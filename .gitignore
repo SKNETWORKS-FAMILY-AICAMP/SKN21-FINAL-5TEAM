@@ -1,3 +1,4 @@
-data/raw/fashion-dataset
+ecommerce/chatbot/data/raw/fashion-dataset
+ecommerce/chatbot/data/processed
 .venv
 .env
