@@ -1,0 +1,11 @@
+# 웹 프레임워크
+fastapi                 # FastAPI: REST API 서버 및 웹 요청 처리
+uvicorn                 # ASGI 서버: FastAPI 실행용, 빠른 비동기 처리 지원
+
+# 데이터베이스
+sqlalchemy              # ORM: 파이썬 객체로 DB 조작 가능
+pymysql                 # MySQL/MariaDB 드라이버: SQLAlchemy가 DB에 연결할 때 사용
+
+# FastAPI 내부 의존성 (보통 pip가 자동 설치)
+# starlette             # FastAPI 내부 사용 (웹 라우팅/미들웨어)
+# annotated-doc         # FastAPI 내부 문서 생성용
