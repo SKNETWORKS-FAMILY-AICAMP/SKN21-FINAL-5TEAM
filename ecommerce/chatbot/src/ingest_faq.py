@@ -12,15 +12,13 @@ import os
 def ingest_faq():
     print("--- Starting Musinsa FAQ Ingestion ---")
     
-    # Path pattern
-    # Assuming only one json file exists or picking the latest
-    pattern = "ecommerce/chatbot/data/raw/musinsa_faq/musinsa_faq_*.json"
-    files = glob.glob(pattern)
-    if not files:
-        print("No FAQ file found.")
+    # Path to preprocessed final FAQ data (relative to project root)
+    filepath = "ecommerce/chatbot/data/raw/musinsa_faq/musinsa_faq_20260203_162139_final.json"
+    
+    if not os.path.exists(filepath):
+        print(f"Error: Final FAQ file not found at {filepath}")
         return
     
-    filepath = sorted(files)[-1] # Take latest
     print(f"Reading {filepath}...")
     
     with open(filepath, 'r', encoding='utf-8') as f:
@@ -36,7 +34,8 @@ def ingest_faq():
     for i in tqdm(range(0, len(data), batch_size), desc="Ingesting Batches"):
         batch = data[i:i+batch_size]
         
-        texts_to_embed = [item['question'] for item in batch]
+        # Use vector_input for embeddings (contains both question and answer context)
+        texts_to_embed = [item['vector_input'] for item in batch]
         
         try:
             resp = openai.embeddings.create(
@@ -47,15 +46,9 @@ def ingest_faq():
             
             points = []
             for j, item in enumerate(batch):
-                # FAQ doesn't have ID, generate UUID
-                point_id = str(uuid.uuid4())
-                
-                payload = {
-                    "main_category": item.get("main_category"),
-                    "sub_category": item.get("sub_category"),
-                    "question": item.get("question"),
-                    "answer": item.get("answer")
-                }
+                # Reuse existing ID and Payload from the preprocessed file
+                point_id = item.get("id", str(uuid.uuid4()))
+                payload = item.get("payload", {})
                 
                 points.append(models.PointStruct(
                     id=point_id,
