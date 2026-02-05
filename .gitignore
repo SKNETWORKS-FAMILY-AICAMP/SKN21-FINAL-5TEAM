@@ -4,3 +4,7 @@ ecommerce/chatbot/data/processed
 .env
 .agent
 .gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
