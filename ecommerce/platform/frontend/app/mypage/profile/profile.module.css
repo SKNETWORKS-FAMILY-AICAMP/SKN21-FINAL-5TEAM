@@ -1,0 +1,277 @@
+/* ===============================
+   페이지 배경 (이 페이지 전용)
+================================ */
+
+.page {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-color: #f5f5f5;
+  z-index: -1;
+}
+
+/* ===============================
+   컨테이너
+================================ */
+
+.container {
+  width: 100%;
+  max-width: 480px;
+  padding: 24px 16px 40px;
+  background-color: #ffffff;
+}
+
+/* ===============================
+   타이틀
+================================ */
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+/* ===============================
+   프로필 영역
+================================ */
+
+.profileBox {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background-color: #e0e0e0;
+}
+
+.userName {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.userId {
+  font-size: 13px;
+  color: #666;
+  margin-top: 4px;
+}
+
+/* ===============================
+   상단 버튼
+================================ */
+
+.buttonRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.outlineBtn {
+  flex: 1;
+  height: 40px;
+  border: 1px solid #e0e0e0;
+  background-color: #fff;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* ===============================
+   메뉴 리스트
+================================ */
+
+.menuList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.menuItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+}
+
+.menuItem strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.menuItem p {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #666;
+}
+
+.arrow {
+  font-size: 18px;
+  color: #999;
+}
+
+/* ===============================
+   Dim / Modal
+================================ */
+
+.dim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 100;
+}
+
+.modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: calc(100% - 32px);
+  max-width: 420px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  transform: translate(-50%, -50%);
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modal h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* ===============================
+   입력 요소
+================================ */
+
+.modal input,
+.modal select {
+  height: 40px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 14px;
+}
+
+/* ===============================
+   배송지 관리
+================================ */
+
+.addBtn {
+  height: 36px;
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.box {
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+/* ===============================
+   알림 설정 토글
+================================ */
+
+.toggleRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  font-size: 14px;
+}
+
+.toggleRow input[type='checkbox'] {
+  appearance: none;
+  width: 44px;
+  height: 24px;
+  background-color: #ccc;
+  border-radius: 999px;
+  position: relative;
+  cursor: pointer;
+}
+
+.toggleRow input[type='checkbox']::after {
+  content: '';
+  width: 18px;
+  height: 18px;
+  background-color: #fff;
+  border-radius: 50%;
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  transition: transform 0.2s;
+}
+
+.toggleRow input[type='checkbox']:checked {
+  background-color: #000;
+}
+
+.toggleRow input[type='checkbox']:checked::after {
+  transform: translateX(20px);
+}
+
+/* ===============================
+   회원 탈퇴
+================================ */
+
+.desc {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.5;
+}
+
+/* ===============================
+   모달 버튼
+================================ */
+
+.modalButtons {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.cancel {
+  flex: 1;
+  height: 40px;
+  border: 1px solid #e0e0e0;
+  background-color: #fff;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.confirm {
+  flex: 1;
+  height: 40px;
+  background-color: #000;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.confirm:disabled {
+  background-color: #ebebeb;
+  color: #aaa;
+  cursor: not-allowed;
+}

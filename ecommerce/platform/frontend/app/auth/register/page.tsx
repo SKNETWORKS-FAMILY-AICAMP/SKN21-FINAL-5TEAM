@@ -4,11 +4,14 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './register.module.css';
 
-const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,16}$/;
+// 8~16자, 영문 소문자 / 숫자 / 특수문자
+const PASSWORD_REGEX =
+  /^(?=.{8,16}$)(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).*$/;
 
 export default function RegisterPage() {
   const router = useRouter();
 
+  // ===== state =====
   const [email, setEmail] = useState('');
   const [emailChecked, setEmailChecked] = useState(false);
   const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
@@ -19,7 +22,7 @@ export default function RegisterPage() {
   const [passwordTouched, setPasswordTouched] = useState(false);
 
   const [name, setName] = useState('');
-  const [dob, setDob] = useState('');
+  const [dob, setDob] = useState(''); // UI용 (전송 ❌)
   const [phone, setPhone] = useState('');
   const [address1, setAddress1] = useState('');
   const [address2, setAddress2] = useState('');
@@ -27,77 +30,90 @@ export default function RegisterPage() {
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // ===== util =====
+  const validatePassword = () => PASSWORD_REGEX.test(password);
+
+  const handlePhoneChange = (v: string) => {
+    setPhone(v.replace(/\D/g, ''));
+  };
+
+  // ===== email duplicate check =====
   async function checkEmail() {
-    setFormError('');
     if (!email) {
       setFormError('이메일을 입력해 주세요.');
       return;
     }
+
+    setFormError('');
     setCheckingEmail(true);
+
     try {
-      const res = await fetch('/api/auth/check-email', {
+      const res = await fetch('http://localhost:8000/users/check-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
+
       const data = await res.json();
       setEmailChecked(true);
       setEmailAvailable(Boolean(data.available));
-    } catch (err) {
-      setFormError('중복확인 중 오류가 발생했습니다.');
+    } catch {
+      setFormError('이메일 중복 확인 중 오류가 발생했습니다.');
     } finally {
       setCheckingEmail(false);
     }
   }
 
-  function handlePhoneChange(v: string) {
-    // Allow only digits (remove '-')
-    const digits = v.replace(/\D/g, '');
-    setPhone(digits);
-  }
-
-  function validatePassword() {
-    return PASSWORD_REGEX.test(password);
-  }
-
+  // ===== submit =====
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError('');
 
     if (!email) return setFormError('이메일을 입력해 주세요.');
-    if (!emailChecked || emailAvailable !== true) return setFormError('이메일 중복확인을 해주세요.');
-    if (!validatePassword()) return setFormError('비밀번호 규칙을 확인해 주세요.');
-    if (password !== passwordConfirm) return setFormError('비밀번호가 일치하지 않습니다.');
+    if (!emailChecked || emailAvailable !== true)
+      return setFormError('이메일 중복확인을 해주세요.');
+    if (!validatePassword())
+      return setFormError('비밀번호 규칙을 확인해 주세요.');
+    if (password !== passwordConfirm)
+      return setFormError('비밀번호가 일치하지 않습니다.');
     if (!name) return setFormError('이름을 입력해 주세요.');
-    if (dob && dob.length !== 8) return setFormError('생년월일은 8자리로 입력해 주세요.');
-    if (phone && phone.length < 9) return setFormError('전화번호를 올바르게 입력해 주세요.');
 
     setSubmitting(true);
+
     try {
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch('http://localhost:8000/users/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name, dob, phone, address1, address2 }),
+        body: JSON.stringify({
+          email,
+          password,
+          name,
+          phone,
+          address1,
+          address2,
+        }),
       });
+
       if (res.ok) {
-        // 성공하면 로그인 페이지로 이동
         router.push('/auth/login');
       } else {
         const data = await res.json();
-        setFormError(data?.error || '회원가입 중 오류가 발생했습니다.');
+        setFormError(data?.detail || '회원가입에 실패했습니다.');
       }
-    } catch (err) {
+    } catch {
       setFormError('서버와 통신할 수 없습니다.');
     } finally {
       setSubmitting(false);
     }
   }
 
+  // ===== render =====
   return (
     <div className={styles.container}>
       <h1 className={styles.title}>회원가입</h1>
 
       <form className={styles.form} onSubmit={handleSubmit}>
+        {/* 이메일 */}
         <div className={styles.field}>
           <label>이메일</label>
           <div className={styles.inline}>
@@ -109,19 +125,22 @@ export default function RegisterPage() {
                 setEmailChecked(false);
                 setEmailAvailable(null);
               }}
-              placeholder="example@domain.com"
+              placeholder="example@email.com"
             />
             <button type="button" onClick={checkEmail} disabled={checkingEmail}>
-              {checkingEmail ? '확인 중...' : '중복확인'}
+              {checkingEmail ? '확인 중' : '중복확인'}
             </button>
           </div>
           {emailChecked && (
-            <div className={emailAvailable ? styles.success : styles.error}>
-              {emailAvailable ? '사용 가능한 이메일입니다.' : '이미 사용 중인 이메일입니다.'}
-            </div>
+            <p className={emailAvailable ? styles.success : styles.error}>
+              {emailAvailable
+                ? '사용 가능한 이메일입니다.'
+                : '이미 사용 중인 이메일입니다.'}
+            </p>
           )}
         </div>
 
+        {/* 비밀번호 */}
         <div className={styles.field}>
           <label>비밀번호</label>
           <input
@@ -132,37 +151,64 @@ export default function RegisterPage() {
           />
           <div className={styles.smallText}>비밀번호: 8~16자의 영문 소문자, 숫자, 특수문자</div>
           {passwordTouched && !validatePassword() && (
-            <div className={styles.error}>비밀번호가 규칙에 맞지 않습니다.</div>
+            <p className={styles.error}>비밀번호 규칙을 확인해 주세요.</p>
           )}
         </div>
 
+        {/* 비밀번호 확인 */}
         <div className={styles.field}>
           <label>비밀번호 확인</label>
-          <input type="password" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} />
+          <input
+            type="password"
+            value={passwordConfirm}
+            onChange={(e) => setPasswordConfirm(e.target.value)}
+          />
         </div>
 
+        {/* 이름 */}
         <div className={styles.field}>
           <label>이름</label>
           <input value={name} onChange={(e) => setName(e.target.value)} />
         </div>
 
+        {/* 생년월일 (UI만) */}
         <div className={styles.field}>
           <label>생년월일</label>
-          <input placeholder="생년월일 8자리" value={dob} onChange={(e) => setDob(e.target.value.replace(/\D/g, '').slice(0, 8))} />
+          <input
+            placeholder="YYYYMMDD"
+            value={dob}
+            onChange={(e) =>
+              setDob(e.target.value.replace(/\D/g, '').slice(0, 8))
+            }
+          />
         </div>
 
+        {/* 전화번호 */}
         <div className={styles.field}>
           <label>전화번호</label>
-          <input value={phone} onChange={(e) => handlePhoneChange(e.target.value)} placeholder="- 을 제외한 전화번호" />
+          <input
+            value={phone}
+            onChange={(e) => handlePhoneChange(e.target.value)}
+            placeholder="- 없이 숫자만 입력"
+          />
         </div>
 
+        {/* 주소 */}
         <div className={styles.field}>
           <label>주소</label>
-          <input placeholder="기본 주소" value={address1} onChange={(e) => setAddress1(e.target.value)} />
-          <input placeholder="상세 주소" value={address2} onChange={(e) => setAddress2(e.target.value)} />
+          <input
+            placeholder="기본 주소"
+            value={address1}
+            onChange={(e) => setAddress1(e.target.value)}
+          />
+          <input
+            placeholder="상세 주소"
+            value={address2}
+            onChange={(e) => setAddress2(e.target.value)}
+          />
         </div>
 
-        {formError && <div className={styles.error}>{formError}</div>}
+        {formError && <p className={styles.error}>{formError}</p>}
 
         <button className={styles.submit} type="submit" disabled={submitting}>
           {submitting ? '가입 중...' : '회원가입 완료'}
@@ -171,4 +217,3 @@ export default function RegisterPage() {
     </div>
   );
 }
-
