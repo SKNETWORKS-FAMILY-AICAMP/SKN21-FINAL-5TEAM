@@ -1,4 +1,4 @@
-
+import os
 import json
 import uuid
 from tqdm import tqdm
@@ -10,42 +10,29 @@ from ecommerce.chatbot.src.core.config import settings
 def ingest_terms():
     print("--- Starting Ecommerce Terms Ingestion ---")
     
-    filepath = "ecommerce/chatbot/data/raw/ecommerce_standard/ecommerce_standard.json"
+    # Path to preprocessed final terms data (relative to project root)
+    filepath = "ecommerce/chatbot/data/raw/ecommerce_standard/ecommerce_standard_preprocessed.json"
+    
+    if not os.path.exists(filepath):
+        print(f"Error: Terms file not found at {filepath}")
+        return
+        
     print(f"Reading {filepath}...")
     
     with open(filepath, 'r', encoding='utf-8') as f:
         data = json.load(f)
         
-    # Data is a list of dicts, but the structure might be quirky (key-value pairs)
-    # Based on previous `view_file`:
-    # [ {"전자상거래...": "표준약관..."}, ... ]
-    
-    # We need to flatten this into meaningful chunks.
-    # Actually, let's inspect the data structure more carefully if needed.
-    # Assuming it's a list of single-key dicts or similar.
-    
-    processed_items = []
-    
-    for item in data:
-        # Since structure might be [{"Title": "Content"}, ...], let's iterate keys
-        for key, value in item.items():
-            processed_items.append({
-                "clause_title": key,
-                "content": value
-            })
-            
-    print(f"Processed {len(processed_items)} clauses.")
+    print(f"Loaded {len(data)} records.")
     
     client = get_qdrant_client()
     openai = get_openai_client()
     batch_size = 50
     
-    for i in tqdm(range(0, len(processed_items), batch_size), desc="Ingesting Batches"):
-        batch = processed_items[i:i+batch_size]
+    for i in tqdm(range(0, len(data), batch_size), desc="Ingesting Batches"):
+        batch = data[i:i+batch_size]
         
-        # Embed the Content (or Title + Content)
-        # Usually searching for content context
-        texts_to_embed = [f"{item['clause_title']}: {item['content']}" for item in batch]
+        # Use 'text' field for embeddings (already preprocessed)
+        texts_to_embed = [item['text'] for item in batch]
         
         try:
             resp = openai.embeddings.create(
@@ -58,10 +45,15 @@ def ingest_terms():
             for j, item in enumerate(batch):
                 point_id = str(uuid.uuid4())
                 
+                # Metadata and original text for the user
                 payload = {
-                    "clause_title": item['clause_title'],
-                    "content": item['content']
+                    "text": item.get("text"),
+                    **item.get("metadata", {})
                 }
+                
+                # Compatibility field for existing search logic if it uses clause_title
+                if "title" in payload and "clause_title" not in payload:
+                    payload["clause_title"] = payload["title"]
                 
                 points.append(models.PointStruct(
                     id=point_id,

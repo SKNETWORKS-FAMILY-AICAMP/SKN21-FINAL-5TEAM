@@ -1,11 +1,13 @@
 
 from typing import List
 from langchain_core.messages import HumanMessage, SystemMessage
+from langsmith import traceable
 from ecommerce.chatbot.src.graph.state import AgentState
 from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
 from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.chatbot.src.core.config import settings
 
+@traceable(run_type="retriever", name="Retrieve Documents")
 def retrieve(state: AgentState):
     """
     Retrieve documents from Qdrant.
@@ -46,6 +48,7 @@ def retrieve(state: AgentState):
 
     return {"documents": documents}
 
+@traceable(run_type="llm", name="Generate Answer")
 def generate(state: AgentState):
     """
     Generate answer using OpenAI.

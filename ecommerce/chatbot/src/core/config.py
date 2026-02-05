@@ -1,15 +1,27 @@
 
 import os
 from typing import Literal
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Get the project root directory (assuming .env is in the root: SKN21-FINAL-5TEAM)
+# config.py is in ecommerce/chatbot/src/core/
+# Path(__file__) = .../ecommerce/chatbot/src/core/config.py
+# .parent = .../core
+# .parent = .../src
+# .parent = .../chatbot
+# .parent = .../ecommerce
+# .parent = .../SKN21-FINAL-5TEAM (Root)
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_ignore_empty=True,
-        extra="ignore"
+        extra="ignore",
+        env_file_encoding="utf-8",
     )
-
+    
     # Project Info
     PROJECT_NAME: str = "Ecommerce Chatbot"
     API_V1_STR: str = "/api/v1"
@@ -21,8 +33,14 @@ class Settings(BaseSettings):
     EMBEDDING_DIM: int = 1536
 
     # Qdrant
-    QDRANT_URL: str = "https://75daa0f4-de48-4954-857a-1fbc276e298f.us-east4-0.gcp.cloud.qdrant.io"
-    QDRANT_API_KEY: str | None = None
+    QDRANT_URL: str
+    QDRANT_API_KEY: str
+    
+    # LangSmith
+    LANGCHAIN_TRACING_V2: str
+    LANGCHAIN_ENDPOINT: str
+    LANGCHAIN_API_KEY: str
+    LANGCHAIN_PROJECT: str
     
     # Collections
     COLLECTION_FASHION: str = "fashion_products"
