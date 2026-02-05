@@ -1,0 +1,556 @@
+/* 전체 래퍼 */
+.wrapper {
+  min-height: 100vh;
+  background-color: #f8f9fa;
+  padding: 40px 20px;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* 타이틀 */
+.title {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 32px;
+  color: #000;
+}
+
+/* 에러 메시지 */
+.error {
+  background: #fee;
+  color: #c33;
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  text-align: center;
+}
+
+/* 로딩 */
+.loading {
+  text-align: center;
+  padding: 60px 20px;
+  font-size: 16px;
+  color: #767676;
+}
+
+/* 에러 메시지 컨테이너 */
+.errorMessage {
+  background: white;
+  border-radius: 8px;
+  padding: 60px 40px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.errorMessage p {
+  font-size: 16px;
+  color: #c33;
+  margin-bottom: 24px;
+}
+
+.retryButton {
+  padding: 12px 32px;
+  background: #000;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.retryButton:hover {
+  background: #333;
+}
+
+/* 메인 컨텐츠 영역 */
+.content {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 24px;
+}
+
+/* 빈 장바구니 */
+.emptyCart {
+  background: white;
+  border-radius: 8px;
+  padding: 80px 40px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.emptyIcon {
+  font-size: 80px;
+  margin-bottom: 24px;
+}
+
+.emptyCart h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #000;
+  margin-bottom: 12px;
+}
+
+.emptyCart p {
+  font-size: 15px;
+  color: #767676;
+  margin-bottom: 32px;
+}
+
+.continueButton {
+  padding: 14px 32px;
+  background: #000;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.continueButton:hover {
+  background: #333;
+}
+
+/* 상품 목록 섹션 */
+.itemsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 선택 바 */
+.selectBar {
+  background: white;
+  border-radius: 8px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.checkboxLabel input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: #000;
+}
+
+.deleteButton {
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #767676;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.deleteButton:hover {
+  border-color: #000;
+  color: #000;
+}
+
+/* 상품 목록 */
+.itemsList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 장바구니 아이템 카드 */
+.cartItem {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  gap: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  position: relative;
+}
+
+.itemCheck {
+  display: flex;
+  align-items: start;
+  padding-top: 4px;
+}
+
+.itemCheck input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: #000;
+}
+
+.itemImage {
+  width: 120px;
+  height: 120px;
+  flex-shrink: 0;
+}
+
+.itemImage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.itemInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.usedBadge {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #fff3e0;
+  color: #e65100;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 4px;
+  width: fit-content;
+}
+
+.itemBrand {
+  font-size: 13px;
+  color: #767676;
+  font-weight: 500;
+}
+
+.itemName {
+  font-size: 16px;
+  font-weight: 600;
+  color: #000;
+  line-height: 1.4;
+}
+
+.itemOption {
+  font-size: 13px;
+  color: #767676;
+}
+
+.itemBottom {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+/* 수량 컨트롤 */
+.quantityControl {
+  display: flex;
+  align-items: center;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.quantityControl button {
+  width: 36px;
+  height: 36px;
+  background: white;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: #000;
+  transition: background 0.2s;
+}
+
+.quantityControl button:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.quantityControl button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.quantityControl span {
+  width: 48px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 15px;
+  border-left: 1px solid #ddd;
+  border-right: 1px solid #ddd;
+}
+
+/* 가격 */
+.itemPrice {
+  text-align: right;
+}
+
+.originalPrice {
+  font-size: 13px;
+  color: #aaa;
+  text-decoration: line-through;
+  margin-bottom: 4px;
+}
+
+.currentPrice {
+  font-size: 20px;
+  font-weight: 700;
+  color: #000;
+}
+
+.shippingInfo {
+  font-size: 13px;
+  color: #767676;
+  margin-top: 8px;
+}
+
+.stockWarning {
+  font-size: 13px;
+  color: #ff6b00;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+/* 삭제 버튼 */
+.removeButton {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  font-size: 28px;
+  color: #aaa;
+  cursor: pointer;
+  transition: color 0.2s;
+  line-height: 1;
+}
+
+.removeButton:hover {
+  color: #000;
+}
+
+/* 주문 요약 섹션 */
+.summarySection {
+  position: relative;
+}
+
+.summary {
+  background: white;
+  border-radius: 8px;
+  padding: 28px 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  top: 20px;
+}
+
+.summary h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 24px;
+  color: #000;
+}
+
+.priceRows {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 20px;
+}
+
+.priceRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 15px;
+}
+
+.priceRow span:first-child {
+  color: #767676;
+}
+
+.priceRow span:last-child {
+  font-weight: 600;
+  color: #000;
+}
+
+/* 최종 금액 */
+.totalPrice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.totalPrice span:first-child {
+  font-size: 16px;
+  font-weight: 700;
+  color: #000;
+}
+
+.finalAmount {
+  font-size: 26px;
+  font-weight: 700;
+  color: #0066ff;
+}
+
+/* 무료배송 안내 */
+.freeShippingInfo {
+  background: #e3f2fd;
+  padding: 14px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #1565c0;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.freeShippingInfo strong {
+  font-weight: 700;
+}
+
+/* 주문 버튼 */
+.orderButton {
+  width: 100%;
+  padding: 16px;
+  background: #000;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-bottom: 12px;
+}
+
+.orderButton:hover:not(:disabled) {
+  background: #333;
+}
+
+.orderButton:disabled {
+  background: #d0d0d0;
+  cursor: not-allowed;
+}
+
+.continueShoppingButton {
+  width: 100%;
+  padding: 16px;
+  background: white;
+  color: #000;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.continueShoppingButton:hover {
+  border-color: #000;
+  background: #f9f9f9;
+}
+
+/* 안내사항 */
+.notice {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #eee;
+}
+
+.notice p {
+  font-size: 12px;
+  color: #999;
+  line-height: 1.8;
+}
+
+/* 반응형 */
+@media (max-width: 1024px) {
+  .content {
+    grid-template-columns: 1fr;
+  }
+
+  .summarySection {
+    order: 1;
+  }
+
+  .itemsSection {
+    order: 2;
+  }
+
+  .summary {
+    position: static;
+  }
+}
+
+@media (max-width: 768px) {
+  .wrapper {
+    padding: 20px 16px;
+  }
+
+  .title {
+    font-size: 24px;
+    margin-bottom: 24px;
+  }
+
+  .cartItem {
+    grid-template-columns: auto 1fr;
+    padding: 20px;
+  }
+
+  .itemCheck {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .itemImage {
+    grid-column: 1;
+    grid-row: 2;
+    width: 100px;
+    height: 100px;
+  }
+
+  .itemInfo {
+    grid-column: 2;
+    grid-row: 1 / 3;
+  }
+
+  .removeButton {
+    top: 16px;
+    right: 16px;
+  }
+
+  .itemBottom {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .itemPrice {
+    text-align: left;
+  }
+
+  .summary {
+    padding: 24px 20px;
+  }
+
+  .finalAmount {
+    font-size: 22px;
+  }
+}
