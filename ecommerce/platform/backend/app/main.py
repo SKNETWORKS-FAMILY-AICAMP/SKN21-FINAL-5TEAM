@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from app.database import engine, Base
-from app.router import user
-from db import crud, models, schemas
+from database import engine, Base
+# from router.carts.router import router as carts_router
+from router.shipping.router import router as shipping_router
 import logging
 
 # ============================================
@@ -31,7 +31,7 @@ app = FastAPI(
 # ============================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 필요 시 프론트 URL로 제한 가능
+    allow_origins=["http://localhost:3000"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -47,7 +47,9 @@ async def health_check():
 # ============================================
 # 라우터 등록
 # ============================================
-app.include_router(user.router, prefix="/users", tags=["Users"])
+
+# app.include_router(carts_router, prefix="/carts", tags=["Carts"])
+app.include_router(shipping_router, prefix="/shipping", tags=["Shipping"])
 
 
 # ============================================
@@ -55,4 +57,4 @@ app.include_router(user.router, prefix="/users", tags=["Users"])
 # ============================================
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
