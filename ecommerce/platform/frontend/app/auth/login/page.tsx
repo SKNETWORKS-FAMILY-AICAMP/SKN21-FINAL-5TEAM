@@ -4,6 +4,11 @@ import Link from 'next/link';
 import styles from './login.module.css';
 
 export default function LoginPage() {
+  const handleGoogleLogin = () => {
+    // 👉 나중에 FastAPI에서 만들 URL
+    window.location.href = 'http://localhost:8000/auth/google/login';
+  };
+  
   return (
     <div className={styles.wrapper}>
       <div className={styles.card}>
@@ -23,6 +28,16 @@ export default function LoginPage() {
 
           <button className={styles.loginButton}>로그인</button>
         </form>
+
+        <div className={styles.social}>
+          <button
+            type="button"
+            className={styles.googleButton}
+            onClick={handleGoogleLogin}
+          >
+            Google로 시작하기
+          </button>
+        </div>
 
         <div className={styles.bottom}>
           계정이 없으신가요?
