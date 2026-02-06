@@ -1,11 +1,13 @@
 
 from fastapi import APIRouter, HTTPException
+from langsmith import traceable
 from ecommerce.chatbot.src.schemas.chat import ChatRequest, ChatResponse
 from ecommerce.chatbot.src.graph.workflow import graph_app
 
 router = APIRouter()
 
 @router.post("/", response_model=ChatResponse)
+@traceable(run_type="chain", name="Chat Endpoint")
 async def chat_endpoint(request: ChatRequest):
     """
     Chat endpoint that invokes the LangGraph workflow.
