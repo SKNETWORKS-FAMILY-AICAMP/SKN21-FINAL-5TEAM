@@ -4,6 +4,8 @@ Mock/Real API 전환이 간편하도록 설계.
 """
 
 from typing import Any, Dict, Optional
+from datetime import datetime, timedelta
+import random
 import httpx
 from ecommerce.chatbot.src.core.config import settings
 
@@ -57,6 +59,39 @@ class BaseAPITool:
         Mock 응답 데이터 반환.
         나중에 실제 API로 전환할 때 이 메서드는 삭제됨.
         """
+        # 주문 상세 조회
+        if "/details" in endpoint:
+            # 예시 데이터
+            if "ORD-456" in endpoint:
+                return {
+                    "status": "배송중",
+                    "date": (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"),
+                    "items": ["검정 슬랙스"],
+                    "amount": 49000,
+                    "can_refund": False
+                }
+            # 기본값 (ORD-123 등)
+            return {
+                "status": "배송준비중",
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "items": ["청바지", "흰 티셔츠"],
+                "amount": 85000,
+                "can_refund": True
+            }
+
+        # 환불 요청
+        if "/refund" in endpoint and method == "POST":
+            # 주문 상태 확인 (간단한 로직)
+            if "ORD-456" in endpoint: # 배송중인 상품은 환불 불가 시뮬레이션
+                return {"status": "error", "message": "현재 '배송중' 상태이므로 환불이 불가능합니다."}
+            
+            return {
+                "status": "success",
+                "message": "환불 요청이 접수되었습니다.",
+                "refund_amount": 85000,
+                "transaction_id": f"REF-{random.randint(10000, 99999)}"
+            }
+
         # 배송 현황 조회
         if "/delivery" in endpoint:
             return {

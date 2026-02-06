@@ -7,6 +7,38 @@ from ecommerce.chatbot.src.tools.base import BaseAPITool
 
 
 @tool
+def get_order_details(order_id: str) -> dict:
+    """
+    주문 상세 정보를 조회합니다.
+    
+    Args:
+        order_id: 주문번호
+        
+    Returns:
+        주문 상태, 상품 목록, 금액, 환불 가능 여부 등
+    """
+    api = BaseAPITool(use_mock=True)
+    return api._call_api(f"/orders/{order_id}/details")
+
+
+@tool
+def request_refund(order_id: str, reason: str) -> dict:
+    """
+    환불을 요청합니다.
+    
+    Args:
+        order_id: 주문번호
+        reason: 환불 사유
+        
+    Returns:
+        환불 요청 결과 (성공 여부, 환불 금액 등)
+    """
+    api = BaseAPITool(use_mock=True)
+    data = {"reason": reason}
+    return api._call_api(f"/orders/{order_id}/refund", method="POST", data=data)
+
+
+@tool
 def get_delivery_status(order_id: str) -> dict:
     """
     주문 번호로 배송 현황을 조회합니다.
