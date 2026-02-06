@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
-from database import get_db
-from . import crud, schema
+from ecommerce.platform.backend.app.database import get_db
+from ecommerce.platform.backend.app.router.shipping import crud, schema
 
 router = APIRouter(
     prefix="/shipping",

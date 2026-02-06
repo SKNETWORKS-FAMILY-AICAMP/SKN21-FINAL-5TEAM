@@ -4,13 +4,18 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
+from pathlib import Path
+
 # .env 파일 로드
-load_dotenv()
+# 현재 파일: .../ecommerce/platform/backend/app/database.py
+# Root: .../SKN21-FINAL-5TEAM (.env 위치)
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
+load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT")
+DB_PORT = os.getenv("DB_PORT", "3306")
 DB_NAME = os.getenv("DB_NAME")
 
 # MySQL 접속 URL
