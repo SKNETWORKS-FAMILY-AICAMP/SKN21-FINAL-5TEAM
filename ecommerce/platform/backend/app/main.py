@@ -10,6 +10,8 @@ import logging
 import os
 from ecommerce.chatbot.src.core.config import settings
 from ecommerce.chatbot.src.api.v1.endpoints.chat import router as chatbot_router
+from starlette.middleware.sessions import SessionMiddleware # 미드웨워 추가
+
 
 # ============================================
 # Lifespan 이벤트 (서버 시작/종료)
@@ -47,6 +49,16 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# ============================================
+# 세션 미들웨어 설정 (Chatbot)
+# ============================================
+app.add_middleware(
+    SessionMiddleware,
+    secret_key="dev-secret-key",  # 나중에 환경변수로
+    same_site="lax",
+    https_only=False,  # 로컬 개발이므로 False
 )
 
 # ============================================
