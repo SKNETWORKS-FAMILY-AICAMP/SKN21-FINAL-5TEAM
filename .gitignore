@@ -1,0 +1,10 @@
+ecommerce/chatbot/data/raw/fashion-dataset
+ecommerce/chatbot/data/processed
+.venv
+.env
+.agent
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

@@ -7,13 +7,16 @@ from typing import List
 from database import get_db
 from . import crud, schema
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/shipping",
+    tags=["shipping"]
+)
 
 
 # =====================
 # 배송지 목록 조회
 # =====================
-@router.get("/", response_model=List[schema.ShippingAddressResponse])
+@router.get("", response_model=List[schema.ShippingAddressResponse])
 def list_shipping(user_id: int, db: Session = Depends(get_db)):
     return crud.get_shipping_addresses(db, user_id)
 
@@ -21,7 +24,7 @@ def list_shipping(user_id: int, db: Session = Depends(get_db)):
 # =====================
 # 배송지 생성
 # =====================
-@router.post("/", response_model=schema.ShippingAddressResponse)
+@router.post("", response_model=schema.ShippingAddressResponse)
 def add_shipping(user_id: int, address: schema.ShippingAddressCreate, db: Session = Depends(get_db)):
     return crud.create_shipping_address(db, user_id, address)
 
