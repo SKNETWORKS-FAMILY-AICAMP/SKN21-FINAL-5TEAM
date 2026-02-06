@@ -13,6 +13,13 @@ NLU_SYSTEM_PROMPT = """당신은 고객센터 의도 분석 전문가입니다. 
    - 'review_search': 리뷰 조회
    - 'review_create': 리뷰 작성
    - 'address_change': 주소지 변경
+4. parameters: 액션 수행에 필요한 정보 추출 (없으면 null)
+   - order_id: 주문번호 (예: ORD-20240201)
+   - payment_method: 결제수단 (카드/무통장/계좌이체 등)
+   - gift_card_code: 상품권 코드
+   - product_id: 상품 ID (없으면 null)
+   - review_content: 리뷰 내용
+   - review_rating: 리뷰 평점 (1~5 정수)
 
 [카테고리 상세 가이드]
 1. 배송: 배송 일정, 택배사, 송장, 도착 등
@@ -22,7 +29,7 @@ NLU_SYSTEM_PROMPT = """당신은 고객센터 의도 분석 전문가입니다. 
 5. 상품/AS 문의: 제품 상세, 사이즈, AS, 수선, 리뷰 등
 6. 약관: 법적 책임, 이용규정 등
 
-응답 예시: {"category": "배송", "intent_type": "execution", "action_name": "tracking"}"""
+응답 예시: {"category": "주문/결제", "intent_type": "execution", "action_name": "payment_update", "parameters": {"order_id": "ORD-123", "payment_method": "카드"}}"""
 
 # 답변 생성을 위한 시스템 프롬프트 (Base)
 ECOMMERCE_SYSTEM_PROMPT = """
@@ -37,8 +44,8 @@ GENERATION_SYSTEM_PROMPT_TEMPLATE = """{system_prompt}
 당신은 이커머스 고객센터의 유능한 에이전트입니다.
 사용자의 질문에 대해 [지식 베이스] 또는 [액션 실행 결과]를 바탕으로 정확하고 친절한 답변을 제공하세요.
 
-[지식 베이스]: {{context}}
-[액션 실행 결과]: {{tool_context}}
+[지식 베이스]: {context}
+[액션 실행 결과 (JSON)]: {tool_context}
 
 - 실행 결과가 있다면 그 내용을 최우선으로 안내하세요.
 - 지식 베이스에 관련 내용이 있다면 이를 보충 설명으로 활용하세요.
