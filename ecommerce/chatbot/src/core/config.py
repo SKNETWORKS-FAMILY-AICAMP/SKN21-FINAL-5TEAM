@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     LANGCHAIN_API_KEY: str
     LANGCHAIN_PROJECT: str
     
+    # Backend API
+    BACKEND_API_URL: str = "http://localhost:3000"
+    
     # Collections
     COLLECTION_FASHION: str = "fashion_products"
     COLLECTION_FAQ: str = "musinsa_faq"

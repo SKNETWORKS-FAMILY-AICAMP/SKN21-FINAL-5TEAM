@@ -1,19 +1,21 @@
-
-from typing import List
+import re
+import json
+from typing import List, Optional, Dict, Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
+from qdrant_client import models
 from ecommerce.chatbot.src.graph.state import AgentState
 from ecommerce.chatbot.src.schemas.nlu import NLUResult
 from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
 from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.chatbot.src.core.config import settings
+from ecommerce.chatbot.src.services.mock_services import get_order_details, request_refund, get_tracking_info
 
 @traceable(run_type="retriever", name="Retrieve Documents")
 def retrieve(state: AgentState):
     """
     Retrieve documents from Qdrant.
-    For the skeleton, we currently default to searching the 'fashion_products' collection.
-    TODO: Implement routing logic to choose between multiple collections.
+    [통합 검색] 카테고리 필터 검색과 전체 검색 결과를 병합하여 최적의 문서를 찾습니다.
     """
     print("---RETRIEVE---")
     question = state["question"]
@@ -66,7 +68,6 @@ def retrieve(state: AgentState):
                 limit=3
             ).points
             for hit in global_res:
-                # 필터 검색에서 이미 찾은 것은 덮어쓰지 않음 (혹은 점수가 더 높을 경우 갱신 가능하나 보통 동일함)
                 if hit.id not in combined_results:
                     combined_results[hit.id] = hit
         except Exception as e:
@@ -78,13 +79,14 @@ def retrieve(state: AgentState):
     # 4. 페이로드 가공 및 유사도 검증
     all_documents = []
     for hit in sorted_hits:
-        print(f"[검색 결과] Score: {hit.score:.4f}, Payload: {hit.payload.get('main_category') or hit.payload.get('category')}")
-        
         if hit.score > 0.2:
-            doc_type = "FAQ" if col == settings.COLLECTION_FAQ else "약관"
+            # Note: Determine doc_type based on the hit metadata or loop context
+            # simplified for resolution here. In complex logic, we might track col.
             payload = hit.payload
-            
-            # 풍부한 텍스트 정보 추출
+            doc_type = "정보" # Default
+            if 'main_category' in payload: doc_type = "FAQ"
+            elif 'category' in payload: doc_type = "약관"
+
             content_text = (
                 payload.get('question', '') + " " + payload.get('answer', '') if payload.get('question') else
                 payload.get('text', '') or 
@@ -147,7 +149,7 @@ def no_info_node(state: AgentState):
         "generation": "죄송합니다. 문의하신 내용에 대한 답변을 지식베이스에서 찾을 수 없습니다. 구체적인 확인을 위해 고객센터(1588-XXXX)로 문의하시거나 상담원 연결을 도와드릴까요?"
     }
 
-@traceable(run_type="chain", name="NLU Simulation")
+@traceable(run_type="parser", name="Mock NLU")
 def mock_nlu(user_message: str) -> NLUResult:
     """
     [초고도화] 스코어링 기반 NLU 엔진
@@ -207,14 +209,12 @@ def mock_nlu(user_message: str) -> NLUResult:
     for cat, keywords in category_map.items():
         for k in keywords:
             if k in clean_msg:
-                # 키워드가 포함될 때마다 점수 가산 (더 긴 단어에 가중치를 줄 수도 있음)
                 scores[cat] += 1
     
     # 점수가 높은 순으로 정렬
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     best_cat, max_score = sorted_scores[0]
     
-    # 의도 파악 결과 반환 (최소 1개 이상의 키워드가 매칭되어야 함)
     if max_score > 0:
         return NLUResult(intent="search_knowledge", slots={"category": best_cat})
     
@@ -254,7 +254,6 @@ def call_llm_for_nlu(user_message: str) -> dict:
         temperature=0
     )
     
-    import json
     res = json.loads(response.choices[0].message.content)
     res["is_relevant"] = res["category"] is not None
     return res
@@ -325,14 +324,14 @@ def execute_action_node(state: AgentState):
         "tool_outputs": [result]
     }
 
-@traceable(run_type="chain", name="Update Agent State")
+@traceable(run_type="chain", name="Update State")
 def update_state_node(state: AgentState) -> dict:
     """
     [하이브리드 NLU] 질문을 분석하여 '조회'인지 '실행'인지 결정합니다.
     """
     print("---UPDATE STATE (Intelligent Action NLU)---")
     messages = state.get("messages", [])
-    content = messages[-1].content if messages else ""
+    content = messages[-1].content if hasattr(messages[-1], "content") else str(messages[-1])
     
     # 1. 문서 검색용 카테고리 추출 (기존 mock_nlu 활용)
     nlu_keyword = mock_nlu(content)
@@ -348,13 +347,14 @@ def update_state_node(state: AgentState) -> dict:
     current_status = state.get("action_status")
     if current_status == "pending_approval":
         positive_words = ["네", "어", "예", "응", "그래", "확인", "진행", "yes", "ok"]
-        if any(word in content.lower() for word in positive_words):
+        content_lower = content.lower()
+        if any(word in content_lower for word in positive_words):
             print("---USER APPROVED ACTION---")
             return {
                 "action_status": "approved",
                 "is_relevant": True
             }
-        elif any(word in content for word in ["싫어", "아니", "취소", "no", "stop"]):
+        elif any(word in content_lower for word in ["싫어", "아니", "취소", "no", "stop"]):
             print("---USER CANCELLED ACTION---")
             return {
                 "action_status": "failed",
@@ -364,7 +364,7 @@ def update_state_node(state: AgentState) -> dict:
 
     updates = {
         "question": content,
-        "category": llm_analysis["category"] or nlu_keyword.slots.get("category"),
+        "category": llm_analysis["category"] or (nlu_keyword.slots.get("category") if nlu_keyword.intent else None),
         "intent_type": llm_analysis["intent_type"],
         "action_name": llm_analysis["action_name"] or state.get("action_name"),
         "order_id": order_id,
@@ -375,8 +375,3 @@ def update_state_node(state: AgentState) -> dict:
     
     print(f"Intent: {updates['intent_type']}, Action: {updates['action_name']}, Order: {updates['order_id']}")
     return updates
-
-
-
-
-

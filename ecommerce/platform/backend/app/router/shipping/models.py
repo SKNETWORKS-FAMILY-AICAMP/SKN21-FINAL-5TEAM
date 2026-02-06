@@ -1,11 +1,23 @@
+"""
+SQLAlchemy Models for E-commerce Platform
+FastAPI + SQLAlchemy ORM
+"""
 from datetime import datetime
-from typing import List, Optional
+from decimal import Decimal
+from typing import Optional, List ,TYPE_CHECKING
+from enum import Enum as PyEnum
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, Index, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import (
+    BigInteger, String, Text, Numeric, Integer, Boolean, 
+    DateTime, Enum, ForeignKey, CheckConstraint, Index, UniqueConstraint
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
 
 from database import Base
 
+if TYPE_CHECKING:
+    from router.users.models import User
 # ============================================
 # Shipping
 # ============================================
@@ -35,6 +47,9 @@ class ShippingAddress(Base):
     address2: Mapped[Optional[str]] = mapped_column(
         String(255), comment='주소2 (상세 주소)'
     )
+    post_code: Mapped[str] = mapped_column(
+        String(10), nullable=False, comment='우편번호'
+    )
     phone: Mapped[str] = mapped_column(
         String(20), nullable=False, comment='핸드폰번호'
     )
@@ -55,8 +70,8 @@ class ShippingAddress(Base):
     )
 
     # Relationships
-    # user: Mapped["User"] = relationship(back_populates="shipping_addresses")
-    # orders: Mapped[List["Order"]] = relationship(back_populates="shipping_address")
+    user: Mapped["User"] = relationship(back_populates="shipping_addresses")
+    #orders: Mapped[List["Order"]] = relationship(back_populates="shipping_address")
 
 
 class ShippingRequestTemplate(Base):
