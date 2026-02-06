@@ -1,5 +1,5 @@
 /* ===============================
-   페이지 배경 (이 페이지 전용)
+   페이지 배경
 ================================ */
 
 .page {
@@ -134,6 +134,7 @@
   z-index: 100;
 }
 
+/* 🔹 공통 모달 (스크롤 없음) */
 .modal {
   position: fixed;
   top: 50%;
@@ -155,6 +156,12 @@
   font-weight: 600;
 }
 
+/* 🔹 나의 맞춤 정보 전용 스크롤 모달 */
+.scrollModal {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
 /* ===============================
    입력 요소
 ================================ */
@@ -165,26 +172,6 @@
   border: 1px solid #e0e0e0;
   border-radius: 6px;
   padding: 0 10px;
-  font-size: 14px;
-}
-
-/* ===============================
-   배송지 관리
-================================ */
-
-.addBtn {
-  height: 36px;
-  border: 1px solid #e0e0e0;
-  background: #fff;
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.box {
-  padding: 12px;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
   font-size: 14px;
 }
 
@@ -231,13 +218,33 @@
 }
 
 /* ===============================
-   회원 탈퇴
+   나의 맞춤 정보
 ================================ */
 
-.desc {
-  font-size: 13px;
-  color: #666;
-  line-height: 1.5;
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.input {
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.toggle {
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 12px 0;
+  cursor: pointer;
 }
 
 /* ===============================

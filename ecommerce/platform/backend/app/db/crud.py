@@ -8,7 +8,7 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc, func
 
-from models import (
+from app.db.models import (
     User, UserBodyMeasurement, Category, Product, ProductOption,
     UsedProduct, UsedProductOption, UsedProductCondition,
     Cart, CartItem, ShippingAddress, Order, OrderItem,
@@ -16,7 +16,7 @@ from models import (
     PointHistory, IssuedVoucher, InventoryTransaction,
     ProductImage, ShippingRequestTemplate
 )
-from schemas import (
+from app.db.schemas import (
     UserCreate, UserUpdate, BodyMeasurementCreate, BodyMeasurementUpdate,
     CategoryCreate, CategoryUpdate, ProductCreate, ProductUpdate,
     ProductOptionCreate, ProductOptionUpdate, UsedProductCreate, UsedProductUpdate,
