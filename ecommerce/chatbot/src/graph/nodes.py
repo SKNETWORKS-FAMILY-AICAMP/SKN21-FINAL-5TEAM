@@ -78,6 +78,7 @@ def generate(state: AgentState):
     
     return {"generation": response.choices[0].message.content}
 
+@traceable(run_type="parser", name="Mock NLU")
 def mock_nlu(user_message: str) -> NLUResult:
     """
     Mock NLU function to simulate checking intent and slots.
@@ -92,6 +93,7 @@ def mock_nlu(user_message: str) -> NLUResult:
     
     return NLUResult(intent=None, slots={})
 
+@traceable(run_type="chain", name="Update State")
 def update_state_node(state: AgentState) -> dict:
     """
     Updates the agent state based on the NLU result from the latest user message.
