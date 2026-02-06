@@ -1,5 +1,9 @@
 from typing import Annotated, TypedDict, List, Dict, Any, Union, Optional
 from langgraph.graph.message import add_messages
+from langchain_core.messages import BaseMessage
+
+# OrderInfo as a Dict for slot information (from remote version)
+OrderInfo = Dict[str, Any]
 
 class AgentState(TypedDict):
     """
@@ -7,7 +11,9 @@ class AgentState(TypedDict):
     """
     
     # 1. 대화 관리
-    messages: Annotated[List[Dict[str, Any]], add_messages]
+    # Note: Using Union[BaseMessage, Dict[str, Any]] to support both formats if needed, 
+    # but the logic generally expects a list of messages.
+    messages: Annotated[List[Any], add_messages]
     question: str
     generation: str
     
@@ -33,3 +39,8 @@ class AgentState(TypedDict):
     # 6. 제어 플래그
     is_relevant: bool
     retry_count: int
+
+    # (From remote version - potentially for future use)
+    current_intent: Optional[str]
+    order_slots: Optional[OrderInfo]
+    missing_slot: Optional[str]

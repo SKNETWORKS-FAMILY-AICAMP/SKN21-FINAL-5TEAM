@@ -11,6 +11,7 @@ class ShippingAddressBase(BaseModel):
     recipient_name: str = Field(..., min_length=1, max_length=100)
     address1: str = Field(..., min_length=1, max_length=255)
     address2: Optional[str] = Field(None, max_length=255)
+    post_code: Optional[str] = Field(None, max_length=10)
     phone: str = Field(..., min_length=1, max_length=20)
     is_default: bool = Field(default=False)
 
@@ -25,6 +26,7 @@ class ShippingAddressUpdate(BaseModel):
     recipient_name: Optional[str] = Field(None, min_length=1, max_length=100)
     address1: Optional[str] = Field(None, min_length=1, max_length=255)
     address2: Optional[str] = Field(None, max_length=255)
+    post_code: Optional[str] = Field(None, max_length=10)
     phone: Optional[str] = Field(None, min_length=1, max_length=20)
     is_default: Optional[bool] = None
 
