@@ -9,7 +9,6 @@ from ecommerce.chatbot.src.schemas.nlu import NLUResult
 from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
 from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.chatbot.src.core.config import settings
-from ecommerce.chatbot.src.services.mock_services import get_order_details, request_refund, get_tracking_info
 # 신규 프롬프트 및 도구 임포트
 from ecommerce.chatbot.src.prompts.system_prompts import (
     ECOMMERCE_SYSTEM_PROMPT, 
@@ -17,7 +16,13 @@ from ecommerce.chatbot.src.prompts.system_prompts import (
     GENERATION_SYSTEM_PROMPT_TEMPLATE,
     CATEGORY_KEYWORDS_MAP
 )
-from ecommerce.chatbot.src.tools.order_tools import get_delivery_status, get_courier_contact, update_payment_info
+from ecommerce.chatbot.src.tools.order_tools import (
+    get_delivery_status, 
+    get_courier_contact, 
+    update_payment_info, 
+    request_refund, 
+    get_order_details
+)
 from ecommerce.chatbot.src.tools.service_tools import register_gift_card, get_reviews, create_review
 
 @traceable(run_type="retriever", name="Retrieve Documents")
@@ -125,7 +130,12 @@ def generate(state: AgentState):
     openai = get_openai_client()
 
     context = "\n\n".join(documents)
-    tool_context = str(tool_outputs)
+    
+    # 도구 실행 결과를 명확한 JSON 문자열로 변환
+    if tool_outputs:
+        tool_context = json.dumps(tool_outputs, ensure_ascii=False, indent=2)
+    else:
+        tool_context = "실행된 액션 없음"
     
     system_prompt = GENERATION_SYSTEM_PROMPT_TEMPLATE.format(
         system_prompt=ECOMMERCE_SYSTEM_PROMPT,
@@ -217,12 +227,15 @@ def check_eligibility_node(state: AgentState):
     if not order_id:
         return {"action_status": "failed", "generation": "주문 번호가 없어 확인이 불가능합니다. 주문 번호를 알려주시겠어요?"}
     
-    order = get_order_details(order_id)
+    order = get_order_details.invoke({"order_id": order_id})
     if not order:
         return {"action_status": "failed", "generation": "해당 주문 번호를 찾을 수 없습니다."}
         
     if action == "refund" and not order["can_refund"]:
         return {"action_status": "failed", "generation": f"이 주문은 현재 {order['status']} 상태로 환불이 불가능합니다."}
+
+    if action == "payment_update" and order["status"] in ["배송중", "배송완료"]:
+        return {"action_status": "failed", "generation": f"죄송합니다. 현재 {order['status']} 상태여서 결제 수단을 변경할 수 없습니다."}
         
     # 환불은 승인 루프(Human-in-the-loop) 진입, 기타 액션은 바로 승인
     if action == "refund":
@@ -251,7 +264,6 @@ def human_approval_node(state: AgentState):
         "action_status": "pending_approval"
     }
 
-@traceable(run_type="chain", name="Execute Action Tool")
 def execute_action_node(state: AgentState):
     """
     실제 API 도구를 호출하여 액션을 수행합니다.
@@ -259,32 +271,38 @@ def execute_action_node(state: AgentState):
     print("---EXECUTE ACTION---")
     action = state.get("action_name")
     order_id = state.get("order_id")
+    # user_info에 저장된 파라미터 활용
+    params = state.get("user_info", {})
     
     result = {}
     if action == "refund":
-        result = request_refund(order_id, "사용자 요청")
+        result = request_refund.invoke({"order_id": order_id, "reason": "사용자 요청"})
     elif action == "tracking":
-        result = get_delivery_status(order_id)
+        result = get_delivery_status.invoke({"order_id": order_id})
     elif action == "courier_contact":
-        result = get_courier_contact(order_id)
+        result = get_courier_contact.invoke({"order_id": order_id})
     elif action == "payment_update":
-        # 결제 정보 변경 (예시로 카드로 고정, 실제로는 슬롯에서 추출 필요)
-        result = update_payment_info(order_id, "카드")
+        payment_method = params.get("payment_method", "카드") # 기본값 카드
+        result = update_payment_info.invoke({"order_id": order_id, "payment_method": payment_method})
     elif action == "gift_card":
-        # 상품권 등록 (메시지에서 코드 추출 로직이 추가로 필요할 수 있음)
-        result = register_gift_card("GIFT-1234")
+        code = params.get("gift_card_code", "UNKNOWN")
+        result = register_gift_card.invoke({"code": code})
     elif action == "review_search":
-        result = get_reviews()
+        result = get_reviews.invoke({"limit": 5})
     elif action == "review_create":
-        result = create_review(product_id="PROD-001", rating=5, content="최고예요!")
+        product_id = params.get("product_id", "PROD-001")
+        rating = params.get("review_rating", 5)
+        content = params.get("review_content", "좋아요")
+        result = create_review.invoke({"product_id": product_id, "rating": rating, "content": content})
     elif action == "address_change":
-        # 주소지 변경 결과 메시지
+        # 주소지 변경 Mock
         result = {"success": True, "message": f"주문 {order_id}의 주소지가 성공적으로 변경되었습니다."}
         
     return {
         "action_status": "completed",
         "tool_outputs": [result]
     }
+
 
 @traceable(run_type="chain", name="Update State")
 def update_state_node(state: AgentState) -> dict:
@@ -324,15 +342,24 @@ def update_state_node(state: AgentState) -> dict:
                 "is_relevant": True
             }
 
+    # 파라미터 추출 및 상태 업데이트
+    parameters = llm_analysis.get("parameters", {}) or {}
+    print(f"Detected Parameters: {parameters}")
+    
+    # 3. 주문 번호 우선순위: 파라미터 > 정규식 > 기존 상태
+    extracted_order_id = parameters.get("order_id") or order_id
+    
     updates = {
         "question": content,
         "category": llm_analysis["category"] or (nlu_keyword.slots.get("category") if nlu_keyword.intent else None),
         "intent_type": llm_analysis["intent_type"],
         "action_name": llm_analysis["action_name"] or state.get("action_name"),
-        "order_id": order_id,
+        "order_id": extracted_order_id,
         "is_relevant": llm_analysis["is_relevant"],
         "action_status": "idle",
-        "tool_outputs": []
+        "tool_outputs": [],
+        # 추후 도구 실행에 필요한 파라미터들을 user_info에 병합하여 저장
+        "user_info": {**state.get("user_info", {}), **parameters}
     }
     
     print(f"Intent: {updates['intent_type']}, Action: {updates['action_name']}, Order: {updates['order_id']}")
