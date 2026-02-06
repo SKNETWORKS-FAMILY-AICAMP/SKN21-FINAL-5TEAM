@@ -1,147 +1,339 @@
-
-from typing import List
+import re
+import json
+from typing import List, Optional, Dict, Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
+from qdrant_client import models
 from ecommerce.chatbot.src.graph.state import AgentState
 from ecommerce.chatbot.src.schemas.nlu import NLUResult
 from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
 from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.chatbot.src.core.config import settings
+from ecommerce.chatbot.src.services.mock_services import get_order_details, request_refund, get_tracking_info
+# 신규 프롬프트 및 도구 임포트
+from ecommerce.chatbot.src.prompts.system_prompts import (
+    ECOMMERCE_SYSTEM_PROMPT, 
+    NLU_SYSTEM_PROMPT, 
+    GENERATION_SYSTEM_PROMPT_TEMPLATE,
+    CATEGORY_KEYWORDS_MAP
+)
+from ecommerce.chatbot.src.tools.order_tools import get_delivery_status, get_courier_contact, update_payment_info
+from ecommerce.chatbot.src.tools.service_tools import register_gift_card, get_reviews, create_review
 
 @traceable(run_type="retriever", name="Retrieve Documents")
 def retrieve(state: AgentState):
     """
     Retrieve documents from Qdrant.
-    For the skeleton, we currently default to searching the 'fashion_products' collection.
-    TODO: Implement routing logic to choose between multiple collections.
+    [통합 검색] 카테고리 필터 검색과 전체 검색 결과를 병합하여 최적의 문서를 찾습니다.
     """
     print("---RETRIEVE---")
     question = state["question"]
+    category = state.get("category")
     client = get_qdrant_client()
     openai = get_openai_client()
 
-    # Embed the question
-    # Note: In a real app, use a proper embedding function. 
-    # Here we assume OpenAI embedding for simplicity of the skeleton.
+    # 1. 질문 임베딩 생성
     emb_response = openai.embeddings.create(
         input=question,
         model=settings.EMBEDDING_MODEL
     )
     query_vector = emb_response.data[0].embedding
 
-    # Search (Defaulting to fashion_products for now)
-    # TODO: Make retrieval modular/routed
-    # Search (Defaulting to fashion_products for now)
-    # Using query_points as search is deprecated/missing in this version
-    search_result = client.query_points(
-        collection_name=settings.COLLECTION_FASHION,
-        query=query_vector,
-        limit=5
-    ).points
-    
-    # Format documents
-    documents = []
-    for hit in search_result:
-        # Assuming payload has 'productDisplayName' or similar. 
-        # We'll dump the whole payload for now.
-        content = f"Item: {hit.payload}" 
-        documents.append(content)
+    # 2. 검색 전략 실행
+    collections = [settings.COLLECTION_FAQ, settings.COLLECTION_TERMS]
+    combined_results = {} # point ID를 키로 사용하여 중복 제거
 
-    return {"documents": documents}
+    for col in collections:
+        # A. 카테고리 필터 검색 (카테고리가 인식된 경우만)
+        if category:
+            if col == settings.COLLECTION_FAQ:
+                field_name = "main_category"
+                mapped_category = "취소/교환/반품" if category == "취소/반품/교환" else category
+            else: # COLLECTION_TERMS
+                field_name = "category"
+                if category == "회원 정보": mapped_category = "회원"
+                elif category == "주문/결제": mapped_category = "구매/결제"
+                else: mapped_category = category
+
+            try:
+                filtered_res = client.query_points(
+                    collection_name=col,
+                    query=query_vector,
+                    query_filter=models.Filter(
+                        must=[models.FieldCondition(key=field_name, match=models.MatchValue(value=mapped_category))]
+                    ),
+                    limit=3
+                ).points
+                for hit in filtered_res:
+                    combined_results[hit.id] = hit
+            except Exception as e:
+                print(f"Error filtered searching {col}: {e}")
+
+        # B. 전체 대상 검색 (카테고리 제한 없음)
+        try:
+            global_res = client.query_points(
+                collection_name=col,
+                query=query_vector,
+                limit=3
+            ).points
+            for hit in global_res:
+                if hit.id not in combined_results:
+                    combined_results[hit.id] = hit
+        except Exception as e:
+            print(f"Error global searching {col}: {e}")
+
+    # 3. 점수 순 정렬 및 상위 5개 추출
+    sorted_hits = sorted(combined_results.values(), key=lambda x: x.score, reverse=True)[:5]
+    
+    # 4. 페이로드 가공 및 유사도 검증
+    all_documents = []
+    for hit in sorted_hits:
+        if hit.score > 0.2:
+            # Note: Determine doc_type based on the hit metadata or loop context
+            # simplified for resolution here. In complex logic, we might track col.
+            payload = hit.payload
+            doc_type = "정보" # Default
+            if 'main_category' in payload: doc_type = "FAQ"
+            elif 'category' in payload: doc_type = "약관"
+
+            content_text = (
+                payload.get('question', '') + " " + payload.get('answer', '') if payload.get('question') else
+                payload.get('text', '') or 
+                payload.get('content', '') or 
+                payload.get('title', '')
+            ).strip()
+            
+            if content_text:
+                all_documents.append(f"[{doc_type}] {content_text}")
+
+    print(f"최종 병합 및 필터링된 문서 수: {len(all_documents)}")
+    
+    return {
+        "documents": all_documents,
+        "is_relevant": len(all_documents) > 0
+    }
 
 @traceable(run_type="llm", name="Generate Answer")
 def generate(state: AgentState):
     """
-    Generate answer using OpenAI.
+    지식 리트리벌 결과 또는 액션 실행 결과를 바탕으로 최종 답변을 생성합니다.
     """
     print("---GENERATE---")
     question = state["question"]
-    documents = state["documents"]
+    documents = state.get("documents", [])
+    tool_outputs = state.get("tool_outputs", [])
     openai = get_openai_client()
 
     context = "\n\n".join(documents)
+    tool_context = str(tool_outputs)
     
-    system_prompt = """You are a helpful assistant for an ecommerce platform. 
-    Use the following context to answer the user's question. 
-    If the answer is not in the context, say you don't know."""
+    system_prompt = GENERATION_SYSTEM_PROMPT_TEMPLATE.format(
+        system_prompt=ECOMMERCE_SYSTEM_PROMPT,
+        context=context,
+        tool_context=tool_context
+    )
     
-    user_message = f"Context:\n{context}\n\nQuestion: {question}"
-
     response = openai.chat.completions.create(
         model=settings.OPENAI_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
+            {"role": "user", "content": question}
         ],
         temperature=0
     )
     
     return {"generation": response.choices[0].message.content}
 
+@traceable(run_type="chain", name="Handle No Info")
+def no_info_node(state: AgentState):
+    """
+    검색 결과가 없을 때 실행되는 노드
+    """
+    print("---NO INFO FOUND---")
+    return {
+        "generation": "죄송합니다. 문의하신 내용에 대한 답변을 지식베이스에서 찾을 수 없습니다. 구체적인 확인을 위해 고객센터(1588-XXXX)로 문의하시거나 상담원 연결을 도와드릴까요?"
+    }
+
 @traceable(run_type="parser", name="Mock NLU")
 def mock_nlu(user_message: str) -> NLUResult:
     """
-    Mock NLU function to simulate checking intent and slots.
-    Replace this with actual NLU logic or service call.
+    [초고도화] 스코어링 기반 NLU 엔진
+    문장 내 키워드 밀도를 계산하여 최적의 카테고리를 추론합니다.
     """
-    # Logic for demonstration:
-    # If message contains specific keywords, return simulated results.
-    if "배송" in user_message:
-        return NLUResult(intent="check_delivery", slots={"category": "delivery"})
-    elif "1234" in user_message:
-        return NLUResult(intent=None, slots={"order_id": "1234"})
+    # 전처리: 띄어쓰기 제거 및 소문자화
+    clean_msg = user_message.replace(" ", "").lower()
+    
+    # 카테고리별 초정밀 키워드 사전 (데이터셋의 모든 세부 카테고리 반영)
+    category_map = CATEGORY_KEYWORDS_MAP
+    
+    # 카테고리별 스코어 계산
+    scores = {cat: 0 for cat in category_map}
+    for cat, keywords in category_map.items():
+        for k in keywords:
+            if k in clean_msg:
+                scores[cat] += 1
+    
+    # 점수가 높은 순으로 정렬
+    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    best_cat, max_score = sorted_scores[0]
+    
+    if max_score > 0:
+        return NLUResult(intent="search_knowledge", slots={"category": best_cat})
     
     return NLUResult(intent=None, slots={})
+
+@traceable(run_type="chain", name="LLM NLU Fallback")
+def call_llm_for_nlu(user_message: str) -> dict:
+    """
+    키워드 매칭 실패 시 LLM을 사용하여 문맥 기반으로 의도(조회/실행)를 파악합니다.
+    """
+    openai = get_openai_client()
+    
+    system_prompt = NLU_SYSTEM_PROMPT
+    
+    response = openai.chat.completions.create(
+        model=settings.OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message}
+        ],
+        response_format={"type": "json_object"},
+        temperature=0
+    )
+    
+    res = json.loads(response.choices[0].message.content)
+    res["is_relevant"] = res["category"] is not None
+    return res
+
+@traceable(run_type="chain", name="Check Action Eligibility")
+def check_eligibility_node(state: AgentState):
+    """
+    액션 수행 전 주문 상태 등을 확인하여 수행 가능 여부를 판단합니다.
+    """
+    print("---CHECK ELIGIBILITY---")
+    order_id = state.get("order_id")
+    action = state.get("action_name")
+    
+    if not order_id:
+        return {"action_status": "failed", "generation": "주문 번호가 없어 확인이 불가능합니다. 주문 번호를 알려주시겠어요?"}
+    
+    order = get_order_details(order_id)
+    if not order:
+        return {"action_status": "failed", "generation": "해당 주문 번호를 찾을 수 없습니다."}
+        
+    if action == "refund" and not order["can_refund"]:
+        return {"action_status": "failed", "generation": f"이 주문은 현재 {order['status']} 상태로 환불이 불가능합니다."}
+        
+    # 환불은 승인 루프(Human-in-the-loop) 진입, 기타 액션은 바로 승인
+    if action == "refund":
+        print("---REFUND PENDING APPROVAL---")
+        return {
+            "action_status": "pending_approval", 
+            "refund_status": "pending_approval",
+            "refund_amount": order.get("amount")
+        }
+        
+    return {"action_status": "approved"}
+
+@traceable(run_type="chain", name="Human Approval")
+def human_approval_node(state: AgentState):
+    """
+    사용자에게 액션 실행 여부를 묻는 메시지를 생성합니다.
+    """
+    print("---HUMAN APPROVAL REQUEST---")
+    order_id = state.get("order_id")
+    amount = state.get("refund_amount", 0)
+    
+    msg = f"주문 번호 {order_id}의 환불 예정 금액은 {amount:,}원입니다. 정말로 환불을 진행하시겠습니까? ('네' 또는 '아니오'로 답해주세요)"
+    
+    return {
+        "generation": msg,
+        "action_status": "pending_approval"
+    }
+
+@traceable(run_type="chain", name="Execute Action Tool")
+def execute_action_node(state: AgentState):
+    """
+    실제 API 도구를 호출하여 액션을 수행합니다.
+    """
+    print("---EXECUTE ACTION---")
+    action = state.get("action_name")
+    order_id = state.get("order_id")
+    
+    result = {}
+    if action == "refund":
+        result = request_refund(order_id, "사용자 요청")
+    elif action == "tracking":
+        result = get_delivery_status(order_id)
+    elif action == "courier_contact":
+        result = get_courier_contact(order_id)
+    elif action == "payment_update":
+        # 결제 정보 변경 (예시로 카드로 고정, 실제로는 슬롯에서 추출 필요)
+        result = update_payment_info(order_id, "카드")
+    elif action == "gift_card":
+        # 상품권 등록 (메시지에서 코드 추출 로직이 추가로 필요할 수 있음)
+        result = register_gift_card("GIFT-1234")
+    elif action == "review_search":
+        result = get_reviews()
+    elif action == "review_create":
+        result = create_review(product_id="PROD-001", rating=5, content="최고예요!")
+    elif action == "address_change":
+        # 주소지 변경 결과 메시지
+        result = {"success": True, "message": f"주문 {order_id}의 주소지가 성공적으로 변경되었습니다."}
+        
+    return {
+        "action_status": "completed",
+        "tool_outputs": [result]
+    }
 
 @traceable(run_type="chain", name="Update State")
 def update_state_node(state: AgentState) -> dict:
     """
-    Updates the agent state based on the NLU result from the latest user message.
-
-    This node implements the following logic:
-    1. Intent Preservation: If NLU detects a new intent, update it. 
-       If NLU returns None (no new intent), preserve the existing `current_intent`.
-    2. Slot Merging: Merge new slots into the existing `order_slots` dictionary 
-       instead of replacing it.
-
-    Args:
-        state (AgentState): The current state of the agent.
-
-    Returns:
-        dict: A dictionary containing the updates to the state.
+    [하이브리드 NLU] 질문을 분석하여 '조회'인지 '실행'인지 결정합니다.
     """
-    print("---UPDATE STATE---")
-    
+    print("---UPDATE STATE (Intelligent Action NLU)---")
     messages = state.get("messages", [])
-    if not messages:
-        return {}
-
-    # 1. Extract NLU Output from the last user message
-    last_message = messages[-1]
-    nlu_result = mock_nlu(last_message.content)
-
-    print(f"DEBUG: NLU Result: {nlu_result}")
-
-    updates = {}
-
-    # 2. Intent Preservation Logic
-    # - If NLU detects an intent (not None), update the state.
-    # - If NLU intent is None, do NOT include 'current_intent' in return (implies keeping old).
-    if nlu_result.intent is not None:
-        updates["current_intent"] = nlu_result.intent
-    else:
-        # Explicitly preserving logic comment:
-        # state["current_intent"] remains unchanged.
-        pass
-
-    # 3. Slot Merging Logic
-    # - Start with existing slots (or empty dict if None)
-    # - Update with new slots from NLU
-    current_slots = state.get("order_slots") or {}
-    # Create a new dictionary to ensure immutability/clean update
-    merged_slots = current_slots.copy()
-    merged_slots.update(nlu_result.slots)
+    content = messages[-1].content if hasattr(messages[-1], "content") else str(messages[-1])
     
-    updates["order_slots"] = merged_slots
+    # 1. 문서 검색용 카테고리 추출 (기존 mock_nlu 활용)
+    nlu_keyword = mock_nlu(content)
+    
+    # 2. 액션 파악을 위한 LLM 분석 (intent_type, action_name, order_id 추출)
+    # 질문에서 주문번호(ORD-XXX) 추출 시도
+    order_id_match = re.search(r"ORD-\d+", content)
+    order_id = order_id_match.group() if order_id_match else state.get("order_id")
+    
+    llm_analysis = call_llm_for_nlu(content)
+    
+    # [승인 루프 처리] 현재 대기 중인 액션이 있고 사용자가 긍정적인 답변을 한 경우
+    current_status = state.get("action_status")
+    if current_status == "pending_approval":
+        positive_words = ["네", "어", "예", "응", "그래", "확인", "진행", "yes", "ok"]
+        content_lower = content.lower()
+        if any(word in content_lower for word in positive_words):
+            print("---USER APPROVED ACTION---")
+            return {
+                "action_status": "approved",
+                "is_relevant": True
+            }
+        elif any(word in content_lower for word in ["싫어", "아니", "취소", "no", "stop"]):
+            print("---USER CANCELLED ACTION---")
+            return {
+                "action_status": "failed",
+                "generation": "환불 요청이 취소되었습니다. 대화를 종료하거나 다른 문의를 도와드릴까요?",
+                "is_relevant": True
+            }
 
+    updates = {
+        "question": content,
+        "category": llm_analysis["category"] or (nlu_keyword.slots.get("category") if nlu_keyword.intent else None),
+        "intent_type": llm_analysis["intent_type"],
+        "action_name": llm_analysis["action_name"] or state.get("action_name"),
+        "order_id": order_id,
+        "is_relevant": llm_analysis["is_relevant"],
+        "action_status": "idle",
+        "tool_outputs": []
+    }
+    
+    print(f"Intent: {updates['intent_type']}, Action: {updates['action_name']}, Order: {updates['order_id']}")
     return updates
