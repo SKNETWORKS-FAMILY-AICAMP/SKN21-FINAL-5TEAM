@@ -14,7 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from database import Base
+from ecommerce.platform.backend.app.database import Base
 
 if TYPE_CHECKING:
     from router.users.models import User

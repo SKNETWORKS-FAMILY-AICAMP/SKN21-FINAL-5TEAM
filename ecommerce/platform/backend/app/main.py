@@ -1,16 +1,28 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from database import engine, Base
-# from router.carts.router import router as carts_router
-from router.shipping.router import router as shipping_router
+from ecommerce.platform.backend.app.database import engine, Base
+# from ecommerce.platform.backend.app.router.carts.router import router as carts_router
+from ecommerce.platform.backend.app.router.shipping.router import router as shipping_router
+# Import models to register them with Base.metadata
+import ecommerce.platform.backend.app.router.users.models
 import logging
+import os
+from ecommerce.chatbot.src.core.config import settings
+from ecommerce.chatbot.src.api.v1.endpoints.chat import router as chatbot_router
 
 # ============================================
 # Lifespan 이벤트 (서버 시작/종료)
 # ============================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # LangSmith 환경 변수 설정 (Chatbot)
+    os.environ["LANGCHAIN_TRACING_V2"] = settings.LANGCHAIN_TRACING_V2
+    os.environ["LANGCHAIN_ENDPOINT"] = settings.LANGCHAIN_ENDPOINT
+    os.environ["LANGCHAIN_API_KEY"] = settings.LANGCHAIN_API_KEY
+    os.environ["LANGCHAIN_PROJECT"] = settings.LANGCHAIN_PROJECT
+    logging.info(f"🔗 LangSmith tracing enabled for project: {settings.LANGCHAIN_PROJECT}")
+
     # 서버 시작 시
     logging.info("서버 시작")
     Base.metadata.create_all(bind=engine)  # 테이블이 없다면 생성
@@ -31,7 +43,7 @@ app = FastAPI(
 # ============================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"], 
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,6 +62,7 @@ async def health_check():
 
 # app.include_router(carts_router, prefix="/carts", tags=["Carts"])
 app.include_router(shipping_router, prefix="/shipping", tags=["Shipping"])
+app.include_router(chatbot_router, prefix="/api/v1/chat", tags=["Chatbot"])
 
 
 # ============================================
@@ -57,4 +70,4 @@ app.include_router(shipping_router, prefix="/shipping", tags=["Shipping"])
 # ============================================
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("ecommerce.platform.backend.app.main:app", host="0.0.0.0", port=8000, reload=True)
