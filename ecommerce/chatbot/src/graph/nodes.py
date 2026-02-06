@@ -10,6 +10,15 @@ from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
 from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.chatbot.src.core.config import settings
 from ecommerce.chatbot.src.services.mock_services import get_order_details, request_refund, get_tracking_info
+# 신규 프롬프트 및 도구 임포트
+from ecommerce.chatbot.src.prompts.system_prompts import (
+    ECOMMERCE_SYSTEM_PROMPT, 
+    NLU_SYSTEM_PROMPT, 
+    GENERATION_SYSTEM_PROMPT_TEMPLATE,
+    CATEGORY_KEYWORDS_MAP
+)
+from ecommerce.chatbot.src.tools.order_tools import get_delivery_status, get_courier_contact, update_payment_info
+from ecommerce.chatbot.src.tools.service_tools import register_gift_card, get_reviews, create_review
 
 @traceable(run_type="retriever", name="Retrieve Documents")
 def retrieve(state: AgentState):
@@ -118,15 +127,11 @@ def generate(state: AgentState):
     context = "\n\n".join(documents)
     tool_context = str(tool_outputs)
     
-    system_prompt = f"""당신은 이커머스 고객센터의 유능한 에이전트입니다.
-    사용자의 질문에 대해 [지식 베이스] 또는 [액션 실행 결과]를 바탕으로 정확하고 친절한 답변을 제공하세요.
-    
-    [지식 베이스]: {context}
-    [액션 실행 결과]: {tool_context}
-    
-    - 실행 결과가 있다면 그 내용을 최우선으로 안내하세요.
-    - 지식 베이스에 관련 내용이 있다면 이를 보충 설명으로 활용하세요.
-    - 한국어로 정중하게 작성하세요."""
+    system_prompt = GENERATION_SYSTEM_PROMPT_TEMPLATE.format(
+        system_prompt=ECOMMERCE_SYSTEM_PROMPT,
+        context=context,
+        tool_context=tool_context
+    )
     
     response = openai.chat.completions.create(
         model=settings.OPENAI_MODEL,
@@ -159,50 +164,7 @@ def mock_nlu(user_message: str) -> NLUResult:
     clean_msg = user_message.replace(" ", "").lower()
     
     # 카테고리별 초정밀 키워드 사전 (데이터셋의 모든 세부 카테고리 반영)
-    category_map = {
-        "배송": [
-            "배송", "택배", "송장", "언제", "도착", "출고", "추적", "기한", "수령", "배달", "영업일", "지연", 
-            "주문제작", "포장", "방문", "퀵", "해외", "도서산간", "제주", "추가비용", "착불", "선불", "묶음", 
-            "새벽", "당일", "매장", "합배송", "분리배송", "군부대", "사서함", "안심번호", "기사님", "현관", 
-            "경비실", "배송완료", "미수령", "택배사", "운송장", "부재중", "출고지", "수령인", "배송지변경", "배송료", "배송비"
-        ],
-        "취소/반품/교환": [
-            "취소", "반품", "교환", "환불", "철회", "거절", "거부", "회수", "반송", "하자", "누락", "오배송", 
-            "반송비", "철회권", "멸실", "훼손", "사용감", "감가", "위약금", "부분취소", "자동취소", "단순변심", 
-            "접수", "맞교환", "라벨제거", "택제거", "오연", "박스훼손", "심의", "반환", "청약철회", "교환권",
-            "환급", "수거", "회수접수", "반송비용", "교환신청", "반품신청", "전액환불", "부분환불", "카드취소",
-            "작아요", "커요", "작네", "크네", "안맞아요"
-        ],
-        "주문/결제": [
-            "결제", "입금", "카드", "주문", "구매", "머니", "상품권", "포인트", "적립금", "가상계좌", "무통장", 
-            "실적", "대금", "영수증", "지불", "유효기간", "소멸", "충전", "전환", "미성년자", "법정대리인", 
-            "간편결제", "페이", "할부", "복합결제", "세금계산서", "증빙", "지출", "수단", "입금확인", "복구", 
-            "임직원", "예치금", "선입금", "송금", "현금", "에스크로", "안전결제", "무통", "무이자", "입금자명", 
-            "은행", "결제오류", "자동입금", "미납", "미결제", "영수증발행", "카드사", "체크카드", "구매/결제"
-        ],
-        "회원 정보": [
-            "회원", "가입", "로그인", "비밀번호", "아이디", "탈퇴", "개인정보", "인증", "본인확인", "혜택", 
-            "등급", "마이메뉴", "쿠폰", "개명", "휴대폰", "연동", "소셜", "계정", "통합", "초기화", "수정", 
-            "아이디찾기", "비회원", "휴면", "정지", "제한", "말소", "소명", "마케팅", "수신동의", "알림", 
-            "푸시", "아이핀", "본인명의", "변경", "기기등록", "기기차단", "명의변경", "닉네임", "정보변경",
-            "계정찾기", "비밀번호분실", "정보수정", "프로필", "약관동의", "회원혜택", "생일선물", "마일리지", "sns"
-        ],
-        "상품/AS 문의": [
-            "상품", "사이즈", "정품", "가품", "as", "수선", "불량", "재고", "품절", "재입고", "사은품", 
-            "검수", "보증서", "디자인", "추천", "브랜드", "리뷰", "후기", "보상", "모조품", "병행수입", 
-            "재판매", "리셀", "가짜", "위조", "도용", "라벨", "래플", "추첨", "응모", "이벤트", "체험단", 
-            "당첨", "가이드", "실측", "소재", "원단", "마감", "박음질", "핏", "착용감", "색상", "오프라인",
-            "디테일", "모델컷", "코디", "사이즈표", "실측데이터", "정품확인", "as접수", "수선비", "재입고알림", 
-            "재고현황", "세탁", "케어", "혼용률", "옷", "의류", "신발", "가방", "액세서리", "크기", "착용"
-        ],
-        "약관": [
-            "약관", "법", "책임", "의무", "저작권", "분쟁", "이용안내", "규정", "조항", "목적", "정의", "개정", 
-            "준용", "손해배상", "합의", "동의", "처리방침", "면책", "상관례", "지침", "소비자보호법", "관할", 
-            "소송", "점검", "장애", "오류", "해킹", "보안", "공정거래위원회", "고의", "과실", "입증", 
-            "표준약관", "권리", "의무", "지식재산권", "전자상거래법", "이용규칙", "준수", "분쟁조정", "민형사",
-            "서비스", "이용 안내", "개인정보", "분쟁해결", "의무/책임", "일반", "연결몰"
-        ]
-    }
+    category_map = CATEGORY_KEYWORDS_MAP
     
     # 카테고리별 스코어 계산
     scores = {cat: 0 for cat in category_map}
@@ -227,22 +189,7 @@ def call_llm_for_nlu(user_message: str) -> dict:
     """
     openai = get_openai_client()
     
-    system_prompt = f"""당신은 고객센터 의도 분석 전문가입니다. 사용자의 질문을 분석하여 JSON 형식으로 응답하세요.
-
-    [분류 가이드]
-    1. category: 배송, 취소/반품/교환, 주문/결제, 회원 정보, 상품/AS 문의, 약관 중 선택
-    2. intent_type: 질문이 정보 조회면 'info_search', 실제 처리 요청(환불해줘, 배송 어디야 등)이면 'execution'
-    3. action_name: 실행 요청인 경우 'refund'(환불/취소), 'tracking'(배송조회), 'address_change'(주소변경) 중 선택 (아니면 null)
-
-    [카테고리 상세 가이드]
-    1. 배송: 배송 일정, 택배사, 송장, 도착 등 (키워드: 배송, 택배, 송장, 언제, 도착, 출고 등)
-    2. 취소/반품/교환: 환불, 취소, 교환, 반품, 작아요, 커요 등 (키워드: 취소, 반품, 교환, 환불, 철회 등)
-    3. 주문/결제: 결제수단, 입금확인, 영수증 등 (키워드: 결제, 입금, 카드, 주문, 구매 등)
-    4. 회원 정보: 비밀번호, 아이디찾기, 탈퇴 등 (키워드: 회원, 가입, 로그인, 비밀번호, 아이디 등)
-    5. 상품/AS 문의: 제품 상세, 사이즈, AS, 수선 등 (키워드: 상품, 사이즈, 정품, 가품, as, 수선 등)
-    6. 약관: 법적 책임, 이용규정 등 (키워드: 약관, 법, 책임, 의무, 저작권 등)
-
-    응답 예시: {{"category": "배송", "intent_type": "execution", "action_name": "tracking"}}"""
+    system_prompt = NLU_SYSTEM_PROMPT
     
     response = openai.chat.completions.create(
         model=settings.OPENAI_MODEL,
@@ -317,7 +264,22 @@ def execute_action_node(state: AgentState):
     if action == "refund":
         result = request_refund(order_id, "사용자 요청")
     elif action == "tracking":
-        result = get_tracking_info(order_id)
+        result = get_delivery_status(order_id)
+    elif action == "courier_contact":
+        result = get_courier_contact(order_id)
+    elif action == "payment_update":
+        # 결제 정보 변경 (예시로 카드로 고정, 실제로는 슬롯에서 추출 필요)
+        result = update_payment_info(order_id, "카드")
+    elif action == "gift_card":
+        # 상품권 등록 (메시지에서 코드 추출 로직이 추가로 필요할 수 있음)
+        result = register_gift_card("GIFT-1234")
+    elif action == "review_search":
+        result = get_reviews()
+    elif action == "review_create":
+        result = create_review(product_id="PROD-001", rating=5, content="최고예요!")
+    elif action == "address_change":
+        # 주소지 변경 결과 메시지
+        result = {"success": True, "message": f"주문 {order_id}의 주소지가 성공적으로 변경되었습니다."}
         
     return {
         "action_status": "completed",
