@@ -85,6 +85,43 @@ class User(Base):
         ),
         default=UserStatus.ACTIVE,
         nullable=False,
+        comment="계정 상태",
+    )
+
+    address1: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        comment="주소1 (기본 주소)",
+    )
+
+    # Relationships
+    body_measurements: Mapped[Optional["UserBodyMeasurement"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
+    shipping_addresses: Mapped[list["ShippingAddress"]] = relationship(
+        "ShippingAddress", back_populates="user", cascade="all, delete-orphan"
+    )
+    orders: Mapped[list["Order"]] = relationship(
+        "Order", back_populates="user"
+    )
+    carts: Mapped[Optional["Cart"]] = relationship(
+        "Cart", back_populates="user", uselist=False
+    )
+    reviews: Mapped[list["Review"]] = relationship(
+        "Review", back_populates="user"
+    )
+    point_history: Mapped[list["PointHistory"]] = relationship(
+        "PointHistory", back_populates="user"
+    )
+    vouchers: Mapped[list["IssuedVoucher"]] = relationship(
+        "IssuedVoucher", back_populates="user"
+    )
+    used_products: Mapped[list["UsedProduct"]] = relationship(
+        "UsedProduct", back_populates="seller"
+    )
+
+    address2: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        comment="주소2 (상세 주소)",
     )
 
     # 약관 동의
