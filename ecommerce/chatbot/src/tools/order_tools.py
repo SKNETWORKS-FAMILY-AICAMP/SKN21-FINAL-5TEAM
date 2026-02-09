@@ -227,14 +227,15 @@ def get_user_orders(user_id: int = 1, limit: int = 5) -> dict:
 
 
 @tool
-def update_payment_info(order_id: str, payment_method: str, card_number: str = None) -> dict:
+def update_payment_info(order_id: str, user_id: int, payment_method: str, card_number: str = None) -> dict:
     """
     주문의 결제 정보를 변경합니다.
     
     Args:
         order_id: 주문번호
+        user_id: 요청자 사용자 ID
         payment_method: 결제 수단 (카드/계좌이체/무통장입금)
-        card_number: 카드번호 (카드 결제 시)
+        card_number: 카드번호 (카드 결제 시, 마스킹 처리 권장)
         
     Returns:
         성공 여부, 메시지, 새로운 결제 수단
@@ -244,14 +245,21 @@ def update_payment_info(order_id: str, payment_method: str, card_number: str = N
         order = db.query(Order).filter(Order.order_number == order_id).first()
         if not order:
             return {"error": "주문 정보를 찾을 수 없습니다."}
+        
+        # [Security] Authorization Check
+        if order.user_id != user_id:
+            return {"error": "PERMISSION_DENIED: 본인의 주문만 수정할 수 있습니다."}
             
         order.payment_method = payment_method
+        if card_number:
+            order.card_number = card_number
         db.commit()
         
         return {
             "success": True, 
             "message": "결제 정보가 업데이트되었습니다.", 
-            "new_payment_method": payment_method
+            "new_payment_method": payment_method,
+            "card_number_updated": card_number is not None
         }
     except Exception as e:
         db.rollback()

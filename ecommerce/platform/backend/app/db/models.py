@@ -544,6 +544,9 @@ class Order(Base):
     payment_method: Mapped[str] = mapped_column(
         String(50), nullable=False, comment='결제 수단'
     )
+    card_number: Mapped[Optional[str]] = mapped_column(
+        String(50), comment='카드번호 (마스킹 처리된 값 저장 권장)'
+    )
     
     # 배송 관련
     shipping_request: Mapped[Optional[str]] = mapped_column(
