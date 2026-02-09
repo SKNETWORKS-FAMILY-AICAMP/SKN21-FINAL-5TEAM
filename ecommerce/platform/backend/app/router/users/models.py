@@ -29,7 +29,8 @@ from ecommerce.platform.backend.app.database import Base
 # ==================================================
 if TYPE_CHECKING:
     from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
-
+    from ecommerce.platform.backend.app.router.carts.models import Cart
+    from ecommerce.platform.backend.app.router.products.models import UsedProduct
 
 # ==================================================
 # Enums
@@ -94,24 +95,24 @@ class User(Base):
     )
 
     # Relationships
-    orders: Mapped[list["Order"]] = relationship(
-        "Order", back_populates="user"
-    )
-    carts: Mapped[Optional["Cart"]] = relationship(
-        "Cart", back_populates="user", uselist=False
-    )
-    reviews: Mapped[list["Review"]] = relationship(
-        "Review", back_populates="user"
-    )
-    point_history: Mapped[list["PointHistory"]] = relationship(
-        "PointHistory", back_populates="user"
-    )
-    vouchers: Mapped[list["IssuedVoucher"]] = relationship(
-        "IssuedVoucher", back_populates="user"
-    )
-    used_products: Mapped[list["UsedProduct"]] = relationship(
-        "UsedProduct", back_populates="seller"
-    )
+    # orders: Mapped[list["Order"]] = relationship(
+    #     "Order", back_populates="user"
+    # )
+    # carts: Mapped[Optional["Cart"]] = relationship(
+    #     "Cart", back_populates="user", uselist=False
+    # )
+    # reviews: Mapped[list["Review"]] = relationship(
+    #     "Review", back_populates="user"
+    # )
+    # point_history: Mapped[list["PointHistory"]] = relationship(
+    #     "PointHistory", back_populates="user"
+    # )
+    # vouchers: Mapped[list["IssuedVoucher"]] = relationship(
+    #     "IssuedVoucher", back_populates="user"
+    # )
+    # used_products: Mapped[list["UsedProduct"]] = relationship(
+    #     "UsedProduct", back_populates="seller"
+    # )
 
     address2: Mapped[Optional[str]] = mapped_column(
         String(255),
@@ -168,12 +169,26 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
+    # 1:N 장바구니 상품
+    carts : Mapped[List["Cart"]] = relationship(
+        "Cart",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    # 1:N UsedProduct
+    used_products: Mapped[List["UsedProduct"]] = relationship(
+        "UsedProduct",
+        back_populates="seller",
+        cascade="all, delete-orphan",
+    )
+
 
 # ==================================================
 # User Body Measurement
 # ==================================================
 class UserBodyMeasurement(Base):
-    __tablename__ = "user_body_measurements"
+    __tablename__ = "userbodymeasurements"  # 실제 DB 테이블명에 맞춤
     __table_args__ = (
         Index("idx_ubm_user_id", "user_id"),
         {"comment": "회원 신체 치수"},
@@ -195,13 +210,18 @@ class UserBodyMeasurement(Base):
     height: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     weight: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
 
+    # 상의 치수
+    upper_total_length: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     shoulder_width: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     chest_width: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     sleeve_length: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
 
+    # 하의 치수
+    lower_total_length: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     waist_width: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     hip_width: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     thigh_width: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    rise: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     hem_width: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
 
     created_at: Mapped[datetime] = mapped_column(
