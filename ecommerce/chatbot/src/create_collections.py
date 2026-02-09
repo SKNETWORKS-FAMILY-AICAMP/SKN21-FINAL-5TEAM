@@ -36,6 +36,13 @@ def create_collections():
                 size=VECTOR_SIZE,
                 distance=models.Distance.COSINE
             ),
+            "sparse_vectors_config": {
+                "text-sparse": models.SparseVectorParams(
+                    index=models.SparseIndexParams(
+                        on_disk=False,
+                    )
+                )
+            },
             "indexes": [
                 {"field_name": "gender", "schema": "keyword"},
                 {"field_name": "masterCategory", "schema": "keyword"},
@@ -52,6 +59,13 @@ def create_collections():
                 size=VECTOR_SIZE,
                 distance=models.Distance.COSINE
             ),
+            "sparse_vectors_config": {
+                "text-sparse": models.SparseVectorParams(
+                    index=models.SparseIndexParams(
+                        on_disk=False,
+                    )
+                )
+            },
             "indexes": [
                 {"field_name": "main_category", "schema": "keyword"},
                 {"field_name": "sub_category", "schema": "keyword"},
@@ -62,8 +76,16 @@ def create_collections():
                 size=VECTOR_SIZE,
                 distance=models.Distance.COSINE
             ),
+            "sparse_vectors_config": {
+                "text-sparse": models.SparseVectorParams(
+                    index=models.SparseIndexParams(
+                        on_disk=False,
+                    )
+                )
+            },
             "indexes": [
                 {"field_name": "clause_title", "schema": "text"},
+                {"field_name": "category", "schema": "keyword"},
             ]
         }
     }
@@ -81,7 +103,8 @@ def create_collections():
         try:
             client.create_collection(
                 collection_name=name,
-                vectors_config=config["vectors_config"]
+                vectors_config=config["vectors_config"],
+                sparse_vectors_config=config.get("sparse_vectors_config")
             )
             print(f"Successfully created collection '{name}'.")
             

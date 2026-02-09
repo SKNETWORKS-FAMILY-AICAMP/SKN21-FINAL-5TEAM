@@ -26,6 +26,10 @@ def ingest_faq():
         
     print(f"Loaded {len(data)} records.")
     
+    # Initialize FastEmbed
+    from fastembed import SparseTextEmbedding
+    sparse_model = SparseTextEmbedding(model_name="Qdrant/bm25")
+
     client = get_qdrant_client()
     openai = get_openai_client()
     
@@ -38,21 +42,36 @@ def ingest_faq():
         texts_to_embed = [item['vector_input'] for item in batch]
         
         try:
+            # 1. Dense Embeddings
             resp = openai.embeddings.create(
                 input=texts_to_embed,
                 model=settings.EMBEDDING_MODEL
             )
-            embeddings = [d.embedding for d in resp.data]
+            dense_vectors = [d.embedding for d in resp.data]
             
+            # 2. Sparse Embeddings
+            sparse_vectors = list(sparse_model.embed(texts_to_embed))
+
             points = []
             for j, item in enumerate(batch):
                 # Reuse existing ID and Payload from the preprocessed file
                 point_id = item.get("id", str(uuid.uuid4()))
                 payload = item.get("payload", {})
                 
+                # Check for existing dense vector in file (optional optimization)
+                # But here we regenerate for consistency with sparse
+                
+                sparse_vec = models.SparseVector(
+                    indices=sparse_vectors[j].indices.tolist(),
+                    values=sparse_vectors[j].values.tolist()
+                )
+
                 points.append(models.PointStruct(
                     id=point_id,
-                    vector=embeddings[j],
+                    vector={
+                        "": dense_vectors[j],
+                        "text-sparse": sparse_vec
+                    },
                     payload=payload
                 ))
             

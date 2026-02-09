@@ -71,7 +71,7 @@ class ShippingAddress(Base):
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="shipping_addresses")
-    #orders: Mapped[List["Order"]] = relationship(back_populates="shipping_address")
+    orders: Mapped[list["Order"]] = relationship("Order", back_populates="shipping_address")
 
 
 class ShippingRequestTemplate(Base):
