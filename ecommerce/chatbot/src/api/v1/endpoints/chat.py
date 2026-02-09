@@ -78,9 +78,6 @@ async def chat_endpoint(
         
         # 3. 에이전트 실행 (LangGraph)
         # 턴 사이의 상태가 current_state를 통해 전달됨
-        # graph_app.invoke generally runs synchronously unless designed async. 
-        # Using ainvoke if possible, otherwise invoke. The original code used invoke.
-        # We will use invoke to match original logic exactly, but wrap in try/except.
         result = await graph_app.ainvoke(current_state)
         
         # 4. 결과 직렬화 (JSON 변환 불가능한 객체들을 텍스트/리스트로 변환)
