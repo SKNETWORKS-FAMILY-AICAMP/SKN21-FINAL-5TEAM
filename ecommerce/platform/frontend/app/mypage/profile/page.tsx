@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import styles from './profile.module.css';
 
 type ModalType =
@@ -12,18 +13,17 @@ type ModalType =
   | null;
 
 export default function ProfilePage() {
-  // ✅ 임시 유저 아이디 (나중에 로그인 붙이면 교체)
-  const TEMP_USER_ID = 2;
+  const router = useRouter();
 
   const [openModal, setOpenModal] = useState<ModalType>(null);
   const [withdrawReason, setWithdrawReason] = useState('');
 
   /* =========================
      1) 회원정보 변경 state
+     - 이메일 제거
   ========================= */
   const [profileForm, setProfileForm] = useState({
     name: '',
-    email: '',
     phone: '',
   });
 
@@ -38,12 +38,12 @@ export default function ProfilePage() {
 
   /* =========================
      3) 알림 설정 state
-     - DB 컬럼: agree_marketing / agree_sms / agree_email 가정
+     - 전체 동의 기본 ON
   ========================= */
   const [alarmForm, setAlarmForm] = useState({
-    agree_marketing: false,
-    agree_sms: false,
-    agree_email: false,
+    agree_marketing: true,
+    agree_sms: true,
+    agree_email: true,
   });
 
   /* =========================
@@ -79,14 +79,12 @@ export default function ProfilePage() {
   };
 
   /* =========================
-     API: 나의 맞춤 정보 저장 (사장님 기존)
+     나의 맞춤 정보 저장
   ========================= */
   const handleSaveStyle = async () => {
-    await fetch(`http://localhost:8000/users/${TEMP_USER_ID}/body-measurement`, {
-      method: 'PUT', // 백엔드에 맞게 POST/PUT 선택
-      headers: {
-        'Content-Type': 'application/json',
-      },
+    await fetch(`http://localhost:8000/users/me/body-measurement`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form),
     });
 
@@ -94,23 +92,12 @@ export default function ProfilePage() {
   };
 
   /* =========================
-     API: 회원 탈퇴 (사장님 기존)
-  ========================= */
-  const handleWithdraw = async () => {
-    await fetch(`http://localhost:8000/users/${TEMP_USER_ID}`, {
-      method: 'DELETE',
-    });
-
-    // TODO: 탈퇴 후 이동 (로그인 페이지 등)
-  };
-
-  /* =========================
-     ✅ 추가: 회원정보 변경 저장
-     - PATCH /users/{id}
+     회원정보 변경 저장
   ========================= */
   const handleSaveProfile = async () => {
-    await fetch(`http://localhost:8000/users/${TEMP_USER_ID}`, {
+    await fetch(`http://localhost:8000/users/me`, {
       method: 'PATCH',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(profileForm),
     });
@@ -119,15 +106,14 @@ export default function ProfilePage() {
   };
 
   /* =========================
-     ✅ 추가: 비밀번호 변경 저장
-     - PATCH /users/{id}/password
+     비밀번호 변경
   ========================= */
   const handleSavePassword = async () => {
-    // 프론트 최소 검증
     if (passwordForm.newPassword !== passwordForm.confirmPassword) return;
 
-    await fetch(`http://localhost:8000/users/${TEMP_USER_ID}/password`, {
+    await fetch(`http://localhost:8000/users/me/password`, {
       method: 'PATCH',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         current_password: passwordForm.currentPassword,
@@ -139,18 +125,47 @@ export default function ProfilePage() {
   };
 
   /* =========================
-     ✅ 추가: 알림 설정 저장
-     - PATCH /users/{id}
-     - agree_marketing / agree_sms / agree_email 업데이트
+     알림 설정 저장
   ========================= */
   const handleSaveAlarm = async () => {
-    await fetch(`http://localhost:8000/users/${TEMP_USER_ID}`, {
+    await fetch(`http://localhost:8000/users/me`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(alarmForm),
     });
 
     closeModal();
+  };
+
+  /* =========================
+     회원 탈퇴
+  ========================= */
+  const handleWithdraw = async () => {
+  await fetch('http://localhost:8000/users/me', {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      reason: withdrawReason, // ⭐ 필수
+    }),
+  });
+
+  router.replace('/auth/login');
+};
+
+
+  /* =========================
+     로그아웃
+  ========================= */
+  const handleLogout = async () => {
+    await fetch('http://localhost:8000/users/logout', {
+      method: 'POST',
+      credentials: 'include',
+    });
+
+    router.replace('/auth/login');
   };
 
   return (
@@ -196,78 +211,18 @@ export default function ProfilePage() {
           </li>
         </ul>
 
+        {/* ===== 로그아웃 ===== */}
+        <div className={styles.footer}>
+          <button type="button" onClick={handleLogout}>
+            <span className={styles.logoutText}>로그아웃</span>
+          </button>
+        </div>
+
         {/* ===== 모달 ===== */}
         {openModal && (
           <>
             <div className={styles.dim} onClick={closeModal} />
 
-            {/* ===== 나의 맞춤 정보 (스크롤 적용 핵심) ===== */}
-            {openModal === 'style' && (
-              <div
-                className={`${styles.modal} ${styles.scrollModal}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <h3>나의 맞춤 정보</h3>
-
-                <div className={styles.section}>
-                  <input
-                    className={styles.input}
-                    name="height"
-                    placeholder="키 (cm)"
-                    value={form.height}
-                    onChange={handleChange}
-                  />
-                  <input
-                    className={styles.input}
-                    name="weight"
-                    placeholder="몸무게 (kg)"
-                    value={form.weight}
-                    onChange={handleChange}
-                  />
-                </div>
-
-                <button
-                  className={styles.toggle}
-                  onClick={() => setOpenUpper(!openUpper)}
-                >
-                  상의 치수 {openUpper ? '▴' : '▾'}
-                </button>
-
-                {openUpper && (
-                  <div className={styles.section}>
-                    <input className={styles.input} name="shoulderWidth" placeholder="어깨너비 (cm)" value={form.shoulderWidth} onChange={handleChange} />
-                    <input className={styles.input} name="chestWidth" placeholder="가슴단면 (cm)" value={form.chestWidth} onChange={handleChange} />
-                    <input className={styles.input} name="sleeveLength" placeholder="소매길이 (cm)" value={form.sleeveLength} onChange={handleChange} />
-                    <input className={styles.input} name="upperTotalLength" placeholder="상체 총장 (cm)" value={form.upperTotalLength} onChange={handleChange} />
-                  </div>
-                )}
-
-                <button
-                  className={styles.toggle}
-                  onClick={() => setOpenLower(!openLower)}
-                >
-                  하의 치수 {openLower ? '▴' : '▾'}
-                </button>
-
-                {openLower && (
-                  <div className={styles.section}>
-                    <input className={styles.input} name="waistWidth" placeholder="허리단면 (cm)" value={form.waistWidth} onChange={handleChange} />
-                    <input className={styles.input} name="hipWidth" placeholder="엉덩이단면 (cm)" value={form.hipWidth} onChange={handleChange} />
-                    <input className={styles.input} name="thighWidth" placeholder="허벅지단면 (cm)" value={form.thighWidth} onChange={handleChange} />
-                    <input className={styles.input} name="rise" placeholder="밑위 (cm)" value={form.rise} onChange={handleChange} />
-                    <input className={styles.input} name="hemWidth" placeholder="밑단단면 (cm)" value={form.hemWidth} onChange={handleChange} />
-                    <input className={styles.input} name="lowerTotalLength" placeholder="하체 총장 (cm)" value={form.lowerTotalLength} onChange={handleChange} />
-                  </div>
-                )}
-
-                <div className={styles.modalButtons}>
-                  <button className={styles.cancel} onClick={closeModal}>취소</button>
-                  <button className={styles.confirm} onClick={handleSaveStyle}>저장</button>
-                </div>
-              </div>
-            )}
-
-            {/* ===== 공통 모달 ===== */}
             {openModal !== 'style' && (
               <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
                 {openModal === 'profile' && (
@@ -276,17 +231,16 @@ export default function ProfilePage() {
                     <input
                       placeholder="이름"
                       value={profileForm.name}
-                      onChange={(e) => setProfileForm((p) => ({ ...p, name: e.target.value }))}
-                    />
-                    <input
-                      placeholder="이메일"
-                      value={profileForm.email}
-                      onChange={(e) => setProfileForm((p) => ({ ...p, email: e.target.value }))}
+                      onChange={(e) =>
+                        setProfileForm((p) => ({ ...p, name: e.target.value }))
+                      }
                     />
                     <input
                       placeholder="휴대폰번호"
                       value={profileForm.phone}
-                      onChange={(e) => setProfileForm((p) => ({ ...p, phone: e.target.value }))}
+                      onChange={(e) =>
+                        setProfileForm((p) => ({ ...p, phone: e.target.value }))
+                      }
                     />
                   </>
                 )}
@@ -298,19 +252,34 @@ export default function ProfilePage() {
                       type="password"
                       placeholder="현재 비밀번호"
                       value={passwordForm.currentPassword}
-                      onChange={(e) => setPasswordForm((p) => ({ ...p, currentPassword: e.target.value }))}
+                      onChange={(e) =>
+                        setPasswordForm((p) => ({
+                          ...p,
+                          currentPassword: e.target.value,
+                        }))
+                      }
                     />
                     <input
                       type="password"
                       placeholder="새 비밀번호"
                       value={passwordForm.newPassword}
-                      onChange={(e) => setPasswordForm((p) => ({ ...p, newPassword: e.target.value }))}
+                      onChange={(e) =>
+                        setPasswordForm((p) => ({
+                          ...p,
+                          newPassword: e.target.value,
+                        }))
+                      }
                     />
                     <input
                       type="password"
                       placeholder="비밀번호 확인"
                       value={passwordForm.confirmPassword}
-                      onChange={(e) => setPasswordForm((p) => ({ ...p, confirmPassword: e.target.value }))}
+                      onChange={(e) =>
+                        setPasswordForm((p) => ({
+                          ...p,
+                          confirmPassword: e.target.value,
+                        }))
+                      }
                     />
                   </>
                 )}
@@ -323,7 +292,12 @@ export default function ProfilePage() {
                       <input
                         type="checkbox"
                         checked={alarmForm.agree_marketing}
-                        onChange={(e) => setAlarmForm((a) => ({ ...a, agree_marketing: e.target.checked }))}
+                        onChange={(e) =>
+                          setAlarmForm((a) => ({
+                            ...a,
+                            agree_marketing: e.target.checked,
+                          }))
+                        }
                       />
                     </div>
                     <div className={styles.toggleRow}>
@@ -331,7 +305,12 @@ export default function ProfilePage() {
                       <input
                         type="checkbox"
                         checked={alarmForm.agree_sms}
-                        onChange={(e) => setAlarmForm((a) => ({ ...a, agree_sms: e.target.checked }))}
+                        onChange={(e) =>
+                          setAlarmForm((a) => ({
+                            ...a,
+                            agree_sms: e.target.checked,
+                          }))
+                        }
                       />
                     </div>
                     <div className={styles.toggleRow}>
@@ -339,7 +318,12 @@ export default function ProfilePage() {
                       <input
                         type="checkbox"
                         checked={alarmForm.agree_email}
-                        onChange={(e) => setAlarmForm((a) => ({ ...a, agree_email: e.target.checked }))}
+                        onChange={(e) =>
+                          setAlarmForm((a) => ({
+                            ...a,
+                            agree_email: e.target.checked,
+                          }))
+                        }
                       />
                     </div>
                   </>
@@ -348,7 +332,6 @@ export default function ProfilePage() {
                 {openModal === 'withdraw' && (
                   <>
                     <h3>회원 탈퇴</h3>
-                    <p className={styles.desc}>탈퇴 사유를 선택해 주세요.</p>
                     <select
                       value={withdrawReason}
                       onChange={(e) => setWithdrawReason(e.target.value)}
@@ -368,7 +351,6 @@ export default function ProfilePage() {
                   <button className={styles.cancel} onClick={closeModal}>
                     취소
                   </button>
-
                   {openModal === 'withdraw' ? (
                     <button
                       className={styles.confirm}
@@ -388,11 +370,6 @@ export default function ProfilePage() {
                           : openModal === 'alarm'
                           ? handleSaveAlarm
                           : closeModal
-                      }
-                      disabled={
-                        openModal === 'password' &&
-                        (!!passwordForm.newPassword &&
-                          passwordForm.newPassword !== passwordForm.confirmPassword)
                       }
                     >
                       저장
