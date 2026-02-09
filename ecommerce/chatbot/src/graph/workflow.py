@@ -1,6 +1,7 @@
 
 from langgraph.graph import StateGraph, START, END
 from ecommerce.chatbot.src.graph.state import AgentState
+from ecommerce.chatbot.src.schemas.nlu import IntentType
 from ecommerce.chatbot.src.graph.nodes import (
     retrieve, generate, update_state_node, no_info_node,
     check_eligibility_node, execute_action_node, human_approval_node
@@ -20,7 +21,7 @@ def route_after_nlu(state: AgentState):
         return "execute_action"
     
     # 의도 유형에 따른 분기
-    if state.get("intent_type") == "execution":
+    if state.get("intent_type") == IntentType.EXECUTION.value:
         return "check_eligibility"
     return "retrieve"
 

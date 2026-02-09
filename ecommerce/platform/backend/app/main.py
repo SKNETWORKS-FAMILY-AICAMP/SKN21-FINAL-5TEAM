@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from ecommerce.platform.backend.app.database import engine, Base
-# from ecommerce.platform.backend.app.router.carts.router import router as carts_router
+from ecommerce.platform.backend.app.router.carts.router import router as carts_router
 from ecommerce.platform.backend.app.router.users.router import router as users_router
 from ecommerce.platform.backend.app.router.shipping.router import router as shipping_router
 # Import models to register them with Base.metadata
@@ -73,10 +73,10 @@ async def health_check():
 # 라우터 등록
 # ============================================
 
-# app.include_router(carts_router, prefix="/carts", tags=["Carts"])
+app.include_router(carts_router, prefix="/carts", tags=["Carts"])
 app.include_router(users_router, prefix="/users", tags=["Users"])
 app.include_router(shipping_router, prefix="/shipping", tags=["Shipping"])
-app.include_router(chatbot_router, prefix="/api/v1/chat", tags=["Chatbot"])
+# app.include_router(chatbot_router, prefix="/api/v1/chat", tags=["Chatbot"])
 
 
 # ============================================
