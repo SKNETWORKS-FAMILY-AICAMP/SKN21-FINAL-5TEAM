@@ -1,65 +1,75 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import styles from './page.module.css';
+
+export default function HomePage() {
+  const router = useRouter();
+
+  // 임시 상품 10개
+  const products = Array.from({ length: 10 });
+
+  const goLogin = () => {
+    router.push('/auth/login');
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main className={styles.main}>
+      <section className={styles.section}>
+        {/* ===== 섹션 헤더 ===== */}
+        <header className={styles.sectionHeader}>
+          <div>
+            <h2 className={styles.sectionTitle}>많이 찾는 스포티 스타일</h2>
+            <p className={styles.sectionSubTitle}>스웨트셔츠</p>
+          </div>
+
+          <button className={styles.moreButton} onClick={goLogin}>
+            더보기
+          </button>
+        </header>
+
+        {/* ===== 상품 그리드 ===== */}
+        <ul className={styles.productGrid}>
+          {products.map((_, index) => (
+            <li key={index} className={styles.productCard}>
+              {/* 카드 본문 */}
+              <div className={styles.cardBody} onClick={goLogin}>
+                <div className={styles.productImage}>
+                  <Image
+                    src="/sample.jpg"
+                    alt="상품 이미지"
+                    fill
+                    style={{ objectFit: 'cover' }}
+                  />
+                </div>
+
+                <div className={styles.productInfo}>
+                  <p className={styles.productName}>상품명</p>
+                  <p className={styles.productName}>BASIC LOGO SWEATSHIRT NAVY</p>
+                  <p className={styles.productPrice}>가격 5억</p>
+                </div>
+              </div>
+
+              {/* hover 오버레이 */}
+              <div className={styles.hoverOverlay}>
+                <button className={styles.hoverButton} onClick={goLogin}>
+                  사이즈 선택
+                </button>
+                <button className={styles.hoverButton} onClick={goLogin}>
+                  장바구니
+                </button>
+                <button
+                  className={`${styles.hoverButton} ${styles.primary}`}
+                  onClick={goLogin}
+                >
+                  바로 구매
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </main>
   );
 }

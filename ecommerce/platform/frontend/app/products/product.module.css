@@ -1,0 +1,43 @@
+.main {
+  padding: 32px;
+}
+
+.productGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+}
+
+.productCard {
+  border: 1px solid #eee;
+  padding: 8px;
+}
+
+.productImage {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: #f2f2f2;
+  margin-bottom: 8px;
+}
+
+/* ===== 페이지네이션 ===== */
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 40px;
+}
+
+.pageButton {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  background: white;
+  cursor: pointer;
+}
+
+.activePage {
+  padding: 6px 12px;
+  background: black;
+  color: white;
+  border: 1px solid black;
+}

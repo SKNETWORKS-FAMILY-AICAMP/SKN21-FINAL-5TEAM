@@ -1,0 +1,133 @@
+.fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  border: none;
+  background: #111;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  z-index: 9999;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.panel {
+  position: fixed;
+  right: 24px;
+  bottom: 88px; /* fab 위로 */
+  width: 360px;
+  height: 520px;
+  background: #fff;
+  border: 1px solid #eaeaea;
+  border-radius: 12px;
+  overflow: hidden;
+  z-index: 9999;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+
+  /* 슬라이드 업 기본 상태(숨김) */
+  transform: translateY(16px);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.open {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.panelHeader {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: #111;
+  color: #fff;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.closeBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.msgList {
+  height: calc(100% - 48px - 54px);
+  padding: 12px;
+  overflow-y: auto;
+  background: #fafafa;
+}
+
+.msgRow {
+  display: flex;
+  margin-bottom: 10px;
+}
+
+.userRow {
+  justify-content: flex-end;
+}
+
+.botRow {
+  justify-content: flex-start;
+}
+
+.bubble {
+  max-width: 78%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  background: #fff;
+  border: 1px solid #eaeaea;
+}
+
+.userRow .bubble {
+  background: #111;
+  color: #fff;
+  border-color: #111;
+}
+
+.inputBar {
+  height: 54px;
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid #eee;
+  background: #fff;
+}
+
+.input {
+  flex: 1;
+  height: 34px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0 10px;
+  outline: none;
+  font-size: 13px;
+}
+
+.sendBtn {
+  width: 64px;
+  height: 34px;
+  border-radius: 8px;
+  border: none;
+  background: #111;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
