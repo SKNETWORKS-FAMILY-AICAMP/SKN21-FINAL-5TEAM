@@ -17,10 +17,12 @@ from ecommerce.chatbot.src.prompts.system_prompts import (
     CATEGORY_KEYWORDS_MAP
 )
 from ecommerce.chatbot.src.tools.order_tools import (
-    get_delivery_status, 
-    get_courier_contact, 
-    update_payment_info, 
-    request_refund, 
+    get_shipping_details, 
+    update_payment_method, 
+    check_cancellation,
+    cancel_order,
+    check_return_eligibility,
+    register_return_request,
     get_order_details,
     get_user_orders
 )
@@ -302,15 +304,18 @@ def check_eligibility_node(state: AgentState):
     if "error" in order:
         return {"action_status": "failed", "generation": order["error"]}
         
-    if action == "refund" and not order["can_refund"]:
-        return {"action_status": "failed", "generation": f"이 주문은 현재 {order['status']} 상태로 환불이 불가능합니다."}
+    # 'refund' 의도인 경우 취소(배송전) 또는 반품(배송후) 가능 여부 통합 확인
+    if action == "refund":
+        if not (order.get("can_cancel") or order.get("can_return")):
+            reason = order.get("cancel_reason") or order.get("return_reason") or "취소/반품 불가 상태입니다."
+            return {"action_status": "failed", "generation": f"이 주문은 현재 {order['status']} 상태로 환불(취소/반품)이 불가능합니다. 사유: {reason}"}
 
     if action == "payment_update" and order["status"] in ["배송중", "배송완료"]:
         return {"action_status": "failed", "generation": f"죄송합니다. 현재 {order['status']} 상태여서 결제 수단을 변경할 수 없습니다."}
         
-    # 환불은 승인 루프(Human-in-the-loop) 진입, 기타 액션은 바로 승인
+    # 환불/취소는 승인 루프(Human-in-the-loop) 진입, 기타 액션은 바로 승인
     if action == "refund":
-        print("---REFUND PENDING APPROVAL---")
+        print("---REFUND/CANCEL PENDING APPROVAL---")
         return {
             "action_status": "pending_approval", 
             "refund_status": "pending_approval",
@@ -328,7 +333,7 @@ def human_approval_node(state: AgentState):
     order_id = state.get("order_id")
     amount = state.get("refund_amount", 0)
     
-    msg = f"주문 번호 {order_id}의 환불 예정 금액은 {amount:,}원입니다. 정말로 환불을 진행하시겠습니까? ('네' 또는 '아니오'로 답해주세요)"
+    msg = f"주문 번호 {order_id}의 환불(또는 취소) 예정 금액은 {amount:,}원입니다. 정말로 진행하시겠습니까? ('네' 또는 '아니오'로 답해주세요)"
     
     return {
         "generation": msg,
@@ -347,30 +352,49 @@ def execute_action_node(state: AgentState):
     params = state.get("user_info", {})
     
     result = {}
+    
+    # 1. 환불/취소 (통합 'refund' 인텐트 처리)
     if action == "refund":
-        result = request_refund.invoke({"order_id": order_id, "user_id": user_id, "reason": "사용자 요청"})
-    elif action == "tracking":
-        result = get_delivery_status.invoke({"order_id": order_id, "user_id": user_id})
+        # 상태 재확인하여 취소 vs 반품 결정
+        order_info = get_order_details.invoke({"order_id": order_id, "user_id": user_id})
+        if order_info.get("can_cancel"):
+             # 배송 전 -> 취소 실행
+             result = cancel_order.invoke({"order_id": order_id, "user_id": user_id, "reason": "사용자 요청"})
+        elif order_info.get("can_return"):
+             # 배송 후 -> 반품 실행 (pickup_address 필요하나 여기서는 기본값 처리 혹은 추가 대화 필요)
+             # Mock: 기본 주소 사용
+             result = register_return_request.invoke({"order_id": order_id, "user_id": user_id, "pickup_address": "등록된 배송지"})
+        else:
+             result = {"error": "실행 시점에 취소/반품 가능 상태가 아닙니다."}
+             
+    # 2. 배송 조회 (통합)
+    elif action == "tracking" or action == "courier_contact":
+        result = get_shipping_details.invoke({"order_id": order_id, "user_id": user_id})
+        
     elif action == "order_detail":
         result = get_order_details.invoke({"order_id": order_id, "user_id": user_id})
-    elif action == "courier_contact":
-        result = get_courier_contact.invoke({"order_id": order_id})
+        
     elif action == "payment_update":
         payment_method = params.get("payment_method", "카드") # 기본값 카드
-        result = update_payment_info.invoke({"order_id": order_id, "user_id": user_id, "payment_method": payment_method})
+        result = update_payment_method.invoke({"order_id": order_id, "user_id": user_id, "payment_method": payment_method})
+        
     elif action == "gift_card":
         code = params.get("gift_card_code", "UNKNOWN")
         result = register_gift_card.invoke({"code": code})
+        
     elif action == "review_search":
         result = get_reviews.invoke({"limit": 5})
+        
     elif action == "review_create":
         product_id = params.get("product_id", "PROD-001")
         rating = params.get("review_rating", 5)
         content = params.get("review_content", "좋아요")
         result = create_review.invoke({"product_id": product_id, "rating": rating, "content": content})
+        
     elif action == "address_change":
         # 주소지 변경 Mock
         result = {"success": True, "message": f"주문 {order_id}의 주소지가 성공적으로 변경되었습니다."}
+        
     elif action == "order_list":
         result = get_user_orders.invoke({"user_id": 1})
         
