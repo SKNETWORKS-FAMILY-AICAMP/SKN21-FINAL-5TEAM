@@ -173,7 +173,7 @@ class User(Base):
 # User Body Measurement
 # ==================================================
 class UserBodyMeasurement(Base):
-    __tablename__ = "user_body_measurements"
+    __tablename__ = "userbodymeasurements"  # 실제 DB 테이블명에 맞춤
     __table_args__ = (
         Index("idx_ubm_user_id", "user_id"),
         {"comment": "회원 신체 치수"},
@@ -195,13 +195,18 @@ class UserBodyMeasurement(Base):
     height: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     weight: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
 
+    # 상의 치수
+    upper_total_length: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     shoulder_width: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     chest_width: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     sleeve_length: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
 
+    # 하의 치수
+    lower_total_length: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     waist_width: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     hip_width: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     thigh_width: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    rise: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     hem_width: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
 
     created_at: Mapped[datetime] = mapped_column(
