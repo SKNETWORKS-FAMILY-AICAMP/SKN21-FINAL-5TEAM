@@ -6,6 +6,11 @@ from sqlalchemy.orm import Session
 from ecommerce.platform.backend.app.database import get_db
 from ecommerce.platform.backend.app.router.users.models import UserStatus
 from ecommerce.platform.backend.app.router.users import crud, schemas
+<<<<<<< Updated upstream
+=======
+
+router = APIRouter()
+>>>>>>> Stashed changes
 
 router = APIRouter(
     # prefix="/users",

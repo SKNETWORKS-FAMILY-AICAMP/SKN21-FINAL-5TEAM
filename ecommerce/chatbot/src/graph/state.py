@@ -28,6 +28,8 @@ class AgentState(TypedDict):
     
     # 4. 거래 및 사용자 컨텍스트
     order_id: Optional[str]
+    user_id: int
+    is_authenticated: bool
     user_info: Dict[str, Any]
     
     # 5. 액션 제어 및 도구 실행 결과
