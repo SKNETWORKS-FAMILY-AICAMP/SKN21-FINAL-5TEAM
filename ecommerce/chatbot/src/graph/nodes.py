@@ -5,7 +5,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 from qdrant_client import models
 from ecommerce.chatbot.src.graph.state import AgentState
-from ecommerce.chatbot.src.schemas.nlu import NLUResult
+from ecommerce.chatbot.src.schemas.nlu import NLUResult, IntentType, ActionType
 from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
 from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.chatbot.src.core.config import settings
@@ -14,7 +14,8 @@ from ecommerce.chatbot.src.prompts.system_prompts import (
     ECOMMERCE_SYSTEM_PROMPT, 
     NLU_SYSTEM_PROMPT, 
     GENERATION_SYSTEM_PROMPT_TEMPLATE,
-    CATEGORY_KEYWORDS_MAP
+    CATEGORY_KEYWORDS_MAP,
+    QUERY_REWRITE_PROMPT
 )
 from ecommerce.chatbot.src.tools.order_tools import (
     get_shipping_details, 
@@ -251,7 +252,7 @@ def mock_nlu(user_message: str) -> NLUResult:
     best_cat, max_score = sorted_scores[0]
     
     if max_score > 0:
-        return NLUResult(intent="search_knowledge", slots={"category": best_cat})
+        return NLUResult(intent=IntentType.INFO_SEARCH, slots={"category": best_cat})
     
     return NLUResult(intent=None, slots={})
 
@@ -291,7 +292,7 @@ def check_eligibility_node(state: AgentState):
         # 주문 번호가 없으면 주문 목록 조회(UI)로 유도
         print("---MISSING ORDER ID: REDIRECT TO ORDER LIST---")
         return {
-            "action_name": "order_list", 
+            "action_name": ActionType.ORDER_LIST.value, 
             "action_status": "approved", # 바로 실행하러 감
             "is_relevant": True
         }
@@ -305,22 +306,38 @@ def check_eligibility_node(state: AgentState):
         return {"action_status": "failed", "generation": order["error"]}
         
     # 'refund' 의도인 경우 취소(배송전) 또는 반품(배송후) 가능 여부 통합 확인
-    if action == "refund":
-        if not (order.get("can_cancel") or order.get("can_return")):
-            reason = order.get("cancel_reason") or order.get("return_reason") or "취소/반품 불가 상태입니다."
-            return {"action_status": "failed", "generation": f"이 주문은 현재 {order['status']} 상태로 환불(취소/반품)이 불가능합니다. 사유: {reason}"}
+    if action == ActionType.REFUND.value:
+        # 1. 배송 전 -> 취소 가능 여부 확인 (check_cancellation)
+        if order["status"] in ["pending", "paid"]:
+            check_result = check_cancellation.invoke({"order_id": order_id, "user_id": user_id})
+        # 2. 배송 후 -> 반품 가능 여부 확인 (check_return_eligibility)
+        elif order["status"] in ["shipped", "delivered"]:
+            # Mock: 단순 변심(사용자 귀책) 가정, 실제로는 사용자에게 사유를 물어봐야 함
+            check_result = check_return_eligibility.invoke({
+                "order_id": order_id, 
+                "user_id": user_id, 
+                "reason": "단순 변심", 
+                "is_seller_fault": False
+            })
+        else:
+            check_result = {"error": f"현재 {order['status']} 상태에서는 환불 처리가 불가능합니다."}
 
-    if action == "payment_update" and order["status"] in ["배송중", "배송완료"]:
-        return {"action_status": "failed", "generation": f"죄송합니다. 현재 {order['status']} 상태여서 결제 수단을 변경할 수 없습니다."}
-        
-    # 환불/취소는 승인 루프(Human-in-the-loop) 진입, 기타 액션은 바로 승인
-    if action == "refund":
+        # 검증 실패 시
+        if "error" in check_result:
+            return {"action_status": "failed", "generation": check_result["error"]}
+            
         print("---REFUND/CANCEL PENDING APPROVAL---")
         return {
             "action_status": "pending_approval", 
             "refund_status": "pending_approval",
-            "refund_amount": order.get("total_amount")
+            # 도구가 생성한 안내 메시지(수수료 포함)와 환불 예정 금액 전달
+            "generation": check_result.get("message"), 
+            "refund_amount": check_result.get("final_refund_amount") or check_result.get("refund_amount")
         }
+
+    # 결제 수단 변경은 배송 시작 전까지만 가능
+    if action == ActionType.PAYMENT_UPDATE.value and order["status"] in ["shipped", "delivered"]:
+        return {"action_status": "failed", "generation": f"죄송합니다. 현재 {order['status']} 상태여서 결제 수단을 변경할 수 없습니다."}
         
     return {"action_status": "approved"}
 
@@ -328,11 +345,20 @@ def check_eligibility_node(state: AgentState):
 def human_approval_node(state: AgentState):
     """
     사용자에게 액션 실행 여부를 묻는 메시지를 생성합니다.
+    (check_eligibility에서 생성된 상세 메시지를 우선 사용)
     """
     print("---HUMAN APPROVAL REQUEST---")
+    
+    # 이미 생성된 메시지가 있다면 사용 (수수료 안내 등 포함됨)
+    if state.get("generation"):
+        return {
+            "generation": state.get("generation"),
+            "action_status": "pending_approval"
+        }
+    
+    # Fallback (단순 메시지)
     order_id = state.get("order_id")
     amount = state.get("refund_amount", 0)
-    
     msg = f"주문 번호 {order_id}의 환불(또는 취소) 예정 금액은 {amount:,}원입니다. 정말로 진행하시겠습니까? ('네' 또는 '아니오'로 답해주세요)"
     
     return {
@@ -354,7 +380,7 @@ def execute_action_node(state: AgentState):
     result = {}
     
     # 1. 환불/취소 (통합 'refund' 인텐트 처리)
-    if action == "refund":
+    if action == ActionType.REFUND.value:
         # 상태 재확인하여 취소 vs 반품 결정
         order_info = get_order_details.invoke({"order_id": order_id, "user_id": user_id})
         if order_info.get("can_cancel"):
@@ -368,34 +394,34 @@ def execute_action_node(state: AgentState):
              result = {"error": "실행 시점에 취소/반품 가능 상태가 아닙니다."}
              
     # 2. 배송 조회 (통합)
-    elif action == "tracking" or action == "courier_contact":
+    elif action == ActionType.TRACKING.value or action == ActionType.COURIER_CONTACT.value:
         result = get_shipping_details.invoke({"order_id": order_id, "user_id": user_id})
         
-    elif action == "order_detail":
+    elif action == ActionType.ORDER_DETAIL.value:
         result = get_order_details.invoke({"order_id": order_id, "user_id": user_id})
         
-    elif action == "payment_update":
+    elif action == ActionType.PAYMENT_UPDATE.value:
         payment_method = params.get("payment_method", "카드") # 기본값 카드
         result = update_payment_method.invoke({"order_id": order_id, "user_id": user_id, "payment_method": payment_method})
         
-    elif action == "gift_card":
+    elif action == ActionType.GIFT_CARD.value:
         code = params.get("gift_card_code", "UNKNOWN")
         result = register_gift_card.invoke({"code": code})
         
-    elif action == "review_search":
+    elif action == ActionType.REVIEW_SEARCH.value:
         result = get_reviews.invoke({"limit": 5})
         
-    elif action == "review_create":
+    elif action == ActionType.REVIEW_CREATE.value:
         product_id = params.get("product_id", "PROD-001")
         rating = params.get("review_rating", 5)
         content = params.get("review_content", "좋아요")
         result = create_review.invoke({"product_id": product_id, "rating": rating, "content": content})
         
-    elif action == "address_change":
+    elif action == ActionType.ADDRESS_CHANGE.value:
         # 주소지 변경 Mock
         result = {"success": True, "message": f"주문 {order_id}의 주소지가 성공적으로 변경되었습니다."}
         
-    elif action == "order_list":
+    elif action == ActionType.ORDER_LIST.value:
         result = get_user_orders.invoke({"user_id": 1})
         
     return {
@@ -409,24 +435,23 @@ def rewrite_query(original_query: str, history: List[Any]) -> str:
     """
     이전 대화 기록을 바탕으로 현재 질문을 재작성합니다.
     """
+
     if not history:
         return original_query
         
     # 최근 대화 2턴(사용자-AI) 정도만 참고해도 충분한 경우가 많음
-    recent_history = history[-4:] 
+    recent_history = history[-6:] 
     history_str = "\n".join([f"{msg.type}: {msg.content}" for msg in recent_history])
     
     openai = get_openai_client()
-    system_prompt = getattr(settings, "QUERY_REWRITE_PROMPT", None) 
-    # settings에 없으면 직접 임포트한 값 사용 (circular import 방지 위해 lazy import하거나 직접 문자열 사용)
-    # 여기서는 상단에서 임포트한 QUERY_REWRITE_PROMPT 사용
-    from ecommerce.chatbot.src.prompts.system_prompts import QUERY_REWRITE_PROMPT
+    # settings에 정의된 값이 있으면 우선 사용, 없으면 import한 기본값 사용
+    system_prompt = getattr(settings, "QUERY_REWRITE_PROMPT", QUERY_REWRITE_PROMPT) 
     
     try:
         response = openai.chat.completions.create(
             model=settings.OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": QUERY_REWRITE_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"History:\n{history_str}\n\nCurrent: {original_query}"}
             ],
             temperature=0
@@ -478,7 +503,7 @@ def update_state_node(state: AgentState) -> dict:
     # 3-1. 새로운 의도(Intent)가 감지되었는지 확인 (Context Switching)
     new_intent_detected = False
     if current_status == "pending_approval":
-        if llm_analysis.get("action_name") and llm_analysis.get("intent_type") == "execution":
+        if llm_analysis.get("action_name") and llm_analysis.get("intent_type") == IntentType.EXECUTION.value:
              print("---CONTEXT SWITCH DETECTED: NEW INTENT OVERRIDES APPROVAL---")
              new_intent_detected = True
 
