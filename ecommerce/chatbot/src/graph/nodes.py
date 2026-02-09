@@ -21,35 +21,57 @@ from ecommerce.chatbot.src.tools.order_tools import (
     get_courier_contact, 
     update_payment_info, 
     request_refund, 
-    get_order_details
+    get_order_details,
+    get_user_orders
 )
 from ecommerce.chatbot.src.tools.service_tools import register_gift_card, get_reviews, create_review
+
+# Advanced Retrieval: Hybrid Search + Reranking Dependencies
+from fastembed import SparseTextEmbedding
+from flashrank import Ranker, RerankRequest
+
+# Initialize models globally (Load once)
+print("Loading Retrieval Models...")
+SPARSE_MODEL = SparseTextEmbedding(model_name="Qdrant/bm25")
+# FlashRank is lightweight (ONNX) but better cached
+RANKER = Ranker(model_name="ms-marco-MiniLM-L-12-v2", cache_dir="/tmp/flashrank_cache")
+print("Retrieval Models Loaded.")
 
 @traceable(run_type="retriever", name="Retrieve Documents")
 def retrieve(state: AgentState):
     """
     Retrieve documents from Qdrant.
     [통합 검색] 카테고리 필터 검색과 전체 검색 결과를 병합하여 최적의 문서를 찾습니다.
+    (Hybrid Search + Reranking applied)
     """
-    print("---RETRIEVE---")
-    question = state["question"]
-    category = state.get("category")
+    # Advanced Retrieval: Hybrid Search + Reranking (Models are global)
+    
     client = get_qdrant_client()
     openai = get_openai_client()
+    
+    question = state["question"]
+    category = state.get("category")
 
-    # 1. 질문 임베딩 생성
+    # 1. 질문 임베딩 생성 (Dense & Sparse)
+    # Dense
     emb_response = openai.embeddings.create(
         input=question,
         model=settings.EMBEDDING_MODEL
     )
-    query_vector = emb_response.data[0].embedding
+    query_dense_vector = emb_response.data[0].embedding
+    
+    # Sparse
+    query_sparse_vector = list(SPARSE_MODEL.embed([question]))[0]
+    query_sparse_indices = query_sparse_vector.indices.tolist()
+    query_sparse_values = query_sparse_vector.values.tolist()
 
-    # 2. 검색 전략 실행
+    # 2. 검색 전략 실행 (Hybrid Search)
     collections = [settings.COLLECTION_FAQ, settings.COLLECTION_TERMS]
-    combined_results = {} # point ID를 키로 사용하여 중복 제거
+    candidates = []
 
     for col in collections:
-        # A. 카테고리 필터 검색 (카테고리가 인식된 경우만)
+        # 필터 설정
+        query_filter = None
         if category:
             if col == settings.COLLECTION_FAQ:
                 field_name = "main_category"
@@ -59,59 +81,95 @@ def retrieve(state: AgentState):
                 if category == "회원 정보": mapped_category = "회원"
                 elif category == "주문/결제": mapped_category = "구매/결제"
                 else: mapped_category = category
-
-            try:
-                filtered_res = client.query_points(
-                    collection_name=col,
-                    query=query_vector,
-                    query_filter=models.Filter(
-                        must=[models.FieldCondition(key=field_name, match=models.MatchValue(value=mapped_category))]
-                    ),
-                    limit=3
-                ).points
-                for hit in filtered_res:
-                    combined_results[hit.id] = hit
-            except Exception as e:
-                print(f"Error filtered searching {col}: {e}")
-
-        # B. 전체 대상 검색 (카테고리 제한 없음)
-        try:
-            global_res = client.query_points(
-                collection_name=col,
-                query=query_vector,
-                limit=3
-            ).points
-            for hit in global_res:
-                if hit.id not in combined_results:
-                    combined_results[hit.id] = hit
-        except Exception as e:
-            print(f"Error global searching {col}: {e}")
-
-    # 3. 점수 순 정렬 및 상위 5개 추출
-    sorted_hits = sorted(combined_results.values(), key=lambda x: x.score, reverse=True)[:5]
-    
-    # 4. 페이로드 가공 및 유사도 검증
-    all_documents = []
-    for hit in sorted_hits:
-        if hit.score > 0.2:
-            # Note: Determine doc_type based on the hit metadata or loop context
-            # simplified for resolution here. In complex logic, we might track col.
-            payload = hit.payload
-            doc_type = "정보" # Default
-            if 'main_category' in payload: doc_type = "FAQ"
-            elif 'category' in payload: doc_type = "약관"
-
-            content_text = (
-                payload.get('question', '') + " " + payload.get('answer', '') if payload.get('question') else
-                payload.get('text', '') or 
-                payload.get('content', '') or 
-                payload.get('title', '')
-            ).strip()
             
-            if content_text:
-                all_documents.append(f"[{doc_type}] {content_text}")
+            query_filter = models.Filter(
+                must=[models.FieldCondition(key=field_name, match=models.MatchValue(value=mapped_category))]
+            )
 
-    print(f"최종 병합 및 필터링된 문서 수: {len(all_documents)}")
+        try:
+            # Hybrid Search using Prefetch
+            # We fetch top 20 from each method and fuse them
+            
+            # Using simple prefetch with no explicit fusion query for now, 
+            # or use Qdrant's new Query API if available. 
+            # Detailed implementation: Fetch separate and fuse manually OR use fusion query.
+            # Let's use Qdrant's Recommendation/Search API which supports hybrid if we use prefetch.
+            
+            # Note: client.query_points is the new API.
+            
+            prefetch = [
+                models.Prefetch(
+                    query=query_dense_vector,
+                    using="", # Default dense vector
+                    filter=query_filter,
+                    limit=20,
+                ),
+                models.Prefetch(
+                    query=models.SparseVector(indices=query_sparse_indices, values=query_sparse_values),
+                    using="text-sparse",
+                    filter=query_filter,
+                    limit=20,
+                ),
+            ]
+            
+            results = client.query_points(
+                collection_name=col,
+                prefetch=prefetch,
+                query=models.FusionQuery(fusion=models.Fusion.RRF), # Reciprocal Rank Fusion
+                limit=20, # Fetch top 20 candidates for reranking
+            ).points
+            
+            for hit in results:
+                # Add collection context to payload for reranker/LLM
+                hit.payload["_collection"] = col
+                candidates.append(hit)
+                
+        except Exception as e:
+            print(f"Error searching {col}: {e}")
+
+    # 3. Reranking using FlashRank
+    if not candidates:
+        return {"documents": [], "is_relevant": False}
+        
+    # Deduplicate candidates by ID (if any overlap between collections, though unlikely with UUIDs)
+    unique_candidates = {c.id: c for c in candidates}.values()
+    
+    passages = []
+    for c in unique_candidates:
+        # Construct text for reranker
+        text_content = (
+            c.payload.get('question', '') + " " + c.payload.get('answer', '') if c.payload.get('question') else
+            c.payload.get('text', '') or 
+            c.payload.get('content', '') or 
+            c.payload.get('title', '')
+        ).strip()
+        
+        passages.append({
+            "id": c.id,
+            "text": text_content,
+            "meta": c.payload
+        })
+        
+    rerank_request = RerankRequest(query=question, passages=passages)
+    reranked_results = RANKER.rerank(rerank_request)
+    
+    # 4. Top 5 Selection
+    top_results = reranked_results[:5]
+    
+    all_documents = []
+    for res in top_results:
+        payload = res["meta"]
+        score = res["score"]
+        
+        doc_type = "정보"
+        if 'main_category' in payload: doc_type = "FAQ"
+        elif 'category' in payload: doc_type = "약관"
+        
+        content_text = res["text"]
+        all_documents.append(f"[{doc_type}] {content_text}")
+        print(f"Verified Doc ({score:.4f}): {content_text[:30]}...")
+
+    print(f"최종 Reranking 후 문서 수: {len(all_documents)}")
     
     return {
         "documents": all_documents,
@@ -131,8 +189,11 @@ def generate(state: AgentState):
 
     context = "\n\n".join(documents)
     
-    # 도구 실행 결과를 명확한 JSON 문자열로 변환
-    if tool_outputs:
+    # 도구 실행 결과 또는 시스템 메시지(예: 권한 확인 실패 사유)가 있는지 확인
+    if state.get("generation") and state.get("action_status") == "failed":
+        # check_eligibility 등에서 실패 사유가 넘어온 경우
+        tool_context = f"액션 수행 불가 사유: {state.get('generation')}"
+    elif tool_outputs:
         tool_context = json.dumps(tool_outputs, ensure_ascii=False, indent=2)
     else:
         tool_context = "실행된 액션 없음"
@@ -225,11 +286,21 @@ def check_eligibility_node(state: AgentState):
     action = state.get("action_name")
     
     if not order_id:
-        return {"action_status": "failed", "generation": "주문 번호가 없어 확인이 불가능합니다. 주문 번호를 알려주시겠어요?"}
+        # 주문 번호가 없으면 주문 목록 조회(UI)로 유도
+        print("---MISSING ORDER ID: REDIRECT TO ORDER LIST---")
+        return {
+            "action_name": "order_list", 
+            "action_status": "approved", # 바로 실행하러 감
+            "is_relevant": True
+        }
     
-    order = get_order_details.invoke({"order_id": order_id})
-    if not order:
-        return {"action_status": "failed", "generation": "해당 주문 번호를 찾을 수 없습니다."}
+    user_id = state.get("user_id")
+    # [Security Check]
+    # We call get_order_details with user_id to verify ownership
+    order = get_order_details.invoke({"order_id": order_id, "user_id": user_id})
+    
+    if "error" in order:
+        return {"action_status": "failed", "generation": order["error"]}
         
     if action == "refund" and not order["can_refund"]:
         return {"action_status": "failed", "generation": f"이 주문은 현재 {order['status']} 상태로 환불이 불가능합니다."}
@@ -243,7 +314,7 @@ def check_eligibility_node(state: AgentState):
         return {
             "action_status": "pending_approval", 
             "refund_status": "pending_approval",
-            "refund_amount": order.get("amount")
+            "refund_amount": order.get("total_amount")
         }
         
     return {"action_status": "approved"}
@@ -271,21 +342,22 @@ def execute_action_node(state: AgentState):
     print("---EXECUTE ACTION---")
     action = state.get("action_name")
     order_id = state.get("order_id")
+    user_id = state.get("user_id")
     # user_info에 저장된 파라미터 활용
     params = state.get("user_info", {})
     
     result = {}
     if action == "refund":
-        result = request_refund.invoke({"order_id": order_id, "reason": "사용자 요청"})
+        result = request_refund.invoke({"order_id": order_id, "user_id": user_id, "reason": "사용자 요청"})
     elif action == "tracking":
-        result = get_delivery_status.invoke({"order_id": order_id})
+        result = get_delivery_status.invoke({"order_id": order_id, "user_id": user_id})
     elif action == "order_detail":
-        result = get_order_details.invoke({"order_id": order_id})
+        result = get_order_details.invoke({"order_id": order_id, "user_id": user_id})
     elif action == "courier_contact":
         result = get_courier_contact.invoke({"order_id": order_id})
     elif action == "payment_update":
         payment_method = params.get("payment_method", "카드") # 기본값 카드
-        result = update_payment_info.invoke({"order_id": order_id, "payment_method": payment_method})
+        result = update_payment_info.invoke({"order_id": order_id, "user_id": user_id, "payment_method": payment_method})
     elif action == "gift_card":
         code = params.get("gift_card_code", "UNKNOWN")
         result = register_gift_card.invoke({"code": code})
@@ -299,6 +371,8 @@ def execute_action_node(state: AgentState):
     elif action == "address_change":
         # 주소지 변경 Mock
         result = {"success": True, "message": f"주문 {order_id}의 주소지가 성공적으로 변경되었습니다."}
+    elif action == "order_list":
+        result = get_user_orders.invoke({"user_id": 1})
         
     return {
         "action_status": "completed",
@@ -306,30 +380,87 @@ def execute_action_node(state: AgentState):
     }
 
 
+@traceable(run_type="chain", name="Query Rewriting")
+def rewrite_query(original_query: str, history: List[Any]) -> str:
+    """
+    이전 대화 기록을 바탕으로 현재 질문을 재작성합니다.
+    """
+    if not history:
+        return original_query
+        
+    # 최근 대화 2턴(사용자-AI) 정도만 참고해도 충분한 경우가 많음
+    recent_history = history[-4:] 
+    history_str = "\n".join([f"{msg.type}: {msg.content}" for msg in recent_history])
+    
+    openai = get_openai_client()
+    system_prompt = getattr(settings, "QUERY_REWRITE_PROMPT", None) 
+    # settings에 없으면 직접 임포트한 값 사용 (circular import 방지 위해 lazy import하거나 직접 문자열 사용)
+    # 여기서는 상단에서 임포트한 QUERY_REWRITE_PROMPT 사용
+    from ecommerce.chatbot.src.prompts.system_prompts import QUERY_REWRITE_PROMPT
+    
+    try:
+        response = openai.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": QUERY_REWRITE_PROMPT},
+                {"role": "user", "content": f"History:\n{history_str}\n\nCurrent: {original_query}"}
+            ],
+            temperature=0
+        )
+        rewritten = response.choices[0].message.content.strip()
+        print(f"--- QUERY REWRITTEN: '{original_query}' -> '{rewritten}' ---")
+        return rewritten
+    except Exception as e:
+        print(f"Error in query rewriting: {e}")
+        return original_query
+
 @traceable(run_type="chain", name="Update State")
 def update_state_node(state: AgentState) -> dict:
     """
     [하이브리드 NLU] 질문을 분석하여 '조회'인지 '실행'인지 결정합니다.
+    (Query Rewriting 추가됨)
     """
     print("---UPDATE STATE (Intelligent Action NLU)---")
     messages = state.get("messages", [])
-    content = messages[-1].content if hasattr(messages[-1], "content") else str(messages[-1])
     
-    # 1. 문서 검색용 카테고리 추출 (기존 mock_nlu 활용)
-    nlu_keyword = mock_nlu(content)
+    # 0. 메시지 추출
+    if not messages:
+        return {}
+        
+    last_message = messages[-1]
+    original_content = last_message.content if hasattr(last_message, "content") else str(last_message)
     
-    # 2. 액션 파악을 위한 LLM 분석 (intent_type, action_name, order_id 추출)
-    # 질문에서 주문번호(ORD-XXX) 추출 시도
-    order_id_match = re.search(r"ORD-\d+", content)
+    # 1. 쿼리 재작성 (대화 이력이 있는 경우)
+    # 현재 메시지를 제외한 이전 이력
+    history = messages[:-1]
+    refined_question = original_content
+    
+    if history:
+         refined_question = rewrite_query(original_content, history)
+    
+    # 2. 문서 검색용 카테고리 추출 (재작성된 쿼리 사용)
+    nlu_keyword = mock_nlu(refined_question)
+    
+    # 3. 액션 파악을 위한 LLM 분석 (intent_type, action_name, order_id 추출)
+    # 질문에서 주문번호(ORD-XXX) 추출 시도 (원본/재작성 둘 다 체크)
+    order_id_match = re.search(r"ORD-\d+", original_content) or re.search(r"ORD-\d+", refined_question)
     order_id = order_id_match.group() if order_id_match else state.get("order_id")
     
-    llm_analysis = call_llm_for_nlu(content)
+    llm_analysis = call_llm_for_nlu(refined_question)
     
-    # [승인 루프 처리] 현재 대기 중인 액션이 있고 사용자가 긍정적인 답변을 한 경우
+    # [승인 루프 처리] 현재 대기 중인 액션이 있고 사용자가 응답한 경우
     current_status = state.get("action_status")
+    
+    # 3-1. 새로운 의도(Intent)가 감지되었는지 확인 (Context Switching)
+    new_intent_detected = False
     if current_status == "pending_approval":
+        if llm_analysis.get("action_name") and llm_analysis.get("intent_type") == "execution":
+             print("---CONTEXT SWITCH DETECTED: NEW INTENT OVERRIDES APPROVAL---")
+             new_intent_detected = True
+
+    if current_status == "pending_approval" and not new_intent_detected:
         positive_words = ["네", "어", "예", "응", "그래", "확인", "진행", "yes", "ok"]
-        content_lower = content.lower()
+        content_lower = original_content.lower() # 승인/거절은 원본 의도 중요
         if any(word in content_lower for word in positive_words):
             print("---USER APPROVED ACTION---")
             return {
@@ -348,20 +479,24 @@ def update_state_node(state: AgentState) -> dict:
     parameters = llm_analysis.get("parameters", {}) or {}
     print(f"Detected Parameters: {parameters}")
     
-    # 3. 주문 번호 우선순위: 파라미터 > 정규식 > 기존 상태
     extracted_order_id = parameters.get("order_id") or order_id
     
     updates = {
-        "question": content,
+        "question": refined_question, # NLU와 검색에 사용될 정제된 질문
         "category": llm_analysis["category"] or (nlu_keyword.slots.get("category") if nlu_keyword.intent else None),
         "intent_type": llm_analysis["intent_type"],
         "action_name": llm_analysis["action_name"] or state.get("action_name"),
         "order_id": extracted_order_id,
         "is_relevant": llm_analysis["is_relevant"],
-        "action_status": "idle",
+        "action_status": "idle" if new_intent_detected else state.get("action_status", "idle"), 
         "tool_outputs": [],
-        # 추후 도구 실행에 필요한 파라미터들을 user_info에 병합하여 저장
-        "user_info": {**state.get("user_info", {}), **parameters}
+        "action_status": "idle" if new_intent_detected else state.get("action_status", "idle"), 
+        "tool_outputs": [],
+        "user_info": {**state.get("user_info", {}), **parameters},
+        
+        # [Security] Auth is now handled by API (chat.py)
+        # "user_id": 7, 
+        # "is_authenticated": True 
     }
     
     print(f"Intent: {updates['intent_type']}, Action: {updates['action_name']}, Order: {updates['order_id']}")

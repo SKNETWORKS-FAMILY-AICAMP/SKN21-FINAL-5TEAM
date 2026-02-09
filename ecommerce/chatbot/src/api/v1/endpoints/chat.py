@@ -5,6 +5,9 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from ecommerce.chatbot.src.schemas.chat import ChatRequest, ChatResponse
 from ecommerce.chatbot.src.graph.workflow import graph_app
+# [Auth Integration] Import existing auth dependency
+from ecommerce.platform.backend.app.router.users.router import get_current_user
+from fastapi import Depends
 
 router = APIRouter()
 
@@ -35,7 +38,10 @@ def deserialize_messages(serialized_messages: List[Dict[str, str]]):
 
 @router.post("/", response_model=ChatResponse)
 @traceable(run_type="chain", name="Chat Endpoint")
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(
+    request: ChatRequest,
+    current_user = Depends(get_current_user) # [Auth Integration] Verify X-User-Id header
+):
     """
     사용자의 메시지를 받아 에이전트의 응답을 반환합니다.
     JSON 기반의 상태 정보를 주고받아 Stateless 환경에서도 대화 맥락을 유지합니다.
@@ -47,14 +53,23 @@ async def chat_endpoint(request: ChatRequest):
             # 클라이언트가 보낸 텍스트 메시지를 LangChain 메시지 객체로 복구
             history = deserialize_messages(request.previous_state["messages"])
         
+        # [Auth Integration] Force override user context from trusted token (DB Model)
         current_state = request.previous_state or {
             "retry_count": 0,
-            "user_info": {"id": request.user_id, "name": "사용자"},
             "action_status": "idle",
             "order_id": None,
             "action_name": None,
             "documents": [],
             "tool_outputs": []
+        }
+        
+        # SECURE OVERRIDE: Trust the server-side authentication, NOT the client JSON
+        current_state["user_id"] = current_user.id
+        current_state["is_authenticated"] = True
+        current_state["user_info"] = {
+            "id": current_user.id,
+            "name": current_user.name,
+            "email": current_user.email
         }
         current_state["messages"] = history
         

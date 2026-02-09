@@ -24,6 +24,10 @@ def ingest_terms():
         
     print(f"Loaded {len(data)} records.")
     
+    # Initialize FastEmbed for Sparse Vectors
+    from fastembed import SparseTextEmbedding
+    sparse_model = SparseTextEmbedding(model_name="Qdrant/bm25")
+
     client = get_qdrant_client()
     openai = get_openai_client()
     batch_size = 50
@@ -35,11 +39,15 @@ def ingest_terms():
         texts_to_embed = [item['text'] for item in batch]
         
         try:
+            # 1. Dense Embeddings (OpenAI)
             resp = openai.embeddings.create(
                 input=texts_to_embed,
                 model=settings.EMBEDDING_MODEL
             )
-            embeddings = [d.embedding for d in resp.data]
+            dense_vectors = [d.embedding for d in resp.data]
+
+            # 2. Sparse Embeddings (FastEmbed BM25)
+            sparse_vectors = list(sparse_model.embed(texts_to_embed))
             
             points = []
             for j, item in enumerate(batch):
@@ -55,9 +63,19 @@ def ingest_terms():
                 if "title" in payload and "clause_title" not in payload:
                     payload["clause_title"] = payload["title"]
                 
+                # Create Sparse Vector dict for Qdrant
+                # fastembed returns numpy, convert to list
+                sparse_vec = models.SparseVector(
+                    indices=sparse_vectors[j].indices.tolist(),
+                    values=sparse_vectors[j].values.tolist()
+                )
+
                 points.append(models.PointStruct(
                     id=point_id,
-                    vector=embeddings[j],
+                    vector={
+                        "": dense_vectors[j],           # Default dense vector
+                        "text-sparse": sparse_vec       # Sparse vector
+                    },
                     payload=payload
                 ))
             
