@@ -8,7 +8,6 @@ from ecommerce.platform.backend.app.database import get_db
 from ecommerce.platform.backend.app.router.shipping import crud, schema
 
 router = APIRouter(
-    prefix="/shipping",
     tags=["shipping"]
 )
 
