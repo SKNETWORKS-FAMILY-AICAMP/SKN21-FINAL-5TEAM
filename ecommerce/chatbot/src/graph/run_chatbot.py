@@ -12,7 +12,7 @@ from ecommerce.chatbot.src.graph.workflow import graph_app
 from langchain_core.messages import HumanMessage
 
 def start_chat():
-    print("=== 무신사 AI 에이전트 인터랙티브 상담 시작 ===")
+    print("=== 이커머스 AI 에이전트 인터랙티브 상담 시작 ===")
     print("(종료하려면 '종료' 또는 'exit'를 입력하세요)")
     
     # 세션 상태 유지용 변수 초기화

@@ -21,12 +21,13 @@ def get_db():
         db.close()
 
 @tool
-def get_order_details(order_id: str) -> dict:
+def get_order_details(order_id: str, user_id: int) -> dict:
     """
     주문 상세 정보를 조회합니다.
     
     Args:
         order_id: 주문번호 (예: ORD-20240209-0001)
+        user_id: 요청자 사용자 ID (본인 확인용)
         
     Returns:
         주문 상태, 상품 목록, 금액, 환불 가능 여부 등
@@ -37,11 +38,12 @@ def get_order_details(order_id: str) -> dict:
         if not order:
             return {"error": "주문 정보를 찾을 수 없습니다."}
         
+        # [Security] Authorization Check
+        if order.user_id != user_id:
+            return {"error": "PERMISSION_DENIED: 본인의 주문 정보만 조회할 수 있습니다."}
+        
         items = []
         for item in order.items:
-            # item.product_option_id allows finding product name if needed, 
-            # but usually getting option details requires joining ProductOption & Product.
-            # For simplicity, returning basic info.
             items.append({
                 "product_id": item.product_option_id,
                 "quantity": item.quantity,
@@ -54,7 +56,8 @@ def get_order_details(order_id: str) -> dict:
             "total_amount": float(order.total_amount),
             "items": items,
             "created_at": order.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "shipping_address": getattr(order.shipping_address, "address1", "N/A")
+            "shipping_address": getattr(order.shipping_address, "address1", "N/A"),
+            "can_refund": order.status in [OrderStatus.DELIVERED, OrderStatus.PAID] 
         }
     except Exception as e:
         return {"error": f"조회 중 오류 발생: {str(e)}"}
@@ -63,12 +66,13 @@ def get_order_details(order_id: str) -> dict:
 
 
 @tool
-def request_refund(order_id: str, reason: str) -> dict:
+def request_refund(order_id: str, user_id: int, reason: str) -> dict:
     """
     환불을 요청합니다.
     
     Args:
         order_id: 주문번호
+        user_id: 요청자 사용자 ID
         reason: 환불 사유
         
     Returns:
@@ -80,10 +84,12 @@ def request_refund(order_id: str, reason: str) -> dict:
         if not order:
             return {"error": "주문 정보를 찾을 수 없습니다."}
         
-        # Simple Logic: Update status directly
-        # In real world, might need a RefundRequest model
+        # [Security] Authorization Check
+        if order.user_id != user_id:
+            return {"error": "PERMISSION_DENIED: 본인의 주문만 환불 신청할 수 있습니다."}
+        
         order.status = OrderStatus.REFUNDED
-        order.shipping_request = f"Refund Requested: {reason}" # Storing reason in notes for now
+        order.shipping_request = f"Refund Requested: {reason}"
         db.commit()
         
         return {
@@ -99,7 +105,7 @@ def request_refund(order_id: str, reason: str) -> dict:
 
 
 @tool
-def get_delivery_status(order_id: str) -> dict:
+def get_delivery_status(order_id: str, user_id: int) -> dict:
     """
     주문 번호로 배송 현황을 조회합니다.
     
@@ -161,6 +167,61 @@ def get_courier_contact(order_id: str) -> dict:
             
     except Exception as e:
         return {"error": f"택배사 정보 조회 실패: {str(e)}"}
+    finally:
+        db.close()
+
+
+@tool
+def get_user_orders(user_id: int = 1, limit: int = 5) -> dict:
+    """
+    사용자의 최근 주문 목록을 조회합니다 (UI 렌더링용).
+    
+    Args:
+        user_id: 사용자 ID (기본값 1)
+        limit: 조회할 주문 개수
+        
+    Returns:
+        주문 목록 및 각 주문별 가능 액션 (UI 데이터)
+    """
+    db = SessionLocal()
+    try:
+        orders = db.query(Order).filter(Order.user_id == user_id).order_by(Order.created_at.desc()).limit(limit).all()
+        
+        ui_data = []
+        for order in orders:
+            # Determine available actions based on status
+            actions = ["tracking"] # Tracking is always available
+            if order.status in [OrderStatus.PENDING, OrderStatus.PAID]:
+                actions.append("cancel")
+            if order.status in [OrderStatus.DELIVERED]:
+                actions.append("refund")
+                actions.append("review")
+            
+            # Get main product name
+            product_name = "상품 정보 없음"
+            if order.items:
+                first_item = order.items[0]
+                # In real app, join with Product/ProductOption to get name
+                # Here we mock it or fetch if needed. 
+                # Ideally, models should allow easy access.
+                product_name = f"상품 {first_item.product_option_id} 등 {len(order.items)}건"
+
+            ui_data.append({
+                "order_id": order.order_number,
+                "date": order.created_at.strftime("%Y-%m-%d"),
+                "status": order.status.value,
+                "product_name": product_name,
+                "amount": float(order.total_amount),
+                "available_actions": actions
+            })
+            
+        return {
+            "ui_action": "show_order_list",
+            "message": "최근 주문 내역입니다. 원하시는 주문을 선택해주세요.",
+            "ui_data": ui_data
+        }
+    except Exception as e:
+        return {"error": f"주문 목록 조회 실패: {str(e)}"}
     finally:
         db.close()
 
