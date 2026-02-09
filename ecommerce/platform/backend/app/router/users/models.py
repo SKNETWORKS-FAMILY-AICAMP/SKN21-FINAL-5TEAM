@@ -94,12 +94,6 @@ class User(Base):
     )
 
     # Relationships
-    body_measurements: Mapped[Optional["UserBodyMeasurement"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan", uselist=False
-    )
-    shipping_addresses: Mapped[list["ShippingAddress"]] = relationship(
-        "ShippingAddress", back_populates="user", cascade="all, delete-orphan"
-    )
     orders: Mapped[list["Order"]] = relationship(
         "Order", back_populates="user"
     )
