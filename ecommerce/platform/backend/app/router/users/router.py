@@ -238,9 +238,10 @@ def upsert_body_measurement(
 
 @router.delete("/me", response_model=schemas.SimpleOkResponse)
 def withdraw(
-    body: schemas.WithdrawRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    crud.withdraw_user(db, current_user, body.reason)
+    crud.withdraw_user(db, current_user)
     return {"ok": True}
+
+
