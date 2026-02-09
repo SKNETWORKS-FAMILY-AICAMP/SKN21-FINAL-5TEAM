@@ -279,6 +279,8 @@ def execute_action_node(state: AgentState):
         result = request_refund.invoke({"order_id": order_id, "reason": "사용자 요청"})
     elif action == "tracking":
         result = get_delivery_status.invoke({"order_id": order_id})
+    elif action == "order_detail":
+        result = get_order_details.invoke({"order_id": order_id})
     elif action == "courier_contact":
         result = get_courier_contact.invoke({"order_id": order_id})
     elif action == "payment_update":
