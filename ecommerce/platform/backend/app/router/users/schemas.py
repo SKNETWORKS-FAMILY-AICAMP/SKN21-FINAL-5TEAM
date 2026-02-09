@@ -43,6 +43,8 @@ class LoginResponse(BaseModel):
     email: EmailStr
     name: str
 
+class WithdrawRequest(BaseModel):
+    reason: str
 
 # =========================
 # Profile (회원정보 변경/조회)

@@ -193,7 +193,7 @@ export default function RegisterPage() {
           />
         </div>
 
-        {/* 주소 */}
+        {/* 주소
         <div className={styles.field}>
           <label>주소</label>
           <input
@@ -206,7 +206,7 @@ export default function RegisterPage() {
             value={address2}
             onChange={(e) => setAddress2(e.target.value)}
           />
-        </div>
+        </div> */}
 
         {formError && <p className={styles.error}>{formError}</p>}
 

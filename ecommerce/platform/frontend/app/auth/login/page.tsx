@@ -1,10 +1,13 @@
 'use client';
+import { useRouter } from 'next/navigation';
 
 import { useState } from 'react';
 import Link from 'next/link';
 import styles from './login.module.css';
 
 export default function LoginPage() {
+  const router = useRouter();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -25,6 +28,7 @@ export default function LoginPage() {
     try {
       const res = await fetch('http://localhost:8000/users/login', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
@@ -39,7 +43,8 @@ export default function LoginPage() {
       console.log('로그인 성공:', data);
 
       // TODO: 로그인 성공 후 처리
-      // ex) router.push('/')
+      router.push('/mypage/profile');
+      
     } catch {
       setError('서버와 통신할 수 없습니다.');
     }

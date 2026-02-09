@@ -282,3 +282,28 @@
   color: #aaa;
   cursor: not-allowed;
 }
+
+/* ===============================
+   Footer / 로그아웃
+================================ */
+
+.footer {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: center;
+}
+
+.footer button {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.logoutText {
+  font-size: 13px;
+  color: #888;
+}
+
