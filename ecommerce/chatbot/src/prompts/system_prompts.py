@@ -7,6 +7,7 @@ NLU_SYSTEM_PROMPT = """당신은 고객센터 의도 분석 전문가입니다. 
 3. action_name: 실행 요청인 경우 다음 중 선택 (아니면 null):
    - 'refund': 환불/취소 요청
    - 'tracking': 배송 조회/조회 요청
+   - 'order_detail': 주문 상세 조회/내역 확인
    - 'courier_contact': 택배사 연락처 문의
    - 'payment_update': 결제 수단 변경
    - 'gift_card': 상품권 등록

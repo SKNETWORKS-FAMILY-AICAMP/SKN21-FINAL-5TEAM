@@ -35,7 +35,7 @@ class ShippingAddress(Base):
         BigInteger, primary_key=True, autoincrement=True, comment='배송지 고유 ID'
     )
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey('Users.id', ondelete='CASCADE'),
+        BigInteger, ForeignKey('users.id', ondelete='CASCADE'),
         nullable=False, comment='회원 ID'
     )
     recipient_name: Mapped[str] = mapped_column(
@@ -71,7 +71,7 @@ class ShippingAddress(Base):
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="shipping_addresses")
-    #orders: Mapped[List["Order"]] = relationship(back_populates="shipping_address")
+    orders: Mapped[list["Order"]] = relationship("Order", back_populates="shipping_address")
 
 
 class ShippingRequestTemplate(Base):
