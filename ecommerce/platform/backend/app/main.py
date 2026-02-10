@@ -5,6 +5,13 @@ from ecommerce.platform.backend.app.database import engine, Base
 from ecommerce.platform.backend.app.router.carts.router import router as carts_router
 from ecommerce.platform.backend.app.router.users.router import router as users_router
 from ecommerce.platform.backend.app.router.shipping.router import router as shipping_router
+from ecommerce.platform.backend.app.router.orders.router import router as orders_router
+from ecommerce.platform.backend.app.router.payments.router import router as payments_router
+from ecommerce.platform.backend.app.router.inventories.router import router as inventories_router
+from ecommerce.platform.backend.app.router.points.router import router as points_router
+from ecommerce.platform.backend.app.router.reviews.router import router as reviews_router
+from ecommerce.platform.backend.app.router.products.router import router as products_router
+
 # Import models to register them with Base.metadata
 import ecommerce.platform.backend.app.router.users.models
 import logging
@@ -76,6 +83,12 @@ async def health_check():
 app.include_router(carts_router, prefix="/carts", tags=["Carts"])
 app.include_router(users_router, prefix="/users", tags=["Users"])
 app.include_router(shipping_router, prefix="/shipping", tags=["Shipping"])
+app.include_router(orders_router, prefix="/orders", tags=["Orders"])
+app.include_router(payments_router, prefix="/payments", tags=["Payments"])
+app.include_router(payments_router, prefix="/inventories", tags=["Inventories"])
+app.include_router(payments_router, prefix="/points", tags=["Points"])
+app.include_router(payments_router, prefix="/reviews", tags=["Reviews"])
+app.include_router(payments_router, prefix="/products", tags=["Products"])
 # app.include_router(chatbot_router, prefix="/api/v1/chat", tags=["Chatbot"])
 
 
