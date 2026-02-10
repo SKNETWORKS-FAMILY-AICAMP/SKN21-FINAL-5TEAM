@@ -8,6 +8,10 @@ from typing import Optional, List
 from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 
+# Type checking required imports moved here to resolve PydanticUserError
+from ecommerce.platform.backend.app.router.payments.schemas import PaymentResponse
+from ecommerce.platform.backend.app.router.shipping.schemas import ShippingInfoResponse
+
 
 # ==================================================
 # Enums
@@ -112,11 +116,9 @@ class OrderResponse(OrderBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+
 class OrderDetailResponse(OrderResponse):
     """주문 상세 응답 스키마 (결제 및 배송 정보 포함)"""
-    from ecommerce.platform.backend.app.router.payments.schemas import PaymentResponse
-    from ecommerce.platform.backend.app.router.shipping.schemas import ShippingInfoResponse
-    
     payment: Optional[PaymentResponse] = None
     shipping_info: Optional[ShippingInfoResponse] = None
 
