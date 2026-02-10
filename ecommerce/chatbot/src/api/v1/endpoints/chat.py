@@ -1,13 +1,14 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from langsmith import traceable
 from typing import List, Dict, Any
+import json
+import asyncio
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from ecommerce.chatbot.src.schemas.chat import ChatRequest, ChatResponse
 from ecommerce.chatbot.src.graph.workflow import graph_app
-# [Auth Integration] Import existing auth dependency
 from ecommerce.platform.backend.app.router.users.router import get_current_user
-from fastapi import Depends
 
 router = APIRouter()
 
@@ -73,13 +74,13 @@ async def chat_endpoint(
                 "email": current_user.email
             }
         else:
-            # Default guest user (temporary solution)
-            current_state["user_id"] = 1
+            # Default test user (temporary solution - user_id=11 for testing)
+            current_state["user_id"] = 11
             current_state["is_authenticated"] = False
             current_state["user_info"] = {
-                "id": 1,
-                "name": "Guest",
-                "email": "guest@example.com"
+                "id": 11,
+                "name": "TestUser",
+                "email": "test@example.com"
             }
         
         current_state["messages"] = history
@@ -126,3 +127,127 @@ async def chat_endpoint(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"상담 처리 중 오류가 발생했습니다: {str(e)}")
+
+
+@router.post("/stream")
+@traceable(run_type="chain", name="Chat Streaming Endpoint")
+async def chat_streaming_endpoint(
+    request: ChatRequest,
+    current_user = Depends(get_current_user) if False else None
+):
+    """
+    스트리밍 방식으로 챗봇 응답을 반환합니다.
+    답변이 생성되는 동안 글자 단위로 전송하여 타이핑 효과를 제공합니다.
+    """
+    async def event_generator():
+        try:
+            # 1. 상태 복구
+            history = []
+            if request.previous_state and "messages" in request.previous_state:
+                history = deserialize_messages(request.previous_state["messages"])
+            
+            # Initialize state
+            current_state = request.previous_state or {
+                "retry_count": 0,
+                "action_status": "idle",
+                "order_id": None,
+                "action_name": None,
+                "documents": [],
+                "tool_outputs": []
+            }
+            
+            # Set user context
+            if current_user:
+                current_state["user_id"] = current_user.id
+                current_state["is_authenticated"] = True
+                current_state["user_info"] = {
+                    "id": current_user.id,
+                    "name": current_user.name,
+                    "email": current_user.email
+                }
+            else:
+                # Default test user (temporary solution - user_id=11 for testing)
+                current_state["user_id"] = 11
+                current_state["is_authenticated"] = False
+                current_state["user_info"] = {
+                    "id": 11,
+                    "name": "TestUser",
+                    "email": "test@example.com"
+                }
+            
+            current_state["messages"] = history
+            current_state["messages"].append(HumanMessage(content=request.message))
+            
+            # 2. 에이전트 실행
+            result = await graph_app.ainvoke(current_state)
+            
+            # 3. 결과 직렬화
+            processed_result = result.copy()
+            processed_result["messages"] = serialize_messages(result.get("messages", []))
+            
+            # 4. UI 데이터 추출
+            ui_action = None
+            ui_data = None
+            tool_outputs = result.get("tool_outputs", [])
+            
+            for tool_output in tool_outputs:
+                if isinstance(tool_output, dict):
+                    if tool_output.get("ui_action") == "show_order_list":
+                        ui_action = "show_order_list"
+                        ui_data = tool_output.get("ui_data", [])
+                        break
+            
+            # 5. UI 액션이 있는 경우 즉시 전송
+            if ui_action and ui_data:
+                response_data = {
+                    "type": "ui_action",
+                    "ui_action": ui_action,
+                    "ui_data": ui_data,
+                    "state": processed_result
+                }
+                yield f"data: {json.dumps(response_data, ensure_ascii=False)}\n\n"
+            else:
+                # 6. 일반 텍스트 응답을 글자 단위로 스트리밍
+                answer = result.get("generation", "")
+                
+                # 먼저 메타데이터 전송
+                meta_data = {
+                    "type": "metadata",
+                    "action_status": result.get("action_status"),
+                    "action_name": result.get("action_name"),
+                    "order_id": result.get("order_id"),
+                    "state": processed_result
+                }
+                yield f"data: {json.dumps(meta_data, ensure_ascii=False)}\n\n"
+                
+                # 답변을 글자 단위로 스트리밍
+                for char in answer:
+                    chunk_data = {
+                        "type": "text_chunk",
+                        "content": char
+                    }
+                    yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+                    await asyncio.sleep(0.02)  # 타이핑 효과를 위한 딜레이
+                
+                # 완료 신호
+                done_data = {"type": "done"}
+                yield f"data: {json.dumps(done_data)}\n\n"
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            error_data = {
+                "type": "error",
+                "message": f"오류가 발생했습니다: {str(e)}"
+            }
+            yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
