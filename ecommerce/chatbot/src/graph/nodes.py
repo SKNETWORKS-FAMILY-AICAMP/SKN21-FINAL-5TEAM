@@ -433,7 +433,8 @@ def execute_action_node(state: AgentState):
         result = {"success": True, "message": f"주문 {order_id}의 주소지가 성공적으로 변경되었습니다."}
         
     elif action == ActionType.ORDER_LIST.value:
-        result = get_user_orders.invoke({"user_id": 1})
+        # Retrieve user_id from state
+        result = get_user_orders.invoke({"user_id": user_id})
         
     return {
         "action_status": "completed",
