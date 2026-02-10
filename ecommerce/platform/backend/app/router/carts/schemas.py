@@ -4,21 +4,12 @@ Pydantic Schemas for Cart
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional, List
-from enum import Enum
 
 from pydantic import BaseModel, Field, ConfigDict
 
-class ProductType(str, Enum):
-    """상품 유형"""
-    NEW = "new"
-    USED = "used"
+# Product 모듈의 ProductType enum 사용
+from ecommerce.platform.backend.app.router.products.models import ProductType, UsedProductStatus
 
-class UsedProductStatus(str, Enum):
-    """중고 상품 판매 상태"""
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    SOLD = "sold"
 
 # ============================================
 # Cart Item Schemas
