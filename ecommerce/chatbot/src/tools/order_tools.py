@@ -40,7 +40,18 @@ def _get_order_with_auth(db: Session, order_id: str, user_id: int) -> tuple[Orde
         (Order 객체, None) 성공 시
         (None, error dict) 실패 시
     """
-    order = db.query(Order).filter(Order.order_number == order_id).first()
+    from sqlalchemy.orm import joinedload
+    
+    order = (
+        db.query(Order)
+        .options(
+            joinedload(Order.shipping_address),
+            joinedload(Order.shipping_info),
+            joinedload(Order.items)
+        )
+        .filter(Order.order_number == order_id)
+        .first()
+    )
     
     if not order:
         return None, {"error": "주문 정보를 찾을 수 없습니다."}
@@ -74,7 +85,7 @@ def _get_order_actions(order: Order) -> dict:
     }
     
     # 1. 취소 가능 여부 (배송 전)
-    if order.status in [OrderStatus.PENDING, OrderStatus.PAID]:
+    if order.status in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
         actions["can_cancel"] = True
     else:
         actions["cancel_reason"] = f"현재 상태({order.status.value})에서는 취소가 불가능합니다. (배송 시작됨)"
@@ -96,7 +107,7 @@ def _get_order_actions(order: Order) -> dict:
     
     # 3. 교환 가능 여부 (배송 전/후)
     if order.status not in [OrderStatus.CANCELLED, OrderStatus.REFUNDED]:
-        if order.status in [OrderStatus.PENDING, OrderStatus.PAID]:
+        if order.status in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
             actions["can_exchange"] = True
             actions["exchange_type"] = "pre_shipment"
         elif order.status in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
@@ -201,7 +212,7 @@ def check_cancellation(order_id: str, user_id: int) -> dict:
             return error
         
         # 배송 전 상태 확인
-        if order.status not in [OrderStatus.PENDING, OrderStatus.PAID]:
+        if order.status not in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
             return {
                 "error": f"현재 주문 상태({order.status.value})에서는 취소가 불가능합니다. 배송이 시작된 경우 반품을 이용해주세요."
             }
@@ -247,7 +258,7 @@ def cancel_order(order_id: str, user_id: int, reason: str, confirmed: bool = Tru
         if error:
             return error
             
-        if order.status not in [OrderStatus.PENDING, OrderStatus.PAID]:
+        if order.status not in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
             return {"error": "배송이 시작되어 취소할 수 없습니다."}
             
         order.status = OrderStatus.CANCELLED
@@ -422,7 +433,7 @@ def check_exchange_eligibility(
             return {"error": "취소/환불된 주문은 교환할 수 없습니다."}
             
         # 1. 배송 전 -> 단순 옵션 변경
-        if order.status in [OrderStatus.PENDING, OrderStatus.PAID]:
+        if order.status in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
             return {
                 "eligible": True,
                 "type": "pre_shipment",
@@ -485,7 +496,7 @@ def change_product_option(order_id: str, user_id: int, new_option_id: int) -> di
         if error:
             return error
             
-        if order.status not in [OrderStatus.PENDING, OrderStatus.PAID]:
+        if order.status not in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
             return {"error": "배송이 시작되어 옵션을 변경할 수 없습니다. 교환 신청을 이용해주세요."}
             
         # 실제로는 여기서 재고 확인 및 OrderItem 업데이트 로직이 들어가야 함
