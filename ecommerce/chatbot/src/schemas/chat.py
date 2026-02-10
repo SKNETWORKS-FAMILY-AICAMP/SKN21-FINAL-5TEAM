@@ -13,4 +13,6 @@ class ChatResponse(BaseModel):
     action_status: Optional[str] = None
     action_name: Optional[str] = None
     order_id: Optional[str] = None
+    ui_action: Optional[str] = Field(None, description="UI action type (e.g., 'show_order_list')")
+    ui_data: Optional[List[Dict[str, Any]]] = Field(None, description="UI rendering data (e.g., order list)")
     state: Dict[str, Any] = Field(..., description="Updated conversation state to be passed back in next request")
