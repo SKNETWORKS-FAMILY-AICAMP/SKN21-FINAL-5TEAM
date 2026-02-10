@@ -308,7 +308,7 @@ def check_eligibility_node(state: AgentState):
     # 'refund' 의도인 경우 취소(배송전) 또는 반품(배송후) 가능 여부 통합 확인
     if action == ActionType.REFUND.value:
         # 1. 배송 전 -> 취소 가능 여부 확인 (check_cancellation)
-        if order["status"] in ["pending", "paid"]:
+        if order["status"] in ["pending", "payment_completed"]:
             check_result = check_cancellation.invoke({"order_id": order_id, "user_id": user_id})
         # 2. 배송 후 -> 반품 가능 여부 확인 (check_return_eligibility)
         elif order["status"] in ["shipped", "delivered"]:
