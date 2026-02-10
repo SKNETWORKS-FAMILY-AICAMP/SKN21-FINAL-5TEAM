@@ -181,3 +181,5 @@ def withdraw_user(db: Session, user: User) -> None:
     user.status = UserStatus.INACTIVE
     user.deleted_at = datetime.utcnow()
     db.commit()
+
+# =========================
