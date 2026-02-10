@@ -54,8 +54,7 @@ export default function ChatbotFab() {
     setIsLoading(true);
 
     try {
-      // API 호출
-      const response = await fetch(`${API_BASE_URL}/api/v1/chat/`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/chat/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -71,28 +70,75 @@ export default function ChatbotFab() {
         throw new Error(`API Error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedText = '';
+      let newState = null;
+      let botMessageAdded = false;
 
-      // 상태 업데이트
-      setConversationState(data.state);
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-      // UI 액션 처리
-      if (data.ui_action === 'show_order_list' && data.ui_data) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'bot',
-            type: 'order_list',
-            message: data.answer || '주문 목록입니다.',
-            orders: data.ui_data,
-          },
-        ]);
-      } else if (data.answer) {
-        // 일반 텍스트 응답
-        setMessages((prev) => [
-          ...prev,
-          { role: 'bot', type: 'text', text: data.answer },
-        ]);
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.type === 'metadata') {
+                // 상태 저장
+                newState = data.state;
+              } else if (data.type === 'text_chunk') {
+                // 첫 글자가 오면 로딩 끄고 메시지 추가
+                if (!botMessageAdded) {
+                  setIsLoading(false);
+                  botMessageAdded = true;
+                  setMessages((prev) => [
+                    ...prev,
+                    { role: 'bot', type: 'text', text: data.content }
+                  ]);
+                  accumulatedText = data.content;
+                } else {
+                  // 이후 글자들은 메시지 업데이트
+                  accumulatedText += data.content;
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastMsg = newMessages[newMessages.length - 1];
+                    if (lastMsg && lastMsg.type === 'text') {
+                      lastMsg.text = accumulatedText;
+                    }
+                    return newMessages;
+                  });
+                }
+              } else if (data.type === 'ui_action') {
+                // UI 액션 처리
+                if (data.ui_action === 'show_order_list') {
+                  setIsLoading(false);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: 'bot',
+                      type: 'order_list',
+                      message: '주문 목록입니다.',
+                      orders: data.ui_data,
+                    },
+                  ]);
+                }
+                newState = data.state;
+              } else if (data.type === 'done') {
+                // 완료
+                if (newState) {
+                  setConversationState(newState);
+                }
+              } else if (data.type === 'error') {
+                throw new Error(data.message);
+              }
+            }
+          }
+        }
       }
     } catch (error) {
       console.error('Chat API error:', error);
@@ -201,7 +247,13 @@ export default function ChatbotFab() {
           })}
           {isLoading && (
             <div className={`${styles.msgRow} ${styles.botRow}`}>
-              <div className={styles.bubble}>...</div>
+              <div className={styles.bubble}>
+                <div className={styles.typingIndicator}>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
             </div>
           )}
         </div>
