@@ -53,7 +53,11 @@ app = FastAPI(
 # ============================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://192.168.0.30:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -89,7 +93,7 @@ app.include_router(payments_router, prefix="/inventories", tags=["Inventories"])
 app.include_router(payments_router, prefix="/points", tags=["Points"])
 app.include_router(payments_router, prefix="/reviews", tags=["Reviews"])
 app.include_router(payments_router, prefix="/products", tags=["Products"])
-# app.include_router(chatbot_router, prefix="/api/v1/chat", tags=["Chatbot"])
+app.include_router(chatbot_router, prefix="/api/v1/chat", tags=["Chatbot"])
 
 
 # ============================================
