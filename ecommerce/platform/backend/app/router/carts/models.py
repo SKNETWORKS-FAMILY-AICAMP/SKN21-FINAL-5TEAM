@@ -4,7 +4,6 @@ SQLAlchemy Models - Carts Module
 """
 from datetime import datetime
 from typing import Optional, List, TYPE_CHECKING
-from enum import Enum as PyEnum
 
 from sqlalchemy import (
     BigInteger, Integer, DateTime, Enum, ForeignKey,
@@ -14,20 +13,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from ecommerce.platform.backend.app.database import Base
+# Product 모듈의 ProductType enum 사용
+from ecommerce.platform.backend.app.router.products.models import ProductType
 
 if TYPE_CHECKING:
     from ecommerce.platform.backend.app.router.users.models import User
     from ecommerce.platform.backend.app.router.products.models import ProductOption, UsedProductOption
-
-
-# ==================================================
-# Enums
-# ==================================================
-
-class ProductType(str, PyEnum):
-    """상품 유형"""
-    NEW = "new"
-    USED = "used"
 
 
 # ==================================================

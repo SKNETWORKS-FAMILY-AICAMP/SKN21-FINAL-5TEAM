@@ -6,7 +6,7 @@ from typing import List, Optional
 
 # 같은 폴더 기준 import
 from .models import ShippingAddress
-from .schema import ShippingAddressCreate, ShippingAddressUpdate
+from .schemas import ShippingAddressCreate, ShippingAddressUpdate
 
 
 # =====================

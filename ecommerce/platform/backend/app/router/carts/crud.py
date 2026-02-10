@@ -7,12 +7,14 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_
 from ecommerce.platform.backend.app.router.carts import models, schemas
 
+# Product 모듈의 모델 및 enum 사용
 from ecommerce.platform.backend.app.router.products.models import (
     ProductOption, 
     Product,
     UsedProductOption, 
     UsedProduct,
-    UsedProductCondition
+    UsedProductCondition,
+    ProductType  # ProductType enum 추가
 )
 
 # ============================================
@@ -69,7 +71,7 @@ def get_cart_item_by_id(db: Session, item_id: int) -> Optional[models.CartItem]:
 def get_existing_cart_item(
     db: Session,
     cart_id: int,
-    product_option_type: schemas.ProductType,
+    product_option_type: ProductType,
     product_option_id: int
 ) -> Optional[models.CartItem]:
     """동일한 상품 옵션이 이미 장바구니에 있는지 확인"""
@@ -271,13 +273,13 @@ def get_used_product_info(db: Session, option_id: int) -> Optional[Dict]:
 
 def get_product_info(
     db: Session,
-    product_type: schemas.ProductType,
+    product_type: ProductType,
     product_option_id: int
 ) -> Optional[Dict]:
     """
     상품 옵션 정보 조회 (신상품/중고상품 분기)
     """
-    if product_type == schemas.ProductType.NEW:
+    if product_type == ProductType.NEW:
         return get_new_product_info(db, product_option_id)
     else:
         return get_used_product_info(db, product_option_id)
@@ -285,7 +287,7 @@ def get_product_info(
 
 def verify_product_option(
     db: Session,
-    product_type: schemas.ProductType,
+    product_type: ProductType,
     product_option_id: int
 ) -> Optional[Dict]:
     """
