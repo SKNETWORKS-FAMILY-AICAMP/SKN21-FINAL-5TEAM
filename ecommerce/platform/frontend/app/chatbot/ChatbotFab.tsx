@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import styles from './ChatbotFab.module.css';
+import styles from './chatbotfab.module.css';
 
 type ChatMsg = { role: 'user' | 'bot'; text: string };
 
