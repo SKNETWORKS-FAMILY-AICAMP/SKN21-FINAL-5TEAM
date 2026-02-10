@@ -1,7 +1,7 @@
 import re
 import json
 from typing import List, Optional, Dict, Any
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage
 from langsmith import traceable
 from qdrant_client import models
 from ecommerce.chatbot.src.graph.state import AgentState
@@ -90,16 +90,6 @@ def retrieve(state: AgentState):
             )
 
         try:
-            # Hybrid Search using Prefetch
-            # We fetch top 20 from each method and fuse them
-            
-            # Using simple prefetch with no explicit fusion query for now, 
-            # or use Qdrant's new Query API if available. 
-            # Detailed implementation: Fetch separate and fuse manually OR use fusion query.
-            # Let's use Qdrant's Recommendation/Search API which supports hybrid if we use prefetch.
-            
-            # Note: client.query_points is the new API.
-            
             prefetch = [
                 models.Prefetch(
                     query=query_dense_vector,
@@ -216,7 +206,11 @@ def generate(state: AgentState):
         temperature=0
     )
     
-    return {"generation": response.choices[0].message.content}
+    final_answer = response.choices[0].message.content
+    return {
+        "generation": final_answer,
+        "messages": [AIMessage(content=final_answer)]
+    }
 
 @traceable(run_type="chain", name="Handle No Info")
 def no_info_node(state: AgentState):
@@ -224,8 +218,10 @@ def no_info_node(state: AgentState):
     검색 결과가 없을 때 실행되는 노드
     """
     print("---NO INFO FOUND---")
+    msg = "죄송합니다. 문의하신 내용에 대한 답변을 지식베이스에서 찾을 수 없습니다. 구체적인 확인을 위해 고객센터(1588-XXXX)로 문의하시거나 상담원 연결을 도와드릴까요?"
     return {
-        "generation": "죄송합니다. 문의하신 내용에 대한 답변을 지식베이스에서 찾을 수 없습니다. 구체적인 확인을 위해 고객센터(1588-XXXX)로 문의하시거나 상담원 연결을 도와드릴까요?"
+        "generation": msg,
+        "messages": [AIMessage(content=msg)]
     }
 
 @traceable(run_type="parser", name="Mock NLU")
@@ -303,7 +299,11 @@ def check_eligibility_node(state: AgentState):
     order = get_order_details.invoke({"order_id": order_id, "user_id": user_id})
     
     if "error" in order:
-        return {"action_status": "failed", "generation": order["error"]}
+        return {
+            "action_status": "failed", 
+            "generation": order["error"],
+            "messages": [AIMessage(content=order["error"])]
+        }
         
     # 'refund' 의도인 경우 취소(배송전) 또는 반품(배송후) 가능 여부 통합 확인
     if action == ActionType.REFUND.value:
@@ -324,7 +324,11 @@ def check_eligibility_node(state: AgentState):
 
         # 검증 실패 시
         if "error" in check_result:
-            return {"action_status": "failed", "generation": check_result["error"]}
+            return {
+                "action_status": "failed", 
+                "generation": check_result["error"],
+                "messages": [AIMessage(content=check_result["error"])]
+            }
             
         print("---REFUND/CANCEL PENDING APPROVAL---")
         return {
@@ -337,7 +341,12 @@ def check_eligibility_node(state: AgentState):
 
     # 결제 수단 변경은 배송 시작 전까지만 가능
     if action == ActionType.PAYMENT_UPDATE.value and order["status"] in ["shipped", "delivered"]:
-        return {"action_status": "failed", "generation": f"죄송합니다. 현재 {order['status']} 상태여서 결제 수단을 변경할 수 없습니다."}
+        msg = f"죄송합니다. 현재 {order['status']} 상태여서 결제 수단을 변경할 수 없습니다."
+        return {
+            "action_status": "failed", 
+            "generation": msg,
+            "messages": [AIMessage(content=msg)]
+        }
         
     return {"action_status": "approved"}
 
@@ -353,7 +362,8 @@ def human_approval_node(state: AgentState):
     if state.get("generation"):
         return {
             "generation": state.get("generation"),
-            "action_status": "pending_approval"
+            "action_status": "pending_approval",
+            "messages": [AIMessage(content=state.get("generation"))]
         }
     
     # Fallback (단순 메시지)
@@ -363,7 +373,8 @@ def human_approval_node(state: AgentState):
     
     return {
         "generation": msg,
-        "action_status": "pending_approval"
+        "action_status": "pending_approval",
+        "messages": [AIMessage(content=msg)]
     }
 
 def execute_action_node(state: AgentState):

@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.db.models import Order, OrderStatus, ShippingInfo
-# Import other models to ensure SQLAlchemy registry is fully populated
+from ecommerce.platform.backend.app.router.orders.models import Order
+from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
+from ecommerce.platform.backend.app.router.shipping.models import ShippingInfo
 from ecommerce.platform.backend.app.router.users.models import User
 from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
 

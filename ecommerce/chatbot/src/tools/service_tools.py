@@ -8,7 +8,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.db.models import Review, OrderItem, ProductOption, Product
+# Updated imports
+from ecommerce.platform.backend.app.router.reviews.models import Review
+from ecommerce.platform.backend.app.router.orders.models import Order, OrderItem
+from ecommerce.platform.backend.app.router.products.models import Product, ProductOption
+
 # Import other models to ensure SQLAlchemy registry is fully populated
 from ecommerce.platform.backend.app.router.users.models import User
 from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
@@ -119,8 +123,6 @@ def create_review(
         # This is tricky because product_id might be generic, but OrderItem links to ProductOption.
         # We need to join ProductOption to check product_id.
         
-        from ecommerce.platform.backend.app.db.models import Order
-        
         order = db.query(Order).filter(Order.order_number == order_id).first()
         if not order:
              return {"error": "유효하지 않은 주문 번호입니다."}
@@ -149,7 +151,7 @@ def create_review(
         
         return {
             "success": True,
-            "message": "리뷰가 성공적으로 등록되었습니.",
+            "message": "리뷰가 성공적으로 등록되었습니다.",
             "review_id": new_review.id
         }
 
@@ -158,3 +160,4 @@ def create_review(
         return {"error": f"리뷰 작성 실패: {str(e)}"}
     finally:
         db.close()
+
