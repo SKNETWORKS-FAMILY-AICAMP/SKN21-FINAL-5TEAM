@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Header from './header/header';
-import ChatbotFab from "./chatbot/ChatbotFab";
+import ChatbotFab from "./chatbot/chatbotfab";
 
 const inter = Inter({ subsets: ["latin"] });
 
