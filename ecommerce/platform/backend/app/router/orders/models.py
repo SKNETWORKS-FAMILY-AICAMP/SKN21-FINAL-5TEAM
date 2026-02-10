@@ -16,8 +16,10 @@ from ecommerce.platform.backend.app.database import Base
 
 if TYPE_CHECKING:
     from ecommerce.platform.backend.app.router.users.models import User
-    from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
+    from ecommerce.platform.backend.app.router.shipping.models import ShippingInfo
     from ecommerce.platform.backend.app.router.payments.models import Payment
+    from ecommerce.platform.backend.app.router.points.models import PointHistory
+    from ecommerce.platform.backend.app.router.reviews.models import Review
 
 # Enum imports
 from ecommerce.platform.backend.app.router.orders import schemas
@@ -95,14 +97,18 @@ class Order(Base):
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="orders")
-    shipping_address: Mapped["ShippingAddress"] = relationship()
+    shipping_info: Mapped["ShippingInfo"] = relationship(back_populates="order")
     items: Mapped[List["OrderItem"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
     payment: Mapped[Optional["Payment"]] = relationship(
         back_populates="order", uselist=False, cascade="all, delete-orphan"
     )
-
+    point_history: Mapped[List["PointHistory"]] = relationship(
+        "PointHistory",
+        back_populates="order",
+        cascade="all, delete-orphan"
+    )
 
 # ============================================
 # OrderItem
@@ -148,3 +154,9 @@ class OrderItem(Base):
 
     # Relationships
     order: Mapped["Order"] = relationship(back_populates="items")
+
+    reviews: Mapped[List["Review"]] = relationship(
+        "Review",
+        back_populates="order_item",
+        cascade="all, delete-orphan"
+    )

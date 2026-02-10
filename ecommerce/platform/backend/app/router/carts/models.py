@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from ecommerce.platform.backend.app.router.users.models import User
     from ecommerce.platform.backend.app.router.products.models import ProductOption, UsedProductOption
 
-
 # ==================================================
 # Cart Models
 # ==================================================
