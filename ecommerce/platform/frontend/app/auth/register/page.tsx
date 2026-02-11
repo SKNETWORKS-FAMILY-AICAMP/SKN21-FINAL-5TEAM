@@ -1,15 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import styles from './register.module.css';
 
-// 8~16자, 영문 소문자 / 숫자 / 특수문자
 const PASSWORD_REGEX =
   /^(?=.{8,16}$)(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).*$/;
 
 export default function RegisterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // 🔥 signup에서 넘어온 약관 동의 값
+  const agreeMarketing =
+    searchParams.get('marketing') === 'true';
+  const agreeAds =
+    searchParams.get('ads') === 'true';
 
   // ===== state =====
   const [email, setEmail] = useState('');
@@ -22,10 +28,8 @@ export default function RegisterPage() {
   const [passwordTouched, setPasswordTouched] = useState(false);
 
   const [name, setName] = useState('');
-  const [dob, setDob] = useState(''); // UI용 (전송 ❌)
+  const [dob, setDob] = useState('');
   const [phone, setPhone] = useState('');
-  const [address1, setAddress1] = useState('');
-  const [address2, setAddress2] = useState('');
 
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -37,7 +41,7 @@ export default function RegisterPage() {
     setPhone(v.replace(/\D/g, ''));
   };
 
-  // ===== email duplicate check =====
+  // ===== 이메일 중복 확인 =====
   async function checkEmail() {
     if (!email) {
       setFormError('이메일을 입력해 주세요.');
@@ -64,7 +68,7 @@ export default function RegisterPage() {
     }
   }
 
-  // ===== submit =====
+  // ===== 회원가입 =====
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError('');
@@ -89,8 +93,9 @@ export default function RegisterPage() {
           password,
           name,
           phone,
-          address1,
-          address2,
+          agree_marketing_info: agreeMarketing,
+          agree_ad_sms: agreeAds,
+          agree_ad_email: agreeAds,
         }),
       });
 
@@ -107,7 +112,6 @@ export default function RegisterPage() {
     }
   }
 
-  // ===== render =====
   return (
     <div className={styles.container}>
       <h1 className={styles.title}>회원가입</h1>
@@ -149,7 +153,9 @@ export default function RegisterPage() {
             onChange={(e) => setPassword(e.target.value)}
             onBlur={() => setPasswordTouched(true)}
           />
-          <div className={styles.smallText}>비밀번호: 8~16자의 영문 소문자, 숫자, 특수문자</div>
+          <div className={styles.smallText}>
+            비밀번호: 8~16자의 영문 소문자, 숫자, 특수문자
+          </div>
           {passwordTouched && !validatePassword() && (
             <p className={styles.error}>비밀번호 규칙을 확인해 주세요.</p>
           )}
@@ -171,7 +177,7 @@ export default function RegisterPage() {
           <input value={name} onChange={(e) => setName(e.target.value)} />
         </div>
 
-        {/* 생년월일 (UI만) */}
+        {/* 생년월일 (UI용) */}
         <div className={styles.field}>
           <label>생년월일</label>
           <input
@@ -192,21 +198,6 @@ export default function RegisterPage() {
             placeholder="- 없이 숫자만 입력"
           />
         </div>
-
-        {/* 주소
-        <div className={styles.field}>
-          <label>주소</label>
-          <input
-            placeholder="기본 주소"
-            value={address1}
-            onChange={(e) => setAddress1(e.target.value)}
-          />
-          <input
-            placeholder="상세 주소"
-            value={address2}
-            onChange={(e) => setAddress2(e.target.value)}
-          />
-        </div> */}
 
         {formError && <p className={styles.error}>{formError}</p>}
 
