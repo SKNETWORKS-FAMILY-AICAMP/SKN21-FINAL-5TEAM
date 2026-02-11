@@ -160,9 +160,8 @@ export default function ChatbotFab() {
   const handleOrderSelect = async (selectedOrderIds: string[]) => {
     if (selectedOrderIds.length === 0) return;
 
-    // 주문 번호만 전달 - 백엔드가 이전 의도(refund/exchange/조회 등)를 기억하고 처리
+    // 주문 번호만 내부적으로 전달 - 사용자 메시지로 표시하지 않음
     const text = selectedOrderIds.join(', ');
-    setMessages((prev) => [...prev, { role: 'user', type: 'text', text }]);
     setIsLoading(true);
 
     try {
