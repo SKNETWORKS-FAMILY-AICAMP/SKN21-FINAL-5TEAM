@@ -14,7 +14,7 @@ NLU_SYSTEM_PROMPT = f"""당신은 고객센터 의도 분석 전문가입니다.
 3. action_name: 실행 요청인 경우 다음 중 선택 (아니면 null):
 {_action_list}
 4. parameters: 액션 수행에 필요한 정보 추출 (없으면 null)
-   - order_id: 주문번호 (예: ORD-20240201)
+   - order_id: 주문번호 또는 쉼표로 구분된 여러 주문번호 (예: ORD-20240201-0001, ORD-20240201-0002)
    - payment_method: 결제수단 (카드/무통장/계좌이체 등)
    - gift_card_code: 상품권 코드
    - product_id: 상품 ID (없으면 null)
