@@ -4,7 +4,8 @@ from ecommerce.chatbot.src.graph.state import AgentState
 from ecommerce.chatbot.src.schemas.nlu import IntentType
 from ecommerce.chatbot.src.graph.nodes import (
     retrieve, generate, update_state_node, no_info_node,
-    check_eligibility_node, execute_action_node, human_approval_node
+    check_eligibility_node, execute_action_node, human_approval_node,
+    casual_chat_node
 )
 
 # --- 라우팅 함수 정의 ---
@@ -12,7 +13,13 @@ from ecommerce.chatbot.src.graph.nodes import (
 def route_after_nlu(state: AgentState):
     """
     NLU 결과에 따라 '지식 검색' 경로 또는 '액션 수행' 경로로 분기합니다.
+    일반 대화(인사말 등)는 casual_chat 노드로 라우팅합니다.
     """
+    # 일반 대화/인사말 감지 (is_general_chat이 True인 경우)
+    if state.get("is_general_chat"):
+        return "casual_chat"
+    
+    # 이커머스 관련 의도가 없는 경우 (is_relevant=False)
     if not state.get("is_relevant"):
         return "no_info"
     
@@ -58,11 +65,12 @@ def create_graph():
     workflow.add_node("execute_action", execute_action_node)
     workflow.add_node("generate", generate)
     workflow.add_node("no_info", no_info_node)
+    workflow.add_node("casual_chat", casual_chat_node)  # 일반 대화 노드 추가
 
     # 2. 엣지 연결 (지능형 라우팅 구조)
     workflow.add_edge(START, "update_state")
     
-    # [NLU -> 검색 vs 액션 확인]
+    # [NLU -> 검색 vs 액션 확인 vs 일반 대화]
     workflow.add_conditional_edges(
         "update_state",
         route_after_nlu,
@@ -70,6 +78,7 @@ def create_graph():
             "retrieve": "retrieve",
             "check_eligibility": "check_eligibility",
             "execute_action": "execute_action",
+            "casual_chat": "casual_chat",  # 일반 대화 라우팅 추가
             "no_info": "no_info"
         }
     )
@@ -105,6 +114,7 @@ def create_graph():
     
     workflow.add_edge("generate", END)
     workflow.add_edge("no_info", END)
+    workflow.add_edge("casual_chat", END)  # 일반 대화는 바로 종료
 
     return workflow.compile()
 

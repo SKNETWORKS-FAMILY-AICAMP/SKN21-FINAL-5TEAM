@@ -1,7 +1,7 @@
 import re
 import json
 from typing import List, Optional, Dict, Any
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, SystemMessage, HumanMessage, BaseMessage
 from langsmith import traceable
 from qdrant_client import models
 from ecommerce.chatbot.src.graph.state import AgentState
@@ -39,6 +39,90 @@ SPARSE_MODEL = SparseTextEmbedding(model_name="Qdrant/bm25")
 # FlashRank is lightweight (ONNX) but better cached
 RANKER = Ranker(model_name="ms-marco-MiniLM-L-12-v2", cache_dir="/tmp/flashrank_cache")
 print("Retrieval Models Loaded.")
+
+# ============================================================================
+# Chat History Optimization (Hybrid: Sliding Window + Key Context Extraction)
+# ============================================================================
+
+def extract_key_context(messages: List[Any]) -> Dict[str, Any]:
+    """
+    오래된 메시지에서 핵심 정보를 추출합니다.
+    
+    Args:
+        messages: 분석할 메시지 리스트
+    
+    Returns:
+        추출된 핵심 정보 (주문번호, 의도 등)
+    """
+    key_context = {
+        "order_ids": [],
+        "user_intents": [],
+        "important_entities": []
+    }
+    
+    for msg in messages:
+        content = msg.content if hasattr(msg, "content") else str(msg)
+        
+        # 1. 주문번호 추출 (ORD-XXXXX 패턴)
+        order_matches = re.findall(r"ORD-\d+", content)
+        for order_id in order_matches:
+            if order_id not in key_context["order_ids"]:
+                key_context["order_ids"].append(order_id)
+        
+        # 2. 중요 액션 키워드 추출
+        action_keywords = ["환불", "취소", "반품", "교환", "배송", "주문", "결제"]
+        for keyword in action_keywords:
+            if keyword in content and keyword not in key_context["user_intents"]:
+                key_context["user_intents"].append(keyword)
+    
+    return key_context
+
+
+def optimize_chat_history(messages: List[Any]) -> List[Any]:
+    """
+    [Hybrid 방식] Sliding Window + 핵심 정보 추출로 채팅 히스토리를 최적화합니다.
+    
+    전략:
+    1. 메시지가 MAX_RECENT_MESSAGES 이하: 그대로 유지
+    2. 메시지가 MAX_RECENT_MESSAGES 초과:
+       - 오래된 메시지에서 핵심 정보 추출 (주문번호, 의도 등)
+       - 핵심 정보를 SystemMessage로 압축
+       - 최근 MAX_RECENT_MESSAGES개만 유지
+    
+    Args:
+        messages: 원본 메시지 리스트
+    
+    Returns:
+        최적화된 메시지 리스트
+    """
+    if len(messages) <= settings.MAX_RECENT_MESSAGES:
+        return messages
+    
+    # 1. 오래된 메시지와 최근 메시지 분리
+    cutoff = len(messages) - settings.MAX_RECENT_MESSAGES
+    old_messages = messages[:cutoff]
+    recent_messages = messages[cutoff:]
+    
+    # 2. 오래된 메시지에서 핵심 정보 추출
+    key_context = extract_key_context(old_messages)
+    
+    # 3. 핵심 정보를 SystemMessage로 압축 (핵심 정보가 있을 때만)
+    context_parts = []
+    if key_context["order_ids"]:
+        context_parts.append(f"이전 대화 주문번호: {', '.join(key_context['order_ids'])}")
+    if key_context["user_intents"]:
+        context_parts.append(f"논의된 주제: {', '.join(key_context['user_intents'])}")
+    
+    optimized_messages = []
+    if context_parts:
+        summary = " | ".join(context_parts)
+        optimized_messages.append(SystemMessage(content=f"[대화 요약] {summary}"))
+    
+    # 4. 최근 메시지 추가
+    optimized_messages.extend(recent_messages)
+    
+    print(f"--- CHAT HISTORY OPTIMIZED: {len(messages)} → {len(optimized_messages)} messages ---")
+    return optimized_messages
 
 @traceable(run_type="retriever", name="Retrieve Documents")
 def retrieve(state: AgentState):
@@ -256,6 +340,7 @@ def mock_nlu(user_message: str) -> NLUResult:
 def call_llm_for_nlu(user_message: str) -> dict:
     """
     키워드 매칭 실패 시 LLM을 사용하여 문맥 기반으로 의도(조회/실행)를 파악합니다.
+    일반 대화/인사말도 감지하여 is_general_chat 플래그를 반환합니다.
     """
     openai = get_openai_client()
     
@@ -272,7 +357,18 @@ def call_llm_for_nlu(user_message: str) -> dict:
     )
     
     res = json.loads(response.choices[0].message.content)
-    res["is_relevant"] = res["category"] is not None
+    
+    # 일반 대화 감지 (인사말, 잡담 등)
+    casual_keywords = ["안녕", "hi", "hello", "배고파", "심심", "날씨", "뭐해", "ㅎㅎ", "ㅋㅋ"]
+    is_casual = any(keyword in user_message.lower() for keyword in casual_keywords)
+    
+    # is_relevant 로직 개선: category가 있거나, intent_type이 있으면 relevant
+    # 일반 대화는 별도 플래그로 처리
+    has_ecommerce_intent = res.get("category") is not None or res.get("intent_type") is not None
+    
+    res["is_relevant"] = has_ecommerce_intent
+    res["is_general_chat"] = is_casual and not has_ecommerce_intent
+    
     return res
 
 @traceable(run_type="chain", name="Check Action Eligibility")
@@ -446,13 +542,17 @@ def execute_action_node(state: AgentState):
 def rewrite_query(original_query: str, history: List[Any]) -> str:
     """
     이전 대화 기록을 바탕으로 현재 질문을 재작성합니다.
+    히스토리 최적화를 적용하여 토큰 효율성을 높입니다.
     """
 
     if not history:
         return original_query
-        
+    
+    # 히스토리 최적화 적용 (Hybrid: Sliding Window + Key Context)
+    optimized_history = optimize_chat_history(history)
+    
     # 최근 대화 2턴(사용자-AI) 정도만 참고해도 충분한 경우가 많음
-    recent_history = history[-6:] 
+    recent_history = optimized_history[-6:] 
     history_str = "\n".join([f"{msg.type}: {msg.content}" for msg in recent_history])
     
     openai = get_openai_client()
@@ -549,6 +649,7 @@ def update_state_node(state: AgentState) -> dict:
         "action_name": llm_analysis["action_name"] or state.get("action_name"),
         "order_id": extracted_order_id,
         "is_relevant": llm_analysis["is_relevant"],
+        "is_general_chat": llm_analysis.get("is_general_chat", False),  # 일반 대화 플래그 전파
         "action_status": "idle" if new_intent_detected else state.get("action_status", "idle"), 
         "tool_outputs": [],
         "action_status": "idle" if new_intent_detected else state.get("action_status", "idle"), 
@@ -562,3 +663,35 @@ def update_state_node(state: AgentState) -> dict:
     
     print(f"Intent: {updates['intent_type']}, Action: {updates['action_name']}, Order: {updates['order_id']}")
     return updates
+
+
+@traceable(run_type="chain", name="Handle Casual Chat")
+def casual_chat_node(state: AgentState):
+    """
+    일반 대화/인사말에 친근하게 응답하는 노드
+    """
+    print("---CASUAL CHAT DETECTED---")
+    question = state.get("question", "")
+    openai = get_openai_client()
+    
+    # 간단한 프롬프트로 자연스러운 대화 생성
+    casual_prompt = """당신은 친절한 이커머스 쇼핑몰 고객센터 챗봇입니다.
+사용자가 일반적인 대화나 인사를 건넸습니다. 친근하고 자연스럽게 응답하되, 
+쇼핑몰 관련 도움이 필요하면 언제든 말씀해달라고 안내하세요.
+
+응답은 1-2문장으로 간결하게 작성하세요."""
+    
+    response = openai.chat.completions.create(
+        model=settings.OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": casual_prompt},
+            {"role": "user", "content": question}
+        ],
+        temperature=0.7  # 조금 더 자연스러운 응답을 위해 temperature 상향
+    )
+    
+    answer = response.choices[0].message.content
+    return {
+        "generation": answer,
+        "messages": [AIMessage(content=answer)]
+    }
