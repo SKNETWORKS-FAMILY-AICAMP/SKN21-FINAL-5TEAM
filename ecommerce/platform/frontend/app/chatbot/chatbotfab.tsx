@@ -157,53 +157,26 @@ export default function ChatbotFab() {
     }
   };
 
-  const handleOrderSelect = async (selectedOrderIds: string[]) => {
+  const handleOrderSelect = (selectedOrderIds: string[]) => {
     if (selectedOrderIds.length === 0) return;
 
-    // 주문 번호만 내부적으로 전달 - 사용자 메시지로 표시하지 않음
-    const text = selectedOrderIds.join(', ');
-    setIsLoading(true);
+    // State만 업데이트 - 그래프 실행 안 함
+    const orderIdString = selectedOrderIds.join(', ');
+    
+    setConversationState((prev) => ({
+      ...prev,
+      order_id: orderIdString,
+    }));
 
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/chat/`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: text,
-          user_id: 'guest',
-          previous_state: conversationState,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      setConversationState(data.state);
-
-      if (data.answer) {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'bot', type: 'text', text: data.answer },
-        ]);
-      }
-    } catch (error) {
-      console.error('Chat API error:', error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'bot',
-          type: 'text',
-          text: '죄송합니다. 오류가 발생했습니다. 다시 시도해주세요.',
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
+    // 사용자에게 선택 확인 메시지 표시
+    setMessages((prev) => [
+      ...prev,
+      { 
+        role: 'bot', 
+        type: 'text', 
+        text: `주문 ${orderIdString}을(를) 선택하셨습니다. 어떤 도움이 필요하신가요?` 
+      },
+    ]);
   };
 
   const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {

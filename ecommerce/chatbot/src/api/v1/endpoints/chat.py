@@ -55,8 +55,8 @@ async def chat_endpoint(
             # 클라이언트가 보낸 텍스트 메시지를 LangChain 메시지 객체로 복구
             history = deserialize_messages(request.previous_state["messages"])
         
-        # Initialize state
-        current_state = request.previous_state or {
+        # Initialize state with defaults
+        default_state = {
             "retry_count": 0,
             "action_status": "idle",
             "order_id": None,
@@ -64,6 +64,12 @@ async def chat_endpoint(
             "documents": [],
             "tool_outputs": []
         }
+        
+        # Merge previous_state with defaults (previous_state takes precedence)
+        if request.previous_state:
+            current_state = {**default_state, **request.previous_state}
+        else:
+            current_state = default_state
         
         # Set user context from JWT authentication (authentication required)
         current_state["user_id"] = current_user.id
@@ -137,8 +143,9 @@ async def chat_streaming_endpoint(
             if request.previous_state and "messages" in request.previous_state:
                 history = deserialize_messages(request.previous_state["messages"])
             
-            # Initialize state
-            current_state = request.previous_state or {
+            
+            # Initialize state with defaults
+            default_state = {
                 "retry_count": 0,
                 "action_status": "idle",
                 "order_id": None,
@@ -146,6 +153,12 @@ async def chat_streaming_endpoint(
                 "documents": [],
                 "tool_outputs": []
             }
+            
+            # Merge previous_state with defaults (previous_state takes precedence)
+            if request.previous_state:
+                current_state = {**default_state, **request.previous_state}
+            else:
+                current_state = default_state
             
             # Set user context from JWT authentication (authentication required)
             current_state["user_id"] = current_user.id
