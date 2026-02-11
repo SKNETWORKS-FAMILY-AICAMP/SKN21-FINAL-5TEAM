@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from ecommerce.platform.backend.app.database import engine, Base
+from ecommerce.platform.backend.app.database import engine, Base, create_db_scheme
 from ecommerce.platform.backend.app.router.carts.router import router as carts_router
 from ecommerce.platform.backend.app.router.users.router import router as users_router
 from ecommerce.platform.backend.app.router.shipping.router import router as shipping_router
@@ -35,7 +35,23 @@ async def lifespan(app: FastAPI):
 
     # 서버 시작 시
     logging.info("서버 시작")
+    
+    # 0. DB 스키마 생성(없을 시)
+    create_db_scheme()
+
+    # 1. 테이블 생성
     Base.metadata.create_all(bind=engine)  # 테이블이 없다면 생성
+    
+    # 초기 데이터 적재 (Seed)
+    from ecommerce.platform.backend.app.database import SessionLocal
+    from ecommerce.scripts.seed import init_db
+    
+    db = SessionLocal()
+    try:
+        init_db(db)
+    finally:
+        db.close()
+        
     yield
     # 서버 종료 시
     logging.info("서버 종료")
