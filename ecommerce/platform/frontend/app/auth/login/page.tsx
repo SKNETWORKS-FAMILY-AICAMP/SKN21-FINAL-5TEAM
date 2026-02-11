@@ -4,10 +4,11 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import Link from 'next/link';
 import styles from './login.module.css';
+import { useAuth } from '../../authcontext';
 
 export default function LoginPage() {
   const router = useRouter();
-
+  const { refreshAuth } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -38,10 +39,9 @@ export default function LoginPage() {
         setError(data?.detail || '로그인에 실패했습니다.');
         return;
       }
-
       const data = await res.json();
       console.log('로그인 성공:', data);
-
+      await refreshAuth();
       // TODO: 로그인 성공 후 처리
       router.push('http://localhost:3000/');
       
