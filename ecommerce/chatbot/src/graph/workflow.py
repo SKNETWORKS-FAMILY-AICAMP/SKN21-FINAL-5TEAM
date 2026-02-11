@@ -1,120 +1,76 @@
 
 from langgraph.graph import StateGraph, START, END
 from ecommerce.chatbot.src.graph.state import AgentState
-from ecommerce.chatbot.src.schemas.nlu import IntentType
-from ecommerce.chatbot.src.graph.nodes import (
-    retrieve, generate, update_state_node, no_info_node,
-    check_eligibility_node, execute_action_node, human_approval_node,
-    casual_chat_node
+# Import new nodes from nodes_v2
+from ecommerce.chatbot.src.graph.nodes_v2 import (
+    agent_node, 
+    tool_node, 
+    should_continue, 
+    process_output_node,
+    smart_validation_node,
+    human_approval_node,
+    route_after_validation,
+    route_after_approval
 )
-
-# --- 라우팅 함수 정의 ---
-
-def route_after_nlu(state: AgentState):
-    """
-    NLU 결과에 따라 '지식 검색' 경로 또는 '액션 수행' 경로로 분기합니다.
-    일반 대화(인사말 등)는 casual_chat 노드로 라우팅합니다.
-    """
-    # 일반 대화/인사말 감지 (is_general_chat이 True인 경우)
-    if state.get("is_general_chat"):
-        return "casual_chat"
-    
-    # 이커머스 관련 의도가 없는 경우 (is_relevant=False)
-    if not state.get("is_relevant"):
-        return "no_info"
-    
-    # 이미 승인된 액션인 경우 바로 실행 노드로
-    if state.get("action_status") == "approved":
-        return "execute_action"
-    
-    # 의도 유형에 따른 분기
-    if state.get("intent_type") == IntentType.EXECUTION.value:
-        return "check_eligibility"
-    return "retrieve"
-
-def route_after_eligibility(state: AgentState):
-    """
-    액션 수행 자격 확인 결과에 따라 다음 노드를 결정합니다.
-    """
-    status = state.get("action_status")
-    if status == "approved":
-        return "execute_action"
-    elif status == "pending_approval":
-        return "human_approval"
-    return "generate" # 실패 사유를 안내하기 위해 생성 노드로 이동
-
-def route_after_retrieval(state: AgentState):
-    """
-    검색(retrieve) 결과의 유효성에 따라 답변 생성 여부를 결정합니다.
-    """
-    if state.get("is_relevant"):
-        return "generate"
-    return "no_info"
 
 def create_graph():
     """
-    고도화된 RAG + Action 에이전트 워크플로우를 생성합니다.
+    Tool Calling 기반의 Agent 워크플로우를 생성합니다.
+    구조: Agent -> (Tools or End) -> Process Output -> End
+    [Updated] Validation & Human Approval 추가
     """
     workflow = StateGraph(AgentState)
 
     # 1. 노드 등록
-    workflow.add_node("update_state", update_state_node)
-    workflow.add_node("retrieve", retrieve)
-    workflow.add_node("check_eligibility", check_eligibility_node)
-    workflow.add_node("human_approval", human_approval_node)
-    workflow.add_node("execute_action", execute_action_node)
-    workflow.add_node("generate", generate)
-    workflow.add_node("no_info", no_info_node)
-    workflow.add_node("casual_chat", casual_chat_node)  # 일반 대화 노드 추가
+    workflow.add_node("agent", agent_node)
+    workflow.add_node("validation", smart_validation_node)
+    workflow.add_node("approval", human_approval_node)
+    workflow.add_node("tools", tool_node)
+    workflow.add_node("process_output", process_output_node)
 
-    # 2. 엣지 연결 (지능형 라우팅 구조)
-    workflow.add_edge(START, "update_state")
+    # 2. 엣지 연결
+    workflow.add_edge(START, "agent")
     
-    # [NLU -> 검색 vs 액션 확인 vs 일반 대화]
+    # [Agent -> Decision: Tools or End]
+    # 도구 호출이 없으면 바로 종료(Process Output), 있으면 검증(Validation)으로 이동
     workflow.add_conditional_edges(
-        "update_state",
-        route_after_nlu,
+        "agent",
+        should_continue,
         {
-            "retrieve": "retrieve",
-            "check_eligibility": "check_eligibility",
-            "execute_action": "execute_action",
-            "casual_chat": "casual_chat",  # 일반 대화 라우팅 추가
-            "no_info": "no_info"
+            "tools": "validation", # 도구 호출 시 바로 실행하지 않고 검증 단계를 거침
+            "end": "process_output"
         }
     )
     
-    # [액션 확인 -> 도구 실행]
+    # [Validation -> Decision: Approval or Tools]
+    # 검증 후, 민감한 도구(Sensitive)는 승인(Approval)으로, 안전한 도구는 실행(Tools)으로, 
+    # 검증 결과 도구 호출이 취소되었으면 종료(End)로 갈 수도 있음
     workflow.add_conditional_edges(
-        "check_eligibility",
-        route_after_eligibility,
+        "validation",
+        route_after_validation,
         {
-            "execute_action": "execute_action",
-            "human_approval": "human_approval",
-            "generate": "generate"
+            "tools": "tools",
+            "human_approval": "approval",
+            "end": "process_output"
         }
     )
     
-    # [승인 요청 -> 사용자 응답 대기]
-    # 생성 노드를 거치지 않고 바로 END로 가거나, 
-    # 혹은 질문을 generation에 담아 generate 노드(혹은 전용 노드)에서 끝냄
-    workflow.add_edge("human_approval", END)
-    
-    # [도구 실행 -> 답변 생성]
-    workflow.add_edge("execute_action", "generate")
-    
-    # [검색 -> 답변 생성]
+    # [Approval -> Decision: Tools or End]
+    # 승인되면 Tools, 아니면 Process Output (UI 표시 후 종료)
     workflow.add_conditional_edges(
-        "retrieve",
-        route_after_retrieval,
+        "approval",
+        route_after_approval,
         {
-            "generate": "generate",
-            "no_info": "no_info"
+            "tools": "tools",
+            "process_output": "process_output"
         }
     )
     
-    workflow.add_edge("generate", END)
-    workflow.add_edge("no_info", END)
-    workflow.add_edge("casual_chat", END)  # 일반 대화는 바로 종료
+    # [Tools -> Agent] (Re-loop for reasoning after tool execution)
+    workflow.add_edge("tools", "agent")
+    
+    # [Process Output -> End]
+    workflow.add_edge("process_output", END)
 
     return workflow.compile()
 
