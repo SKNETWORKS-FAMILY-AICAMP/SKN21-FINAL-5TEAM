@@ -450,8 +450,16 @@ def execute_action_node(state: AgentState):
     """
     print("---EXECUTE ACTION---")
     action = state.get("action_name")
-    order_id = state.get("order_id")
+    order_id_raw = state.get("order_id")
     user_id = state.get("user_id")
+    
+    # If multiple order IDs are provided, use only the first one for action execution
+    if order_id_raw and "," in str(order_id_raw):
+        order_id = str(order_id_raw).split(",")[0].strip()
+        print(f"Multiple order IDs detected. Using first: {order_id}")
+    else:
+        order_id = order_id_raw
+    
     # user_info에 저장된 파라미터 활용
     params = state.get("user_info", {})
     
@@ -608,7 +616,18 @@ def update_state_node(state: AgentState) -> dict:
     parameters = llm_analysis.get("parameters", {}) or {}
     print(f"Detected Parameters: {parameters}")
     
-    extracted_order_id = parameters.get("order_id") or order_id
+    # Parse single or comma-separated order IDs
+    raw_order_param = parameters.get("order_id")
+    extracted_order_ids = []
+    if raw_order_param:
+        # Split by comma and clean whitespace
+        extracted_order_ids = [oid.strip() for oid in str(raw_order_param).split(",")]
+    elif order_id:
+        # Fallback to state order_id
+        extracted_order_ids = [oid.strip() for oid in str(order_id).split(",")]
+    
+    # Store as comma-separated string for backwards compatibility
+    extracted_order_id = ", ".join(extracted_order_ids) if extracted_order_ids else None
     
     updates = {
         "question": refined_question, # NLU와 검색에 사용될 정제된 질문
