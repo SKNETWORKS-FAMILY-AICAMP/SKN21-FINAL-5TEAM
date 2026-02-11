@@ -5,6 +5,7 @@ type OrderData = {
   order_id: string;
   date: string;
   status: string;
+  status_label?: string;  // 한글 상태명
   product_name: string;
   amount: number;
   delivered_at?: string | null;
@@ -53,7 +54,7 @@ export default function OrderListUI({ message, orders, onSelect }: OrderListUIPr
             <div className={styles.orderContent}>
               <div className={styles.orderHeader}>
                 <span className={styles.orderId}>주문번호: {order.order_id}</span>
-                <span className={styles.orderStatus}>{order.status}</span>
+                <span className={styles.orderStatus}>{order.status_label || order.status}</span>
               </div>
               <div className={styles.orderProduct}>{order.product_name}</div>
               <div className={styles.orderMeta}>

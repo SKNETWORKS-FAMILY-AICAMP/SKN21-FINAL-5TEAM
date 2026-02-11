@@ -13,6 +13,7 @@ type OrderListMessage = {
     order_id: string;
     date: string;
     status: string;
+    status_label?: string;  // 한글 상태명
     product_name: string;
     amount: number;
     delivered_at?: string | null;
