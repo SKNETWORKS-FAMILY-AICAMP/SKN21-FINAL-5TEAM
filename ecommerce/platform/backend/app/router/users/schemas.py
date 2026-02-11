@@ -141,9 +141,12 @@ class BodyMeasurementResponse(BodyMeasurementBase):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
+    model_config = {
+        "from_attributes": True
+    }
+
 
 class BodyMeasurementUpsertResponse(BaseModel):
     ok: bool
     measurement: BodyMeasurementResponse
-
 # =========================
