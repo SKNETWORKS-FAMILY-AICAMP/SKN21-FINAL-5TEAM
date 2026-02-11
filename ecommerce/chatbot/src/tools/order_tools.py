@@ -45,7 +45,6 @@ def _get_order_with_auth(db: Session, order_id: str, user_id: int) -> tuple[Orde
     order = (
         db.query(Order)
         .options(
-            joinedload(Order.shipping_address),
             joinedload(Order.shipping_info),
             joinedload(Order.items)
         )
@@ -161,7 +160,7 @@ def get_order_details(order_id: str, user_id: int) -> dict:
             "total_amount": float(order.total_amount),
             "items": items,
             "created_at": order.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "shipping_address": getattr(order.shipping_address, "address1", "N/A"),
+            "shipping_address_id": order.shipping_address_id,
             "delivered_at": order.shipping_info.delivered_at.strftime("%Y-%m-%d %H:%M:%S") if order.shipping_info and order.shipping_info.delivered_at else None,
             **actions
         }
@@ -664,6 +663,7 @@ def get_user_orders(user_id: int = 1, limit: int = 5, days: int = 30) -> dict:
                 "order_id": order.order_number,
                 "date": order.created_at.strftime("%Y-%m-%d"),
                 "status": order.status.value,
+                "status_label": order.status.label,  # 한글 상태명 추가
                 "product_name": product_name,
                 "amount": float(order.total_amount),
                 "delivered_at": order.shipping_info.delivered_at.strftime("%Y-%m-%d") if order.shipping_info and order.shipping_info.delivered_at else None,
