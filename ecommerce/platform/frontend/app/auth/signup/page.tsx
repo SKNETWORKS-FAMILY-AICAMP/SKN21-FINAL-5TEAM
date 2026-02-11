@@ -106,7 +106,9 @@ export default function SignupPage() {
               setError('필수 항목에 모두 동의해야 합니다.');
               return;
             }
-            router.push('/auth/register');
+            router.push(
+              `/auth/register?marketing=${marketingChecked}&ads=${adsChecked}`
+            );
           }}
           disabled={!ageChecked || !termsChecked}
         >
