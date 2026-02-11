@@ -17,13 +17,18 @@ type OrderListMessage = {
     product_name: string;
     amount: number;
     delivered_at?: string | null;
-    can_cancel?: boolean;
-    can_return?: boolean;
     can_exchange?: boolean;
   }>;
+  requiresSelection?: boolean;
 };
 
-type ChatMsg = TextMessage | OrderListMessage;
+type ConfirmationMessage = {
+  role: 'bot';
+  type: 'confirmation';
+  message: string;
+};
+
+type ChatMsg = TextMessage | OrderListMessage | ConfirmationMessage;
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -35,7 +40,6 @@ export default function ChatbotFab() {
   ]);
   const [conversationState, setConversationState] = useState<Record<string, unknown> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-
   const listRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -126,10 +130,25 @@ export default function ChatbotFab() {
                       type: 'order_list',
                       message: '주문 목록입니다.',
                       orders: data.ui_data,
+                      requiresSelection: data.requires_selection,
+                    },
+                  ]);
+                } else if (data.ui_action === 'show_confirmation') {
+                  setIsLoading(false);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: 'bot',
+                      type: 'confirmation',
+                      message: data.message || '진행하시겠습니까?',
                     },
                   ]);
                 }
+                // UI Action 수신 시 상태 즉시 반영 (중요: prior_action 등 컨텍스트 유지를 위해)
                 newState = data.state;
+                if (newState) {
+                    setConversationState(newState);
+                }
               } else if (data.type === 'done') {
                 // 완료
                 if (newState) {
@@ -167,16 +186,102 @@ export default function ChatbotFab() {
       ...prev,
       order_id: orderIdString,
     }));
+    
+    sendConfirm(`주문 ${orderIdString}를 선택했어`, true);
+  };
 
-    // 사용자에게 선택 확인 메시지 표시
-    setMessages((prev) => [
-      ...prev,
-      { 
-        role: 'bot', 
-        type: 'text', 
-        text: `주문 ${orderIdString}을(를) 선택하셨습니다. 어떤 도움이 필요하신가요?` 
-      },
-    ]);
+  const sendConfirm = async (text: string, hidden: boolean = false) => {
+      // 강제 전송
+      if (!hidden) {
+        setMessages((prev) => [...prev, { role: 'user', type: 'text', text }]);
+      }
+      setIsLoading(true);
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/v1/chat/stream`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            user_id: 'guest',
+            previous_state: conversationState,
+          }),
+        });
+
+        if (!response.ok) throw new Error(`API Error: ${response.status}`);
+        
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let accumulatedText = '';
+        let newState = null;
+        let botMessageAdded = false;
+
+        if (reader) {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+    
+              const chunk = decoder.decode(value, { stream: true });
+              const lines = chunk.split('\n');
+    
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  const data = JSON.parse(line.slice(6));
+    
+                  if (data.type === 'metadata') {
+                    newState = data.state;
+                  } else if (data.type === 'text_chunk') {
+                    if (!botMessageAdded) {
+                      setIsLoading(false);
+                      botMessageAdded = true;
+                      setMessages((prev) => [
+                        ...prev,
+                        { role: 'bot', type: 'text', text: data.content }
+                      ]);
+                      accumulatedText = data.content;
+                    } else {
+                      accumulatedText += data.content;
+                      setMessages((prev) => {
+                        const newMessages = [...prev];
+                        const lastMsg = newMessages[newMessages.length - 1];
+                        if (lastMsg && lastMsg.type === 'text') {
+                          lastMsg.text = accumulatedText;
+                        }
+                        return newMessages;
+                      });
+                    }
+                  } else if (data.type === 'ui_action') {
+                     if (data.ui_action === 'show_order_list') {
+                      setIsLoading(false);
+                      setMessages((prev) => [
+                        ...prev,
+                        {
+                          role: 'bot',
+                          type: 'order_list',
+                          message: '주문 목록입니다.',
+                          orders: data.ui_data,
+                          requiresSelection: data.requires_selection,
+                        },
+                      ]);
+                     }
+                     // show_confirmation 제거됨 (일반 텍스트 대화로 전환)
+                     
+                     newState = data.state;
+                     if (newState) setConversationState(newState);
+                  } else if (data.type === 'done') {
+                    if (newState) setConversationState(newState);
+                  }
+                }
+              }
+            }
+          }
+
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setIsLoading(false);
+      }
   };
 
   const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
@@ -208,6 +313,7 @@ export default function ChatbotFab() {
                     message={m.message}
                     orders={m.orders}
                     onSelect={handleOrderSelect}
+                    requiresSelection={m.requiresSelection}
                   />
                 </div>
               );

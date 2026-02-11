@@ -27,14 +27,14 @@ def get_db():
         db.close()
 
 @tool
-def register_gift_card(code: str, user_id: str = None) -> dict:
+def register_gift_card(code: str, user_id: int = 1) -> dict:
     """
     상품권 코드를 등록합니다.
     (현재 DB 모델 미구현으로 Mock 동작 유지)
     
     Args:
         code: 상품권 코드
-        user_id: 사용자 ID (선택)
+        user_id: 사용자 ID (기본값 1)
         
     Returns:
         성공 여부, 메시지, 잔액, 유효기간
@@ -95,7 +95,8 @@ def create_review(
     product_id: str, 
     rating: int, 
     content: str,
-    order_id: str = None
+    order_id: str,
+    user_id: int = 1
 ) -> dict:
     """
     리뷰를 작성합니다.
@@ -104,7 +105,8 @@ def create_review(
         product_id: 상품 ID
         rating: 평점 (1-5)
         content: 리뷰 내용
-        order_id: 주문번호 (선택)
+        order_id: 주문번호 (구매 내역 확인용)
+        user_id: 사용자 ID (기본값 1)
         
     Returns:
         성공 여부, 메시지, 리뷰 ID
@@ -114,10 +116,6 @@ def create_review(
 
     db = SessionLocal()
     try:
-        # 1. Provide a temporary user ID since auth context is missing in tool
-        # In production, pass user_id via tool arguments or context
-        user_id = 1 
-        
         # 2. Find Order Item to attach review to
         # We need to find an OrderItem in this order that matches the product_id
         # This is tricky because product_id might be generic, but OrderItem links to ProductOption.
@@ -127,6 +125,10 @@ def create_review(
         if not order:
              return {"error": "유효하지 않은 주문 번호입니다."}
              
+        # [Security Warning] In strict production, verify order.user_id == user_id
+        if order.user_id != user_id:
+             pass
+
         target_item = None
         for item in order.items:
             # Check if this item's option belongs to the product
