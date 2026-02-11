@@ -56,6 +56,7 @@ export default function ChatbotFab() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/v1/chat/stream`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -166,6 +167,7 @@ export default function ChatbotFab() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/v1/chat/`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },

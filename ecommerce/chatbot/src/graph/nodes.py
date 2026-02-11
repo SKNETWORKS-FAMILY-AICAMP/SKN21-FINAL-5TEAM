@@ -612,7 +612,7 @@ def update_state_node(state: AgentState) -> dict:
     
     updates = {
         "question": refined_question, # NLU와 검색에 사용될 정제된 질문
-        "category": llm_analysis["category"] or (nlu_keyword.slots.get("category") if nlu_keyword.intent else None),
+        "category": llm_analysis["category"],
         "intent_type": llm_analysis["intent_type"],
         "action_name": llm_analysis["action_name"] or state.get("action_name"),
         "order_id": extracted_order_id,
