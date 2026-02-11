@@ -348,8 +348,15 @@ def check_eligibility_node(state: AgentState):
     액션 수행 전 주문 상태 등을 확인하여 수행 가능 여부를 판단합니다.
     """
     print("---CHECK ELIGIBILITY---")
-    order_id = state.get("order_id")
+    order_id_raw = state.get("order_id")
     action = state.get("action_name")
+    
+    # If multiple order IDs are provided, use only the first one
+    if order_id_raw and "," in str(order_id_raw):
+        order_id = str(order_id_raw).split(",")[0].strip()
+        print(f"Multiple order IDs detected. Using first: {order_id}")
+    else:
+        order_id = order_id_raw
     
     if not order_id:
         # 주문 번호가 없으면 주문 목록 조회(UI)로 유도
