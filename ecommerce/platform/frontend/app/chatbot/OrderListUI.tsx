@@ -22,6 +22,7 @@ type OrderListUIProps = {
 
 export default function OrderListUI({ message, orders, onSelect }: OrderListUIProps) {
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [confirmed, setConfirmed] = React.useState(false);  // 선택 완료 상태
 
   const toggleOrder = (orderId: string) => {
     setSelectedIds((prev) => {
@@ -36,7 +37,10 @@ export default function OrderListUI({ message, orders, onSelect }: OrderListUIPr
   };
 
   const handleConfirm = () => {
-    onSelect(Array.from(selectedIds));
+    if (selectedIds.size > 0) {
+      setConfirmed(true);  // 선택 완료 표시
+      onSelect(Array.from(selectedIds));
+    }
   };
 
   return (
@@ -50,6 +54,7 @@ export default function OrderListUI({ message, orders, onSelect }: OrderListUIPr
               checked={selectedIds.has(order.order_id)}
               onChange={() => toggleOrder(order.order_id)}
               className={styles.orderCheckbox}
+              disabled={confirmed}  // 선택 완료 후 비활성화
             />
             <div className={styles.orderContent}>
               <div className={styles.orderHeader}>
@@ -79,9 +84,9 @@ export default function OrderListUI({ message, orders, onSelect }: OrderListUIPr
         type="button"
         className={styles.confirmBtn}
         onClick={handleConfirm}
-        disabled={selectedIds.size === 0}
+        disabled={selectedIds.size === 0 || confirmed}  // 선택 완료 후 비활성화
       >
-        선택 완료 ({selectedIds.size}건)
+        {confirmed ? '선택 완료됨' : `선택 완료 (${selectedIds.size}건)`}
       </button>
     </div>
   );
