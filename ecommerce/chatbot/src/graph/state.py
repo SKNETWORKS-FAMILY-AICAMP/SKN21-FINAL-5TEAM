@@ -42,8 +42,10 @@ class AgentState(TypedDict):
     is_relevant: bool
     is_general_chat: bool  # 일반 대화/인사말 여부
     retry_count: int
+    requires_selection: Optional[bool]  # 주문 목록 조회 시 선택 UI 표시 여부
 
     # (From remote version - potentially for future use)
     current_intent: Optional[str]
+    prior_action: Optional[str]  # 주문 목록 조회 등으로 리다이렉트되기 전의 원래 액션 의도
     order_slots: Optional[OrderInfo]
     missing_slot: Optional[str]

@@ -18,9 +18,10 @@ type OrderListUIProps = {
   message: string;
   orders: OrderData[];
   onSelect: (selectedOrderIds: string[]) => void;
+  requiresSelection?: boolean;
 };
 
-export default function OrderListUI({ message, orders, onSelect }: OrderListUIProps) {
+export default function OrderListUI({ message, orders, onSelect, requiresSelection = false }: OrderListUIProps) {
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [confirmed, setConfirmed] = React.useState(false);  // 선택 완료 상태
 
@@ -48,14 +49,16 @@ export default function OrderListUI({ message, orders, onSelect }: OrderListUIPr
       <p className={styles.orderListMessage}>{message}</p>
       <div className={styles.orderCards}>
         {orders.map((order) => (
-          <label key={order.order_id} className={styles.orderCard}>
-            <input
-              type="checkbox"
-              checked={selectedIds.has(order.order_id)}
-              onChange={() => toggleOrder(order.order_id)}
-              className={styles.orderCheckbox}
-              disabled={confirmed}  // 선택 완료 후 비활성화
-            />
+          <div key={order.order_id} className={styles.orderCard}>
+            {requiresSelection && (
+              <input
+                type="checkbox"
+                checked={selectedIds.has(order.order_id)}
+                onChange={() => toggleOrder(order.order_id)}
+                className={styles.orderCheckbox}
+                disabled={confirmed}  // 선택 완료 후 비활성화
+              />
+            )}
             <div className={styles.orderContent}>
               <div className={styles.orderHeader}>
                 <span className={styles.orderId}>주문번호: {order.order_id}</span>
@@ -77,17 +80,19 @@ export default function OrderListUI({ message, orders, onSelect }: OrderListUIPr
                 {order.can_exchange && <span className={styles.actionBadge}>교환가능</span>}
               </div>
             </div>
-          </label>
+          </div>
         ))}
       </div>
-      <button
-        type="button"
-        className={styles.confirmBtn}
-        onClick={handleConfirm}
-        disabled={selectedIds.size === 0 || confirmed}  // 선택 완료 후 비활성화
-      >
-        {confirmed ? '선택 완료됨' : `선택 완료 (${selectedIds.size}건)`}
-      </button>
+      {requiresSelection && (
+        <button
+          type="button"
+          className={styles.confirmBtn}
+          onClick={handleConfirm}
+          disabled={selectedIds.size === 0 || confirmed}
+        >
+          {confirmed ? '선택 완료됨' : `선택 완료 (${selectedIds.size}건)`}
+        </button>
+      )}
     </div>
   );
 }

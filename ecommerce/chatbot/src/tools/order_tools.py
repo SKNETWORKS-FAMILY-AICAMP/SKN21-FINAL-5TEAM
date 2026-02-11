@@ -8,12 +8,18 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.router.orders.models import Order
+from ecommerce.platform.backend.app.router.orders.models import Order, OrderItem
 from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
-from ecommerce.platform.backend.app.router.shipping.models import ShippingInfo
+from ecommerce.platform.backend.app.router.shipping.models import ShippingInfo, ShippingAddress
 from ecommerce.platform.backend.app.router.users.models import User
-from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
-
+# Fix for SQLAlchemy relationship errors (registry population)
+from ecommerce.platform.backend.app.router.payments.models import Payment
+from ecommerce.platform.backend.app.router.products.models import ProductOption, Product
+from ecommerce.platform.backend.app.router.points.models import PointHistory
+from ecommerce.platform.backend.app.router.carts.models import Cart
+from ecommerce.platform.backend.app.router.reviews.models import Review
+from ecommerce.platform.backend.app.router.inventories.models import InventoryTransaction
+    
 def get_db():
     """DB 세션 생성 (generator)"""
     db = SessionLocal()
@@ -192,17 +198,9 @@ def _check_return_period(delivered_at: datetime | None) -> tuple[bool, str | Non
     return True, None
 
 
-@tool
-def check_cancellation(order_id: str, user_id: int) -> dict:
+def _check_cancellation(order_id: str, user_id: int) -> dict:
     """
-    취소 가능 여부와 환불 예정 금액을 확인합니다 (배송 전 전용).
-    
-    Args:
-        order_id: 주문번호
-        user_id: 요청자 사용자 ID
-        
-    Returns:
-        취소 가능 여부, 환불 예정 금액(전액), 안내 메시지
+    취소 가능 여부와 환불 예정 금액을 확인합니다 (배송 전 전용, Internal).
     """
     db = SessionLocal()
     try:
@@ -218,6 +216,7 @@ def check_cancellation(order_id: str, user_id: int) -> dict:
         
         return {
             "eligible": True,
+            "type": "cancellation",
             "order_id": order_id,
             "current_status": order.status.value,
             "refund_amount": float(order.total_amount),
@@ -225,76 +224,21 @@ def check_cancellation(order_id: str, user_id: int) -> dict:
                 f"취소 가능 여부 확인 완료\n"
                 f"주문 금액 {float(order.total_amount):,.0f}원이 전액 환불됩니다.\n"
                 f"정말 취소하시겠습니까?"
-            ),
-            "requires_confirmation": True
+            )
         }
     except Exception as e:
         return {"error": f"취소 가능 여부 확인 실패: {str(e)}"}
     finally:
         db.close()
 
-
-@tool
-def cancel_order(order_id: str, user_id: int, reason: str, confirmed: bool = True) -> dict:
-    """
-    주문을 취소합니다 (배송 전, 즉시 실행).
-    
-    Args:
-        order_id: 주문번호
-        user_id: 요청자 사용자 ID
-        reason: 취소 사유
-        confirmed: 사용자 확인 여부
-        
-    Returns:
-        취소 처리 결과
-    """
-    db = SessionLocal()
-    try:
-        if not confirmed:
-            return {"success": False, "message": "주문 취소가 중단되었습니다."}
-            
-        order, error = _get_order_with_auth(db, order_id, user_id)
-        if error:
-            return error
-            
-        if order.status not in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
-            return {"error": "배송이 시작되어 취소할 수 없습니다."}
-            
-        order.status = OrderStatus.CANCELLED
-        order.shipping_request = f"Cancelled by user: {reason}"
-        db.commit()
-        
-        return {
-            "success": True,
-            "message": f"주문({order_id})이 성공적으로 취소되었습니다.",
-            "status": "cancelled",
-            "refund_amount": float(order.total_amount)
-        }
-    except Exception as e:
-        db.rollback()
-        return {"error": f"주문 취소 실패: {str(e)}"}
-    finally:
-        db.close()
-
-
-@tool
-def check_return_eligibility(
+def _check_return_eligibility(
     order_id: str, 
     user_id: int, 
     reason: str,
     is_seller_fault: bool = False
 ) -> dict:
     """
-    반품(환불) 가능 여부와 배송비를 계산합니다 (배송 후 전용).
-    
-    Args:
-        order_id: 주문번호
-        user_id: 요청자 사용자 ID
-        reason: 반품 사유
-        is_seller_fault: 판매자 귀책 여부 (True: 판매자 귀책, False: 구매자 귀책)
-        
-    Returns:
-        반품 가능 여부, 배송비 차감 내역, 최종 환불 예정 금액
+    반품(환불) 가능 여부와 배송비를 계산합니다 (배송 후 전용, Internal).
     """
     db = SessionLocal()
     try:
@@ -331,6 +275,7 @@ def check_return_eligibility(
         
         return {
             "eligible": True,
+            "type": "return",
             "order_id": order_id,
             "reason": reason,
             "responsibility": responsibility,
@@ -343,13 +288,95 @@ def check_return_eligibility(
                 f"- 반품 배송비: {return_shipping_fee:,.0f}원 차감\n"
                 f"- 최종 환불 예정 금액: {final_refund:,.0f}원\n\n"
                 f"반품 접수를 진행하시겠습니까?"
-            ),
-            "requires_confirmation": True
+            )
         }
     except Exception as e:
         return {"error": f"반품 확인 실패: {str(e)}"}
     finally:
         db.close()
+
+@tool
+def cancel_order(order_id: str, user_id: int, reason: str, confirmed: bool = True) -> dict:
+    """
+    주문을 즉시 취소합니다. (주의: 배송 시작 전 단계에서만 사용 가능)
+    
+    Args:
+        order_id: 주문번호
+        user_id: 요청자 사용자 ID
+        reason: 취소 사유
+        confirmed: 사용자 확인 여부 (True일 경우에만 실제 DB 반영)
+        
+    Returns:
+        취소 처리 결과 (성공 여부, 메시지 등)
+    """
+    db = SessionLocal()
+    try:
+        if not confirmed:
+            return {"success": False, "message": "주문 취소가 중단되었습니다."}
+            
+        order, error = _get_order_with_auth(db, order_id, user_id)
+        if error:
+            return error
+            
+        if order.status not in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
+            return {"error": "배송이 시작되어 취소할 수 없습니다."}
+            
+        order.status = OrderStatus.CANCELLED
+        order.shipping_request = f"Cancelled by user: {reason}"
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"주문({order_id})이 성공적으로 취소되었습니다.",
+            "status": "cancelled",
+            "refund_amount": float(order.total_amount)
+        }
+    except Exception as e:
+        db.rollback()
+        return {"error": f"주문 취소 실패: {str(e)}"}
+    finally:
+        db.close()
+
+@tool
+def check_refund_eligibility(
+    order_id: str, 
+    user_id: int, 
+    reason: str = "단순 변심",
+    is_seller_fault: bool = False
+) -> dict:
+    """
+    환불(취소 또는 반품) 가능 여부를 확인하고 예상 환불 금액을 계산합니다.
+    주문 상태(배송 전/후)에 따라 자동으로 '취소' 또는 '반품' 가능 여부를 판단합니다.
+    
+    Args:
+        order_id: 주문번호 (예: ORD-20240209-0001)
+        user_id: 요청자 사용자 ID
+        reason: 환불/취소 사유 (기본값: 단순 변심)
+        is_seller_fault: 판매자 귀책 여부 (상품 불량 등일 경우 True)
+        
+    Returns:
+        환불 가능 여부(eligible), 유형(type: cancellation/return), 환불 예정 금액, 안내 메시지 등
+    """
+    # 1. 주문 상태 확인을 위해 먼저 DB 조회 (Internal helper 사용 안함, 비용 절감)
+    db = SessionLocal()
+    try:
+        order, error = _get_order_with_auth(db, order_id, user_id)
+        if error:
+            return error
+        
+        status = order.status
+    finally:
+        db.close()
+        
+    # 2. 상태에 따라 분기
+    if status in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
+        # 배송 전 -> 취소 로직
+        return _check_cancellation(order_id, user_id)
+    elif status in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
+        # 배송 후 -> 반품 로직
+        return _check_return_eligibility(order_id, user_id, reason, is_seller_fault)
+    else:
+        return {"error": f"현재 주문 상태({status.value})에서는 환불/취소 처리가 불가능합니다."}
 
 
 @tool
@@ -621,14 +648,19 @@ def get_shipping_details(order_id: str, user_id: int) -> dict:
 
 
 @tool
-def get_user_orders(user_id: int = 1, limit: int = 5, days: int = 30) -> dict:
+def get_user_orders(user_id: int = 1, limit: int = 5, days: int = 30, requires_selection: bool = False, action_context: str = None) -> dict:
     """
     사용자의 최근 주문 목록을 조회합니다 (UI 렌더링용).
+    
+    [중요] 사용자가 특정 주문에 대해 환불/교환/취소 등을 하려는데 주문번호를 특정하지 않은 경우,
+    반드시 `requires_selection=True`로설정하여 호출해야 합니다. 그래야 UI에 선택 버튼(체크박스 등)이 표시됩니다.
     
     Args:
         user_id: 사용자 ID (기본값 1)
         limit: 조회할 주문 개수
         days: 조회 기간 (기본값 30일)
+        requires_selection: 주문 선택 UI 표시 여부 (액션 수행 전 선택이 필요하면 True)
+        action_context: 주문 선택 후 이어질 액션의 의도 (예: 'refund', 'exchange', 'cancel'). 없으면 None.
         
     Returns:
         주문 목록 및 각 주문별 환불/교환/취소 가능 여부 (UI 데이터)
@@ -670,11 +702,24 @@ def get_user_orders(user_id: int = 1, limit: int = 5, days: int = 30) -> dict:
                 **order_actions  # 환불/교환/취소 가능 여부 포함
             })
             
+        # Context-aware message
+        base_msg = f"최근 {days}일 이내 주문 내역입니다."
+        if action_context == 'refund':
+            msg_suffix = " 환불하실 주문을 선택해주세요."
+        elif action_context == 'exchange':
+            msg_suffix = " 교환하실 주문을 선택해주세요."
+        elif action_context == 'cancel':
+            msg_suffix = " 취소하실 주문을 선택해주세요."
+        else:
+            msg_suffix = " 원하시는 주문을 선택해주세요."
+            
         return {
             "ui_action": "show_order_list",
-            "message": f"최근 {days}일 이내 주문 내역입니다. 원하시는 주문을 선택해주세요.",
+            "message": base_msg + msg_suffix,
             "total_orders": len(ui_data),
-            "ui_data": ui_data
+            "ui_data": ui_data,
+            "requires_selection": requires_selection,
+            "prior_action": action_context # Pass context back for state update if handled by tool output processor
         }
     except Exception as e:
         return {"error": f"주문 목록 조회 실패: {str(e)}"}

@@ -13,6 +13,7 @@ dependencies = [
     "flashrank>=0.2.10",
     "itsdangerous>=2.2.0",
     "langchain-core>=1.2.8",
+    "langchain-openai>=1.1.7",
     "langgraph>=1.0.7",
     "langsmith>=0.6.8",
     "openai>=2.16.0",

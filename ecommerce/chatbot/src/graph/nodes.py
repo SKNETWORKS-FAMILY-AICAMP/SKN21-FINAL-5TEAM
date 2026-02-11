@@ -350,67 +350,92 @@ def check_eligibility_node(state: AgentState):
     print("---CHECK ELIGIBILITY---")
     order_id_raw = state.get("order_id")
     action = state.get("action_name")
-    
-    # If multiple order IDs are provided, use only the first one
-    if order_id_raw and "," in str(order_id_raw):
-        order_id = str(order_id_raw).split(",")[0].strip()
-        print(f"Multiple order IDs detected. Using first: {order_id}")
-    else:
-        order_id = order_id_raw
-    
-    if not order_id:
+
+    # Parse order IDs (handle multiple)
+    order_ids = []
+    if order_id_raw:
+        if "," in str(order_id_raw):
+            order_ids = [oid.strip() for oid in str(order_id_raw).split(",")]
+        else:
+            order_ids = [str(order_id_raw).strip()]
+            
+    if not order_ids:
         # 주문 번호가 없으면 주문 목록 조회(UI)로 유도
         print("---MISSING ORDER ID: REDIRECT TO ORDER LIST---")
         return {
             "action_name": ActionType.ORDER_LIST.value, 
             "action_status": "approved", # 바로 실행하러 감
-            "is_relevant": True
+            "is_relevant": True,
+            "requires_selection": True,  # 액션 실행을 위해 선택이 필요함
+            "prior_action": action       # 원래 의도(환불 등)를 저장하여 UI에서 문맥 유지
         }
     
     user_id = state.get("user_id")
-    # [Security Check]
-    # We call get_order_details with user_id to verify ownership
-    order = get_order_details.invoke({"order_id": order_id, "user_id": user_id})
     
-    if "error" in order:
+    # Process multiple orders
+    total_refund_amount = 0
+    valid_orders = []
+    error_messages = []
+    
+    for oid in order_ids:
+        # [Security Check]
+        order = get_order_details.invoke({"order_id": oid, "user_id": user_id})
+        
+        if "error" in order:
+            error_messages.append(f"{oid}: {order['error']}")
+            continue
+            
+        # 'refund' 의도인 경우 취소(배송전) 또는 반품(배송후) 가능 여부 통합 확인
+        if action == ActionType.REFUND.value:
+            check_result = {}
+            # 1. 배송 전 -> 취소 가능 여부 확인
+            if order["status"] in ["pending", "payment_completed"]:
+                check_result = check_cancellation.invoke({"order_id": oid, "user_id": user_id})
+            # 2. 배송 후 -> 반품 가능 여부 확인
+            elif order["status"] in ["shipped", "delivered"]:
+                check_result = check_return_eligibility.invoke({
+                    "order_id": oid, 
+                    "user_id": user_id, 
+                    "reason": "단순 변심", 
+                    "is_seller_fault": False
+                })
+            else:
+                check_result = {"error": f"현재 {order['status']} 상태에서는 환불 처리가 불가능합니다."}
+    
+            # 검증 실패 시
+            if "error" in check_result:
+                error_messages.append(f"{oid}: {check_result['error']}")
+                continue
+                
+            # 검증 성공 시
+            # 도구 출력 키가 다를 수 있음 (refund_amount vs final_refund_amount)
+            refund_amount = check_result.get("final_refund_amount") or check_result.get("refund_amount", 0)
+            total_refund_amount += refund_amount
+            valid_orders.append(oid)
+            
+    # 결과 종합
+    if not valid_orders:
         return {
             "action_status": "failed", 
-            "generation": order["error"],
-            "messages": [AIMessage(content=order["error"])]
+            "generation": "선택하신 주문에 대해 처리가 불가능합니다.\\n" + "\\n".join(error_messages),
+            "messages": [AIMessage(content="선택하신 주문에 대해 처리가 불가능합니다.\\n" + "\\n".join(error_messages))]
         }
-        
-    # 'refund' 의도인 경우 취소(배송전) 또는 반품(배송후) 가능 여부 통합 확인
-    if action == ActionType.REFUND.value:
-        # 1. 배송 전 -> 취소 가능 여부 확인 (check_cancellation)
-        if order["status"] in ["pending", "payment_completed"]:
-            check_result = check_cancellation.invoke({"order_id": order_id, "user_id": user_id})
-        # 2. 배송 후 -> 반품 가능 여부 확인 (check_return_eligibility)
-        elif order["status"] in ["shipped", "delivered"]:
-            # Mock: 단순 변심(사용자 귀책) 가정, 실제로는 사용자에게 사유를 물어봐야 함
-            check_result = check_return_eligibility.invoke({
-                "order_id": order_id, 
-                "user_id": user_id, 
-                "reason": "단순 변심", 
-                "is_seller_fault": False
-            })
-        else:
-            check_result = {"error": f"현재 {order['status']} 상태에서는 환불 처리가 불가능합니다."}
+    
+    print("---ALL VALIDATED FOR REFUND---")
+    
+    # 부분 성공인 경우 경고 메시지 포함
+    warning = ""
+    if error_messages:
+        warning = f"\\n(처리 불가 주문 제외: {', '.join(error_messages)})"
 
-        # 검증 실패 시
-        if "error" in check_result:
-            return {
-                "action_status": "failed", 
-                "generation": check_result["error"],
-                "messages": [AIMessage(content=check_result["error"])]
-            }
-            
-        print("---REFUND/CANCEL PENDING APPROVAL---")
+    if action == ActionType.REFUND.value:
         return {
             "action_status": "pending_approval", 
             "refund_status": "pending_approval",
             # 도구가 생성한 안내 메시지(수수료 포함)와 환불 예정 금액 전달
-            "generation": check_result.get("message"), 
-            "refund_amount": check_result.get("final_refund_amount") or check_result.get("refund_amount")
+            "generation": f"총 {len(valid_orders)}건의 주문에 대해 {total_refund_amount:,}원 환불이 가능합니다. 진행하시겠습니까?{warning}", 
+            "refund_amount": total_refund_amount,
+            "order_id": ", ".join(valid_orders)  # 유효한 주문만 남김
         }
 
     # 결제 수단 변경은 배송 시작 전까지만 가능
@@ -461,11 +486,16 @@ def execute_action_node(state: AgentState):
     user_id = state.get("user_id")
     
     # If multiple order IDs are provided, use only the first one for action execution
-    if order_id_raw and "," in str(order_id_raw):
-        order_id = str(order_id_raw).split(",")[0].strip()
-        print(f"Multiple order IDs detected. Using first: {order_id}")
-    else:
-        order_id = order_id_raw
+    # Parse order IDs (handle multiple)
+    order_ids = []
+    if order_id_raw:
+        if "," in str(order_id_raw):
+            order_ids = [oid.strip() for oid in str(order_id_raw).split(",")]
+        else:
+            order_ids = [str(order_id_raw).strip()]
+            
+    # Default behavior for single-order actions
+    order_id = order_ids[0] if order_ids else order_id_raw
     
     # user_info에 저장된 파라미터 활용
     params = state.get("user_info", {})
@@ -474,18 +504,49 @@ def execute_action_node(state: AgentState):
     
     # 1. 환불/취소 (통합 'refund' 인텐트 처리)
     if action == ActionType.REFUND.value:
-        # 상태 재확인하여 취소 vs 반품 결정
-        order_info = get_order_details.invoke({"order_id": order_id, "user_id": user_id})
-        if order_info.get("can_cancel"):
-             # 배송 전 -> 취소 실행
-             result = cancel_order.invoke({"order_id": order_id, "user_id": user_id, "reason": "사용자 요청"})
-        elif order_info.get("can_return"):
-             # 배송 후 -> 반품 실행 (pickup_address 필요하나 여기서는 기본값 처리 혹은 추가 대화 필요)
-             # Mock: 기본 주소 사용
-             result = register_return_request.invoke({"order_id": order_id, "user_id": user_id, "pickup_address": "등록된 배송지"})
-        else:
-             result = {"error": "실행 시점에 취소/반품 가능 상태가 아닙니다."}
-             
+        results = []
+        success_count = 0
+        
+        for oid in order_ids:
+            # 상태 재확인하여 취소 vs 반품 결정
+            order_info = get_order_details.invoke({"order_id": oid, "user_id": user_id})
+            
+            # 이미 처리되었거나 오류인 경우 스킵
+            if "error" in order_info:
+                results.append({"order_id": oid, "success": False, "message": order_info["error"]})
+                continue
+
+            current_result = {}
+            if order_info.get("can_cancel"):
+                 # 배송 전 -> 취소 실행
+                 current_result = request_cancellation.invoke({"order_id": oid, "user_id": user_id, "reason": "사용자 요청"})
+            elif order_info.get("can_return"):
+                 # 배송 후 -> 반품 실행
+                 current_result = register_return_request.invoke({
+                     "order_id": oid, 
+                     "user_id": user_id, 
+                     "reason": "사용자 요청", 
+                     "is_seller_fault": False
+                 })
+            else:
+                 current_result = {"success": False, "message": f"주문 {oid}: 현재 상태({order_info.get('status')})에서는 처리할 수 없습니다."}
+            
+            # 성공 여부 판단 (API 응답 구조에 따라 다를 수 있음)
+            if current_result.get("success", False) or "접수되었습니다" in str(current_result.get("message", "")) or "취소되었습니다" in str(current_result.get("message", "")):
+                success_count += 1
+            results.append(current_result)
+            
+        # 결과 메시지 생성
+        final_message = f"총 {success_count}건의 주문에 대해 환불/취소 처리가 완료되었습니다."
+        if len(order_ids) > success_count:
+            final_message += f" ({len(order_ids) - success_count}건 처리 실패)"
+            
+        return {
+            "action_status": "completed",
+            "tool_outputs": results,
+            "generation": final_message
+        }
+              
     # 2. 배송 조회 (통합)
     elif action == ActionType.TRACKING.value or action == ActionType.COURIER_CONTACT.value:
         result = get_shipping_details.invoke({"order_id": order_id, "user_id": user_id})
@@ -516,7 +577,9 @@ def execute_action_node(state: AgentState):
         
     elif action == ActionType.ORDER_LIST.value:
         # Retrieve user_id from state
-        result = get_user_orders.invoke({"user_id": user_id})
+        # Use flag from state if redirected from other action
+        requires_selection = state.get("requires_selection", False)
+        result = get_user_orders.invoke({"user_id": user_id, "requires_selection": requires_selection})
         
     return {
         "action_status": "completed",

@@ -189,16 +189,29 @@ async def chat_streaming_endpoint(
                     if tool_output.get("ui_action") == "show_order_list":
                         ui_action = "show_order_list"
                         ui_data = tool_output.get("ui_data", [])
+                        requires_selection = tool_output.get("requires_selection", False)
+                        break
+                    elif tool_output.get("ui_action") == "show_confirmation":
+                        ui_action = "show_confirmation"
+                        # confirmation은 ui_data가 따로 없고 message와 tool_name이 중요함
+                        # 하지만 ui_action 구조상 ui_data 필드는 유지
+                        ui_data = tool_output
                         break
             
             # 5. UI 액션이 있는 경우 즉시 전송
-            if ui_action and ui_data:
+            # (show_order_list or show_confirmation)
+            if ui_action:
                 response_data = {
                     "type": "ui_action",
                     "ui_action": ui_action,
                     "ui_data": ui_data,
+                    "requires_selection": locals().get("requires_selection", False),
                     "state": processed_result
                 }
+                # confirmation의 경우 message도 같이 보냄
+                if ui_action == "show_confirmation":
+                    response_data["message"] = tool_outputs[0].get("message", "")
+
                 yield f"data: {json.dumps(response_data, ensure_ascii=False)}\n\n"
             else:
                 # 6. 일반 텍스트 응답을 글자 단위로 스트리밍
