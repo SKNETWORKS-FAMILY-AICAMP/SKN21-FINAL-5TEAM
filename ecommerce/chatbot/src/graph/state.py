@@ -40,6 +40,7 @@ class AgentState(TypedDict):
     
     # 6. 제어 플래그
     is_relevant: bool
+    is_general_chat: bool  # 일반 대화/인사말 여부
     retry_count: int
 
     # (From remote version - potentially for future use)

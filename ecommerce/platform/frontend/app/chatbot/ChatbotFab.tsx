@@ -158,7 +158,8 @@ export default function ChatbotFab() {
   const handleOrderSelect = async (selectedOrderIds: string[]) => {
     if (selectedOrderIds.length === 0) return;
 
-    const text = `선택한 주문: ${selectedOrderIds.join(', ')}`;
+    // 주문 번호만 전달 - 백엔드가 이전 의도(refund/exchange/조회 등)를 기억하고 처리
+    const text = selectedOrderIds.join(', ');
     setMessages((prev) => [...prev, { role: 'user', type: 'text', text }]);
     setIsLoading(true);
 
