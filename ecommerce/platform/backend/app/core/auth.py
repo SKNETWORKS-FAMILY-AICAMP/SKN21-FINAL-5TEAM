@@ -51,3 +51,31 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="User not found")
 
     return user
+
+
+# =========================
+# Optional 인증 (챗봇용)
+# =========================
+def get_current_user_optional(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """
+    쿠키에서 JWT 토큰을 읽어 사용자 인증을 시도합니다.
+    인증 실패 시 None을 반환하며 예외를 발생시키지 않습니다.
+    (챗봇은 비로그인 사용자도 사용 가능)
+    """
+    token = request.cookies.get("access_token")
+    if not token:
+        return None
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("user_id")
+        if not user_id:
+            return None
+    except JWTError:
+        return None
+
+    user = db.query(User).filter(User.id == user_id).first()
+    return user if user else None
