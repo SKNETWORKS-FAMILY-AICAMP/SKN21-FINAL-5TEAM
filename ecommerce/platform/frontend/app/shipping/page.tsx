@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import styles from './shipping.module.css';
+import { useAuth } from '../authcontext';
 
 interface ShippingAddress {
   id: number;
@@ -24,6 +25,7 @@ export default function ShippingPage() {
     post_code: '',
     phone: '',
   });
+  const { user, isLoggedIn } = useAuth();
 
   const API_BASE = 'http://localhost:8000/shipping';
 
@@ -32,7 +34,8 @@ export default function ShippingPage() {
   // =====================
   const fetchAddresses = async () => {
     try {
-      const res = await fetch(`${API_BASE}?user_id=1`);
+      if (!user) throw new Error("유저 정보가 없습니다");
+      const res = await fetch(`${API_BASE}?user_id=${user.id}`);
       if (!res.ok) throw new Error('배송지 가져오기 실패');
       const data: ShippingAddress[] = await res.json();
       setAddresses(data);
@@ -42,8 +45,10 @@ export default function ShippingPage() {
   };
 
   useEffect(() => {
-    fetchAddresses();
-  }, []);
+    if (user) {
+      fetchAddresses();
+    }
+  }, [user]);
 
   // =====================
   // 기본 배송지 상단 정렬

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './cart.module.css';
+import { useAuth } from '../authcontext';
 
 // ============================================
 // Types
@@ -171,8 +172,6 @@ function normalizeCartData(data: CartDetailWithSummary): CartDetailWithSummary {
 // Main Component
 // ============================================
 
-const CURRENT_USER_ID = 1; // 임시 사용자 ID
-
 export default function CartPage() {
   const router = useRouter();
   const [cartData, setCartData] = useState<CartDetailWithSummary | null>(null);
@@ -181,14 +180,15 @@ export default function CartPage() {
   const [allChecked, setAllChecked] = useState(false);
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const {user, isLoggedIn } = useAuth();
 
   // 장바구니 데이터 로드
   const loadCartData = async () => {
     setLoading(true);
     setError('');
-    
     try {
-      const data = await fetchApi<CartDetailWithSummary>(`/carts/${CURRENT_USER_ID}`);
+      if (!user) throw new Error("유저 정보가 없습니다");
+      const data = await fetchApi<CartDetailWithSummary>(`/carts/${user.id}`);
       // API에서 받은 데이터의 가격을 숫자로 변환
       const normalizedData = normalizeCartData(data);
       setCartData(normalizedData);
@@ -206,8 +206,10 @@ export default function CartPage() {
   };
 
   useEffect(() => {
-    loadCartData();
-  }, []);
+    if (user) {
+      loadCartData();
+    }
+  }, [user]);
 
   useEffect(() => {
     if (cartData?.cart?.items) {
@@ -254,7 +256,8 @@ export default function CartPage() {
     setError('');
 
     try {
-      await fetchApi<CartItem>(`/carts/${CURRENT_USER_ID}/items/${itemId}`, {
+      if (!user) throw new Error("유저 정보가 없습니다");
+      await fetchApi<CartItem>(`/carts/${user.id}/items/${itemId}`, {
         method: 'PATCH',
         body: JSON.stringify({ quantity: newQuantity }),
       });
@@ -286,8 +289,9 @@ export default function CartPage() {
     setError('');
 
     try {
+      if (!user) throw new Error("유저 정보가 없습니다");
       await fetchApi<{ message: string; deleted_count: number }>(
-        `/carts/${CURRENT_USER_ID}/items`,
+        `/carts/${user.id}/items`,
         {
           method: 'DELETE',
           body: JSON.stringify({ item_ids: selectedItems }),
@@ -317,7 +321,8 @@ export default function CartPage() {
     setError('');
 
     try {
-      await fetchApi<void>(`/carts/${CURRENT_USER_ID}/items/${itemId}`, {
+      if (!user) throw new Error("유저 정보가 없습니다");
+      await fetchApi<void>(`/carts/${user.id}/items/${itemId}`, {
         method: 'DELETE',
       });
       
