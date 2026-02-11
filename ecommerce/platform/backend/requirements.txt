@@ -14,4 +14,4 @@ python-dotenv
 # annotated-doc         # FastAPI 내부 문서 생성용
 
 # 추가 라이브러리
-python-jose[cryptography]  # JWT 토큰 생성 및 검증
+python-jose  # JWT 토큰 생성 및 검증
