@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlalchemy.orm import Session
+from fastapi.responses import JSONResponse
 
 from ecommerce.platform.backend.app.core.auth import create_access_token
 from ecommerce.platform.backend.app.database import get_db
@@ -251,12 +252,17 @@ def upsert_body_measurement(
 # Withdraw
 # =========================
 
-@router.delete("/me", response_model=schemas.SimpleOkResponse)
+@router.delete("/me")
 def withdraw(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     crud.withdraw_user(db, current_user)
-    return {"ok": True}
+
+    response = JSONResponse(content={"ok": True})
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("session", path="/")
+
+    return response
 
 # =========================
