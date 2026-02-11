@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import styles from './header.module.css';
 import Link from 'next/link';
+import { useAuth } from '../authcontext';
 
 const CATEGORY = [
   {
@@ -78,20 +79,8 @@ export default function Header() {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<number | null>(null);
 
-  // 🔑 로그인 상태
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    fetch('http://localhost:8000/users/me', {
-      credentials: 'include', // ⭐ JWT 쿠키 포함
-    })
-      .then((res) => {
-        setIsLoggedIn(res.ok);
-      })
-      .catch(() => {
-        setIsLoggedIn(false);
-      });
-  }, []);
+  // 🔑 전역 로그인 상태 (Context)
+  const { isLoggedIn } = useAuth();
 
   return (
     <>
@@ -111,8 +100,9 @@ export default function Header() {
           <Link href="/mypage">마이</Link>
           <Link href="/cart">장바구니</Link>
 
-          {isLoggedIn !== true && <Link href="/auth/login">로그인</Link>}
-          {isLoggedIn === true && <Link href="/auth/logout">로그아웃</Link>}
+          {/* ✅ 새로고침 없이 즉시 반영 */}
+          {!isLoggedIn && <Link href="/auth/login">로그인</Link>}
+          {isLoggedIn && <Link href="/auth/logout">로그아웃</Link>}
         </nav>
       </header>
 
