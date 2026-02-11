@@ -14,7 +14,6 @@ from ecommerce.chatbot.src.prompts.system_prompts import (
     ECOMMERCE_SYSTEM_PROMPT, 
     NLU_SYSTEM_PROMPT, 
     GENERATION_SYSTEM_PROMPT_TEMPLATE,
-    CATEGORY_KEYWORDS_MAP,
     QUERY_REWRITE_PROMPT
 )
 from ecommerce.chatbot.src.tools.order_tools import (
@@ -308,34 +307,6 @@ def no_info_node(state: AgentState):
         "messages": [AIMessage(content=msg)]
     }
 
-@traceable(run_type="parser", name="Mock NLU")
-def mock_nlu(user_message: str) -> NLUResult:
-    """
-    [초고도화] 스코어링 기반 NLU 엔진
-    문장 내 키워드 밀도를 계산하여 최적의 카테고리를 추론합니다.
-    """
-    # 전처리: 띄어쓰기 제거 및 소문자화
-    clean_msg = user_message.replace(" ", "").lower()
-    
-    # 카테고리별 초정밀 키워드 사전 (데이터셋의 모든 세부 카테고리 반영)
-    category_map = CATEGORY_KEYWORDS_MAP
-    
-    # 카테고리별 스코어 계산
-    scores = {cat: 0 for cat in category_map}
-    for cat, keywords in category_map.items():
-        for k in keywords:
-            if k in clean_msg:
-                scores[cat] += 1
-    
-    # 점수가 높은 순으로 정렬
-    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    best_cat, max_score = sorted_scores[0]
-    
-    if max_score > 0:
-        return NLUResult(intent=IntentType.INFO_SEARCH, slots={"category": best_cat})
-    
-    return NLUResult(intent=None, slots={})
-
 @traceable(run_type="chain", name="LLM NLU Fallback")
 def call_llm_for_nlu(user_message: str) -> dict:
     """
@@ -599,9 +570,6 @@ def update_state_node(state: AgentState) -> dict:
     if history:
          refined_question = rewrite_query(original_content, history)
     
-    # 2. 문서 검색용 카테고리 추출 (재작성된 쿼리 사용)
-    nlu_keyword = mock_nlu(refined_question)
-    
     # 3. 액션 파악을 위한 LLM 분석 (intent_type, action_name, order_id 추출)
     # 질문에서 주문번호(ORD-XXX) 추출 시도 (원본/재작성 둘 다 체크)
     order_id_match = re.search(r"ORD-\d+", original_content) or re.search(r"ORD-\d+", refined_question)
@@ -644,7 +612,7 @@ def update_state_node(state: AgentState) -> dict:
     
     updates = {
         "question": refined_question, # NLU와 검색에 사용될 정제된 질문
-        "category": llm_analysis["category"] or (nlu_keyword.slots.get("category") if nlu_keyword.intent else None),
+        "category": llm_analysis["category"],
         "intent_type": llm_analysis["intent_type"],
         "action_name": llm_analysis["action_name"] or state.get("action_name"),
         "order_id": extracted_order_id,
