@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional, List
 from enum import Enum
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, computed_field
 
 # Type checking required imports moved here to resolve PydanticUserError
 from ecommerce.platform.backend.app.router.payments.schemas import PaymentResponse
@@ -26,6 +26,20 @@ class OrderStatus(str, Enum):
     DELIVERED = "delivered"          # 배송 완료
     CANCELLED = "cancelled"          # 주문 취소
     REFUNDED = "refunded"            # 환불 완료
+
+    @property
+    def label(self) -> str:
+        """한국어 상태명"""
+        labels = {
+            "pending": "결제 대기",
+            "payment_completed": "결제 완료",
+            "preparing": "상품 준비중",
+            "shipped": "배송중",
+            "delivered": "배송 완료",
+            "cancelled": "주문 취소",
+            "refunded": "환불 완료"
+        }
+        return labels.get(self.value, "알 수 없음")
 
 
 class ProductType(str, Enum):
@@ -115,6 +129,11 @@ class OrderResponse(OrderBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @computed_field
+    def status_label(self) -> str:
+        """주문 상태 한국어 표기"""
+        return self.status.label
+
 
 
 class OrderDetailResponse(OrderResponse):
@@ -148,3 +167,8 @@ class OrderSummary(BaseModel):
     item_count: int = Field(..., description="주문 항목 개수")
 
     model_config = ConfigDict(from_attributes=True)
+
+    @computed_field
+    def status_label(self) -> str:
+        """주문 상태 한국어 표기"""
+        return self.status.label

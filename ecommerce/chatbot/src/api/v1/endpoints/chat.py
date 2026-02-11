@@ -8,7 +8,8 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from ecommerce.chatbot.src.schemas.chat import ChatRequest, ChatResponse
 from ecommerce.chatbot.src.graph.workflow import graph_app
-from ecommerce.platform.backend.app.router.users.router import get_current_user
+from ecommerce.platform.backend.app.core.auth import get_current_user
+from ecommerce.platform.backend.app.router.users.models import User
 
 router = APIRouter()
 
@@ -41,7 +42,7 @@ def deserialize_messages(serialized_messages: List[Dict[str, str]]):
 @traceable(run_type="chain", name="Chat Endpoint")
 async def chat_endpoint(
     request: ChatRequest,
-    current_user = Depends(get_current_user) if False else None  # Temporarily disabled auth for testing
+    current_user: User = Depends(get_current_user)
 ):
     """
     사용자의 메시지를 받아 에이전트의 응답을 반환합니다.
@@ -64,24 +65,14 @@ async def chat_endpoint(
             "tool_outputs": []
         }
         
-        # Set user context (use authenticated user if available, otherwise default to user_id=1)
-        if current_user:
-            current_state["user_id"] = current_user.id
-            current_state["is_authenticated"] = True
-            current_state["user_info"] = {
-                "id": current_user.id,
-                "name": current_user.name,
-                "email": current_user.email
-            }
-        else:
-            # Default test user (temporary solution - user_id=11 for testing)
-            current_state["user_id"] = 11
-            current_state["is_authenticated"] = False
-            current_state["user_info"] = {
-                "id": 11,
-                "name": "TestUser",
-                "email": "test@example.com"
-            }
+        # Set user context from JWT authentication (authentication required)
+        current_state["user_id"] = current_user.id
+        current_state["is_authenticated"] = True
+        current_state["user_info"] = {
+            "id": current_user.id,
+            "name": current_user.name,
+            "email": current_user.email
+        }
         
         current_state["messages"] = history
         
@@ -133,7 +124,7 @@ async def chat_endpoint(
 @traceable(run_type="chain", name="Chat Streaming Endpoint")
 async def chat_streaming_endpoint(
     request: ChatRequest,
-    current_user = Depends(get_current_user) if False else None
+    current_user: User = Depends(get_current_user)
 ):
     """
     스트리밍 방식으로 챗봇 응답을 반환합니다.
@@ -156,24 +147,14 @@ async def chat_streaming_endpoint(
                 "tool_outputs": []
             }
             
-            # Set user context
-            if current_user:
-                current_state["user_id"] = current_user.id
-                current_state["is_authenticated"] = True
-                current_state["user_info"] = {
-                    "id": current_user.id,
-                    "name": current_user.name,
-                    "email": current_user.email
-                }
-            else:
-                # Default test user (temporary solution - user_id=11 for testing)
-                current_state["user_id"] = 11
-                current_state["is_authenticated"] = False
-                current_state["user_info"] = {
-                    "id": 11,
-                    "name": "TestUser",
-                    "email": "test@example.com"
-                }
+            # Set user context from JWT authentication (authentication required)
+            current_state["user_id"] = current_user.id
+            current_state["is_authenticated"] = True
+            current_state["user_info"] = {
+                "id": current_user.id,
+                "name": current_user.name,
+                "email": current_user.email
+            }
             
             current_state["messages"] = history
             current_state["messages"].append(HumanMessage(content=request.message))
