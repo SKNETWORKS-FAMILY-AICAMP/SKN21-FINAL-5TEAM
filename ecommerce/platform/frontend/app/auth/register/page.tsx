@@ -7,6 +7,32 @@ import styles from './register.module.css';
 const PASSWORD_REGEX =
   /^(?=.{8,16}$)(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).*$/;
 
+const API_BASE_URL = 'http://localhost:8000';
+
+/**
+ * 인증 액션을 user history에 기록
+ */
+async function trackAuthAction(
+  userId: number,
+  actionType: 'login' | 'logout' | 'register'
+): Promise<void> {
+  try {
+    await fetch(`${API_BASE_URL}/user-history/users/${userId}/track/auth`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action_type: actionType,
+      }),
+    });
+    console.log(`User history tracked: ${actionType} for user ${userId}`);
+  } catch (err) {
+    console.error('Failed to track auth action:', err);
+    // 히스토리 기록 실패는 무시 (사용자 경험에 영향 없음)
+  }
+}
+
 export default function RegisterPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -100,6 +126,13 @@ export default function RegisterPage() {
       });
 
       if (res.ok) {
+        const data = await res.json();
+
+        // User History에 회원가입 기록
+        if (data.user_id || data.id) {
+          await trackAuthAction(data.user_id || data.id, 'register');
+        }
+
         router.push('/auth/login');
       } else {
         const data = await res.json();
