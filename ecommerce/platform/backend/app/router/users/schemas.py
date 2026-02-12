@@ -24,8 +24,6 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=1)
     name: str = Field(min_length=1, max_length=100)
     phone: Optional[str] = None
-    address1: Optional[str] = None
-    address2: Optional[str] = None
 
     # 약관/알림(회원가입 때 선택)
     agree_marketing_info: bool = False

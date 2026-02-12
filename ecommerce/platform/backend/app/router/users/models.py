@@ -66,12 +66,6 @@ class User(Base):
         Enum(UserStatus, values_callable=lambda x: [e.value for e in x]),
         default=UserStatus.ACTIVE, comment='계정상태'
     )
-    address1: Mapped[Optional[str]] = mapped_column(
-        String(255), comment='주소1 (기본 주소)'
-    )
-    address2: Mapped[Optional[str]] = mapped_column(
-        String(255), comment='주소2 (상세 주소)'
-    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp(), comment='생성일시'
     )

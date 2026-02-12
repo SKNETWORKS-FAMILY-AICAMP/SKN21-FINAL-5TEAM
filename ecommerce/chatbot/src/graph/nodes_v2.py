@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 from typing import List, Literal
 
 from langchain_core.messages import ToolMessage, AIMessage, SystemMessage, HumanMessage
@@ -30,6 +29,9 @@ from ecommerce.chatbot.src.tools.service_tools import (
     register_gift_card
 )
 from ecommerce.chatbot.src.tools.retrieval_tools import search_knowledge_base
+from ecommerce.chatbot.src.tools.address_tools import (
+    open_address_search
+)
 
 # Define Tool List
 TOOLS = [
@@ -46,10 +48,13 @@ TOOLS = [
     get_reviews,
     create_review,
     register_gift_card,
-    search_knowledge_base
+    search_knowledge_base,
+    register_gift_card,
+    search_knowledge_base,
+    open_address_search
 ]
 
-# Initialize ToolNode
+# Initialize ToolNode -> workflow.py로 이동
 tool_node = ToolNode(TOOLS)
 
 @traceable(run_type="chain", name="Agent Node (Tool Calling)")
@@ -65,10 +70,8 @@ def agent_node(state: AgentState):
     # 2. 시스템 프롬프트 준비
     # 매 턴마다 시스템 프롬프트를 컨텍스트로 주입 (state에 저장하지 않음)
     user_context = ""
-    if state.get("user_id"):
-        user_context = f"\n\n[User Context]\nUser ID: {state['user_id']}\n"
-        if state.get("user_info"):
-             user_context += f"User Info: {json.dumps(state['user_info'], ensure_ascii=False)}\n"
+    if state.get("user_info"):
+            user_context += f"User Info: {json.dumps(state['user_info'], ensure_ascii=False)}\n"
     
     # [Context Injection] Prior Action (이전 의도 주입)
     if state.get("prior_action"):
@@ -81,6 +84,7 @@ def agent_node(state: AgentState):
 3. 주문 번호가 문맥에 있다면 해당 주문 번호를 사용하세요.
 4. 사용자가 특정 주문을 선택해야 하는 상황(예: "환불해줘"라고만 하고 주문번호를 안 줌)이라면, get_user_orders를 호출하되 `requires_selection=True` 파라미터를 꼭 설정하세요.
 5. 이때, `action_context` 파라미터에 원래 의도('refund', 'exchange', 'cancel')를 반드시 포함하세요. (예: `action_context='refund'`)
+6. [CRITICAL] 사용자로부터 '주소'(배송지, 수거지 등)를 입력받아야 할 경우, 절대로 텍스트로 "주소를 입력해주세요"라고 질문하지 마십시오. 대신 무조건 `open_address_search` 도구를 호출하여 주소 검색 팝업을 띄우십시오. 이는 필수 규칙입니다.
     """
 
     final_prompt = ECOMMERCE_SYSTEM_PROMPT + user_context + tool_instructions
@@ -134,8 +138,11 @@ def route_after_validation(state: AgentState) -> Literal["tools", "human_approva
     if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
         return "end"
         
+    # 1. TaskContext 확인
+    current_task = state.get("current_task")
+    
     # 이미 승인된 상태라면 바로 도구 실행
-    if state.get("action_status") == "approved":
+    if current_task and current_task.get("status") == "approved":
         return "tools"
 
     # 민감한 도구가 있는지 확인 (Human Approval 필요 여부)
@@ -167,9 +174,21 @@ def smart_validation_node(state: AgentState):
     if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
         return {} # 변경 없음
         
-    new_tool_calls = []
-    has_changes = False
-    prior_action = None
+    
+    # Init TaskContext if needed
+    current_task = state.get("current_task")
+    if not current_task:
+        current_task = {
+            "type": "general",
+            "status": "idle",
+            "target_id": None,
+            "reason": None,
+            "missing_info": []
+        }
+    
+    # Extract user_id from user_info (default to 1 if missing)
+    user_info = state.get("user_info", {})
+    user_id = user_info.get("id", 1)
     
     for tool_call in last_message.tool_calls:
         tool_name = tool_call["name"]
@@ -185,14 +204,20 @@ def smart_validation_node(state: AgentState):
                 new_tool_calls.append({
                     "id": tool_call["id"], # Keep ID to maintain message consistency if possible, or new ID
                     "name": "get_user_orders",
-                    "args": {"requires_selection": True, "user_id": state.get("user_id", 1)},
+                    "args": {"requires_selection": True, "user_id": user_id},
                     "type": "tool_call" # Standard key
                 })
                 # 원래 의도 저장 (e.g., 'refund')
                 # tool_name을 간단한 action name으로 매핑
-                if tool_name == "cancel_order": prior_action = "cancel"
-                elif tool_name == "register_exchange_request": prior_action = "exchange"
-                else: prior_action = "refund" # check_refund_eligibility, register_return_request 등
+                task_type = "general"
+                if tool_name == "cancel_order": task_type = "cancel"
+                elif tool_name == "register_exchange_request": task_type = "exchange"
+                else: task_type = "refund" # check_refund_eligibility, register_return_request 등
+                
+                # Update TaskContext
+                current_task["type"] = task_type
+                current_task["status"] = "validating"
+                current_task["missing_info"] = ["order_id"]
 
                 has_changes = True
                 continue
@@ -219,8 +244,10 @@ def smart_validation_node(state: AgentState):
 
             if action_context:
                 print(f"[Validation] Capturing action_context: {action_context}")
-                prior_action = action_context
+                current_task["type"] = action_context
+                current_task["status"] = "validating"
                 has_changes = True # Flag to update state
+
 
         # 기본: 변경 없이 유지 (args가 수정되었을 수 있음)
         new_tool_calls.append({
@@ -238,10 +265,10 @@ def smart_validation_node(state: AgentState):
             tool_calls=new_tool_calls,
             id=last_message.id 
         )
-        # prior_action도 state에 저장하여 UI 및 다음 턴 Agent가 알 수 있게 함
+        # TaskContext도 state에 저장하여 UI 및 다음 턴 Agent가 알 수 있게 함
         return {
             "messages": [updated_message],
-            "prior_action": prior_action
+            "current_task": current_task
         }
     
     return {} # 변경 없음
@@ -257,7 +284,8 @@ def human_approval_node(state: AgentState):
     last_message = messages[-1]
     
     # 이미 승인된 상태라면 통과
-    if state.get("action_status") == "approved":
+    current_task = state.get("current_task")
+    if current_task and current_task.get("status") == "approved":
         print("---APPROVAL: ALREADY APPROVED---")
         return {}
         
@@ -286,7 +314,6 @@ def human_approval_node(state: AgentState):
         print(f"---APPROVAL CHECK: Last User Msg='{content}'---")
         
         # A. LLM 기반 승인 여부 판단 (LLM-based Confirmation Check)
-        # 하드코딩된 키워드 대신 LLM에게 위임하여 문맥을 파악함
         try:
             # 빠른 응답을 위해 3.5-turbo 등 가벼운 모델 사용 권장 (여기서는 기본 설정 따름)
             approval_llm = ChatOpenAI(temperature=0, model="gpt-4o-mini") 
@@ -307,7 +334,8 @@ def human_approval_node(state: AgentState):
             print(f"---APPROVAL LLM DECISION: {decision} ({content})---")
             
             if "YES" in decision:
-                return {"action_status": "approved"}
+                if current_task: current_task["status"] = "approved"
+                return {"current_task": current_task}
                 
         except Exception as e:
             print(f"---APPROVAL LLM ERROR: {e}---")
@@ -315,7 +343,8 @@ def human_approval_node(state: AgentState):
             positive_keywords = ["응", "네", "예", "맞아", "진행", "해줘", "yes", "ok", "confirm", "좋아", "수락"]
             if any(keyword in content.lower() for keyword in positive_keywords):
                 print(f"---APPROVAL: Detected positive keyword (Fallback)---")
-                return {"action_status": "approved"}
+                if current_task: current_task["status"] = "approved"
+                return {"current_task": current_task}
             
         # B. 인자 매칭 (Implicit Confirmation via Slot Filling)
         # 툴 호출 인자값(예: 주소)이 사용자 메시지에 포함되어 있다면, 
@@ -326,33 +355,34 @@ def human_approval_node(state: AgentState):
                 if isinstance(value, str) and len(value) > 1 and value in content:
                     # 예: arg="경기도", content="경기도로 보내줘" -> 매칭
                     print(f"---APPROVAL: Detected argument match ('{value}') in user message---")
-                    return {"action_status": "approved"}
+                    if current_task: current_task["status"] = "approved"
+                    return {"current_task": current_task}
         except Exception as e:
             print(f"---APPROVAL CHECK ERROR: {e}---")
 
     # 2. state에 pending_approval 상태가 있을 때 (이전 턴에서 시스템이 물어본 경우)
-    if state.get("action_status") == "pending_approval":
+    if current_task and current_task.get("status") == "approving":
          # 위 로직에서 걸러지지 않았더라도, pending 상태에서 다시 왔다면 승인으로 간주
          pass
-         return {"action_status": "approved"}
-    
-    # 꼼수: 만약 이전 메시지가 Confirmation UI 요청이었다면? (추적 어려움)
-    # 대신, Agent가 툴을 호출했다는 것 자체가 "사용자의 의도를 반영"한 결과라고 가정하되,
-    # "최초 1회"만 막기 위해 별도 state flag를 쓰거나,
-    # 단순하게 "action_status"가 "pending_approval"이면 이번 호출은 승인된 재호출로 간주.
+         current_task["status"] = "approved"
+         return {"current_task": current_task}
     
     # 2. 첫 진입 (action_status가 'idle'이거나 없거나) -> 승인 요청 UI 띄움
-    if state.get("action_status", "idle") != "pending_approval":
-        tool_call_id = sensitive_calls[0]["id"]
+    is_approving = current_task and current_task.get("status") == "approving"
+    
+    if not is_approving:
         tool_name = sensitive_calls[0]["name"]
         
         print(f"---APPROVAL REQUEST: {tool_name}---")
         
-        # [MODIFIED] UI Action 대신 일반 텍스트 질문으로 변경
-        # 사용자가 "응 진행해줘"라고 답하면 Agent가 다시 호출 -> 위 로직에서 통과
+        # Init TaskContext if missing
+        if not current_task:
+            current_task = {"type": "general", "status": "idle", "target_id": None}
+            
+        current_task["status"] = "approving"
         
         return {
-            "action_status": "pending_approval",
+            "current_task": current_task,
             "messages": [
                 # Tool 실행을 중단하고, 시스템(AI)이 질문하는 형태로 반환
                 # ToolMessage를 쓰지 않고 AIMessage를 써서 대화를 이어감
@@ -361,7 +391,8 @@ def human_approval_node(state: AgentState):
         }
     
     # "pending_approval" 상태에서 다시 여기로 왔다면 승인된 것으로 간주하고 통과
-    return {"action_status": "approved"}
+    current_task["status"] = "approved"
+    return {"current_task": current_task}
 
 
 def route_after_approval(state: AgentState) -> Literal["tools", "process_output"]:
@@ -370,49 +401,14 @@ def route_after_approval(state: AgentState) -> Literal["tools", "process_output"
     - approved: 도구 실행 (tools)
     - pending_approval: 사용자 입력 대기 (process_output -> end)
     """
-    status = state.get("action_status")
+    current_task = state.get("current_task")
+    status = current_task.get("status") if current_task else "idle"
     print(f"---ROUTE AFTER APPROVAL: {status}---")
     
     if status == "approved":
         return "tools"
     
     return "process_output"
-    
-    # (Existing comments removed for brevity)
-        
-    # 승인 요청 UI 생성을 위한 가짜 ToolOutput 생성
-    # 실제로는 Tool을 실행하지 않고, 사용자에게 UI를 보여주기 위함
-    # 이 노드에서 멈추고(graph end), 사용자가 '승인' 버튼을 누르면 action_status='approved'로 재요청 옴
-    
-    tool_call_id = sensitive_calls[0]["id"]
-    tool_name = sensitive_calls[0]["name"]
-    
-    print(f"---APPROVAL REQUEST: {tool_name}---")
-    
-    confirmation_data = {
-        "ui_action": "show_confirmation",
-        "message": "해당 작업을 진행하시겠습니까?",
-        "tool_name": tool_name,
-        "requires_confirmation": True
-    }
-    
-    # ToolMessage로 가장하여 UI 트리거 반환
-    # 주의: 여기서 ToolMessage를 추가하면, 다음 턴에 Agent가 이를 보고 "사용자가 거절/보류했음"을 알 수 있어야 함
-    # 하지만 여기서는 프로세스를 '중단'하고 사용자 입력을 기다리는 것임.
-    
-    return {
-        "action_status": "pending_approval",
-        # UI 트리거용 임시 메시지 (또는 process_output_node에서 처리하도록 state에 flag 설정)
-        # ToolMessage를 추가하면 `tools` 노드가 실행된 것처럼 보일 수 있으니 주의.
-        # 여기서는 ToolMessage를 추가하되, 내용은 Confirmation UI 요청임.
-        "messages": [
-            ToolMessage(
-                tool_call_id=tool_call_id,
-                content=json.dumps(confirmation_data, ensure_ascii=False),
-                name=tool_name
-            )
-        ]
-    }
 
 
 def process_output_node(state: AgentState):
