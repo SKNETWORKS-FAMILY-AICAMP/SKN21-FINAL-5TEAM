@@ -10,7 +10,8 @@ from ecommerce.chatbot.src.graph.nodes_v2 import (
     smart_validation_node,
     human_approval_node,
     route_after_validation,
-    route_after_approval
+    route_after_approval,
+    route_after_tools
 )
 
 def create_graph():
@@ -66,8 +67,16 @@ def create_graph():
         }
     )
     
-    # [Tools -> Agent] (Re-loop for reasoning after tool execution)
-    workflow.add_edge("tools", "agent")
+    # [Tools -> Decision: Agent or Process Output]
+    # UI Action이 있는 경우 Agent를 거치지 않고 바로 종료 (텍스트 생성 방지)
+    workflow.add_conditional_edges(
+        "tools",
+        route_after_tools,
+        {
+            "agent": "agent",
+            "process_output": "process_output"
+        }
+    )
     
     # [Process Output -> End]
     workflow.add_edge("process_output", END)
