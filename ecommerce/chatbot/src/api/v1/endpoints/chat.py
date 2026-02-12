@@ -129,12 +129,25 @@ async def chat_streaming_endpoint(
 
                 # C. 도구 실행 완료 (UI 액션 감지 및 상태 초기화)
                 elif event_type == "on_tool_end":
+                    print(f"--- TOOL END: {event['name']} ---")
                     
                     # output이 UI Action 딕셔너리인지 확인
                     tool_output = event["data"].get("output")
+                    
+                    # ToolMessage 객체인 경우 처리
+                    if isinstance(tool_output, BaseMessage):
+                         print(f"Tool Output is Message: {tool_output}")
+                         if hasattr(tool_output, "content"):
+                            try:
+                                tool_output = json.loads(tool_output.content)
+                            except:
+                                pass
+
                     if isinstance(tool_output, dict):
+                        print(f"Tool Output Dict keys: {tool_output.keys()}")
                         ui_action = tool_output.get("ui_action")
                         if ui_action:
+                            print(f"emit ui_action: {ui_action}")
                             response_data = {
                                 "type": "ui_action",
                                 "ui_action": ui_action,
