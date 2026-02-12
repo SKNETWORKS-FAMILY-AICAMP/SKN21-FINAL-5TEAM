@@ -6,6 +6,32 @@ import Link from 'next/link';
 import styles from './login.module.css';
 import { useAuth } from '../../authcontext';
 
+const API_BASE_URL = 'http://localhost:8000';
+
+/**
+ * 인증 액션을 user history에 기록
+ */
+async function trackAuthAction(
+  userId: number,
+  actionType: 'login' | 'logout' | 'register'
+): Promise<void> {
+  try {
+    await fetch(`${API_BASE_URL}/user-history/users/${userId}/track/auth`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action_type: actionType,
+      }),
+    });
+    console.log(`User history tracked: ${actionType} for user ${userId}`);
+  } catch (err) {
+    console.error('Failed to track auth action:', err);
+    // 히스토리 기록 실패는 무시 (사용자 경험에 영향 없음)
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { refreshAuth } = useAuth();
@@ -40,10 +66,20 @@ export default function LoginPage() {
         return;
       }
       const data = await res.json();
-      console.log('로그인 성공:', data);
+
+      // User History에 로그인 기록
+      if (data.user_id || data.id) {
+        await trackAuthAction(data.user_id || data.id, 'login');
+      }
+
       await refreshAuth();
-      // TODO: 로그인 성공 후 처리
-      router.push('http://localhost:3000/');
+
+      // admin 사용자는 user-history로 이동
+      if (data.role === 'admin') {
+        router.push('/admin/user-history');
+      } else {
+        router.push('/');
+      }
       
     } catch (err) {
       setError('서버와 통신할 수 없습니다.');
