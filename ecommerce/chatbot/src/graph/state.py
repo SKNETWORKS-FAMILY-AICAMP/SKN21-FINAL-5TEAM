@@ -1,4 +1,4 @@
-from typing import Annotated, TypedDict, List, Dict, Any, Union, Optional
+from typing import Annotated, TypedDict, List, Dict, Any, Union, Optional, Literal
 from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage
 
@@ -21,31 +21,31 @@ class AgentState(TypedDict):
     documents: List[str] 
     refined_context: str
     
-    # 3. 분석 결과 (NLU)
+    # 3. 분석 결과 (NLU) & 사용자 컨텍스트
     category: Optional[str]         # '배송', '취소/반품/교환' 등
     intent_type: str               # 'info_search' (규정 조회) vs 'execution' (직접 실행)
-    action_name: Optional[str]      # 'refund', 'tracking', 'address_change' 등 구체적 액션
-    
-    # 4. 거래 및 사용자 컨텍스트
-    order_id: Optional[str]
-    user_id: int
     is_authenticated: bool
     user_info: Dict[str, Any]
     
-    # 5. 액션 제어 및 도구 실행 결과
-    action_status: str             # 'idle', 'pending', 'approved', 'completed', 'failed'
-    refund_status: Optional[str]   # 'pending_approval', 'approved', 'completed'
-    refund_amount: Optional[int]
+    # 4. 액션 제어 및 도구 실행 결과
     tool_outputs: List[Dict[str, Any]]
+    
+    # 5. [Refactored State] Structured Task Context
+    # 모든 기존 액션 상태(action_name, action_status, prior_action, order_id 등)는 여기에 통합됨
+    current_task: Optional["TaskContext"]
     
     # 6. 제어 플래그
     is_relevant: bool
-    is_general_chat: bool  # 일반 대화/인사말 여부
+    is_general_chat: bool
     retry_count: int
     requires_selection: Optional[bool]  # 주문 목록 조회 시 선택 UI 표시 여부
 
-    # (From remote version - potentially for future use)
-    current_intent: Optional[str]
-    prior_action: Optional[str]  # 주문 목록 조회 등으로 리다이렉트되기 전의 원래 액션 의도
-    order_slots: Optional[OrderInfo]
-    missing_slot: Optional[str]
+class TaskContext(TypedDict):
+    """
+    현재 진행 중인 작업의 컨텍스트를 구조화하여 관리합니다.
+    """
+    type: Literal["refund", "cancel", "exchange", "search", "general"]  # 작업 유형
+    status: Literal["idle", "validating", "approving", "executing", "completed"] # 진행 단계
+    target_id: Optional[str]  # 대상 ID (예: order_id)
+    reason: Optional[str]     # 사유 (예: 반품 사유)
+    missing_info: Optional[List[str]] # 부족한 정보 목록
