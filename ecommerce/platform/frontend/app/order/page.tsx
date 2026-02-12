@@ -8,7 +8,7 @@ import { useAuth } from '../authcontext';
 
 type OrderStatus =
   | "pending"
-  | "payment_completed"
+  | "paid"
   | "preparing"
   | "shipped"
   | "delivered"
@@ -26,6 +26,11 @@ interface OrderItem {
   unit_price: string;
   subtotal: string;
   created_at: string;
+  product_name?: string; // 상품명 (백엔드에서 제공)
+  product_brand?: string; // 브랜드 (카테고리명)
+  product_size?: string; // 사이즈
+  product_color?: string; // 색상
+  product_condition?: string; // 중고상품 상태
 }
 
 interface Order {
@@ -67,7 +72,7 @@ interface ShippingInfo {
 
 const ORDER_STATUS_MAP: Record<OrderStatus, string> = {
   pending: "결제 대기",
-  payment_completed: "결제 완료",
+  paid: "결제 완료",
   preparing: "상품 준비중",
   shipped: "배송중",
   delivered: "배송 완료",
@@ -77,7 +82,7 @@ const ORDER_STATUS_MAP: Record<OrderStatus, string> = {
 
 const STATUS_COLOR_MAP: Record<OrderStatus, string> = {
   pending: "#ff9800",
-  payment_completed: "#2196f3",
+  paid: "#2196f3",
   preparing: "#9c27b0",
   shipped: "#00bcd4",
   delivered: "#4caf50",
@@ -318,7 +323,7 @@ export default function OrdersPage() {
         >
           <option value="all">전체</option>
           <option value="pending">결제 대기</option>
-          <option value="payment_completed">결제 완료</option>
+          <option value="paid">결제 완료</option>
           <option value="preparing">상품 준비중</option>
           <option value="shipped">배송중</option>
           <option value="delivered">배송 완료</option>
@@ -380,10 +385,20 @@ export default function OrdersPage() {
                         {item.product_option_type === "new"
                           ? "🆕 신상품"
                           : "♻️ 중고상품"}
+                        {item.product_brand && ` · ${item.product_brand}`}
                       </div>
                       <div className={styles.itemName}>
-                        상품 옵션 ID: {item.product_option_id}
+                        {item.product_name || `상품 옵션 ID: ${item.product_option_id}`}
                       </div>
+                      {/* 옵션 정보 표시 */}
+                      {(item.product_size || item.product_color || item.product_condition) && (
+                        <div style={{ fontSize: "13px", color: "#666", marginTop: "4px" }}>
+                          {item.product_size && `사이즈: ${item.product_size}`}
+                          {item.product_size && item.product_color && " · "}
+                          {item.product_color && `색상: ${item.product_color}`}
+                          {item.product_condition && ` · 상태: ${item.product_condition}`}
+                        </div>
+                      )}
                       <div className={styles.itemQuantity}>
                         수량: {item.quantity}개
                       </div>
@@ -459,7 +474,7 @@ export default function OrdersPage() {
                 )}
 
                 {/* 결제 완료 ~ 배송중 상태에서 환불 가능 */}
-                {(order.status === "payment_completed" ||
+                {(order.status === "paid" ||
                   order.status === "preparing" ||
                   order.status === "shipped") && (
                   <button
@@ -545,10 +560,22 @@ export default function OrdersPage() {
                   borderRadius: "4px",
                 }}
               >
-                <div>
-                  {item.product_option_type === "new" ? "🆕" : "♻️"} 상품 옵션
-                  ID: {item.product_option_id}
+                <div style={{ marginBottom: "6px", fontWeight: "500" }}>
+                  {item.product_option_type === "new" ? "🆕" : "♻️"} {item.product_name || `상품 옵션 ID: ${item.product_option_id}`}
                 </div>
+                {item.product_brand && (
+                  <div style={{ fontSize: "13px", color: "#666", marginBottom: "4px" }}>
+                    브랜드: {item.product_brand}
+                  </div>
+                )}
+                {(item.product_size || item.product_color || item.product_condition) && (
+                  <div style={{ fontSize: "13px", color: "#666", marginBottom: "4px" }}>
+                    {item.product_size && `사이즈: ${item.product_size}`}
+                    {item.product_size && item.product_color && " · "}
+                    {item.product_color && `색상: ${item.product_color}`}
+                    {item.product_condition && ` · 상태: ${item.product_condition}`}
+                  </div>
+                )}
                 <div>
                   수량: {item.quantity}개 x{" "}
                   {Number(item.unit_price).toLocaleString()}원 ={" "}
