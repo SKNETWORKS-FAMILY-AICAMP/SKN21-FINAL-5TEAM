@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import styles from './product.module.css';
 import { PRODUCTS } from '../data/products';
 
 const PRODUCTS_PER_PAGE = 10;
+
+// ✅ 백엔드 주소
+const API_BASE = 'http://localhost:8000';
 
 /**
  * 카테고리 → 소분류 매핑
@@ -51,9 +54,26 @@ const CATEGORY_MAP: Record<string, string[]> = {
   바우처: ['아이패드'],
 };
 
+type ProductOption = {
+  id: number;
+  product_id: number;
+  size_name: string | null;
+  color: string | null;
+  quantity: number;
+  is_active: boolean;
+};
+
+type MeResponseLoose = {
+  id?: number;
+  user_id?: number;
+  ok?: boolean;
+  [key: string]: unknown;
+};
+
 export default function ProductsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
   const category = searchParams.get('category') || '';
   const subCategories = CATEGORY_MAP[category] || [];
 
@@ -63,26 +83,66 @@ export default function ProductsPage() {
   /** 🔑 로그인 상태 */
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
 
+  /** 🔑 (가능하면) 로그인 유저 ID */
+  const [userId, setUserId] = useState<number | null>(null);
+
+  /** 사이즈 모달 상태 */
+  const [sizeModalOpenFor, setSizeModalOpenFor] = useState<number | null>(null);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [options, setOptions] = useState<ProductOption[]>([]);
+
+  /** 상품별 선택된 옵션(사이즈) */
+  const [selectedOptionIdByProduct, setSelectedOptionIdByProduct] = useState<
+    Record<number, number | null>
+  >({});
+  const [selectedSizeLabelByProduct, setSelectedSizeLabelByProduct] = useState<
+    Record<number, string>
+  >({});
+
+  // ✅ 로그인 체크 + userId 확보(가능하면)
   useEffect(() => {
-    fetch('http://localhost:8000/users/me', {
-      credentials: 'include',
-    })
-      .then((res) => setIsLoggedIn(res.ok))
-      .catch(() => setIsLoggedIn(false));
+    const run = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/users/me`, { credentials: 'include' });
+        setIsLoggedIn(res.ok);
+
+        if (!res.ok) {
+          setUserId(null);
+          return;
+        }
+
+        // /users/me가 JSON을 주는 경우에만 id를 읽음 (안주면 fallback 1 사용)
+        try {
+          const data: MeResponseLoose = await res.json();
+          const maybeId =
+            (typeof data.id === 'number' && data.id) ||
+            (typeof data.user_id === 'number' && data.user_id) ||
+            null;
+          setUserId(maybeId);
+        } catch {
+          setUserId(null);
+        }
+      } catch {
+        setIsLoggedIn(false);
+        setUserId(null);
+      }
+    };
+
+    run();
   }, []);
 
   /** 🔐 비회원 가드 */
-  const guard = (path: string) => {
-    if (isLoggedIn === null) return; // 아직 판별 중
+  const requireLoginOr = (fn: () => void) => {
+    if (isLoggedIn === null) return;
     if (isLoggedIn === false) {
       router.push('/auth/login');
       return;
     }
-    router.push(path);
+    fn();
   };
 
   /**
-   * 🔹 카테고리 + 소분류 필터
+   * 🔹 카테고리 + 소분류 필터 (원본 그대로)
    */
   const filteredProducts = PRODUCTS.filter((p) => {
     if (!category) return true;
@@ -91,26 +151,123 @@ export default function ProductsPage() {
     return p.uiSubCategory === activeSub;
   });
 
-  const totalPages = Math.max(
-    Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE),
-    1
-  );
+  const totalPages = Math.max(Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE), 1);
 
   const startIndex = (currentPage - 1) * PRODUCTS_PER_PAGE;
-  const currentProducts = filteredProducts.slice(
-    startIndex,
-    startIndex + PRODUCTS_PER_PAGE
-  );
+  const currentProducts = filteredProducts.slice(startIndex, startIndex + PRODUCTS_PER_PAGE);
+
+  // ✅ 옵션(사이즈) 로드
+  const openSizeModal = (productId: number) => {
+    requireLoginOr(async () => {
+      setSizeModalOpenFor(productId);
+      setOptions([]);
+      setOptionsLoading(true);
+
+      try {
+        const res = await fetch(`${API_BASE}/products/new/${productId}/options`, {
+          credentials: 'include',
+        });
+
+        if (!res.ok) {
+          throw new Error(`options fetch failed: ${res.status}`);
+        }
+
+        const data: ProductOption[] = await res.json();
+
+        // 활성 + 재고 있는 옵션만
+        const filtered = (data ?? []).filter(
+          (o) => o.is_active !== false && (o.quantity ?? 0) > 0
+        );
+
+        setOptions(filtered);
+      } catch (e) {
+        console.error(e);
+        alert('사이즈 정보를 불러오지 못했습니다. (옵션 API / 상품ID 매핑 확인 필요)');
+        setSizeModalOpenFor(null);
+      } finally {
+        setOptionsLoading(false);
+      }
+    });
+  };
+
+  const closeSizeModal = () => {
+    setSizeModalOpenFor(null);
+    setOptions([]);
+    setOptionsLoading(false);
+  };
+
+  // ✅ 같은 size_name 중 1개만 노출(메인과 동일 UX)
+  const uniqueSizes = useMemo(() => {
+    const map = new Map<string, ProductOption>();
+    for (const o of options) {
+      const key = o.size_name ?? 'FREE';
+      if (!map.has(key)) map.set(key, o);
+    }
+    return Array.from(map.entries()).map(([size, opt]) => ({ size, opt }));
+  }, [options]);
+
+  const selectOption = (productId: number, option: ProductOption) => {
+    setSelectedOptionIdByProduct((prev) => ({ ...prev, [productId]: option.id }));
+    setSelectedSizeLabelByProduct((prev) => ({
+      ...prev,
+      [productId]: option.size_name || '선택됨',
+    }));
+    closeSizeModal();
+  };
+
+  // ✅ 카트 담기 (carts router.py 기준)
+  const addToCart = async (productId: number, goPayment: boolean) => {
+    requireLoginOr(async () => {
+      const optionId = selectedOptionIdByProduct[productId];
+
+      if (!optionId) {
+        openSizeModal(productId);
+        return;
+      }
+
+      // /users/me에서 id를 못 받는 프로젝트도 있어서 임시 fallback
+      const resolvedUserId = userId ?? 1;
+
+      try {
+        const res = await fetch(`${API_BASE}/carts/${resolvedUserId}/items`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            product_option_type: 'new',
+            product_option_id: optionId,
+            quantity: 1,
+          }),
+        });
+
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          console.error('addToCart failed:', res.status, text);
+          alert('장바구니 담기에 실패했습니다. (carts POST 경로/권한/userId 확인 필요)');
+          return;
+        }
+
+        if (goPayment) {
+          router.push('/payment');
+        } else {
+          alert('장바구니에 담았습니다.');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('장바구니 요청 중 오류가 발생했습니다.');
+      }
+    });
+  };
 
   return (
     <main className={styles.main}>
-      {/* ===== 페이지 헤더 ===== */}
+      {/* ===== 페이지 헤더 (원본 그대로) ===== */}
       <header className={styles.pageHeader}>
         <h1>{category || '상품 목록'}</h1>
         <p>최다 판매 순</p>
       </header>
 
-      {/* ===== 소분류 탭 ===== */}
+      {/* ===== 소분류 탭 (원본 그대로) ===== */}
       {subCategories.length > 0 && (
         <div className={styles.tabWrapper}>
           <button
@@ -140,63 +297,167 @@ export default function ProductsPage() {
 
       {/* ===== 상품 리스트 ===== */}
       <ul className={styles.productGrid}>
-        {currentProducts.map((product) => (
-          <li key={product.id} className={styles.productCard}>
-            {/* 카드 본문 */}
-            <div className={styles.cardBody}>
-              <div className={styles.productImage}>
-                <Image
-                  src={`/products/${product.id}.jpg`}
-                  alt={product.productDisplayName}
-                  fill
-                  sizes="(max-width: 768px) 50vw, 20vw"
-                  style={{ objectFit: 'cover' }}
-                />
+        {currentProducts.map((product) => {
+          const selectedLabel = selectedSizeLabelByProduct[product.id];
+
+          return (
+            <li key={product.id} className={styles.productCard}>
+              {/* 카드 본문 (원본 유지: UI만) */}
+              <div className={styles.cardBody}>
+                <div className={styles.productImage}>
+                  <Image
+                    src={`/products/${product.id}.jpg`}
+                    alt={product.productDisplayName}
+                    fill
+                    sizes="(max-width: 768px) 50vw, 20vw"
+                    style={{ objectFit: 'cover' }}
+                  />
+                </div>
+
+                <p className={styles.productName}>{product.productDisplayName}</p>
+                <p className={styles.productPrice}>
+                  {(product.price ?? 0).toLocaleString()}원
+                </p>
               </div>
 
-              <p className={styles.productName}>
-                {product.productDisplayName}
-              </p>
-              <p className={styles.productPrice}>
-                {(product.price ?? 0).toLocaleString()}원
-              </p>
-            </div>
+              {/* ===== hover overlay (메인과 동일 로직) ===== */}
+              <div className={styles.hoverOverlay}>
+                <button
+                  className={styles.hoverButton}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openSizeModal(product.id);
+                  }}
+                >
+                  {selectedLabel ? selectedLabel : '사이즈 선택'}
+                </button>
 
-            {/* ===== hover overlay ===== */}
-            <div className={styles.hoverOverlay}>
-              <button
-                className={styles.hoverButton}
-                onClick={() => guard(`/products/${product.id}`)}
-              >
-                사이즈 선택
-              </button>
-              <button
-                className={styles.hoverButton}
-                onClick={() => guard('/cart')}
-              >
-                장바구니
-              </button>
-              <button
-                className={`${styles.hoverButton} ${styles.primary}`}
-                onClick={() => guard('/payment')}
-              >
-                바로 구매
-              </button>
-            </div>
-          </li>
-        ))}
+                <button
+                  className={styles.hoverButton}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    addToCart(product.id, false);
+                  }}
+                >
+                  장바구니
+                </button>
+
+                <button
+                  className={`${styles.hoverButton} ${styles.primary}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    addToCart(product.id, true);
+                  }}
+                >
+                  바로 구매
+                </button>
+              </div>
+
+              {/* ===== 사이즈 선택 모달 (UI 영향 최소: 인라인 스타일) ===== */}
+              {sizeModalOpenFor === product.id && (
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeSizeModal();
+                  }}
+                  style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(0,0,0,0.35)',
+                    zIndex: 9999,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: '16px',
+                  }}
+                >
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      width: 'min(420px, 100%)',
+                      background: '#fff',
+                      borderRadius: '10px',
+                      padding: '16px',
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '12px',
+                      }}
+                    >
+                      <strong style={{ fontSize: '14px' }}>사이즈 선택</strong>
+                      <button
+                        onClick={closeSizeModal}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          cursor: 'pointer',
+                          fontSize: '16px',
+                          lineHeight: 1,
+                        }}
+                        aria-label="닫기"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {optionsLoading ? (
+                      <p style={{ fontSize: '13px', margin: 0 }}>불러오는 중…</p>
+                    ) : uniqueSizes.length === 0 ? (
+                      <p style={{ fontSize: '13px', margin: 0 }}>
+                        선택 가능한 사이즈가 없습니다.
+                      </p>
+                    ) : (
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(4, 1fr)',
+                          gap: '8px',
+                        }}
+                      >
+                        {uniqueSizes.map(({ size, opt }) => (
+                          <button
+                            key={size}
+                            onClick={() => selectOption(product.id, opt)}
+                            style={{
+                              height: '38px',
+                              border: '1px solid #ddd',
+                              background: '#fff',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                            }}
+                          >
+                            {size}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <p style={{ fontSize: '12px', color: '#666', marginTop: '12px' }}>
+                      * 사이즈 선택 후 장바구니/바로구매가 가능합니다.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ul>
 
-      {/* ===== 페이지네이션 ===== */}
+      {/* ===== 페이지네이션 (원본 그대로) ===== */}
       <nav className={styles.pagination}>
         {Array.from({ length: totalPages }, (_, i) => (
           <button
             key={i}
-            className={
-              currentPage === i + 1
-                ? styles.activePage
-                : styles.pageButton
-            }
+            className={currentPage === i + 1 ? styles.activePage : styles.pageButton}
             onClick={() => setCurrentPage(i + 1)}
           >
             {i + 1}

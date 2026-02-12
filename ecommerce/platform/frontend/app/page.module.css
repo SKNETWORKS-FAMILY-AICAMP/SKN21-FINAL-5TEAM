@@ -62,6 +62,7 @@
   aspect-ratio: 1 / 1;
   margin-bottom: 8px;
   background-color: #f2f2f2;
+  overflow: hidden;
 }
 
 /* 상품 정보 */
@@ -89,7 +90,7 @@
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 
   opacity: 0;
   pointer-events: none;
@@ -102,18 +103,30 @@
   pointer-events: auto;
 }
 
-/* ===== hover 버튼 ===== */
+/* ===== hover 버튼 공통 ===== */
 .hoverButton {
-  width: 120px;
-  height: 36px;
-  background-color: #fff;
-  border: none;
+  width: 140px;
+  height: 40px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
   font-size: 13px;
   font-weight: 500;
+
+  border: none;
   cursor: pointer;
 }
 
+/* 흰색 버튼 (사이즈 선택, 장바구니) */
+.hoverButton {
+  background-color: #ffffff;
+  color: #000000;
+}
+
+/* 검정 버튼 (바로 구매) */
 .primary {
-  background-color: #000;
-  color: #fff;
+  background-color: #000000;
+  color: #ffffff;
 }
