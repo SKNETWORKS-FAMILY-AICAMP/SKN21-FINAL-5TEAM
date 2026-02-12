@@ -1,0 +1,692 @@
+<!-- Chosen Palette: Warm Neutrals with Functional Pastels -->
+
+<!-- Application Structure Plan:
+1. **Header & Intro**: Sets the stage, explaining the MOYEO architecture context.
+2. **High-Level Architecture (Interactive Flow)**: A horizontal interactive diagram representing the Client-Server-Agent flow. Users click components to see their detailed roles (Frontend, Backend, LangGraph).
+3. **The "Brain": LangGraph Workflow**: A visual representation of the decision logic (nodes_v2.py). It maps the Agent -> Validation -> Approval -> Tools loop using HTML/CSS grid.
+4. **Interactive Scenario Simulator**: The core "Wow" feature. A split-view allowing users to trigger specific scenarios ("Refund", "Address"). As the simulated chat progresses, the corresponding architectural components and logic nodes light up, and a "System Log" displays the internal data flow.
+5. **Component Risk & Logic Analysis**: A Chart.js Scatter plot visualization synthesizing the "Smart Validation" and "Human Approval" concepts by plotting various bot actions against Risk vs. Complexity.
+6. **Code Reference**: A tabulated guide mapping the concepts back to the specific source files provided in the report.
+-->
+
+<!-- Visualization & Content Choices:
+1. **Architecture Diagram**: HTML Flexbox with CSS arrows. Goal: Inform/Organize. Interaction: Click to reveal details. Justification: Clearer than static text, explains the data pipeline.
+2. **LangGraph Viz**: CSS Grid layout to mimic a flowchart. Goal: Explain Process. Interaction: Highlight active state during simulation. Justification: Visualizes the conditional logic described in the report.
+3. **Scenario Simulator**: Dynamic JS-driven UI updates. Goal: Engagement/Teaching. Interaction: Step-through automation. Justification: Transforms abstract "Data Flow" text into a concrete, observable event.
+4. **Risk Analysis Chart**: Chart.js Scatter Plot. Goal: Analysis. Interaction: Tooltip details. Justification: Visualizes *why* certain nodes (like Human Approval) exist, adding analytical value beyond just describing the code.
+5. **Code Table**: HTML Table. Goal: Reference. Interaction: None. Justification: Direct mapping to source report for developers.
+-->
+
+<!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+<!DOCTYPE html>
+
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOYEO Chatbot Architecture Explorer</title>
+<script src="[https://cdn.tailwindcss.com](https://www.google.com/search?q=https://cdn.tailwindcss.com)"></script>
+<script src="[https://cdn.jsdelivr.net/npm/chart.js](https://www.google.com/search?q=https://cdn.jsdelivr.net/npm/chart.js)"></script>
+<style>
+/* Custom Utilities for Diagram Connectors (No SVG) */
+.arrow-right::after {
+content: '→';
+font-size: 1.5rem;
+color: #a8a29e; /* stone-400 */
+position: absolute;
+right: -25px;
+top: 50%;
+transform: translateY(-50%);
+}
+.arrow-down::after {
+content: '↓';
+font-size: 1.5rem;
+color: #a8a29e;
+position: absolute;
+bottom: -30px;
+left: 50%;
+transform: translateX(-50%);
+}
+
+    /* Highlight Animations */
+    @keyframes pulse-ring {
+        0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+    }
+    .active-node {
+        border-color: #3b82f6 !important; /* blue-500 */
+        background-color: #eff6ff !important; /* blue-50 */
+        animation: pulse-ring 2s infinite;
+    }
+
+    /* Chart Container Strict Styling */
+    .chart-container {
+        position: relative;
+        width: 100%;
+        max-width: 600px;
+        margin-left: auto;
+        margin-right: auto;
+        height: 300px;
+        max-height: 400px;
+    }
+    @media (min-width: 768px) {
+        .chart-container {
+            height: 350px;
+        }
+    }
+
+    /* Terminal/Log Styling */
+    .terminal-scroll::-webkit-scrollbar {
+        width: 8px;
+    }
+    .terminal-scroll::-webkit-scrollbar-track {
+        background: #292524; 
+    }
+    .terminal-scroll::-webkit-scrollbar-thumb {
+        background: #57534e; 
+        border-radius: 4px;
+    }
+</style>
+
+```
+
+</head>
+<body class="bg-stone-50 text-stone-800 font-sans antialiased selection:bg-stone-200">
+
+```
+<!-- Navigation -->
+<nav class="sticky top-0 z-50 bg-stone-50/90 backdrop-blur-md border-b border-stone-200 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between h-16 items-center">
+            <div class="flex items-center">
+                <span class="text-xl font-bold tracking-tight text-stone-900">MOYEO <span class="text-blue-600">Arch</span></span>
+            </div>
+            <div class="hidden md:flex space-x-8 text-sm font-medium">
+                <button onclick="scrollToSection('overview')" class="text-stone-500 hover:text-blue-600 transition-colors">데이터 흐름</button>
+                <button onclick="scrollToSection('workflow')" class="text-stone-500 hover:text-blue-600 transition-colors">에이전트 로직</button>
+                <button onclick="scrollToSection('simulation')" class="text-stone-500 hover:text-blue-600 transition-colors">시뮬레이션</button>
+                <button onclick="scrollToSection('analysis')" class="text-stone-500 hover:text-blue-600 transition-colors">분석</button>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<!-- Header -->
+<header class="bg-white border-b border-stone-200 py-12">
+    <div class="max-w-4xl mx-auto px-4 text-center">
+        <h1 class="text-4xl font-extrabold text-stone-900 mb-4">MOYEO 챗봇 시스템 아키텍처</h1>
+        <p class="text-lg text-stone-600 leading-relaxed">
+            클라이언트-서버 구조부터 LangGraph 기반의 복합 에이전트 워크플로우까지.<br>
+            MOYEO 시스템이 사용자의 의도를 파악하고 안전하게 도구를 실행하는 과정을 탐색하세요.
+        </p>
+    </div>
+</header>
+
+<!-- Main Content -->
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-20">
+
+    <!-- 1. High-Level Data Flow -->
+    <section id="overview" class="scroll-mt-24">
+        <div class="mb-6">
+            <h2 class="text-2xl font-bold text-stone-900 mb-2">1. 고수준 데이터 흐름 (High-Level Data Flow)</h2>
+            <p class="text-stone-600">
+                사용자의 입력이 Frontend UI에서 Backend API를 거쳐 LangGraph 에이전트로 전달되는 전체 파이프라인입니다. 
+                각 박스를 클릭하여 구성 요소의 상세 역할을 확인하세요.
+            </p>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-stone-200 p-8">
+            <!-- Interactive Flow Diagram -->
+            <div class="flex flex-col md:flex-row justify-between items-center gap-8 md:gap-4 mb-8 select-none">
+                
+                <!-- Node: User -->
+                <div onclick="showDetail('user')" class="relative cursor-pointer group w-full md:w-32 bg-stone-100 hover:bg-stone-200 border-2 border-transparent hover:border-stone-400 rounded-lg p-4 text-center transition-all duration-200 arrow-down md:arrow-down-0 md:arrow-right">
+                    <div class="text-3xl mb-2">👤</div>
+                    <div class="font-bold text-sm">User</div>
+                    <div class="text-xs text-stone-500">Input / Action</div>
+                </div>
+
+                <!-- Node: Frontend -->
+                <div onclick="showDetail('frontend')" id="node-fe" class="relative cursor-pointer group w-full md:w-32 bg-blue-50 hover:bg-blue-100 border-2 border-blue-100 hover:border-blue-300 rounded-lg p-4 text-center transition-all duration-200 arrow-down md:arrow-down-0 md:arrow-right">
+                    <div class="text-3xl mb-2">🖥️</div>
+                    <div class="font-bold text-sm text-blue-900">Frontend</div>
+                    <div class="text-xs text-blue-600">chatbotfab.tsx</div>
+                </div>
+
+                <!-- Node: Backend -->
+                <div onclick="showDetail('backend')" id="node-be" class="relative cursor-pointer group w-full md:w-32 bg-emerald-50 hover:bg-emerald-100 border-2 border-emerald-100 hover:border-emerald-300 rounded-lg p-4 text-center transition-all duration-200 arrow-down md:arrow-down-0 md:arrow-right">
+                    <div class="text-3xl mb-2">⚙️</div>
+                    <div class="font-bold text-sm text-emerald-900">Backend API</div>
+                    <div class="text-xs text-emerald-600">chat.py</div>
+                </div>
+
+                <!-- Node: LangGraph -->
+                <div onclick="showDetail('langgraph')" id="node-graph" class="relative cursor-pointer group w-full md:w-32 bg-purple-50 hover:bg-purple-100 border-2 border-purple-100 hover:border-purple-300 rounded-lg p-4 text-center transition-all duration-200 arrow-down md:arrow-down-0 md:arrow-right">
+                    <div class="text-3xl mb-2">🧠</div>
+                    <div class="font-bold text-sm text-purple-900">LangGraph</div>
+                    <div class="text-xs text-purple-600">workflow.py</div>
+                </div>
+
+                <!-- Node: Tools -->
+                <div onclick="showDetail('tools')" id="node-tools" class="relative cursor-pointer group w-full md:w-32 bg-orange-50 hover:bg-orange-100 border-2 border-orange-100 hover:border-orange-300 rounded-lg p-4 text-center transition-all duration-200">
+                    <div class="text-3xl mb-2">🛠️</div>
+                    <div class="font-bold text-sm text-orange-900">Tools/DB</div>
+                    <div class="text-xs text-orange-600">DB & APIs</div>
+                </div>
+            </div>
+
+            <!-- Detail Panel -->
+            <div id="detail-panel" class="bg-stone-50 rounded-lg p-6 border-l-4 border-blue-500 transition-all duration-300">
+                <h3 id="detail-title" class="text-lg font-bold text-stone-900 mb-2">구성 요소를 선택하세요</h3>
+                <p id="detail-desc" class="text-stone-600 text-sm">위 다이어그램의 박스를 클릭하면 해당 컴포넌트의 상세 역할과 관련 파일을 확인할 수 있습니다.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 2. Agent Logic (LangGraph) -->
+    <section id="workflow" class="scroll-mt-24">
+        <div class="mb-6">
+            <h2 class="text-2xl font-bold text-stone-900 mb-2">2. 에이전트 워크플로우 (Logic & Decision)</h2>
+            <p class="text-stone-600">
+                `nodes_v2.py`에 정의된 핵심 의사결정 로직입니다. 
+                단순한 LLM 호출이 아닌, <strong>스마트 검증(Smart Validation)</strong>과 <strong>인간 승인(Human Approval)</strong> 단계를 거쳐 안전성을 확보합니다.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Logic Diagram -->
+            <div class="bg-white rounded-xl shadow-sm border border-stone-200 p-6 relative">
+                <div class="absolute top-4 right-4 bg-stone-100 px-3 py-1 rounded-full text-xs font-mono text-stone-500">nodes_v2.py</div>
+                
+                <div class="flex flex-col items-center space-y-8 py-4">
+                    <!-- Start -->
+                    <div class="w-8 h-8 rounded-full bg-stone-800 flex items-center justify-center text-white text-xs font-bold z-10">Start</div>
+                    
+                    <!-- Agent Node -->
+                    <div id="logic-agent" class="w-64 p-4 bg-purple-50 border-2 border-purple-200 rounded-lg text-center transition-all duration-300 relative">
+                        <div class="font-bold text-purple-900">Agent Node (LLM)</div>
+                        <div class="text-xs text-purple-600 mt-1">System Prompt + User Input</div>
+                        <div class="absolute -bottom-6 left-1/2 w-0.5 h-6 bg-stone-300 -translate-x-1/2"></div>
+                    </div>
+
+                    <!-- Decision Diamond (Visual only) -->
+                    <div class="w-4 h-4 bg-stone-300 rotate-45 z-0"></div>
+
+                    <!-- Tool Called? -->
+                    <div class="flex w-full justify-between px-2 text-xs text-stone-500 font-mono -mt-4">
+                        <span class="pl-8">Text Answer</span>
+                        <span class="pr-8">Tool Call</span>
+                    </div>
+
+                    <!-- Branches Container -->
+                    <div class="grid grid-cols-2 gap-4 w-full">
+                        <!-- Left: End -->
+                        <div class="flex flex-col items-center">
+                            <div class="w-full h-8 border-l-2 border-t-2 border-stone-300 rounded-tl-xl translate-x-1/2"></div>
+                            <div id="logic-end" class="mt-2 px-4 py-2 bg-stone-100 border border-stone-300 rounded text-stone-600 text-sm">End / Response</div>
+                        </div>
+                        
+                        <!-- Right: Validation -->
+                        <div class="flex flex-col items-center w-full">
+                            <div class="w-full h-8 border-r-2 border-t-2 border-stone-300 rounded-tr-xl -translate-x-1/2"></div>
+                            <div id="logic-validation" class="w-full mt-2 p-3 bg-blue-50 border-2 border-blue-200 rounded-lg text-center transition-all duration-300">
+                                <div class="font-bold text-blue-900 text-sm">Smart Validation</div>
+                                <div class="text-xs text-blue-600 mt-1">Intercept & Check Params</div>
+                            </div>
+                            <div class="h-6 w-0.5 bg-stone-300"></div>
+                            
+                            <!-- Tool Routing -->
+                            <div class="grid grid-cols-2 gap-2 w-full mt-2">
+                                <!-- Human Approval -->
+                                <div id="logic-approval" class="p-2 bg-red-50 border-2 border-red-200 rounded text-center text-xs transition-all duration-300">
+                                    <div class="font-bold text-red-900">Human Approval</div>
+                                    <div class="text-[10px] text-red-600">Sensitive Actions</div>
+                                </div>
+                                <!-- Tools Node -->
+                                <div id="logic-tools" class="p-2 bg-orange-50 border-2 border-orange-200 rounded text-center text-xs transition-all duration-300 flex flex-col justify-center">
+                                    <div class="font-bold text-orange-900">Tool Exec</div>
+                                    <div class="text-[10px] text-orange-600">Safe Actions</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logic Description -->
+            <div class="space-y-4">
+                <div class="bg-white p-5 rounded-xl border border-stone-200 shadow-sm">
+                    <h3 class="font-bold text-stone-900 mb-2 flex items-center">
+                        <span class="w-2 h-2 bg-blue-500 rounded-full mr-2"></span> Smart Validation (Intercept)
+                    </h3>
+                    <p class="text-sm text-stone-600">
+                        LLM이 도구를 호출하려 할 때 즉시 실행하지 않고 가로챕니다.
+                        필수 파라미터(예: <code>order_id</code>)가 누락되었는지 확인하고, 
+                        누락 시 사용자에게 선택 UI(예: 주문 목록)를 제공하도록 유도합니다.
+                        <br><span class="text-xs text-stone-400 mt-1 block">Ref: smart_validation_node</span>
+                    </p>
+                </div>
+
+                <div class="bg-white p-5 rounded-xl border border-stone-200 shadow-sm">
+                    <h3 class="font-bold text-stone-900 mb-2 flex items-center">
+                        <span class="w-2 h-2 bg-red-500 rounded-full mr-2"></span> Human Approval (Safety)
+                    </h3>
+                    <p class="text-sm text-stone-600">
+                        민감한 작업(환불, 반품 등록)은 즉시 실행되지 않습니다.
+                        시스템은 작업을 일시 중지하고 사용자에게 "정말 진행하시겠습니까?"라고 묻습니다.
+                        <br><span class="text-xs text-stone-400 mt-1 block">Ref: human_approval_node</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. Interactive Scenario Simulator -->
+    <section id="simulation" class="scroll-mt-24">
+        <div class="mb-6 flex flex-col md:flex-row md:items-end justify-between">
+            <div>
+                <h2 class="text-2xl font-bold text-stone-900 mb-2">3. 시나리오 시뮬레이터 (Interactive Simulator)</h2>
+                <p class="text-stone-600">
+                    실제 채팅 상황에서 내부 아키텍처가 어떻게 반응하는지 단계별로 확인해보세요.
+                </p>
+            </div>
+            <div class="flex space-x-3 mt-4 md:mt-0">
+                <button onclick="runScenario('refund')" id="btn-refund" class="px-4 py-2 bg-white border border-stone-300 hover:border-blue-500 hover:text-blue-600 rounded-lg text-sm font-medium shadow-sm transition-all flex items-center">
+                    <span class="mr-2">🔄</span> 반품/환불 시나리오
+                </button>
+                <button onclick="runScenario('address')" id="btn-address" class="px-4 py-2 bg-white border border-stone-300 hover:border-purple-500 hover:text-purple-600 rounded-lg text-sm font-medium shadow-sm transition-all flex items-center">
+                    <span class="mr-2">📍</span> 주소 입력 시나리오
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[600px] lg:h-[500px]">
+            <!-- Chat UI Mockup -->
+            <div class="bg-white rounded-xl border border-stone-200 shadow-sm flex flex-col overflow-hidden">
+                <div class="bg-stone-100 px-4 py-3 border-b border-stone-200 flex justify-between items-center">
+                    <span class="font-bold text-stone-700 text-sm">MOYEO Chat</span>
+                    <div class="flex space-x-1">
+                        <div class="w-2 h-2 rounded-full bg-red-400"></div>
+                        <div class="w-2 h-2 rounded-full bg-yellow-400"></div>
+                        <div class="w-2 h-2 rounded-full bg-green-400"></div>
+                    </div>
+                </div>
+                <div id="chat-window" class="flex-1 p-4 space-y-4 overflow-y-auto bg-stone-50 font-sans text-sm">
+                    <!-- Chat messages injected here -->
+                    <div class="flex justify-start">
+                        <div class="bg-white border border-stone-200 text-stone-800 rounded-2xl rounded-tl-none px-4 py-2 shadow-sm max-w-[80%]">
+                            안녕하세요! 무엇을 도와드릴까요?
+                        </div>
+                    </div>
+                </div>
+                <div class="p-3 bg-white border-t border-stone-200">
+                    <div class="w-full h-10 bg-stone-100 rounded-lg border border-stone-200 flex items-center px-3 text-stone-400 text-sm">
+                        메시지를 입력하세요...
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Internals / Terminal -->
+            <div class="lg:col-span-2 bg-stone-900 rounded-xl shadow-inner flex flex-col overflow-hidden text-stone-300 font-mono text-xs">
+                <div class="bg-stone-800 px-4 py-2 flex items-center justify-between border-b border-stone-700">
+                    <span class="font-bold text-stone-400">System Logs & State Transitions</span>
+                    <span id="sim-status" class="px-2 py-0.5 rounded bg-stone-700 text-stone-400">IDLE</span>
+                </div>
+                <div id="terminal-output" class="flex-1 p-4 space-y-2 overflow-y-auto terminal-scroll">
+                    <div class="text-stone-500">// Select a scenario to start simulation...</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. Analysis & Insights -->
+    <section id="analysis" class="scroll-mt-24">
+        <div class="mb-6">
+            <h2 class="text-2xl font-bold text-stone-900 mb-2">4. 로직 복잡성 및 리스크 분석</h2>
+            <p class="text-stone-600">
+                왜 <code>Human Approval</code>과 <code>Smart Validation</code>이 필요한가요?
+                각 봇 액션의 리스크와 복잡도 관계를 시각화했습니다. 리스크가 높을수록 인간의 개입(Approval)이 필수적입니다.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
+            <div class="md:col-span-2 bg-white rounded-xl shadow-sm border border-stone-200 p-6">
+                <div class="chart-container">
+                    <canvas id="riskChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-sm border border-stone-200 p-6 space-y-4">
+                <h3 class="font-bold text-stone-900 border-b border-stone-100 pb-2">인사이트</h3>
+                
+                <div>
+                    <h4 class="text-sm font-bold text-blue-600">Low Risk (자동화)</h4>
+                    <p class="text-xs text-stone-600 mt-1">
+                        단순 조회(배송조회)나 검색은 에이전트가 즉시 수행합니다. 
+                        <code>Tools Node</code>에서 바로 처리됩니다.
+                    </p>
+                </div>
+                
+                <div>
+                    <h4 class="text-sm font-bold text-orange-600">Medium Risk (검증)</h4>
+                    <p class="text-xs text-stone-600 mt-1">
+                        데이터 입력이 필요한 경우(주소 검색). 
+                        <code>Smart Validation</code>이 누락된 정보를 확인하고 UI 입력을 유도합니다.
+                    </p>
+                </div>
+
+                <div>
+                    <h4 class="text-sm font-bold text-red-600">High Risk (승인)</h4>
+                    <p class="text-xs text-stone-600 mt-1">
+                        금전적/물리적 변경(환불, 반품). 
+                        반드시 <code>Human Approval Node</code>를 거쳐 사용자의 최종 확인을 받습니다.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 5. Code Reference Table -->
+    <section class="mt-12 bg-stone-50 border-t border-stone-200 pt-10 pb-20">
+        <h2 class="text-2xl font-bold text-stone-900 mb-6">코드 참조 (Code Reference)</h2>
+        <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-stone-200">
+            <table class="min-w-full divide-y divide-stone-200 text-sm">
+                <thead class="bg-stone-100">
+                    <tr>
+                        <th class="px-6 py-3 text-left font-medium text-stone-500 uppercase tracking-wider">Layer</th>
+                        <th class="px-6 py-3 text-left font-medium text-stone-500 uppercase tracking-wider">File / Component</th>
+                        <th class="px-6 py-3 text-left font-medium text-stone-500 uppercase tracking-wider">Role & Key Function</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-stone-200">
+                    <tr>
+                        <td class="px-6 py-4 font-bold text-stone-800">Logic</td>
+                        <td class="px-6 py-4 font-mono text-stone-600">nodes_v2.py</td>
+                        <td class="px-6 py-4 text-stone-600">
+                            <code>smart_validation_node</code> (파라미터 검사), 
+                            <code>human_approval_node</code> (실행 승인)
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="px-6 py-4 font-bold text-stone-800">Tools</td>
+                        <td class="px-6 py-4 font-mono text-stone-600">order_tools.py</td>
+                        <td class="px-6 py-4 text-stone-600">
+                            <code>get_user_orders</code> (주문 목록 조회), 
+                            <code>register_return_request</code> (반품 등록)
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="px-6 py-4 font-bold text-stone-800">Frontend</td>
+                        <td class="px-6 py-4 font-mono text-stone-600">chatbotfab.tsx</td>
+                        <td class="px-6 py-4 text-stone-600">
+                            UI 렌더링, 숨겨진 메시지 전송 (예: "주문 선택했어")
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="px-6 py-4 font-bold text-stone-800">API</td>
+                        <td class="px-6 py-4 font-mono text-stone-600">chat.py</td>
+                        <td class="px-6 py-4 text-stone-600">
+                            SSE 스트리밍, 세션 관리
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="bg-stone-900 text-stone-400 py-8 text-center text-sm">
+    <p>MOYEO Chatbot Architecture Visualization</p>
+    <p class="mt-2 text-stone-600">Generated based on Source Report: Chatbot System Architecture</p>
+</footer>
+
+<!-- Scripts -->
+<script>
+    // --- Data Definitions ---
+    const componentDetails = {
+        'user': {
+            title: 'User (사용자)',
+            desc: '챗봇과 상호작용하는 최종 사용자입니다. 텍스트 입력, 버튼 클릭(주문 선택 등), 주소 입력 폼 제출 등의 UI 액션을 수행합니다.'
+        },
+        'frontend': {
+            title: 'Frontend (chatbotfab.tsx)',
+            desc: 'React 기반 UI입니다. 사용자 입력을 API로 전송하고, SSE 스트림을 수신하여 말풍선을 렌더링합니다. 주문 목록 선택 시 숨겨진 텍스트 메시지를 백엔드로 보내는 로직이 포함되어 있습니다.'
+        },
+        'backend': {
+            title: 'Backend API (chat.py)',
+            desc: 'FastAPI 엔드포인트입니다. 클라이언트 세션을 관리하고, LangGraph 워크플로우를 호출(Invoke)하며, 결과를 스트리밍(SSE)으로 반환합니다.'
+        },
+        'langgraph': {
+            title: 'LangGraph Agent (workflow.py)',
+            desc: '챗봇의 두뇌입니다. 상태(State)를 관리하며 LLM 호출, 도구 실행 여부 판단, 다음 단계(노드)로의 전이를 제어합니다.'
+        },
+        'tools': {
+            title: 'Tools & DB',
+            desc: '실제 비즈니스 로직을 수행하는 Python 함수들입니다. DB에서 주문을 조회하거나, 반품 요청을 기록합니다. (order_tools.py, address_tools.py)'
+        }
+    };
+
+    // --- Interaction Logic: Overview Diagram ---
+    function showDetail(key) {
+        const panel = document.getElementById('detail-panel');
+        const title = document.getElementById('detail-title');
+        const desc = document.getElementById('detail-desc');
+        
+        // Update Content
+        title.textContent = componentDetails[key].title;
+        desc.textContent = componentDetails[key].desc;
+        
+        // Visual feedback
+        panel.classList.remove('border-blue-500', 'border-emerald-500', 'border-purple-500', 'border-orange-500');
+        
+        let colorClass = 'border-blue-500';
+        if(key === 'backend') colorClass = 'border-emerald-500';
+        if(key === 'langgraph') colorClass = 'border-purple-500';
+        if(key === 'tools') colorClass = 'border-orange-500';
+        
+        panel.classList.add(colorClass);
+        
+        // Highlight node
+        ['node-fe', 'node-be', 'node-graph', 'node-tools'].forEach(id => {
+            document.getElementById(id).classList.remove('ring-2', 'ring-offset-2', 'ring-stone-400');
+        });
+        
+        const mapping = {
+            'frontend': 'node-fe',
+            'backend': 'node-be',
+            'langgraph': 'node-graph',
+            'tools': 'node-tools'
+        };
+        if(mapping[key]) {
+            document.getElementById(mapping[key]).classList.add('ring-2', 'ring-offset-2', 'ring-stone-400');
+        }
+    }
+
+    // --- Interaction Logic: Simulator ---
+    const scenarios = {
+        'refund': [
+            { type: 'user', text: "이거 반품하고 싶어", delay: 500 },
+            { type: 'log', text: ">>> [Agent Node] Input received: '반품하고 싶어'", highlight: 'logic-agent', delay: 1000 },
+            { type: 'log', text: "--- DECISION: Tool Call Detected (get_user_orders)", highlight: 'logic-agent', delay: 1500 },
+            { type: 'log', text: ">>> [Smart Validation] Intercepting... Checking params.", highlight: 'logic-validation', delay: 2000 },
+            { type: 'log', text: "MISSING: 'order_id'. Redirecting to selection UI.", highlight: 'logic-validation', delay: 2500 },
+            { type: 'log', text: "<<< Tool Exec: get_user_orders(requires_selection=True)", highlight: 'logic-tools', delay: 3000 },
+            { type: 'bot_ui', html: `<div class="bg-white border border-stone-200 rounded-lg p-3 max-w-[85%] shadow-sm"><p class="text-xs font-bold mb-2">주문을 선택해주세요</p><div class="space-y-2"><div class="p-2 bg-stone-50 hover:bg-blue-50 border border-stone-100 rounded cursor-pointer transition text-xs">📦 <strong>ORD-001</strong><br>나이키 운동화 (배송완료)</div><div class="p-2 bg-stone-50 border border-stone-100 rounded text-xs text-stone-400">📦 ORD-002 (반품불가)</div></div></div>`, delay: 3500 },
+            { type: 'log', text: "WAITING for User Selection...", highlight: 'logic-end', delay: 4000 }
+        ],
+        'address': [
+            { type: 'user', text: "수거지 입력할게", delay: 500 },
+            { type: 'log', text: ">>> [Agent Node] Input received: '수거지 입력할게'", highlight: 'logic-agent', delay: 1000 },
+            { type: 'log', text: "--- DECISION: Tool Call Detected (open_address_search)", highlight: 'logic-agent', delay: 1500 },
+            { type: 'log', text: ">>> [Smart Validation] Address tool safe. Passing through.", highlight: 'logic-validation', delay: 2000 },
+            { type: 'log', text: "<<< Tool Exec: open_address_search()", highlight: 'logic-tools', delay: 2500 },
+            { type: 'bot_ui', html: `<div class="bg-white border border-stone-200 rounded-lg p-3 max-w-[85%] shadow-sm"><p class="mb-2">주소를 입력해주세요.</p><button class="w-full py-2 bg-stone-800 text-white rounded text-xs hover:bg-stone-700">📍 주소 검색하기</button></div>`, delay: 3000 },
+            { type: 'user', text: "[System] 서울시 강남구... (입력완료)", delay: 4500 },
+            { type: 'log', text: ">>> [Agent Node] Address received. Proceeding to 'register_return'", highlight: 'logic-agent', delay: 5000 },
+            { type: 'log', text: ">>> [Human Approval] Sensitive Action Detected!", highlight: 'logic-approval', delay: 6000 },
+            { type: 'bot', text: "입력하신 주소로 반품 접수를 진행할까요?", delay: 6500 }
+        ]
+    };
+
+    let activeTimeouts = [];
+
+    function runScenario(type) {
+        // Reset UI
+        const chatWindow = document.getElementById('chat-window');
+        const termOutput = document.getElementById('terminal-output');
+        const statusBadge = document.getElementById('sim-status');
+        
+        chatWindow.innerHTML = ''; // Clear chat
+        termOutput.innerHTML = '<div class="text-stone-500">// Simulation Initialized...</div>';
+        statusBadge.textContent = "RUNNING";
+        statusBadge.classList.replace('bg-stone-700', 'bg-blue-600');
+        statusBadge.classList.replace('text-stone-400', 'text-white');
+
+        // Clear Highlights
+        ['logic-agent', 'logic-validation', 'logic-approval', 'logic-tools', 'logic-end'].forEach(id => {
+            document.getElementById(id).classList.remove('active-node');
+        });
+
+        // Clear previous timeouts
+        activeTimeouts.forEach(t => clearTimeout(t));
+        activeTimeouts = [];
+
+        // Execute Steps
+        const steps = scenarios[type];
+        steps.forEach(step => {
+            const t = setTimeout(() => {
+                executeStep(step);
+            }, step.delay);
+            activeTimeouts.push(t);
+        });
+
+        // Finish Indicator
+        const totalTime = steps[steps.length - 1].delay + 1000;
+        const endT = setTimeout(() => {
+            statusBadge.textContent = "COMPLETED";
+            statusBadge.classList.replace('bg-blue-600', 'bg-green-600');
+            termOutput.innerHTML += '<div class="text-green-500 mt-2">// Scenario Finished.</div>';
+            termOutput.scrollTop = termOutput.scrollHeight;
+        }, totalTime);
+        activeTimeouts.push(endT);
+    }
+
+    function executeStep(step) {
+        const chatWindow = document.getElementById('chat-window');
+        const termOutput = document.getElementById('terminal-output');
+
+        // Highlight Logic Node
+        if (step.highlight) {
+            // Remove all active first
+            document.querySelectorAll('.active-node').forEach(el => el.classList.remove('active-node'));
+            document.getElementById(step.highlight).classList.add('active-node');
+        }
+
+        // Render Output
+        if (step.type === 'user') {
+            chatWindow.innerHTML += `
+                <div class="flex justify-end animate-fade-in-up">
+                    <div class="bg-blue-600 text-white rounded-2xl rounded-tr-none px-4 py-2 shadow-sm max-w-[80%]">
+                        ${step.text}
+                    </div>
+                </div>`;
+        } else if (step.type === 'bot') {
+            chatWindow.innerHTML += `
+                <div class="flex justify-start animate-fade-in-up">
+                    <div class="bg-white border border-stone-200 text-stone-800 rounded-2xl rounded-tl-none px-4 py-2 shadow-sm max-w-[80%]">
+                        ${step.text}
+                    </div>
+                </div>`;
+        } else if (step.type === 'bot_ui') {
+             chatWindow.innerHTML += `
+                <div class="flex justify-start animate-fade-in-up">
+                    ${step.html}
+                </div>`;
+        } else if (step.type === 'log') {
+            const color = step.text.includes('>>>') ? 'text-blue-400' : 
+                          step.text.includes('<<<') ? 'text-orange-400' : 
+                          step.text.includes('DECISION') ? 'text-purple-400' : 
+                          step.text.includes('MISSING') ? 'text-red-400' : 'text-stone-300';
+            
+            termOutput.innerHTML += `<div class="${color} font-mono border-l-2 border-stone-700 pl-2 mb-1">${step.text}</div>`;
+            termOutput.scrollTop = termOutput.scrollHeight;
+        }
+
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+    }
+
+    function scrollToSection(id) {
+        document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // --- Chart.js Implementation ---
+    document.addEventListener('DOMContentLoaded', () => {
+        const ctx = document.getElementById('riskChart').getContext('2d');
+        
+        new Chart(ctx, {
+            type: 'bubble',
+            data: {
+                datasets: [{
+                    label: 'Bot Actions',
+                    data: [
+                        { x: 1, y: 1, r: 15, label: '단순 질의', desc: '배송 언제와?' },
+                        { x: 2, y: 2, r: 20, label: '주문 조회', desc: '내 주문 내역 보여줘' },
+                        { x: 4, y: 5, r: 25, label: '주소 검색', desc: '외부 API 연동 필요' },
+                        { x: 7, y: 8, r: 30, label: '반품 요청', desc: 'Smart Validation 필수' },
+                        { x: 9, y: 9, r: 35, label: '환불 실행', desc: 'Human Approval 필수 (High Risk)' }
+                    ],
+                    backgroundColor: (context) => {
+                        const val = context.raw?.y;
+                        if (val > 7) return 'rgba(239, 68, 68, 0.6)'; // Red
+                        if (val > 4) return 'rgba(249, 115, 22, 0.6)'; // Orange
+                        return 'rgba(59, 130, 246, 0.6)'; // Blue
+                    },
+                    borderColor: (context) => {
+                        const val = context.raw?.y;
+                        if (val > 7) return 'rgb(220, 38, 38)';
+                        if (val > 4) return 'rgb(234, 88, 12)';
+                        return 'rgb(37, 99, 235)';
+                    }
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        title: { display: true, text: 'Logic Complexity (로직 복잡도)' },
+                        min: 0, max: 10,
+                        grid: { display: false }
+                    },
+                    y: {
+                        title: { display: true, text: 'Risk Level (리스크 수준)' },
+                        min: 0, max: 10,
+                        grid: { color: '#f5f5f4' }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.raw.label}: Risk ${context.raw.y}/10`;
+                            },
+                            afterLabel: function(context) {
+                                return context.raw.desc;
+                            }
+                        }
+                    },
+                    legend: { display: false }
+                }
+            }
+        });
+    });
+</script>
+
+```
+
+</body>
+</html>

@@ -1,0 +1,333 @@
+/* =========================
+   Page Layout
+========================= */
+.page {
+  min-height: 100vh;
+  background-color: #f5f5f5;
+}
+
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 12px 24px;
+}
+
+/* =========================
+   AppBar
+========================= */
+.appBar {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.appBarTitle {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* =========================
+   Profile Card
+========================= */
+.profileCard {
+  margin-bottom: 12px;
+  padding: 16px;
+  background-color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 6px;
+}
+
+.profileLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profileImage {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.profileImage img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.nickname {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.snapButton {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
+  background: #fff;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* =========================
+   Shortcut Grid
+========================= */
+.shortcutGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background-color: #fff;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.shortcutItem {
+  padding: 16px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shortcutItem + .shortcutItem {
+  border-left: 1px solid #f0f0f0;
+}
+
+.shortcutTitle {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.shortcutValue {
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* =========================
+   Menu Section
+========================= */
+.menuSection {
+  background-color: #fff;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.menuSection ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.menuSection li {
+  padding: 16px;
+  font-size: 14px;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+
+.menuSection li:last-child {
+  border-bottom: none;
+}
+
+.menuSection li:hover {
+  background-color: #fafafa;
+}
+
+/* =========================
+   Logout
+========================= */
+.logoutSection {
+  background-color: #fff;
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.logoutButton {
+  width: 100%;
+  height: 48px;
+  background-color: #000;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+/* =========================
+   Modal Overlay
+========================= */
+.dim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* =========================
+   Modal Box
+========================= */
+.modal {
+  background: #fff;
+  width: 92%;
+  max-width: 420px;
+  padding: 28px;
+  border-radius: 14px;
+  z-index: 1000;
+  font-family: -apple-system, BlinkMacSystemFont,
+               "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+}
+
+.modal h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 22px;
+}
+
+/* =========================
+   Inputs
+========================= */
+.modal input,
+.modal select {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
+  font-size: 14px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  outline: none;
+}
+
+.modal input:focus,
+.modal select:focus {
+  border-color: #000;
+}
+
+/* =========================
+   Scroll Modal
+========================= */
+.scrollModal {
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+/* =========================
+   Toggle Section
+========================= */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.toggle {
+  display: block;          /* 🔥 한 줄 전체 차지 */
+  width: 100%;
+  margin-top: 10px;        /* 위와 간격 */
+  margin-bottom: 8px;      /* 아래 입력폼과 간격 */
+  padding: 10px 0;
+  background: none;
+  border: none;
+  font-size: 16px;         /* 약간 키워주면 더 자연스러움 */
+  font-weight: 600;
+  text-align: left;        /* 왼쪽 정렬 */
+  cursor: pointer;
+}
+
+/* =========================
+   Modal Buttons
+========================= */
+.modalButtons {
+  margin-top: 26px;
+  display: flex;
+  gap: 12px;
+}
+
+.modalButtons button {
+  flex: 1;
+  height: 48px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+/* Cancel */
+.modalButtons button:first-child {
+  background: #f2f2f2;
+  border: 1px solid #ddd;
+  color: #333;
+}
+
+/* Confirm */
+.modalButtons button:last-child {
+  background: #000;
+  color: #fff;
+  border: none;
+}
+
+/* =========================
+   Toggle Switch
+========================= */
+.toggleRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  font-size: 14px;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 46px;
+  height: 24px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  inset: 0;
+  background-color: #ccc;
+  transition: 0.3s;
+  border-radius: 24px;
+  cursor: pointer;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  top: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+.switch input:checked + .slider {
+  background-color: #000;
+}
+
+.switch input:checked + .slider:before {
+  transform: translateX(22px);
+}
