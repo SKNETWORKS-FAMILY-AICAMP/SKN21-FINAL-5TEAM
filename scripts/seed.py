@@ -89,7 +89,8 @@ def create_users(db: Session):
             status=UserStatus.ACTIVE,
             agree_marketing=False,
             agree_sms=False,
-            agree_email=False
+            agree_email=False,
+            role=UserRole.ADMIN
         )
     ]
     db.add_all(users)

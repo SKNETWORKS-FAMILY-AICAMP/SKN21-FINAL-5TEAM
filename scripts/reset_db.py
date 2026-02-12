@@ -30,13 +30,23 @@ logger = logging.getLogger(__name__)
 def reset_db():
     try:
         logger.info("🗑️  기존 테이블 삭제 중...")
-        # 모든 테이블 삭제 (CASCADE로 연관된 테이블도 삭제됨)
+        from sqlalchemy import text
+        # 0. 외래 키 제약 조건 비활성화
+        with engine.begin() as conn:
+            conn.execute(text("SET FOREIGN_KEY_CHECKS = 0;"))
+        
+        # 1. 모든 테이블 삭제
         Base.metadata.drop_all(bind=engine)
         logger.info("✅ 테이블 삭제 완료.")
         
+        # 2. 모든 테이블 재생성
         logger.info("🆕 테이블 재생성 중...")
-        # 모든 테이블 재생성
         Base.metadata.create_all(bind=engine)
+        
+        # 3. 외래 키 제약 조건 활성화
+        with engine.begin() as conn:
+            conn.execute(text("SET FOREIGN_KEY_CHECKS = 1;"))
+            
         logger.info("✅ 테이블 재생성 완료.")
         
     except Exception as e:

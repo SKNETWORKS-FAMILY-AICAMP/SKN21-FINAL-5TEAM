@@ -175,6 +175,9 @@ def smart_validation_node(state: AgentState):
         return {} # 변경 없음
         
     
+    new_tool_calls = []
+    has_changes = False
+    
     # Init TaskContext if needed
     current_task = state.get("current_task")
     if not current_task:
@@ -445,3 +448,30 @@ def process_output_node(state: AgentState):
         pass
             
     return result
+
+
+def route_after_tools(state: AgentState) -> Literal["agent", "process_output"]:
+    """
+    도구 실행 후 경로를 결정합니다.
+    - UI Action이 발생했으면 process_output (텍스트 생성 생략)
+    - 일반 도구 실행이면 agent (LLM이 결과 해석 후 답변)
+    """
+    print("---ROUTE AFTER TOOLS---")
+    messages = state["messages"]
+    last_message = messages[-1]
+    
+    if isinstance(last_message, ToolMessage):
+        try:
+            content = last_message.content
+            data = json.loads(content)
+            if isinstance(data, dict):
+                # UI Action이 포함되어 있으면 텍스트 생성 생략하고 바로 종료
+                if "ui_action" in data and data["ui_action"]:
+                    print(f"---DECISION: UI ACTION ({data['ui_action']}) -> END---")
+                    return "process_output"
+        except Exception:
+            pass
+            
+    # 기본: Agent로 돌아가서 결과 해석
+    print("---DECISION: BACK TO AGENT---")
+    return "agent"
