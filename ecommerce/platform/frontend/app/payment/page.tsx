@@ -160,6 +160,30 @@ export default function PaymentPage() {
   const API_BASE = "http://localhost:8000";
   const PAYMENT_METHOD = "card"; // 고정: 신용카드만 가능
 
+  // ==================== User History 기록 함수 ====================
+
+  const trackOrderAction = async (orderId: number, actionType: "order_create" | "order_cancel") => {
+    try {
+      if (!user) return;
+
+      await fetch(`${API_BASE}/user-history/users/${user.id}/track/order`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          order_id: orderId,
+          action_type: actionType,
+        }),
+      });
+
+      console.log(`User history tracked: ${actionType} for order ${orderId}`);
+    } catch (err) {
+      console.error("Failed to track order action:", err);
+      // 히스토리 기록 실패는 무시 (사용자 경험에 영향 없음)
+    }
+  };
+
   // 가격 계산 (Cart Summary 기반)
   const subtotal = cartData ? Number(cartData.summary.total_price) : 0;
   const shippingFee = cartData ? Number(cartData.summary.total_shipping_fee) : 0;
@@ -280,6 +304,29 @@ export default function PaymentPage() {
 
   // ==================== 주문 생성 (Orders CRUD 기반) ====================
 
+  const updateOrderStatus = async (orderId: number, status: OrderStatus) => {
+    try {
+      // PATCH /orders/{order_id}
+      const response = await fetch(`${API_BASE}/orders/${orderId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "주문 상태 업데이트에 실패했습니다");
+      }
+
+      console.log("Order status updated:", status);
+    } catch (err) {
+      console.error("Failed to update order status:", err);
+      throw err;
+    }
+  };
+
   const createOrder = async (): Promise<number> => {
     try {
       if (!selectedAddress) {
@@ -303,7 +350,7 @@ export default function PaymentPage() {
         payment_method: PAYMENT_METHOD, // "card" 고정
         shipping_request: shippingRequest || null,
         points_used: pointsToUse,
-        status : 'paid',
+        status : 'pending', // 결제 대기 상태로 시작
         items: orderItems,
       };
 
@@ -363,16 +410,14 @@ export default function PaymentPage() {
     try {
       setProcessing(true);
 
-      // 1. 포인트 사용 (Points CRUD 기반) - 포인트를 사용하는 경우만
-      if (pointsValue > 0 && pointBalance) {
-        await usePoints(pointsValue);
-      }
-
-      // 2. 주문 생성 (Orders CRUD 기반)
+      // 1. 주문 생성 (pending 상태로)
       const orderId = await createOrder();
       console.log("Order created:", orderId);
 
-      // 3. 결제 처리 (Payments CRUD의 process_payment)
+      // 1-1. User History에 주문 생성 기록
+      await trackOrderAction(orderId, "order_create");
+
+      // 2. 결제 처리 (Payments CRUD의 process_payment)
       const maskedCard = maskCardNumber(cardNumber);
 
       const params = new URLSearchParams({
@@ -395,10 +440,18 @@ export default function PaymentPage() {
       const payment: PaymentResponse = await paymentResponse.json();
       console.log("Payment processed:", payment);
 
-      // 4. 장바구니 비우기 (Carts CRUD 기반)
+      // 3. 결제 성공 - 주문 상태를 'paid'로 업데이트
+      await updateOrderStatus(orderId, 'paid');
+
+      // 4. 포인트 사용 (Points CRUD 기반) - 포인트를 사용하는 경우만
+      if (pointsValue > 0 && pointBalance) {
+        await usePoints(pointsValue);
+      }
+
+      // 5. 장바구니 비우기 (Carts CRUD 기반)
       await clearCart();
 
-      // 5. 포인트 적립 (구매 금액의 1%) - 포인트 시스템이 있는 경우만
+      // 6. 포인트 적립 (구매 금액의 1%) - 포인트 시스템이 있는 경우만
       if (pointBalance !== null) {
         const earnPoints = Math.floor(totalAmount * 0.01);
         if (earnPoints > 0) {
@@ -413,7 +466,9 @@ export default function PaymentPage() {
       router.push('/order');
     } catch (err) {
       console.error("Payment failed:", err);
-      alert(err instanceof Error ? err.message : "결제 처리 중 오류가 발생했습니다");
+      alert(err instanceof Error ? err.message : "결제 처리 중 오류가 발생했습니다.\n주문은 '결제 대기' 상태로 주문 목록에서 확인하실 수 있습니다.");
+      // 결제 실패 시 주문은 pending 상태로 유지, 장바구니도 그대로 유지
+      router.push('/order'); // 주문 목록으로 이동하여 pending 상태 확인 가능
     } finally {
       setProcessing(false);
     }
@@ -565,7 +620,7 @@ export default function PaymentPage() {
         <div className={styles.container}>
           <h1 className={styles.title}>결제하기</h1>
           <div style={{ textAlign: "center", padding: "50px 0" }}>
-            장바구니가 비어있습니다
+            결제할 상품이 없습니다.
           </div>
         </div>
       </div>
