@@ -17,31 +17,6 @@ router = APIRouter(
 )
 
 # =========================
-# auth helper (세션 기반)
-# =========================
-
-# def get_current_user(
-#     request: Request,
-#     db: Session = Depends(get_db),
-# ):
-#     user_id = request.session.get("user_id")
-#     if not user_id:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="로그인이 필요합니다.",
-#         )
-
-#     user = crud.get_user_by_id(db, user_id)
-#     if not user:
-#         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
-
-#     if user.status != UserStatus.ACTIVE:
-#         raise HTTPException(status_code=403, detail="비활성화된 계정입니다.")
-
-#     return user
-
-
-# =========================
 # Auth / Register / Login
 # =========================
 
