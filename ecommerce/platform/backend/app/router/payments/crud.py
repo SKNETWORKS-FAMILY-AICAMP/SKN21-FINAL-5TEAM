@@ -206,7 +206,7 @@ def update_payment_status(
         order = db.query(Order).filter(Order.id == payment.order_id).first()
         if order:
             if new_status == schemas.PaymentStatus.COMPLETED:
-                order.status = OrderStatus.PAYMENT_COMPLETED 
+                order.status = OrderStatus.PAID 
             elif new_status == schemas.PaymentStatus.FAILED:
                 order.status = OrderStatus.CANCELLED
             elif new_status == schemas.PaymentStatus.CANCELLED:
@@ -301,7 +301,7 @@ def process_payment(
         payment = create_payment(db, payment_create)
     
     # 주문 상태를 PAID로 변경
-    order.status = OrderStatus.PAYMENT_COMPLETED 
+    order.status = OrderStatus.PAID 
     
     db.commit()
     db.refresh(payment)

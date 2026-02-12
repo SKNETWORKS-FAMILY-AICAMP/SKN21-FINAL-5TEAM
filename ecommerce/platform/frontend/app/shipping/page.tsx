@@ -100,7 +100,8 @@ export default function ShippingPage() {
           body: JSON.stringify(payload),
         });
       } else {
-        res = await fetch(`${API_BASE}?user_id=1`, {
+        if (!user) throw new Error("유저 정보가 없습니다");
+        res = await fetch(`${API_BASE}?user_id=${user.id}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),

@@ -20,7 +20,7 @@ from ecommerce.platform.backend.app.router.shipping.schemas import ShippingInfoR
 class OrderStatus(str, Enum):
     """주문 상태"""
     PENDING = "pending"              # 결제 대기
-    PAYMENT_COMPLETED = "payment_completed"  # 결제 완료
+    PAID = "paid"  # 결제 완료
     PREPARING = "preparing"          # 상품 준비중
     SHIPPED = "shipped"              # 배송중
     DELIVERED = "delivered"          # 배송 완료
@@ -32,7 +32,7 @@ class OrderStatus(str, Enum):
         """한국어 상태명"""
         labels = {
             "pending": "결제 대기",
-            "payment_completed": "결제 완료",
+            "paid": "결제 완료",
             "preparing": "상품 준비중",
             "shipped": "배송중",
             "delivered": "배송 완료",
@@ -78,8 +78,13 @@ class OrderItemResponse(OrderItemBase):
     order_id: int
     subtotal: Decimal
     created_at: datetime
-
     model_config = ConfigDict(from_attributes=True)
+
+    product_name: Optional[str] = None       # 상품명
+    product_brand: Optional[str] = None      # 브랜드
+    product_size: Optional[str] = None       # 사이즈
+    product_color: Optional[str] = None      # 색상
+    product_condition: Optional[str] = None  # 중고상품 상태 (중고만 해당)
 
 
 # ==================================================
