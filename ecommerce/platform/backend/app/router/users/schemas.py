@@ -42,6 +42,7 @@ class LoginResponse(BaseModel):
     id: int
     email: EmailStr
     name: str
+    role: str = "user"
 
 class WithdrawRequest(BaseModel):
     reason: str

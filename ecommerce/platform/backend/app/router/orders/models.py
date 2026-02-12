@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from ecommerce.platform.backend.app.router.payments.models import Payment
     from ecommerce.platform.backend.app.router.points.models import PointHistory
     from ecommerce.platform.backend.app.router.reviews.models import Review
+    from ecommerce.platform.backend.app.router.user_history.models import UserHistory
 
 # Enum imports
 from ecommerce.platform.backend.app.router.orders import schemas
@@ -112,6 +113,10 @@ class Order(Base):
         "PointHistory",
         back_populates="order",
         cascade="all, delete-orphan"
+    )
+    user_history: Mapped[List["UserHistory"]] = relationship(
+        "UserHistory",
+        back_populates="order"
     )
 
 # ============================================

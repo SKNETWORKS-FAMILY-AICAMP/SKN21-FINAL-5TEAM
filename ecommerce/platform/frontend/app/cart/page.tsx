@@ -73,6 +73,42 @@ interface CartDetailWithSummary {
 const API_BASE_URL = 'http://localhost:8000';
 
 // ============================================
+// User History Tracking
+// ============================================
+
+/**
+ * 장바구니 액션을 user history에 기록
+ */
+async function trackCartAction(
+  userId: number,
+  actionType: 'cart_add' | 'cart_remove' | 'cart_update',
+  cartItemId: number,
+  productOptionType: string,
+  productOptionId: number,
+  quantity?: number
+): Promise<void> {
+  try {
+    await fetch(`${API_BASE_URL}/user-history/users/${userId}/track/cart-action`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action_type: actionType,
+        cart_item_id: cartItemId,
+        product_option_type: productOptionType,
+        product_option_id: productOptionId,
+        quantity,
+      }),
+    });
+    console.log(`User history tracked: ${actionType} for cart item ${cartItemId}`);
+  } catch (err) {
+    console.error('Failed to track cart action:', err);
+    // 히스토리 기록 실패는 무시 (사용자 경험에 영향 없음)
+  }
+}
+
+// ============================================
 // API Error Handling
 // ============================================
 
@@ -261,7 +297,17 @@ export default function CartPage() {
         method: 'PATCH',
         body: JSON.stringify({ quantity: newQuantity }),
       });
-      
+
+      // User History에 장바구니 수량 변경 기록
+      await trackCartAction(
+        user.id,
+        'cart_update',
+        itemId,
+        item.product_option_type,
+        item.product_option_id,
+        newQuantity
+      );
+
       await loadCartData();
     } catch (err) {
       console.error('수량 업데이트 실패:', err);
@@ -290,6 +336,12 @@ export default function CartPage() {
 
     try {
       if (!user) throw new Error("유저 정보가 없습니다");
+
+      // 삭제할 아이템들의 정보 저장 (삭제 전에 저장)
+      const itemsToDelete = cartData?.cart.items.filter(item =>
+        selectedItems.includes(item.id)
+      ) || [];
+
       await fetchApi<{ message: string; deleted_count: number }>(
         `/carts/${user.id}/items`,
         {
@@ -297,7 +349,18 @@ export default function CartPage() {
           body: JSON.stringify({ item_ids: selectedItems }),
         }
       );
-      
+
+      // User History에 장바구니 삭제 기록 (각 아이템별로)
+      for (const item of itemsToDelete) {
+        await trackCartAction(
+          user.id,
+          'cart_remove',
+          item.id,
+          item.product_option_type,
+          item.product_option_id
+        );
+      }
+
       setSelectedItems([]);
       await loadCartData();
     } catch (err) {
@@ -322,10 +385,25 @@ export default function CartPage() {
 
     try {
       if (!user) throw new Error("유저 정보가 없습니다");
+
+      // 삭제할 아이템 정보 저장 (삭제 전에 저장)
+      const itemToDelete = cartData?.cart.items.find(item => item.id === itemId);
+
       await fetchApi<void>(`/carts/${user.id}/items/${itemId}`, {
         method: 'DELETE',
       });
-      
+
+      // User History에 장바구니 삭제 기록
+      if (itemToDelete) {
+        await trackCartAction(
+          user.id,
+          'cart_remove',
+          itemId,
+          itemToDelete.product_option_type,
+          itemToDelete.product_option_id
+        );
+      }
+
       setSelectedItems(prev => prev.filter(id => id !== itemId));
       await loadCartData();
     } catch (err) {

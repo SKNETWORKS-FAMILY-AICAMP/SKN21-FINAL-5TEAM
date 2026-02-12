@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from ecommerce.platform.backend.app.router.products.models import UsedProduct
     from ecommerce.platform.backend.app.router.points.models import PointHistory, IssuedVoucher
     from ecommerce.platform.backend.app.router.reviews.models import Review
+    from ecommerce.platform.backend.app.router.user_history.models import UserHistory
 
 
 # ==================================================
@@ -33,6 +34,12 @@ class UserStatus(str, PyEnum):
     ACTIVE = "active"
     INACTIVE = "inactive"
     SUSPENDED = "suspended"
+
+
+class UserRole(str, PyEnum):
+    """사용자 권한"""
+    USER = "user"
+    ADMIN = "admin"
 
 
 # ==================================================
@@ -94,6 +101,10 @@ class User(Base):
     agree_email: Mapped[bool] = mapped_column(
         Boolean, default=False, comment='광고성 이메일 수신 동의'
     )
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, values_callable=lambda x: [e.value for e in x]),
+        default=UserRole.USER, comment='사용자 권한 (user/admin)'
+    )
 
     # Relationships
     body_measurement: Mapped[Optional["UserBodyMeasurement"]] = relationship(
@@ -133,6 +144,11 @@ class User(Base):
     )
     reviews: Mapped[List["Review"]] = relationship(
         "Review",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+    user_history: Mapped[List["UserHistory"]] = relationship(
+        "UserHistory",
         back_populates="user",
         cascade="all, delete-orphan"
     )
