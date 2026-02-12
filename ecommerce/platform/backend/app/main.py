@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from ecommerce.platform.backend.app.database import engine, Base, create_db_scheme
+from sqlalchemy import inspect, text
 from ecommerce.platform.backend.app.router.carts.router import router as carts_router
 from ecommerce.platform.backend.app.router.users.router import router as users_router
 from ecommerce.platform.backend.app.router.shipping.router import router as shipping_router
@@ -11,14 +12,86 @@ from ecommerce.platform.backend.app.router.inventories.router import router as i
 from ecommerce.platform.backend.app.router.points.router import router as points_router
 from ecommerce.platform.backend.app.router.reviews.router import router as reviews_router
 from ecommerce.platform.backend.app.router.products.router import router as products_router
+from ecommerce.platform.backend.app.router.user_history.router import router as user_history_router
 
 # Import models to register them with Base.metadata
 import ecommerce.platform.backend.app.router.users.models
+import ecommerce.platform.backend.app.router.user_history.models
 import logging
 import os
 from ecommerce.chatbot.src.core.config import settings
 from ecommerce.chatbot.src.api.v1.endpoints.chat import router as chatbot_router
 from starlette.middleware.sessions import SessionMiddleware # 미드웨워 추가
+
+
+# ============================================
+# 자동 컬럼 마이그레이션
+# ============================================
+def auto_add_missing_columns():
+    """
+    테이블은 있지만 컬럼이 없을 때 자동으로 컬럼 추가
+    SQLAlchemy 모델과 실제 DB를 비교하여 누락된 컬럼을 추가합니다.
+    """
+    from ecommerce.platform.backend.app.database import SessionLocal
+
+    inspector = inspect(engine)
+    db = SessionLocal()
+
+    try:
+        # Base.metadata에 등록된 모든 테이블 순회
+        for table_name, table in Base.metadata.tables.items():
+            # 테이블이 DB에 존재하는지 확인
+            if not inspector.has_table(table_name):
+                continue
+
+            # 실제 DB의 컬럼 목록
+            existing_columns = {col['name'] for col in inspector.get_columns(table_name)}
+
+            # 모델에 정의된 컬럼 목록
+            model_columns = {col.name: col for col in table.columns}
+
+            # 누락된 컬럼 찾기
+            missing_columns = set(model_columns.keys()) - existing_columns
+
+            if missing_columns:
+                for col_name in missing_columns:
+                    col = model_columns[col_name]
+
+                    # 컬럼 타입 결정
+                    col_type = str(col.type.compile(dialect=engine.dialect))
+
+                    # NULL 여부
+                    nullable = "NULL" if col.nullable else "NOT NULL"
+
+                    # 기본값 처리
+                    default_clause = ""
+                    if col.default is not None:
+                        if hasattr(col.default, 'arg'):
+                            # scalar default
+                            default_value = col.default.arg
+                            if isinstance(default_value, str):
+                                default_clause = f"DEFAULT '{default_value}'"
+                            elif isinstance(default_value, bool):
+                                default_clause = f"DEFAULT {1 if default_value else 0}"
+                            else:
+                                default_clause = f"DEFAULT {default_value}"
+
+                    # ALTER TABLE 문 생성
+                    alter_sql = f"""
+                        ALTER TABLE {table_name}
+                        ADD COLUMN {col_name} {col_type} {nullable} {default_clause}
+                    """
+
+                    try:
+                        db.execute(text(alter_sql))
+                        db.commit()
+                    except Exception:
+                        db.rollback()
+
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 
 # ============================================
@@ -35,23 +108,26 @@ async def lifespan(app: FastAPI):
 
     # 서버 시작 시
     logging.info("서버 시작")
-    
+
     # 0. DB 스키마 생성(없을 시)
     create_db_scheme()
 
     # 1. 테이블 생성
     Base.metadata.create_all(bind=engine)  # 테이블이 없다면 생성
-    
-    # 초기 데이터 적재 (Seed)
+
+    # 2. 누락된 컬럼 자동 추가
+    auto_add_missing_columns()
+
+    # 3. 초기 데이터 적재 (Seed)
     from ecommerce.platform.backend.app.database import SessionLocal
     from scripts.seed import init_db
-    
+
     db = SessionLocal()
     try:
         init_db(db)
     finally:
         db.close()
-        
+
     yield
     # 서버 종료 시
     logging.info("서버 종료")
@@ -109,6 +185,7 @@ app.include_router(inventories_router, prefix="/inventories", tags=["Inventories
 app.include_router(points_router, prefix="/points", tags=["Points"])
 app.include_router(reviews_router, prefix="/reviews", tags=["Reviews"])
 app.include_router(products_router, prefix="/products", tags=["Products"])
+app.include_router(user_history_router, prefix="/user-history", tags=["UserHistory"])
 app.include_router(chatbot_router, prefix="/api/v1/chat", tags=["Chatbot"])
 
 
