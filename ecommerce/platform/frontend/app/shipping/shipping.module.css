@@ -1,0 +1,110 @@
+/* Wrapper */
+.wrapper {
+  padding: 20px;
+  font-family: Arial, sans-serif;
+  display: flex;
+  justify-content: center;
+}
+
+/* 중앙 컨테이너 */
+.container {
+  width: 600px; /* 적당한 크기 */
+}
+
+/* 제목 */
+.title {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 16px;
+}
+
+/* 공통 버튼 (검은색 통일) */
+.actionButton {
+  background-color: #000 !important; /* 검은색 배경 */
+  color: #fff !important;            /* 흰 글자 */
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 0.2s;
+}
+
+.actionButton:hover {
+  background-color: #333 !important; /* hover 진한 회색 */
+}
+
+/* 배송지 리스트 */
+.addressList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.addressBox {
+  display: flex;
+  justify-content: space-between;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.addressDetails p {
+  margin: 2px 0;
+  font-size: 14px;
+}
+
+/* 기본 배송지 표시 */
+.defaultLabel {
+  color: red;
+  font-size: 12px;
+  margin-left: 6px;
+}
+
+/* 주소 액션 버튼 그룹 */
+.addressActions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 모달 오버레이 */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+/* 모달 내용 */
+.modalContent {
+  background-color: white;
+  padding: 24px;
+  border-radius: 12px;
+  width: 400px;
+  box-shadow: 0 0 15px rgba(0,0,0,0.2);
+}
+
+/* 모달 입력폼 */
+.newAddressForm input {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+/* 모달 버튼 그룹 */
+.modalButtons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}

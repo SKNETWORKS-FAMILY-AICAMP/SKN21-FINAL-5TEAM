@@ -1,0 +1,477 @@
+/* ============================================
+   Container & Layout
+   ============================================ */
+
+.container {
+  min-height: 100vh;
+  background-color: #000;
+  color: #fff;
+  padding: 40px 20px;
+}
+
+.header {
+  max-width: 1400px;
+  margin: 0 auto 40px;
+  text-align: center;
+  border-bottom: 1px solid #333;
+  padding-bottom: 30px;
+}
+
+.title {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0 0 10px;
+  color: #fff;
+  letter-spacing: -0.5px;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #999;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.content {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* ============================================
+   Error Banner
+   ============================================ */
+
+.errorBanner {
+  background-color: #ff4444;
+  color: #fff;
+  padding: 16px 24px;
+  border-radius: 4px;
+  margin-bottom: 24px;
+  font-size: 14px;
+  text-align: center;
+  max-width: 1400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ============================================
+   Section
+   ============================================ */
+
+.section {
+  background-color: #111;
+  border: 1px solid #222;
+  border-radius: 8px;
+  padding: 32px;
+  margin-bottom: 32px;
+}
+
+.sectionTitle {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 24px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.selectedUserBadge {
+  font-size: 14px;
+  font-weight: 400;
+  color: #999;
+  background-color: #222;
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+
+.totalCount {
+  font-size: 14px;
+  font-weight: 400;
+  color: #999;
+  background-color: #222;
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+
+/* ============================================
+   User Grid
+   ============================================ */
+
+.userGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.userCard {
+  background-color: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.userCard:hover {
+  border-color: #555;
+  background-color: #222;
+  transform: translateY(-2px);
+}
+
+.userCardActive {
+  border-color: #fff;
+  background-color: #222;
+}
+
+.userInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.userId {
+  font-size: 12px;
+  color: #666;
+  font-weight: 500;
+}
+
+.userName {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.userEmail {
+  font-size: 14px;
+  color: #999;
+  word-break: break-all;
+}
+
+.userDate {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
+
+/* ============================================
+   Filter Buttons
+   ============================================ */
+
+.filterButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.filterButton {
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  color: #999;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.filterButton:hover {
+  background-color: #222;
+  border-color: #555;
+  color: #fff;
+}
+
+.filterButtonActive {
+  background-color: #fff;
+  border-color: #fff;
+  color: #000;
+}
+
+/* ============================================
+   Table
+   ============================================ */
+
+.tableWrapper {
+  overflow-x: auto;
+  border: 1px solid #222;
+  border-radius: 8px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: #1a1a1a;
+}
+
+.table thead {
+  background-color: #000;
+  border-bottom: 2px solid #333;
+}
+
+.table th {
+  padding: 16px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 16px;
+  border-bottom: 1px solid #222;
+  font-size: 14px;
+  color: #ccc;
+  vertical-align: top;
+}
+
+.table tbody tr:hover {
+  background-color: #222;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ============================================
+   Table Cell Styles
+   ============================================ */
+
+.actionBadge {
+  display: inline-block;
+  background-color: #333;
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.productInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.productId {
+  font-size: 12px;
+  color: #666;
+}
+
+.idInfo {
+  font-size: 13px;
+  color: #999;
+}
+
+.keyword {
+  background-color: #222;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #fff;
+  font-weight: 500;
+}
+
+.noData {
+  color: #555;
+  font-style: italic;
+}
+
+.dateCell {
+  white-space: nowrap;
+  font-size: 13px;
+  color: #999;
+}
+
+/* ============================================
+   Metadata Details
+   ============================================ */
+
+.metadata summary {
+  cursor: pointer;
+  color: #fff;
+  font-size: 13px;
+  padding: 4px 8px;
+  background-color: #222;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.metadata summary:hover {
+  background-color: #333;
+}
+
+.metadata pre {
+  margin-top: 8px;
+  background-color: #000;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 12px;
+  font-size: 12px;
+  color: #0f0;
+  overflow-x: auto;
+  max-width: 400px;
+}
+
+/* ============================================
+   Pagination
+   ============================================ */
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 32px;
+  padding-top: 32px;
+  border-top: 1px solid #222;
+}
+
+.pageButton {
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  color: #999;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pageButton:hover:not(:disabled) {
+  background-color: #222;
+  border-color: #555;
+  color: #fff;
+}
+
+.pageButton:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.pageNumbers {
+  display: flex;
+  gap: 8px;
+}
+
+.pageNumber {
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  color: #999;
+  padding: 10px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 44px;
+}
+
+.pageNumber:hover {
+  background-color: #222;
+  border-color: #555;
+  color: #fff;
+}
+
+.pageNumberActive {
+  background-color: #fff;
+  border-color: #fff;
+  color: #000;
+}
+
+/* ============================================
+   Loading & Empty States
+   ============================================ */
+
+.loading,
+.empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #666;
+  font-size: 16px;
+}
+
+.loading {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ============================================
+   Responsive Design
+   ============================================ */
+
+@media (max-width: 1200px) {
+  .container {
+    padding: 30px 16px;
+  }
+
+  .section {
+    padding: 24px;
+  }
+
+  .userGrid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .title {
+    font-size: 24px;
+  }
+
+  .section {
+    padding: 20px;
+  }
+
+  .sectionTitle {
+    font-size: 18px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .userGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .filterButtons {
+    gap: 8px;
+  }
+
+  .filterButton {
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+
+  .table {
+    font-size: 12px;
+  }
+
+  .table th,
+  .table td {
+    padding: 12px 8px;
+  }
+
+  .pagination {
+    flex-wrap: wrap;
+  }
+
+  .pageNumbers {
+    flex-wrap: wrap;
+  }
+}
