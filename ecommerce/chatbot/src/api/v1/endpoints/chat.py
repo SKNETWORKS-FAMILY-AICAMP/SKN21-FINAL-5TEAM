@@ -38,94 +38,6 @@ def deserialize_messages(serialized_messages: List[Dict[str, str]]):
             messages.append(AIMessage(content=content))
     return messages
 
-@router.post("/", response_model=ChatResponse)
-@traceable(run_type="chain", name="Chat Endpoint")
-async def chat_endpoint(
-    request: ChatRequest,
-    current_user: User = Depends(get_current_user)
-):
-    """
-    사용자의 메시지를 받아 에이전트의 응답을 반환합니다.
-    JSON 기반의 상태 정보를 주고받아 Stateless 환경에서도 대화 맥락을 유지합니다.
-    """
-    try:
-        # 1. 상태(State) 복구
-        history = []
-        if request.previous_state and "messages" in request.previous_state:
-            # 클라이언트가 보낸 텍스트 메시지를 LangChain 메시지 객체로 복구
-            history = deserialize_messages(request.previous_state["messages"])
-        
-        # Initialize state with defaults
-        default_state = {
-            "retry_count": 0,
-            "action_status": "idle",
-            "order_id": None,
-            "action_name": None,
-            "documents": [],
-            "tool_outputs": []
-        }
-        
-        # Merge previous_state with defaults (previous_state takes precedence)
-        if request.previous_state:
-            current_state = {**default_state, **request.previous_state}
-        else:
-            current_state = default_state
-        
-        # Set user context from JWT authentication (authentication required)
-        current_state["user_id"] = current_user.id
-        current_state["is_authenticated"] = True
-        current_state["user_info"] = {
-            "id": current_user.id,
-            "name": current_user.name,
-            "email": current_user.email
-        }
-        
-        current_state["messages"] = history
-        
-        # 2. 새로운 사용자 메시지 추가
-        current_state["messages"].append(HumanMessage(content=request.message))
-        
-        # 3. 에이전트 실행 (LangGraph)
-        # 턴 사이의 상태가 current_state를 통해 전달됨
-        result = await graph_app.ainvoke(current_state)
-        
-        # 4. 결과 직렬화 (JSON 변환 불가능한 객체들을 텍스트/리스트로 변환)
-        processed_result = result.copy()
-        
-        # 메시지 객체 리스트를 JSON 직렬화 가능한 딕셔너리 리스트로 변환
-        processed_result["messages"] = serialize_messages(result.get("messages", []))
-        
-        # 5. Extract UI data from tool_outputs
-        ui_action = None
-        ui_data = None
-        tool_outputs = result.get("tool_outputs", [])
-        
-        # Check if any tool returned UI rendering data
-        for tool_output in tool_outputs:
-            if isinstance(tool_output, dict):
-                if tool_output.get("ui_action") == "show_order_list":
-                    ui_action = "show_order_list"
-                    ui_data = tool_output.get("ui_data", [])
-                    break
-        
-        # 6. 최종 응답 구성
-        return ChatResponse(
-            answer=result.get("generation"),
-            action_status=result.get("action_status"),
-            action_name=result.get("action_name"),
-            order_id=result.get("order_id"),
-            ui_action=ui_action,
-            ui_data=ui_data,
-            state=processed_result  # 프론트엔드가 다음 전송을 위해 저장해야 함
-        )
-
-    except Exception as e:
-        # 상세 에러 로그 출력 (서버 터미널용)
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"상담 처리 중 오류가 발생했습니다: {str(e)}")
-
-
 @router.post("/stream")
 @traceable(run_type="chain", name="Chat Streaming Endpoint")
 async def chat_streaming_endpoint(
@@ -134,7 +46,7 @@ async def chat_streaming_endpoint(
 ):
     """
     스트리밍 방식으로 챗봇 응답을 반환합니다.
-    답변이 생성되는 동안 글자 단위로 전송하여 타이핑 효과를 제공합니다.
+    LangGraph의 `astream_events`를 사용하여 실시간 토큰 스트리밍과 도구 이벤트를 처리합니다.
     """
     async def event_generator():
         try:
@@ -143,25 +55,21 @@ async def chat_streaming_endpoint(
             if request.previous_state and "messages" in request.previous_state:
                 history = deserialize_messages(request.previous_state["messages"])
             
-            
             # Initialize state with defaults
             default_state = {
                 "retry_count": 0,
-                "action_status": "idle",
-                "order_id": None,
-                "action_name": None,
+                "current_task": None,
                 "documents": [],
                 "tool_outputs": []
             }
             
-            # Merge previous_state with defaults (previous_state takes precedence)
+            # Merge previous_state with defaults
             if request.previous_state:
                 current_state = {**default_state, **request.previous_state}
             else:
                 current_state = default_state
             
-            # Set user context from JWT authentication (authentication required)
-            current_state["user_id"] = current_user.id
+            # Set user context
             current_state["is_authenticated"] = True
             current_state["user_info"] = {
                 "id": current_user.id,
@@ -172,73 +80,106 @@ async def chat_streaming_endpoint(
             current_state["messages"] = history
             current_state["messages"].append(HumanMessage(content=request.message))
             
-            # 2. 에이전트 실행
-            result = await graph_app.ainvoke(current_state)
+            # 2. astream_events를 사용하여 실시간 이벤트 스트리밍
+            # version="v2"는 LangChain 표준 이벤트 형식을 따름
+            final_state = None
             
-            # 3. 결과 직렬화
-            processed_result = result.copy()
-            processed_result["messages"] = serialize_messages(result.get("messages", []))
-            
-            # 4. UI 데이터 추출
-            ui_action = None
-            ui_data = None
-            tool_outputs = result.get("tool_outputs", [])
-            
-            for tool_output in tool_outputs:
-                if isinstance(tool_output, dict):
-                    if tool_output.get("ui_action") == "show_order_list":
-                        ui_action = "show_order_list"
-                        ui_data = tool_output.get("ui_data", [])
-                        requires_selection = tool_output.get("requires_selection", False)
-                        break
-                    elif tool_output.get("ui_action") == "show_confirmation":
-                        ui_action = "show_confirmation"
-                        # confirmation은 ui_data가 따로 없고 message와 tool_name이 중요함
-                        # 하지만 ui_action 구조상 ui_data 필드는 유지
-                        ui_data = tool_output
-                        break
-            
-            # 5. UI 액션이 있는 경우 즉시 전송
-            # (show_order_list or show_confirmation)
-            if ui_action:
-                response_data = {
-                    "type": "ui_action",
-                    "ui_action": ui_action,
-                    "ui_data": ui_data,
-                    "requires_selection": locals().get("requires_selection", False),
-                    "state": processed_result
-                }
-                # confirmation의 경우 message도 같이 보냄
-                if ui_action == "show_confirmation":
-                    response_data["message"] = tool_outputs[0].get("message", "")
-
-                yield f"data: {json.dumps(response_data, ensure_ascii=False)}\n\n"
-            else:
-                # 6. 일반 텍스트 응답을 글자 단위로 스트리밍
-                answer = result.get("generation", "")
+            async for event in graph_app.astream_events(current_state, version="v2"):
+                event_type = event["event"]
                 
-                # 먼저 메타데이터 전송
+                # A. 토큰 스트리밍 (LLM이 글자를 생성할 때마다 발생)
+                if event_type == "on_chat_model_stream":
+                    # 메타데이터 전송 (첫 토큰일 때만 보낼 수도 있지만, 상태가 변할 수 있으므로 상황에 맞게 처리)
+                    # 여기서는 data.chunk.content가 있을 때만 전송
+                    content = event["data"]["chunk"].content
+                    if content:
+                        chunk_data = {
+                            "type": "text_chunk",
+                            "content": content
+                        }
+                        yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+                
+                # B. 도구 실행 시작 (상태 메시지 전송)
+                elif event_type == "on_tool_start":
+                    tool_name = event["name"]
+                    status_message = None
+                    
+                    # 도구 이름에 따른 사용자 친화적 메시지 매핑
+                    if tool_name == "get_user_orders":
+                        status_message = "주문 내역을 조회하고 있습니다..."
+                    elif tool_name == "get_order_detail":
+                        status_message = "주문 상세 정보를 확인하고 있습니다..."
+                    elif tool_name == "get_shipping_details":
+                        status_message = "배송 상태를 조회하고 있습니다..."
+                    elif tool_name == "register_return_request":
+                        status_message = "반품 신청을 처리하고 있습니다..."
+                    elif tool_name == "register_exchange_request":
+                        status_message = "교환 신청을 처리하고 있습니다..."
+                    elif tool_name == "cancel_order":
+                        status_message = "주문 취소를 처리하고 있습니다..."
+                    elif tool_name == "request_human_handoff":
+                        status_message = "상담원 연결을 시도하고 있습니다..."
+                    
+                    if status_message:
+                        status_data = {
+                            "type": "status_update",
+                            "status": status_message
+                        }
+                        yield f"data: {json.dumps(status_data, ensure_ascii=False)}\n\n"
+
+                # C. 도구 실행 완료 (UI 액션 감지 및 상태 초기화)
+                elif event_type == "on_tool_end":
+                    
+                    # output이 UI Action 딕셔너리인지 확인
+                    tool_output = event["data"].get("output")
+                    if isinstance(tool_output, dict):
+                        ui_action = tool_output.get("ui_action")
+                        if ui_action:
+                            response_data = {
+                                "type": "ui_action",
+                                "ui_action": ui_action,
+                                "ui_data": tool_output.get("ui_data"),
+                                "requires_selection": tool_output.get("requires_selection", False),
+                                "message": tool_output.get("message", "")
+                            }
+                            yield f"data: {json.dumps(response_data, ensure_ascii=False)}\n\n"
+
+                # D. 체인 종료 (최종 상태 획득)
+                elif event_type == "on_chain_end" and event["name"] == "LangGraph":
+                    # 최종 output (State) 캡처
+                    final_state = event["data"].get("output")
+
+            
+            # 3. 완료 처리 및 최종 상태 전송
+            if final_state:
+                # 불필요한 객체 제거 및 직렬화
+                processed_state = final_state.copy()
+                if "messages" in processed_state:
+                    processed_state["messages"] = serialize_messages(processed_state["messages"])
+                
+                # [Refactoring Compatibility] Map TaskContext back to legacy fields for frontend
+                current_task = final_state.get("current_task")
+                action_status = "idle"
+                action_name = None
+                order_id = None
+                
+                if current_task:
+                    action_status = current_task.get("status", "idle")
+                    action_name = f"{current_task.get('type')}_requested" if current_task.get("status") == "completed" else None
+                    order_id = current_task.get("target_id")
+
+                # 메타데이터 및 완료 신호 전송
+                # (UI 액션 등은 이미 스트리밍으로 나갔으므로, 여기서는 State 동기화가 주 목적)
                 meta_data = {
                     "type": "metadata",
-                    "action_status": result.get("action_status"),
-                    "action_name": result.get("action_name"),
-                    "order_id": result.get("order_id"),
-                    "state": processed_result
+                    "action_status": action_status,     # Now derived from current_task
+                    "action_name": action_name,         # Now derived from current_task
+                    "order_id": order_id,               # Now derived from current_task
+                    "state": processed_state
                 }
                 yield f"data: {json.dumps(meta_data, ensure_ascii=False)}\n\n"
-                
-                # 답변을 글자 단위로 스트리밍
-                for char in answer:
-                    chunk_data = {
-                        "type": "text_chunk",
-                        "content": char
-                    }
-                    yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
-                    await asyncio.sleep(0.02)  # 타이핑 효과를 위한 딜레이
-                
-                # 완료 신호
-                done_data = {"type": "done"}
-                yield f"data: {json.dumps(done_data)}\n\n"
+            
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 
         except Exception as e:
             import traceback

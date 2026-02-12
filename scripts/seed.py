@@ -77,8 +77,6 @@ def create_users(db: Session):
             name="테스트유저",
             phone="010-1234-5678",
             status=UserStatus.ACTIVE,
-            address1="서울시 강남구",
-            address2="테헤란로 123",
             agree_marketing=True,
             agree_sms=True,
             agree_email=True
@@ -89,8 +87,6 @@ def create_users(db: Session):
             name="관리자",
             phone="010-9999-9999",
             status=UserStatus.ACTIVE,
-            address1="서울시 중구",
-            address2="1번지",
             agree_marketing=False,
             agree_sms=False,
             agree_email=False
@@ -321,7 +317,7 @@ def create_orders(db: Session):
             subtotal=price,
             shipping_fee=Decimal("2500"),
             total_amount=price + Decimal("2500"),
-            status=OrderStatus.PAYMENT_COMPLETED,
+            status=OrderStatus.PAID,
             payment_method="CARD",
             shipping_request="배송 전 연락바랍니다"
         )

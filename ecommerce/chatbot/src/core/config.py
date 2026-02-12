@@ -1,18 +1,5 @@
 
-import os
-from typing import Literal
-from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-# Get the project root directory (assuming .env is in the root: SKN21-FINAL-5TEAM)
-# config.py is in ecommerce/chatbot/src/core/
-# Path(__file__) = .../ecommerce/chatbot/src/core/config.py
-# .parent = .../core
-# .parent = .../src
-# .parent = .../chatbot
-# .parent = .../ecommerce
-# .parent = .../SKN21-FINAL-5TEAM (Root)
-ROOT_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(

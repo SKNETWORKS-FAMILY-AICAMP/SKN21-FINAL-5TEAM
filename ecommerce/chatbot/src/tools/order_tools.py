@@ -90,7 +90,7 @@ def _get_order_actions(order: Order) -> dict:
     }
     
     # 1. 취소 가능 여부 (배송 전)
-    if order.status in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
+    if order.status in [OrderStatus.PENDING, OrderStatus.PAID]:
         actions["can_cancel"] = True
     else:
         actions["cancel_reason"] = f"현재 상태({order.status.value})에서는 취소가 불가능합니다. (배송 시작됨)"
@@ -112,7 +112,7 @@ def _get_order_actions(order: Order) -> dict:
     
     # 3. 교환 가능 여부 (배송 전/후)
     if order.status not in [OrderStatus.CANCELLED, OrderStatus.REFUNDED]:
-        if order.status in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
+        if order.status in [OrderStatus.PENDING, OrderStatus.PAID]:
             actions["can_exchange"] = True
             actions["exchange_type"] = "pre_shipment"
         elif order.status in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
@@ -209,7 +209,7 @@ def _check_cancellation(order_id: str, user_id: int) -> dict:
             return error
         
         # 배송 전 상태 확인
-        if order.status not in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
+        if order.status not in [OrderStatus.PENDING, OrderStatus.PAID]:
             return {
                 "error": f"현재 주문 상태({order.status.value})에서는 취소가 불가능합니다. 배송이 시작된 경우 반품을 이용해주세요."
             }
@@ -318,7 +318,7 @@ def cancel_order(order_id: str, user_id: int, reason: str, confirmed: bool = Tru
         if error:
             return error
             
-        if order.status not in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
+        if order.status not in [OrderStatus.PENDING, OrderStatus.PAID]:
             return {"error": "배송이 시작되어 취소할 수 없습니다."}
             
         order.status = OrderStatus.CANCELLED
@@ -369,7 +369,7 @@ def check_refund_eligibility(
         db.close()
         
     # 2. 상태에 따라 분기
-    if status in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
+    if status in [OrderStatus.PENDING, OrderStatus.PAID]:
         # 배송 전 -> 취소 로직
         return _check_cancellation(order_id, user_id)
     elif status in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
@@ -392,7 +392,7 @@ def register_return_request(
     Args:
         order_id: 주문번호
         user_id: 요청자 사용자 ID
-        pickup_address: 반품 수거지 주소
+        pickup_address: 반품 수거지 주소 (필수). 사용자가 주소를 입력하지 않았다면, 절대 텍스트로 묻지 말고 `open_address_search` 툴을 호출하세요.
         confirmed: 사용자 확인 여부
         
     Returns:
@@ -459,7 +459,7 @@ def check_exchange_eligibility(
             return {"error": "취소/환불된 주문은 교환할 수 없습니다."}
             
         # 1. 배송 전 -> 단순 옵션 변경
-        if order.status in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
+        if order.status in [OrderStatus.PENDING, OrderStatus.PAID]:
             return {
                 "eligible": True,
                 "type": "pre_shipment",
@@ -522,7 +522,7 @@ def change_product_option(order_id: str, user_id: int, new_option_id: int) -> di
         if error:
             return error
             
-        if order.status not in [OrderStatus.PENDING, OrderStatus.PAYMENT_COMPLETED]:
+        if order.status not in [OrderStatus.PENDING, OrderStatus.PAID]:
             return {"error": "배송이 시작되어 옵션을 변경할 수 없습니다. 교환 신청을 이용해주세요."}
             
         # 실제로는 여기서 재고 확인 및 OrderItem 업데이트 로직이 들어가야 함
@@ -558,7 +558,7 @@ def register_exchange_request(
         order_id: 주문번호
         user_id: 요청자 사용자 ID
         reason: 교환 사유
-        pickup_address: 반품 수거지 주소
+        pickup_address: 반품 수거지 주소 (필수). 사용자가 주소를 입력하지 않았다면, 절대 텍스트로 묻지 말고 `open_address_search` 툴을 호출하세요.
         new_option_id: 교환할 새로운 옵션 ID
         confirmed: 사용자 확인 여부
         
