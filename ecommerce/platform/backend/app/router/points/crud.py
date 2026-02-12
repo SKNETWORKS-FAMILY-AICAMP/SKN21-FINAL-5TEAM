@@ -1,6 +1,8 @@
 """
 CRUD Operations - Points Module
 포인트 및 상품권 관련 CRUD 함수
+
+✅ 수정사항: get_point_statistics에서 포인트 이력 없는 사용자도 0으로 반환
 """
 from typing import Optional, List
 from decimal import Decimal
@@ -103,7 +105,7 @@ def get_current_point_balance(db: Session, user_id: int) -> Decimal:
         user_id: 사용자 ID
     
     Returns:
-        현재 포인트 잔액
+        현재 포인트 잔액 (포인트 이력이 없으면 0)
     """
     # 가장 최근 내역의 balance_after 조회
     latest = (
@@ -113,6 +115,7 @@ def get_current_point_balance(db: Session, user_id: int) -> Decimal:
         .first()
     )
     
+    # ✅ 포인트 이력이 없으면 0 반환
     return latest[0] if latest else Decimal('0')
 
 
@@ -125,9 +128,9 @@ def get_point_statistics(db: Session, user_id: int) -> schemas.PointBalance:
         user_id: 사용자 ID
     
     Returns:
-        포인트 잔액 및 통계
+        포인트 잔액 및 통계 (포인트 이력이 없으면 모두 0 반환)
     """
-    # 현재 잔액
+    # 현재 잔액 (포인트 이력이 없으면 0)
     current_balance = get_current_point_balance(db, user_id)
     
     # 총 적립 포인트 (EARN, REFUND)
@@ -154,6 +157,7 @@ def get_point_statistics(db: Session, user_id: int) -> schemas.PointBalance:
         .scalar() or Decimal('0')
     )
     
+    # ✅ 포인트 이력이 없는 사용자도 정상적으로 0 반환
     return schemas.PointBalance(
         user_id=user_id,
         current_balance=current_balance,

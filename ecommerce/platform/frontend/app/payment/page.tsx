@@ -1,40 +1,88 @@
 "use client";
 
+import { useRouter } from 'next/navigation';
 import { useState, useEffect } from "react";
 import styles from "./payment.module.css";
 import { useAuth } from '../authcontext';
 
-// ==================== 타입 정의 (Schemas 기반) ====================
+// ==================== 타입 정의 (실제 Schemas 기반) ====================
 
 type PaymentStatus = "pending" | "completed" | "failed" | "cancelled";
-type OrderStatus = "pending" | "payment_completed" | "preparing" | "shipped" | "delivered" | "cancelled" | "refunded";
+type OrderStatus = "pending" | "paid" | "preparing" | "shipped" | "delivered" | "cancelled" | "refunded";
 type ProductType = "new" | "used";
 
-// Cart 관련
-interface CartItem {
-  id: number;
-  user_id: number;
-  product_option_type: ProductType;
-  product_option_id: number;
-  quantity: number;
-  created_at: string;
+// ==================== Carts 모듈 타입 (실제 schemas.py 기반) ====================
+
+interface ProductOptionInfo {
+  size: string | null;
+  color: string | null;
+  condition: string | null;
 }
 
-// Shipping 관련
+interface ProductInfo {
+  id: number;
+  name: string;
+  brand: string;
+  price: string;
+  original_price: string | null;
+  stock: number;
+  shipping_fee: string;
+  shipping_text: string;
+  is_used: boolean;
+  image: string;
+  option: ProductOptionInfo;
+}
+
+interface CartItemDetailResponse {
+  id: number;
+  cart_id: number;
+  quantity: number;
+  product_option_type: ProductType;
+  product_option_id: number;
+  created_at: string;
+  updated_at: string;
+  product: ProductInfo;
+}
+
+interface CartDetailResponse {
+  id: number;
+  user_id: number;
+  items: CartItemDetailResponse[];
+  created_at: string;
+  updated_at: string;
+}
+
+interface CartSummary {
+  total_items: number;
+  total_quantity: number;
+  total_price: string;
+  total_shipping_fee: string;
+  final_total: string;
+}
+
+interface CartDetailWithSummary {
+  cart: CartDetailResponse;
+  summary: CartSummary;
+}
+
+// ==================== Shipping 모듈 타입 (실제 schemas.py 기반) ====================
+
 interface ShippingAddress {
   id: number;
   user_id: number;
-  address_name: string;
   recipient_name: string;
-  phone_number: string;
-  address: string;
-  detail_address: string | null;
-  postal_code: string;
+  address1: string;
+  address2: string | null;
+  post_code: string;
+  phone: string;
   is_default: boolean;
   created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
 }
 
-// Order 관련
+// ==================== Orders 모듈 타입 ====================
+
 interface OrderItemCreate {
   product_option_type: ProductType;
   product_option_id: number;
@@ -48,6 +96,7 @@ interface OrderCreate {
   shipping_request: string | null;
   points_used: string;
   items: OrderItemCreate[];
+  status : OrderStatus;
 }
 
 interface OrderDetailResponse {
@@ -70,7 +119,8 @@ interface OrderDetailResponse {
   shipping_info: any | null;
 }
 
-// Payment 관련 (Schemas 기반)
+// ==================== Payments 모듈 타입 ====================
+
 interface PaymentResponse {
   id: number;
   order_id: number;
@@ -82,55 +132,59 @@ interface PaymentResponse {
   updated_at: string;
 }
 
-// Product 정보 (가격 조회용)
-interface ProductOption {
-  id: number;
-  price: string;
-  product_id: number;
+// ==================== Points 모듈 타입 ====================
+
+interface PointBalance {
+  user_id: number;
+  current_balance: string;
+  total_earned: string;
+  total_used: string;
 }
 
 // ==================== 메인 컴포넌트 ====================
 
 export default function PaymentPage() {
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const router = useRouter();
+  const [cartData, setCartData] = useState<CartDetailWithSummary | null>(null);
   const [addresses, setAddresses] = useState<ShippingAddress[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<ShippingAddress | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<string>("card");
   const [cardNumber, setCardNumber] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
-  const [productPrices, setProductPrices] = useState<Map<number, string>>(new Map());
-  const {user, isLoggedIn } = useAuth();
+  const [pointBalance, setPointBalance] = useState<PointBalance | null>(null);
+  const [pointsToUse, setPointsToUse] = useState<string>("0");
+  const [shippingRequest, setShippingRequest] = useState<string>("");
+  const { user, isLoggedIn } = useAuth();
 
   const API_BASE = "http://localhost:8000";
+  const PAYMENT_METHOD = "card"; // 고정: 신용카드만 가능
 
-  // 가격 계산
-  const subtotal = cartItems.reduce((sum, item) => {
-    const price = productPrices.get(item.product_option_id) || "0";
-    return sum + Number(price) * item.quantity;
-  }, 0);
-  const shippingFee = subtotal >= 50000 ? 0 : 3000;
+  // 가격 계산 (Cart Summary 기반)
+  const subtotal = cartData ? Number(cartData.summary.total_price) : 0;
+  const shippingFee = cartData ? Number(cartData.summary.total_shipping_fee) : 0;
   const discount = 0;
-  const totalAmount = subtotal + shippingFee - discount;
+  const pointsUsed = Number(pointsToUse) || 0;
+  const totalAmount = subtotal + shippingFee - discount - pointsUsed;
 
   // ==================== 데이터 로딩 ====================
 
   useEffect(() => {
-    if(user){
+    if (user) {
       loadInitialData();
-    }
+    }  
   }, [user]);
 
   const loadInitialData = async () => {
     try {
       setLoading(true);
 
-      // 1. 장바구니 아이템 로드 (실제 DB 연동)
-      await loadCartItems();
-
-      // 2. 배송지 목록 로드 (실제 DB 연동)
-      await loadAddresses();
+      // 병렬로 데이터 로드
+      await Promise.all([
+        loadCartWithProducts(),
+        loadAddresses(),
+        loadPointBalance(), // 포인트 없어도 에러 무시
+      ]);
     } catch (err) {
       console.error("Failed to load data:", err);
       alert("데이터를 불러오는데 실패했습니다");
@@ -139,11 +193,11 @@ export default function PaymentPage() {
     }
   };
 
-  // ==================== 장바구니 데이터 로드 (실제 DB) ====================
+  // ==================== 장바구니 + 상품 정보 로드 (Carts CRUD 기반) ====================
 
-  const loadCartItems = async () => {
+  const loadCartWithProducts = async () => {
     try {
-      // GET /carts/users/{user_id}/items
+      // GET /carts/{user_id}
       if (!user) throw new Error("유저 정보가 없습니다");
       const response = await fetch(`${API_BASE}/carts/${user.id}`);
 
@@ -151,62 +205,30 @@ export default function PaymentPage() {
         throw new Error("장바구니를 불러오는데 실패했습니다");
       }
 
-      const items: CartItem[] = await response.json();
-      const itemsArray = Array.isArray(items) ? items : [items];
-      setCartItems(itemsArray);
+      const data: CartDetailWithSummary = await response.json();
+      setCartData(data);
 
-      // 각 상품의 가격 정보 로드
-      await loadProductPrices(itemsArray);
+      console.log("Cart loaded:", data);
     } catch (err) {
-      console.error("Failed to load cart items:", err);
-      // 에러 발생 시 빈 배열 유지
+      console.error("Failed to load cart:", err);
+      throw err; // 장바구니는 필수이므로 에러 전파
     }
   };
 
-  // ==================== 상품 가격 정보 로드 ====================
-
-  const loadProductPrices = async (items: CartItem[]) => {
-    const pricesMap = new Map<number, string>();
-
-    for (const item of items) {
-      try {
-        let price = "0";
-
-        if (item.product_option_type === "new") {
-          // GET /products/new/{product_id}/options
-          // 실제로는 product_option_id로 직접 조회하는 API 필요
-          // 여기서는 간단히 고정 가격 사용
-          price = "100000"; // 임시 가격
-        } else {
-          // 중고상품 가격
-          price = "50000"; // 임시 가격
-        }
-
-        pricesMap.set(item.product_option_id, price);
-      } catch (err) {
-        console.error(`Failed to load price for option ${item.product_option_id}:`, err);
-      }
-    }
-
-    setProductPrices(pricesMap);
-  };
-
-  // ==================== 배송지 목록 로드 (실제 DB) ====================
+  // ==================== 배송지 목록 로드 (Shipping CRUD 기반) ====================
 
   const loadAddresses = async () => {
     try {
-      // GET /shipping/users/{user_id}/addresses
+      // GET /shipping?user_id={user_id}
       if (!user) throw new Error("유저 정보가 없습니다");
-      const response = await fetch(`${API_BASE}/shipping/?user_id=${user.id}`);
+      const response = await fetch(`${API_BASE}/shipping?user_id=${user.id}`);
 
       if (!response.ok) {
         throw new Error("배송지를 불러오는데 실패했습니다");
       }
 
       const data: ShippingAddress[] = await response.json();
-      const addressArray = Array.isArray(data) ? data : (data ? [data] : []);
-      
-      setAddresses(addressArray);
+      setAddresses(data);
 
       // 기본 배송지 자동 선택
       const defaultAddr = data.find((addr) => addr.is_default);
@@ -215,12 +237,48 @@ export default function PaymentPage() {
       } else if (data.length > 0) {
         setSelectedAddress(data[0]);
       }
+
+      console.log("Addresses loaded:", data);
     } catch (err) {
       console.error("Failed to load addresses:", err);
+      // 배송지는 필수이므로 에러 전파
+      throw err;
     }
   };
 
-  // ==================== 주문 생성 (실제 DB) ====================
+  // ==================== 포인트 잔액 조회 (Points CRUD 기반) ====================
+
+  const loadPointBalance = async () => {
+    try {
+      // GET /points/users/{user_id}/balance
+      if (!user) throw new Error("유저 정보가 없습니다");
+      const response = await fetch(`${API_BASE}/points/users/${user.id}/balance`);
+
+      if (!response.ok) {
+        // 포인트 시스템이 없거나 사용자에게 포인트가 없을 수 있음
+        console.warn("포인트 정보를 불러올 수 없습니다");
+        setPointBalance(null);
+        return;
+      }
+
+      const data: PointBalance = await response.json();
+      
+      // 잔액이 0이면 null 처리
+      if (Number(data.current_balance) === 0) {
+        setPointBalance(null);
+      } else {
+        setPointBalance(data);
+      }
+
+      console.log("Point balance loaded:", data);
+    } catch (err) {
+      console.error("Failed to load point balance:", err);
+      // 포인트는 선택사항이므로 에러 무시
+      setPointBalance(null);
+    }
+  };
+
+  // ==================== 주문 생성 (Orders CRUD 기반) ====================
 
   const createOrder = async (): Promise<number> => {
     try {
@@ -228,23 +286,24 @@ export default function PaymentPage() {
         throw new Error("배송지를 선택해주세요");
       }
 
-      if (cartItems.length === 0) {
+      if (!cartData || cartData.cart.items.length === 0) {
         throw new Error("장바구니가 비어있습니다");
       }
 
       // OrderCreate 스키마에 맞게 데이터 구성
-      const orderItems: OrderItemCreate[] = cartItems.map((item) => ({
+      const orderItems: OrderItemCreate[] = cartData.cart.items.map((item) => ({
         product_option_type: item.product_option_type,
         product_option_id: item.product_option_id,
         quantity: item.quantity,
-        unit_price: productPrices.get(item.product_option_id) || "0",
+        unit_price: item.product.price,
       }));
 
       const orderData: OrderCreate = {
         shipping_address_id: selectedAddress.id,
-        payment_method: paymentMethod,
-        shipping_request: null,
-        points_used: "0",
+        payment_method: PAYMENT_METHOD, // "card" 고정
+        shipping_request: shippingRequest || null,
+        points_used: pointsToUse,
+        status : 'paid',
         items: orderItems,
       };
 
@@ -264,6 +323,7 @@ export default function PaymentPage() {
       }
 
       const order: OrderDetailResponse = await response.json();
+      console.log("Order created:", order);
       return order.id;
     } catch (err) {
       console.error("Failed to create order:", err);
@@ -271,7 +331,7 @@ export default function PaymentPage() {
     }
   };
 
-  // ==================== 결제 처리 (실제 DB - CRUD의 process_payment) ====================
+  // ==================== 결제 처리 (Payments CRUD의 process_payment) ====================
 
   const handlePayment = async () => {
     if (!selectedAddress) {
@@ -279,13 +339,20 @@ export default function PaymentPage() {
       return;
     }
 
-    if (cartItems.length === 0) {
+    if (!cartData || cartData.cart.items.length === 0) {
       alert("장바구니가 비어있습니다");
       return;
     }
 
-    if (paymentMethod === "card" && !cardNumber) {
+    if (!cardNumber) {
       alert("카드번호를 입력해주세요");
+      return;
+    }
+
+    // 포인트 사용 금액 검증 (포인트가 있는 경우만)
+    const pointsValue = Number(pointsToUse) || 0;
+    if (pointsValue > 0 && pointBalance && pointsValue > Number(pointBalance.current_balance)) {
+      alert("포인트 잔액이 부족합니다");
       return;
     }
 
@@ -296,21 +363,22 @@ export default function PaymentPage() {
     try {
       setProcessing(true);
 
-      // 1. 주문 생성
+      // 1. 포인트 사용 (Points CRUD 기반) - 포인트를 사용하는 경우만
+      if (pointsValue > 0 && pointBalance) {
+        await usePoints(pointsValue);
+      }
+
+      // 2. 주문 생성 (Orders CRUD 기반)
       const orderId = await createOrder();
       console.log("Order created:", orderId);
 
-      // 2. 결제 처리 (CRUD의 process_payment 함수 사용)
-      // POST /payments/orders/{order_id}/process
-      const maskedCard = paymentMethod === "card" ? maskCardNumber(cardNumber) : null;
+      // 3. 결제 처리 (Payments CRUD의 process_payment)
+      const maskedCard = maskCardNumber(cardNumber);
 
       const params = new URLSearchParams({
-        payment_method: paymentMethod,
+        payment_method: PAYMENT_METHOD, // "card" 고정
+        card_numbers: maskedCard,
       });
-
-      if (maskedCard) {
-        params.append("card_numbers", maskedCard);
-      }
 
       const paymentResponse = await fetch(
         `${API_BASE}/payments/orders/${orderId}/process?${params.toString()}`,
@@ -327,14 +395,22 @@ export default function PaymentPage() {
       const payment: PaymentResponse = await paymentResponse.json();
       console.log("Payment processed:", payment);
 
-      // 3. 장바구니 비우기 (선택사항)
+      // 4. 장바구니 비우기 (Carts CRUD 기반)
       await clearCart();
+
+      // 5. 포인트 적립 (구매 금액의 1%) - 포인트 시스템이 있는 경우만
+      if (pointBalance !== null) {
+        const earnPoints = Math.floor(totalAmount * 0.01);
+        if (earnPoints > 0) {
+          await earnPointsAfterPurchase(earnPoints, orderId);
+        }
+      }
 
       // 결제 성공
       alert("결제가 완료되었습니다!");
 
       // 주문 상세 페이지로 이동
-      window.location.href = `/orders/${orderId}`;
+      router.push('/order');
     } catch (err) {
       console.error("Payment failed:", err);
       alert(err instanceof Error ? err.message : "결제 처리 중 오류가 발생했습니다");
@@ -343,16 +419,72 @@ export default function PaymentPage() {
     }
   };
 
-  // ==================== 장바구니 비우기 ====================
+  // ==================== 포인트 사용 (Points CRUD 기반) ====================
+
+  const usePoints = async (amount: number) => {
+    try {
+      // POST /points/users/{user_id}/use
+      if (!user) throw new Error("유저 정보가 없습니다");
+      const response = await fetch(`${API_BASE}/points/users/${user.id}/use`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: amount.toString(),
+          description: "상품 구매 시 포인트 사용",
+          order_id: null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "포인트 사용에 실패했습니다");
+      }
+
+      console.log("Points used:", amount);
+    } catch (err) {
+      console.error("Failed to use points:", err);
+      throw err;
+    }
+  };
+
+  // ==================== 포인트 적립 (Points CRUD 기반) ====================
+
+  const earnPointsAfterPurchase = async (amount: number, orderId: number) => {
+    try {
+      // POST /points/users/{user_id}/earn
+      if (!user) throw new Error("유저 정보가 없습니다");
+      await fetch(`${API_BASE}/points/users/${user.id}/earn`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: amount.toString(),
+          description: `주문 ${orderId} 구매 적립`,
+          order_id: orderId,
+        }),
+      });
+
+      console.log("Points earned:", amount);
+    } catch (err) {
+      console.error("Failed to earn points:", err);
+      // 포인트 적립 실패는 무시 (결제는 이미 완료됨)
+    }
+  };
+
+  // ==================== 장바구니 비우기 (Carts CRUD 기반) ====================
 
   const clearCart = async () => {
     try {
-      for (const item of cartItems) {
-        // DELETE /carts/items/{cart_item_id}
-        await fetch(`${API_BASE}/carts/items/${item.id}`, {
-          method: "DELETE",
-        });
-      }
+      // DELETE /carts/{user_id}/clear
+      if (!user) throw new Error("유저 정보가 없습니다");
+      await fetch(`${API_BASE}/carts/${user.id}/clear`, {
+        method: "DELETE",
+      });
+
+      console.log("Cart cleared");
     } catch (err) {
       console.error("Failed to clear cart:", err);
       // 에러 무시 (결제는 완료됨)
@@ -378,6 +510,34 @@ export default function PaymentPage() {
     setCardNumber(formatted);
   };
 
+  const handlePointsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, "");
+    const numValue = Number(value);
+    
+    // 최대값 제한
+    const maxPoints = Math.min(
+      pointBalance ? Number(pointBalance.current_balance) : 0,
+      subtotal // 상품금액까지만 사용 가능
+    );
+
+    if (numValue > maxPoints) {
+      setPointsToUse(maxPoints.toString());
+    } else {
+      setPointsToUse(value);
+    }
+  };
+
+  const useAllPoints = () => {
+    if (!pointBalance) return;
+    
+    const maxPoints = Math.min(
+      Number(pointBalance.current_balance),
+      subtotal
+    );
+
+    setPointsToUse(maxPoints.toString());
+  };
+
   // ==================== 배송지 선택 ====================
 
   const handleSelectAddress = (address: ShippingAddress) => {
@@ -399,7 +559,7 @@ export default function PaymentPage() {
     );
   }
 
-  if (cartItems.length === 0) {
+  if (!cartData || cartData.cart.items.length === 0) {
     return (
       <div className={styles.wrapper}>
         <div className={styles.container}>
@@ -426,17 +586,16 @@ export default function PaymentPage() {
             <div className={styles.addressBox}>
               <div className={styles.addressInfo}>
                 <p>
-                  <strong>{selectedAddress.address_name}</strong>
+                  <strong>{selectedAddress.recipient_name}</strong>
                   {selectedAddress.is_default && (
                     <span style={{ color: "#0070f3", marginLeft: "8px" }}>[기본]</span>
                   )}
                 </p>
-                <p>{selectedAddress.recipient_name}</p>
-                <p>{selectedAddress.phone_number}</p>
+                <p>{selectedAddress.phone}</p>
                 <p>
-                  [{selectedAddress.postal_code}] {selectedAddress.address}
+                  [{selectedAddress.post_code}] {selectedAddress.address1}
                 </p>
-                {selectedAddress.detail_address && <p>{selectedAddress.detail_address}</p>}
+                {selectedAddress.address2 && <p>{selectedAddress.address2}</p>}
               </div>
               <button
                 className={styles.changeAddressButton}
@@ -458,117 +617,159 @@ export default function PaymentPage() {
           )}
         </div>
 
-        {/* 주문 상품 */}
+        {/* 주문 상품 (Cart with Product Info) */}
         <div className={styles.section}>
-          <h2>주문 상품</h2>
+          <h2>주문 상품 ({cartData.summary.total_items}종 / {cartData.summary.total_quantity}개)</h2>
           <div className={styles.itemsList}>
-            {cartItems.map((item) => {
-              const price = productPrices.get(item.product_option_id) || "0";
-              return (
-                <div key={item.id} className={styles.cartItem}>
-                  <div style={{ flex: 1 }}>
-                    <div className={styles.itemInfo}>
-                      <p>
-                        <strong>
-                          {item.product_option_type === "new" ? "🆕 신상품" : "♻️ 중고상품"}
-                        </strong>
+            {cartData.cart.items.map((item) => (
+              <div key={item.id} className={styles.cartItem}>
+                <div style={{ width: "80px", height: "80px", marginRight: "12px" }}>
+                  <img
+                    src={item.product.image}
+                    alt={item.product.name}
+                    style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "4px" }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div className={styles.itemInfo}>
+                    <p>
+                      <strong>
+                        {item.product.is_used ? "♻️ 중고상품" : "🆕 신상품"} {item.product.brand}
+                      </strong>
+                    </p>
+                    <p>{item.product.name}</p>
+                    {(item.product.option.size || item.product.option.color) && (
+                      <p style={{ fontSize: "13px", color: "#666" }}>
+                        {item.product.option.size && `사이즈: ${item.product.option.size}`}
+                        {item.product.option.color && ` / 색상: ${item.product.option.color}`}
+                        {item.product.option.condition && ` / 상태: ${item.product.option.condition}`}
                       </p>
-                      <p>옵션 ID: {item.product_option_id}</p>
-                      <p>
-                        수량: {item.quantity}개 x {Number(price).toLocaleString()}원
-                      </p>
-                    </div>
-                  </div>
-                  <div>
-                    <strong>{(Number(price) * item.quantity).toLocaleString()}원</strong>
+                    )}
+                    <p>
+                      수량: {item.quantity}개 x {Number(item.product.price).toLocaleString()}원
+                    </p>
+                    <p style={{ fontSize: "12px", color: "#666" }}>
+                      {item.product.shipping_text}
+                    </p>
                   </div>
                 </div>
-              );
-            })}
+                <div>
+                  <strong>
+                    {(Number(item.product.price) * item.quantity).toLocaleString()}원
+                  </strong>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* 결제 수단 */}
+        {/* 배송 요청사항 */}
         <div className={styles.section}>
-          <h2>결제 수단</h2>
-          <div className={styles.paymentMethods}>
-            <label>
-              <input
-                type="radio"
-                value="card"
-                checked={paymentMethod === "card"}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-              />
-              신용/체크카드
-            </label>
-            <label>
-              <input
-                type="radio"
-                value="transfer"
-                checked={paymentMethod === "transfer"}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-              />
-              계좌이체
-            </label>
-            <label>
-              <input
-                type="radio"
-                value="phone"
-                checked={paymentMethod === "phone"}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-              />
-              휴대폰 결제
-            </label>
-            <label>
-              <input
-                type="radio"
-                value="kakaopay"
-                checked={paymentMethod === "kakaopay"}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-              />
-              카카오페이
-            </label>
-          </div>
-
-          {/* 카드번호 입력 */}
-          {paymentMethod === "card" && (
-            <div style={{ marginTop: "16px" }}>
-              <label>
-                카드번호:
-                <input
-                  type="text"
-                  value={cardNumber}
-                  onChange={handleCardNumberChange}
-                  placeholder="1234-5678-9012-3456"
-                  style={{
-                    marginLeft: "8px",
-                    padding: "8px",
-                    borderRadius: "4px",
-                    border: "1px solid #ccc",
-                    width: "250px",
-                  }}
-                />
-              </label>
-            </div>
-          )}
+          <h2>배송 요청사항</h2>
+          <textarea
+            value={shippingRequest}
+            onChange={(e) => setShippingRequest(e.target.value)}
+            placeholder="배송 시 요청사항을 입력해주세요 (예: 부재 시 문 앞에 놔주세요)"
+            style={{
+              width: "100%",
+              minHeight: "80px",
+              padding: "12px",
+              borderRadius: "4px",
+              border: "1px solid #ccc",
+              fontSize: "14px",
+              resize: "vertical",
+            }}
+            maxLength={200}
+          />
         </div>
 
-        {/* 결제 금액 */}
+        {/* 포인트 사용 - 포인트가 있는 경우만 표시 */}
+        {pointBalance && Number(pointBalance.current_balance) > 0 && (
+          <div className={styles.section}>
+            <h2>포인트 사용</h2>
+            <div style={{ marginBottom: "12px" }}>
+              <p>
+                보유 포인트: <strong>{Number(pointBalance.current_balance).toLocaleString()}P</strong>
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <input
+                type="text"
+                value={pointsToUse}
+                onChange={handlePointsChange}
+                placeholder="0"
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  borderRadius: "4px",
+                  border: "1px solid #ccc",
+                }}
+              />
+              <span>P</span>
+              <button
+                onClick={useAllPoints}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "4px",
+                  border: "1px solid #000",
+                  backgroundColor: "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                전액 사용
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 카드 결제 정보 */}
+        <div className={styles.section}>
+          <h2>카드 결제</h2>
+          <div style={{ marginBottom: "16px" }}>
+            <label>
+              카드번호:
+              <input
+                type="text"
+                value={cardNumber}
+                onChange={handleCardNumberChange}
+                placeholder="1234-5678-9012-3456"
+                style={{
+                  marginLeft: "8px",
+                  padding: "8px",
+                  borderRadius: "4px",
+                  border: "1px solid #ccc",
+                  width: "250px",
+                }}
+              />
+            </label>
+          </div>
+          <p style={{ fontSize: "13px", color: "#666" }}>
+            💳 신용/체크카드로 안전하게 결제됩니다
+          </p>
+        </div>
+
+        {/* 결제 금액 (Cart Summary 기반) */}
         <div className={styles.section}>
           <h2>결제 금액</h2>
           <div className={styles.priceRows}>
             <div className={styles.priceRow}>
               <span>상품금액</span>
-              <span>{subtotal.toLocaleString()}원</span>
+              <span>{Number(cartData.summary.total_price).toLocaleString()}원</span>
             </div>
             <div className={styles.priceRow}>
               <span>배송비</span>
-              <span>+{shippingFee.toLocaleString()}원</span>
+              <span>+{Number(cartData.summary.total_shipping_fee).toLocaleString()}원</span>
             </div>
             {discount > 0 && (
               <div className={styles.priceRow}>
                 <span>할인</span>
                 <span style={{ color: "red" }}>-{discount.toLocaleString()}원</span>
+              </div>
+            )}
+            {pointsUsed > 0 && (
+              <div className={styles.priceRow}>
+                <span>포인트 사용</span>
+                <span style={{ color: "#9c27b0" }}>-{pointsUsed.toLocaleString()}P</span>
               </div>
             )}
           </div>
@@ -612,17 +813,16 @@ export default function PaymentPage() {
                   />
                   <div className={styles.addressDetails}>
                     <p>
-                      <strong>{address.address_name}</strong>
+                      <strong>{address.recipient_name}</strong>
                       {address.is_default && (
                         <span style={{ color: "#0070f3", marginLeft: "8px" }}>[기본]</span>
                       )}
                     </p>
-                    <p>{address.recipient_name}</p>
-                    <p>{address.phone_number}</p>
+                    <p>{address.phone}</p>
                     <p>
-                      [{address.postal_code}] {address.address}
+                      [{address.post_code}] {address.address1}
                     </p>
-                    {address.detail_address && <p>{address.detail_address}</p>}
+                    {address.address2 && <p>{address.address2}</p>}
                   </div>
                 </div>
               ))

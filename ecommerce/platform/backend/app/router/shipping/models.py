@@ -72,6 +72,10 @@ class ShippingAddress(Base):
         "User",
         back_populates="shipping_addresses"
     )
+    order: Mapped["Order"] = relationship(
+        "Order",
+        back_populates="shipping_addresses"
+    )
 
 
 class ShippingRequestTemplate(Base):

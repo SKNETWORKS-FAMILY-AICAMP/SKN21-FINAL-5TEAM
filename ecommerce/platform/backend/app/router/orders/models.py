@@ -16,7 +16,7 @@ from ecommerce.platform.backend.app.database import Base
 
 if TYPE_CHECKING:
     from ecommerce.platform.backend.app.router.users.models import User
-    from ecommerce.platform.backend.app.router.shipping.models import ShippingInfo
+    from ecommerce.platform.backend.app.router.shipping.models import ShippingInfo,ShippingAddress
     from ecommerce.platform.backend.app.router.payments.models import Payment
     from ecommerce.platform.backend.app.router.points.models import PointHistory
     from ecommerce.platform.backend.app.router.reviews.models import Review
@@ -97,6 +97,10 @@ class Order(Base):
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="orders")
+    shipping_addresses: Mapped[List["ShippingAddress"]] = relationship(
+        "ShippingAddress",
+        back_populates="order"
+    )
     shipping_info: Mapped["ShippingInfo"] = relationship(back_populates="order")
     items: Mapped[List["OrderItem"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"

@@ -381,8 +381,7 @@ export default function CartPage() {
       items: selectedCartItems,
       totals: calculateSelectedTotals(),
     });
-
-    alert('주문 기능은 아직 구현되지 않았습니다.');
+    router.push('/payment')
   };
 
   const totals = calculateSelectedTotals();

@@ -111,7 +111,7 @@ def get_user_orders(
     - 상태별 필터링 가능
     - 페이지네이션 지원
     """
-    orders, total = crud.get_orders_by_user_id(
+    orders, total = crud.get_orders_by_user_with_product_names(
         db=db,
         user_id=user_id,
         skip=skip,
@@ -146,7 +146,7 @@ def get_order_detail(
             detail="주문을 찾을 수 없습니다"
         )
     
-    order = crud.get_order_detail(db, order_id)
+    order = crud.get_order_detail_with_product_names(db, order_id)
     
     if not order:
         raise HTTPException(
