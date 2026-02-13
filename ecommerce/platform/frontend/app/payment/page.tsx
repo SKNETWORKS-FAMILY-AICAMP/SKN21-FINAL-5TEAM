@@ -152,6 +152,14 @@ export default function PaymentPage() {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addFormData, setAddFormData] = useState({
+    recipient_name: '',
+    address1: '',
+    address2: '',
+    post_code: '',
+    phone: '',
+  });
   const [pointBalance, setPointBalance] = useState<PointBalance | null>(null);
   const [pointsToUse, setPointsToUse] = useState<string>("0");
   const [shippingRequest, setShippingRequest] = useState<string>("");
@@ -576,6 +584,48 @@ export default function PaymentPage() {
     setShowAddressModal(false);
   };
 
+  // ==================== 배송지 추가 (Shipping CRUD 기반) ====================
+
+  const openAddAddressForm = () => {
+    setAddFormData({ recipient_name: '', address1: '', address2: '', post_code: '', phone: '' });
+    setShowAddForm(true);
+  };
+
+  const saveNewAddress = async () => {
+    if (!addFormData.recipient_name || !addFormData.address1 || !addFormData.phone) {
+      alert("수령인 이름, 기본 주소, 전화번호는 필수입니다.");
+      return;
+    }
+
+    try {
+      if (!user) throw new Error("유저 정보가 없습니다");
+
+      const payload = {
+        recipient_name: addFormData.recipient_name,
+        address1: addFormData.address1,
+        address2: addFormData.address2 || "",
+        post_code: addFormData.post_code || "",
+        phone: addFormData.phone,
+        is_default: addresses.length === 0,
+      };
+
+      const res = await fetch(`${API_BASE}/shipping?user_id=${user.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error('배송지 저장 실패');
+
+      // 배송지 목록 다시 로드
+      await loadAddresses();
+      setShowAddForm(false);
+    } catch (err) {
+      console.error(err);
+      alert("배송지 저장에 실패했습니다.");
+    }
+  };
+
   // ==================== 로딩 처리 ====================
 
   if (loading) {
@@ -821,7 +871,7 @@ export default function PaymentPage() {
       </div>
 
       {/* 배송지 선택 모달 */}
-      {showAddressModal && (
+      {showAddressModal && !showAddForm && (
         <div className={styles.modalOverlay} onClick={() => setShowAddressModal(false)}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <h2>배송지 선택</h2>
@@ -859,7 +909,13 @@ export default function PaymentPage() {
               ))
             )}
 
-            <div className={styles.modalButtons}>
+            <div className={styles.modalButtons} style={{ marginTop: "12px" }}>
+              <button
+                className={styles.saveButton}
+                onClick={openAddAddressForm}
+              >
+                + 배송지 추가
+              </button>
               <button
                 className={styles.cancelButton}
                 onClick={() => setShowAddressModal(false)}
@@ -872,6 +928,51 @@ export default function PaymentPage() {
               >
                 확인
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 배송지 추가 모달 */}
+      {showAddForm && (
+        <div className={styles.modalOverlay} onClick={() => setShowAddForm(false)}>
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <h2>배송지 추가</h2>
+            <div className={styles.newAddressForm}>
+              <input
+                type="text"
+                placeholder="수령인 이름"
+                value={addFormData.recipient_name}
+                onChange={e => setAddFormData({ ...addFormData, recipient_name: e.target.value })}
+              />
+              <input
+                type="text"
+                placeholder="우편번호"
+                value={addFormData.post_code}
+                onChange={e => setAddFormData({ ...addFormData, post_code: e.target.value })}
+              />
+              <input
+                type="text"
+                placeholder="기본 주소"
+                value={addFormData.address1}
+                onChange={e => setAddFormData({ ...addFormData, address1: e.target.value })}
+              />
+              <input
+                type="text"
+                placeholder="상세 주소"
+                value={addFormData.address2}
+                onChange={e => setAddFormData({ ...addFormData, address2: e.target.value })}
+              />
+              <input
+                type="text"
+                placeholder="전화번호"
+                value={addFormData.phone}
+                onChange={e => setAddFormData({ ...addFormData, phone: e.target.value })}
+              />
+            </div>
+            <div className={styles.modalButtons} style={{ marginTop: "12px" }}>
+              <button className={styles.cancelButton} onClick={() => setShowAddForm(false)}>취소</button>
+              <button className={styles.saveButton} onClick={saveNewAddress}>저장</button>
             </div>
           </div>
         </div>

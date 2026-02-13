@@ -54,3 +54,29 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Inactive user")
 
     return user
+
+
+# =========================
+# 현재 로그인 유저 (Optional - 비로그인 시 None 반환)
+# =========================
+def get_current_user_optional(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    token = request.cookies.get("access_token")
+    if not token:
+        return None
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("user_id")
+        if not user_id:
+            return None
+    except JWTError:
+        return None
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or user.status != "active":
+        return None
+
+    return user
