@@ -33,6 +33,10 @@ export default function ProfilePage() {
           return;
         }
         const data = await res.json();
+        if (!data.authenticated) {
+          router.replace('/auth/login');
+          return;
+        }
         setUser(data);
 
         setProfileForm({

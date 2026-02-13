@@ -51,6 +51,10 @@ export default function HomePage() {
           return;
         }
         const data = await res.json();
+        if (!data.authenticated) {
+          setIsLoggedIn(false);
+          return;
+        }
         setUser(data);
         setIsLoggedIn(true);
       })
