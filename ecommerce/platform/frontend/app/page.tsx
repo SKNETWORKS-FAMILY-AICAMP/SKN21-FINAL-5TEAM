@@ -157,6 +157,25 @@ export default function HomePage() {
           return;
         }
 
+        const cartItem = await res.json();
+
+        // User History에 장바구니 추가 기록
+        try {
+          await fetch(`${API_BASE}/user-history/users/${user!.id}/track/cart-action`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action_type: 'cart_add',
+              cart_item_id: cartItem.id,
+              product_option_type: 'new',
+              product_option_id: optionId,
+              quantity: 1,
+            }),
+          });
+        } catch (err) {
+          console.error('Failed to track cart_add:', err);
+        }
+
         if (goPayment) {
           router.push('/payment');
         } else {

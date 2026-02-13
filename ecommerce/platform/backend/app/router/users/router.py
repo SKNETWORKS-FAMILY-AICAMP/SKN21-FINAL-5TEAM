@@ -8,13 +8,27 @@ from ecommerce.platform.backend.app.core.auth import create_access_token
 from ecommerce.platform.backend.app.database import get_db
 from ecommerce.platform.backend.app.router.users.models import UserStatus
 from ecommerce.platform.backend.app.router.users import crud, schemas
-from ecommerce.platform.backend.app.router.users.models import User
+from ecommerce.platform.backend.app.router.users.models import User, UserRole
 from ecommerce.platform.backend.app.core.auth import get_current_user
 
 router = APIRouter(
     # prefix="/users",
     tags=["Users"],
 )
+
+# =========================
+# Admin - 전체 유저 조회
+# =========================
+
+@router.get("/all", response_model=list[schemas.UserListItem])
+def list_all_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="관리자만 접근할 수 있습니다.")
+    return crud.get_all_users(db)
+
 
 # =========================
 # Auth / Register / Login

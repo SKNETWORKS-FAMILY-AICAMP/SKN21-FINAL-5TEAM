@@ -31,14 +31,14 @@ class ActionType(str, PyEnum):
 
     # 장바구니 관련
     CART_ADD = "cart_add"
-    CART_REMOVE = "cart_remove"
+    CART_DEL = "cart_del"
 
     # 주문 관련
-    ORDER_CREATE = "order_create"  # 결제 완료
-    ORDER_CANCEL = "order_cancel"
+    PAYMENT = "payment"  # 결제 완료
+    ORDER_DEL = "order_del"
 
     # 환불 관련
-    REFUND_REQUEST = "refund_request"
+    ORDER_RE = "order_re"
 
     # 리뷰 관련
     REVIEW_CREATE = "review_create"
