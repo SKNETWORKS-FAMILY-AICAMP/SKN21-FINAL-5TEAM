@@ -487,3 +487,45 @@ def delete_voucher(db: Session, voucher_id: int) -> bool:
     db.commit()
     
     return True
+
+def redeem_voucher_to_point(
+    db: Session,
+    user_id: int,
+    voucher_code: str
+):
+    """
+    상품권을 사용하여 포인트로 전환
+    """
+
+    voucher = get_voucher_by_code(db, voucher_code)
+
+    if not voucher:
+        raise ValueError("존재하지 않는 상품권 코드입니다")
+
+    if voucher.is_used:
+        raise ValueError("이미 사용된 상품권입니다")
+
+    # 1️⃣ 포인트 적립 (commit 없이 처리되도록 구조 유지)
+    current_balance = get_current_point_balance(db, user_id)
+    new_balance = current_balance + voucher.amount
+
+    point_history = models.PointHistory(
+        user_id=user_id,
+        amount=voucher.amount,
+        balance_after=new_balance,
+        type=schemas.PointType.EARN,
+        description="상품권 충전"
+    )
+
+    db.add(point_history)
+
+    # 2️⃣ 상품권 사용 처리
+    voucher.is_used = True
+    voucher.used_at = datetime.utcnow()
+    voucher.user_id = user_id  # 누가 사용했는지 기록
+
+    db.commit()
+    db.refresh(voucher)
+
+    return voucher
+

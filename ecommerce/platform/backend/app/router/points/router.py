@@ -392,6 +392,24 @@ def delete_voucher(
     logger.info(f"Voucher deleted: {voucher_id}")
     return None
 
+# ==================== 상품권 포인트 전환 ====================
+@router.post("/users/{user_id}/vouchers/redeem")
+def redeem_voucher(
+    user_id: int,
+    request: schemas.VoucherUseRequest,
+    db: Session = Depends(get_db)
+):
+    try:
+        return crud.redeem_voucher_to_point(
+            db=db,
+            user_id=user_id,
+            voucher_code=request.voucher_code
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
 # ==================== 헬스 체크 ====================
 
