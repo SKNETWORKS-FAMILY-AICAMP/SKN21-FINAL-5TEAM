@@ -162,7 +162,7 @@ export default function PaymentPage() {
 
   // ==================== User History 기록 함수 ====================
 
-  const trackOrderAction = async (orderId: number, actionType: "order_create" | "order_cancel") => {
+  const trackOrderAction = async (orderId: number, actionType: "payment" | "order_del") => {
     try {
       if (!user) return;
 
@@ -304,29 +304,6 @@ export default function PaymentPage() {
 
   // ==================== 주문 생성 (Orders CRUD 기반) ====================
 
-  const updateOrderStatus = async (orderId: number, status: OrderStatus) => {
-    try {
-      // PATCH /orders/{order_id}
-      const response = await fetch(`${API_BASE}/orders/${orderId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ status }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "주문 상태 업데이트에 실패했습니다");
-      }
-
-      console.log("Order status updated:", status);
-    } catch (err) {
-      console.error("Failed to update order status:", err);
-      throw err;
-    }
-  };
-
   const createOrder = async (): Promise<number> => {
     try {
       if (!selectedAddress) {
@@ -414,8 +391,8 @@ export default function PaymentPage() {
       const orderId = await createOrder();
       console.log("Order created:", orderId);
 
-      // 1-1. User History에 주문 생성 기록
-      await trackOrderAction(orderId, "order_create");
+      // 1-1. User History에 결제 기록
+      await trackOrderAction(orderId, "payment");
 
       // 2. 결제 처리 (Payments CRUD의 process_payment)
       const maskedCard = maskCardNumber(cardNumber);
@@ -440,8 +417,7 @@ export default function PaymentPage() {
       const payment: PaymentResponse = await paymentResponse.json();
       console.log("Payment processed:", payment);
 
-      // 3. 결제 성공 - 주문 상태를 'paid'로 업데이트
-      await updateOrderStatus(orderId, 'paid');
+      // 3. 결제 성공 - 주문 상태는 process_payment에서 이미 'paid'로 변경됨
 
       // 4. 포인트 사용 (Points CRUD 기반) - 포인트를 사용하는 경우만
       if (pointsValue > 0 && pointBalance) {

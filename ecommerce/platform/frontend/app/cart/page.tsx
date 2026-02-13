@@ -81,7 +81,7 @@ const API_BASE_URL = 'http://localhost:8000';
  */
 async function trackCartAction(
   userId: number,
-  actionType: 'cart_add' | 'cart_remove' | 'cart_update',
+  actionType: 'cart_add' | 'cart_del' | 'cart_update',
   cartItemId: number,
   productOptionType: string,
   productOptionId: number,
@@ -354,7 +354,7 @@ export default function CartPage() {
       for (const item of itemsToDelete) {
         await trackCartAction(
           user.id,
-          'cart_remove',
+          'cart_del',
           item.id,
           item.product_option_type,
           item.product_option_id
@@ -397,7 +397,7 @@ export default function CartPage() {
       if (itemToDelete) {
         await trackCartAction(
           user.id,
-          'cart_remove',
+          'cart_del',
           itemId,
           itemToDelete.product_option_type,
           itemToDelete.product_option_id

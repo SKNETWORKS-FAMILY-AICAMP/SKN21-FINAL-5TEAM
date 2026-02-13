@@ -204,6 +204,17 @@ export default function OrdersPage() {
         throw new Error(errorData.detail || "주문 취소에 실패했습니다");
       }
 
+      // User History에 주문 취소 기록
+      try {
+        await fetch(`${API_BASE}/user-history/users/${user.id}/track/order`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order_id: orderId, action_type: "order_del" }),
+        });
+      } catch (err) {
+        console.error("Failed to track order_del:", err);
+      }
+
       alert("주문이 취소되었습니다");
       fetchOrders(); // 목록 새로고침
     } catch (err) {
@@ -234,6 +245,17 @@ export default function OrdersPage() {
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || "환불 요청에 실패했습니다");
+      }
+
+      // User History에 환불 요청 기록
+      try {
+        await fetch(`${API_BASE}/user-history/users/${user.id}/track/refund`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order_id: orderId }),
+        });
+      } catch (err) {
+        console.error("Failed to track order_re:", err);
       }
 
       alert("환불이 요청되었습니다");

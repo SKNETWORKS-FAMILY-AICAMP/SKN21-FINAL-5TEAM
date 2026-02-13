@@ -20,14 +20,14 @@ class ActionType(str, Enum):
 
     # 장바구니 관련
     CART_ADD = "cart_add"
-    CART_REMOVE = "cart_remove"
+    CART_DEL = "cart_del"
 
     # 주문 관련
-    ORDER_CREATE = "order_create"  # 결제 완료
-    ORDER_CANCEL = "order_cancel"
+    PAYMENT = "payment"  # 결제 완료
+    ORDER_DEL = "order_del"
 
     # 환불 관련
-    REFUND_REQUEST = "refund_request"
+    ORDER_RE = "order_re"
 
     # 리뷰 관련
     REVIEW_CREATE = "review_create"
@@ -70,7 +70,7 @@ class UserHistoryResponse(UserHistoryBase):
 
 class TrackCartActionRequest(BaseModel):
     """장바구니 행동 추적 요청"""
-    action_type: Literal["cart_add", "cart_remove"]
+    action_type: Literal["cart_add", "cart_del"]
     cart_item_id: int
     product_option_type: str
     product_option_id: int
@@ -85,7 +85,7 @@ class TrackAuthRequest(BaseModel):
 class TrackOrderRequest(BaseModel):
     """주문 행동 추적 요청"""
     order_id: int
-    action_type: Literal["order_create", "order_cancel"]
+    action_type: Literal["payment", "order_del"]
 
 
 class TrackRefundRequest(BaseModel):

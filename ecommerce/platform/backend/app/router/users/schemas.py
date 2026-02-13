@@ -42,6 +42,18 @@ class LoginResponse(BaseModel):
     name: str
     role: str = "user"
 
+class UserListItem(BaseModel):
+    id: int
+    email: str
+    name: str
+    phone: Optional[str] = None
+    status: str
+    role: str
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
 class WithdrawRequest(BaseModel):
     reason: str
 

@@ -23,6 +23,7 @@ import ecommerce.platform.backend.app.router.payments.models
 import ecommerce.platform.backend.app.router.points.models
 import ecommerce.platform.backend.app.router.reviews.models
 import ecommerce.platform.backend.app.router.inventories.models
+import ecommerce.platform.backend.app.router.user_history.models
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
