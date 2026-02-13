@@ -133,6 +133,12 @@ export default function MyPage() {
   const [pointHistory, setPointHistory] = useState<any[]>([]);
   const [showPointModal, setShowPointModal] = useState(false);
 
+    /* =========================
+    상품권
+    ==========================*/
+  const [showVoucherModal, setShowVoucherModal] = useState(false);
+  const [voucherCode, setVoucherCode] = useState("");
+  const [voucherLoading, setVoucherLoading] = useState(false);
 
   /* =========================
      체형 정보
@@ -201,6 +207,81 @@ export default function MyPage() {
   return (
     <div className={styles.page}>
       <div className={styles.container}>
+
+        {/* ================= 상품권 충전 ================= */}
+        {showVoucherModal && (
+          <div className={styles.dim} onClick={() => setShowVoucherModal(false)}>
+            <div
+              className={styles.modal}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3>상품권 충전</h3>
+
+              <input
+                type="text"
+                placeholder="8자리 상품권 번호 입력"
+                maxLength={8}
+                value={voucherCode}
+                onChange={(e) =>
+                  setVoucherCode(e.target.value.replace(/\D/g, ""))
+                }
+              />
+
+              <div className={styles.modalButtons}>
+                <button onClick={() => setShowVoucherModal(false)}>
+                  취소
+                </button>
+
+                <button
+                  disabled={voucherLoading || voucherCode.length !== 8}
+                  onClick={async () => {
+                    try {
+                      setVoucherLoading(true);
+
+                      const res = await fetch(
+                        `http://localhost:8000/points/users/${user.id}/vouchers/redeem`,
+                        {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify({
+                            voucher_code: voucherCode,
+                          }),
+                        }
+                      );
+
+                      const result = await res.json();
+
+                      if (!res.ok) {
+                        alert(result.detail || "충전 실패");
+                        return;
+                      }
+
+                      // 🔥 포인트 재조회
+                      const balanceRes = await fetch(
+                        `http://localhost:8000/points/users/${user.id}/balance`
+                      );
+                      const balanceData = await balanceRes.json();
+                      setPointBalance(balanceData.current_balance ?? 0);
+
+                      alert("충전 완료!");
+                      setVoucherCode("");
+                      setShowVoucherModal(false);
+                    } catch (err) {
+                      alert("에러 발생");
+                    } finally {
+                      setVoucherLoading(false);
+                    }
+                  }}
+                >
+                  충전하기
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ===== AppBar ===== */}
         <header className={styles.appBar}>
           <h2 className={styles.appBarTitle}>마이</h2>
@@ -246,7 +327,10 @@ export default function MyPage() {
             </div>
           </button>
 
-          <button className={styles.shortcutItem}>
+          <button
+            className={styles.shortcutItem}
+            onClick={() => setShowVoucherModal(true)}
+          >
             <div className={styles.shortcutTitle}>
               <span>상품권</span>
               <span className={styles.arrow}>›</span>
@@ -588,3 +672,4 @@ export default function MyPage() {
     </div>
   );
 }
+
