@@ -104,24 +104,27 @@ export default function ProductsPage() {
     const run = async () => {
       try {
         const res = await fetch(`${API_BASE}/users/me`, { credentials: 'include' });
-        setIsLoggedIn(res.ok);
 
         if (!res.ok) {
+          setIsLoggedIn(false);
           setUserId(null);
           return;
         }
 
-        // /users/me가 JSON을 주는 경우에만 id를 읽음 (안주면 fallback 1 사용)
-        try {
-          const data: MeResponseLoose = await res.json();
-          const maybeId =
-            (typeof data.id === 'number' && data.id) ||
-            (typeof data.user_id === 'number' && data.user_id) ||
-            null;
-          setUserId(maybeId);
-        } catch {
+        const data: MeResponseLoose = await res.json();
+
+        if (!data.authenticated) {
+          setIsLoggedIn(false);
           setUserId(null);
+          return;
         }
+
+        setIsLoggedIn(true);
+        const maybeId =
+          (typeof data.id === 'number' && data.id) ||
+          (typeof data.user_id === 'number' && data.user_id) ||
+          null;
+        setUserId(maybeId);
       } catch {
         setIsLoggedIn(false);
         setUserId(null);

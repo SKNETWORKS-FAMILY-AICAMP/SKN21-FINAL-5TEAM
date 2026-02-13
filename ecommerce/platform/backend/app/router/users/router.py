@@ -9,7 +9,7 @@ from ecommerce.platform.backend.app.database import get_db
 from ecommerce.platform.backend.app.router.users.models import UserStatus
 from ecommerce.platform.backend.app.router.users import crud, schemas
 from ecommerce.platform.backend.app.router.users.models import User, UserRole
-from ecommerce.platform.backend.app.core.auth import get_current_user
+from ecommerce.platform.backend.app.core.auth import get_current_user, get_current_user_optional
 
 router = APIRouter(
     # prefix="/users",
@@ -112,19 +112,22 @@ def add_to_cart(
 # Profile (me)
 # =========================
 
-@router.get("/me", response_model=schemas.MeResponse)
-def me(current_user: User = Depends(get_current_user)):
-    return schemas.MeResponse(
-        id=current_user.id,
-        email=current_user.email,
-        name=current_user.name,
-        phone=current_user.phone,
-        agree_marketing=current_user.agree_marketing,
-        agree_sms=current_user.agree_sms,
-        agree_email=current_user.agree_email,
-        created_at=current_user.created_at,
-        updated_at=current_user.updated_at,
-    )
+@router.get("/me")
+def me(current_user: User | None = Depends(get_current_user_optional)):
+    if current_user is None:
+        return {"authenticated": False}
+    return {
+        "authenticated": True,
+        "id": current_user.id,
+        "email": current_user.email,
+        "name": current_user.name,
+        "phone": current_user.phone,
+        "agree_marketing": current_user.agree_marketing,
+        "agree_sms": current_user.agree_sms,
+        "agree_email": current_user.agree_email,
+        "created_at": current_user.created_at,
+        "updated_at": current_user.updated_at,
+    }
 
 @router.patch("/me", response_model=schemas.UserProfileUpdateResponse)
 def update_my_profile(

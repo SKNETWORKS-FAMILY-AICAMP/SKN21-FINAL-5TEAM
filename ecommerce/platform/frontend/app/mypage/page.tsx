@@ -30,6 +30,10 @@ export default function MyPage() {
           return;
         }
         const data = await res.json();
+        if (!data.authenticated) {
+          router.replace("/auth/login");
+          return;
+        }
         setUser(data);
 
         if (data.id) {
