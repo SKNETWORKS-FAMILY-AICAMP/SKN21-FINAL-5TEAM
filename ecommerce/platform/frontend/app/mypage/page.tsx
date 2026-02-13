@@ -32,6 +32,13 @@ export default function MyPage() {
         const data = await res.json();
         setUser(data);
 
+        if (data.id) {
+          fetch(`http://localhost:8000/points/users/${data.id}/balance`)
+            .then(res => res.json())
+            .then(balanceData => {
+              setPointBalance(balanceData.current_balance ?? 0);
+            });
+        }
         setProfileForm({
           name: data.name ?? "",
           phone: data.phone ?? "",
@@ -45,6 +52,7 @@ export default function MyPage() {
       })
       .catch(() => router.replace("/auth/login"));
   }, [router]);
+
 
   /* =========================
      모달 상태
@@ -113,6 +121,14 @@ export default function MyPage() {
     });
     closeModal();
   };
+
+  /* =========================
+    포인트상태
+    ==========================*/
+  const [pointBalance, setPointBalance] = useState<number>(0);
+  const [pointHistory, setPointHistory] = useState<any[]>([]);
+  const [showPointModal, setShowPointModal] = useState(false);
+
 
   /* =========================
      체형 정보
@@ -206,12 +222,24 @@ export default function MyPage() {
 
         {/* ===== Shortcut Grid ===== */}
         <section className={styles.shortcutGrid}>
-          <button className={styles.shortcutItem}>
+          <button
+            className={styles.shortcutItem}
+            onClick={async () => {
+              const res = await fetch(
+                `http://localhost:8000/points/users/${user.id}/history`
+              );
+              const data = await res.json();
+              setPointHistory(data);
+              setShowPointModal(true);
+            }}
+          >
             <div className={styles.shortcutTitle}>
               <span>포인트</span>
               <span className={styles.arrow}>›</span>
             </div>
-            <div className={styles.shortcutValue}>3,000원</div>
+            <div className={styles.shortcutValue}>
+              {Number(pointBalance).toLocaleString()}원
+            </div>
           </button>
 
           <button className={styles.shortcutItem}>
@@ -241,7 +269,9 @@ export default function MyPage() {
               주문목록
             </li>
 
-            <li>취소 / 반품 / 교환 내역</li>
+            <li onClick={() => router.push("/shipping")} style={{ cursor: "pointer" }}>
+              배송지 관리
+            </li>
             <li>재입고 알림 내역</li>
             <li>최근 본 상품</li>
             <li>유즈드</li>
@@ -513,6 +543,43 @@ export default function MyPage() {
     </div>
   </div>
 )}
+
+      {/* ================= 포인트 내역 ================= */}
+      {showPointModal && (
+        <div className={styles.dim} onClick={() => setShowPointModal(false)}>
+          <div
+            className={styles.modal}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3>포인트 내역</h3>
+
+            {pointHistory.length === 0 ? (
+              <p>포인트 내역이 없습니다.</p>
+            ) : (
+              pointHistory.map((item) => (
+                <div key={item.id} style={{ marginBottom: "10px" }}>
+                  <div>
+                    {item.description}
+                  </div>
+                  <div style={{ fontSize: "13px", color: "#666" }}>
+                    {new Date(item.created_at).toLocaleDateString("ko-KR")}
+                  </div>
+                  <div style={{ fontWeight: "bold" }}>
+                    {item.amount > 0 ? "+" : ""}
+                    {Number(item.amount).toLocaleString()}원
+                  </div>
+                  <hr />
+                </div>
+              ))
+            )}
+
+            <div className={styles.modalButtons}>
+              <button onClick={() => setShowPointModal(false)}>닫기</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       </div>
     </div>
   );

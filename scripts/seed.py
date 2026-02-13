@@ -7,7 +7,7 @@ import random
 from datetime import datetime, timedelta
 from decimal import Decimal
 from sqlalchemy.orm import Session
-from ecommerce.platform.backend.app.router.users.models import User, UserStatus
+from ecommerce.platform.backend.app.router.users.models import User, UserStatus, UserRole
 from ecommerce.platform.backend.app.router.products.models import (
     Category, Product, ProductOption, ProductType,
     UsedProduct, UsedProductOption, UsedProductCondition, UsedProductStatus
