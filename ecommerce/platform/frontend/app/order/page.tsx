@@ -204,6 +204,17 @@ export default function OrdersPage() {
         throw new Error(errorData.detail || "주문 취소에 실패했습니다");
       }
 
+      // User History에 주문 취소 기록
+      try {
+        await fetch(`${API_BASE}/user-history/users/${user.id}/track/order`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order_id: orderId, action_type: "order_del" }),
+        });
+      } catch (err) {
+        console.error("Failed to track order_del:", err);
+      }
+
       alert("주문이 취소되었습니다");
       fetchOrders(); // 목록 새로고침
     } catch (err) {
@@ -234,6 +245,17 @@ export default function OrdersPage() {
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || "환불 요청에 실패했습니다");
+      }
+
+      // User History에 환불 요청 기록
+      try {
+        await fetch(`${API_BASE}/user-history/users/${user.id}/track/refund`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order_id: orderId }),
+        });
+      } catch (err) {
+        console.error("Failed to track order_re:", err);
       }
 
       alert("환불이 요청되었습니다");
@@ -280,28 +302,76 @@ export default function OrdersPage() {
     }
   };
 
-  // ==================== 로딩 및 에러 처리 ====================
+    // ==================== 리뷰 작성 =======================
+    const handleCreateReview = async (orderItemId: number) => {
+    if (!user) {
+      alert("로그인이 필요합니다");
+      return;
+    }
 
-  if (loading) {
-    return (
-      <div className={styles.wrapper}>
-        <div className={styles.loading}>주문 목록을 불러오는 중...</div>
-      </div>
-    );
-  }
+    const content = prompt("리뷰 내용을 입력하세요:");
+    if (!content) return;
 
-  if (error) {
-    return (
-      <div className={styles.wrapper}>
-        <div className={styles.loading} style={{ color: "red" }}>
-          에러: {error}
+    const ratingInput = prompt("평점을 입력하세요 (1~5):");
+    if (!ratingInput) return;
+
+    const rating = Number(ratingInput);
+    if (rating < 1 || rating > 5) {
+      alert("평점은 1~5 사이여야 합니다");
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `http://localhost:8000/reviews?user_id=${user.id}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            order_item_id: orderItemId,
+            content,
+            rating,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "리뷰 작성 실패");
+      }
+
+      alert("리뷰가 등록되었습니다 🎉 (100원 적립)");
+
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "리뷰 작성 실패");
+    }
+  };
+
+    // ==================== 로딩 및 에러 처리 ====================
+
+    if (loading) {
+      return (
+        <div className={styles.wrapper}>
+          <div className={styles.loading}>주문 목록을 불러오는 중...</div>
         </div>
-        <button onClick={fetchOrders} className={styles.detailBtn}>
-          다시 시도
-        </button>
-      </div>
-    );
-  }
+      );
+    }
+
+    if (error) {
+      return (
+        <div className={styles.wrapper}>
+          <div className={styles.loading} style={{ color: "red" }}>
+            에러: {error}
+          </div>
+          <button onClick={fetchOrders} className={styles.detailBtn}>
+            다시 시도
+          </button>
+        </div>
+      );
+    }
 
   // ==================== 렌더링 ====================
 
@@ -490,7 +560,8 @@ export default function OrdersPage() {
                 {order.status === "delivered" && (
                   <button
                     className={styles.reviewBtn}
-                    onClick={() => alert("리뷰 작성 기능은 준비중입니다")}
+                    // onClick={() => alert("리뷰 작성 기능은 준비중입니다")}
+                    onClick={() => handleCreateReview(order.items[0].id)}
                   >
                     ⭐ 리뷰 작성
                   </button>

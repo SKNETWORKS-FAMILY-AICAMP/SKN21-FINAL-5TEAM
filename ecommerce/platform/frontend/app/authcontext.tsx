@@ -40,6 +40,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const data = await res.json();
 
+      if (!data.authenticated) {
+        setIsLoggedIn(false);
+        setUser(null);
+        return;
+      }
+
       setIsLoggedIn(true);
       setUser(data);
     } catch {

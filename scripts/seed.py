@@ -16,6 +16,7 @@ from ecommerce.platform.backend.app.router.orders.models import Order, OrderItem
 from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
 from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
 from ecommerce.platform.backend.app.router.users.crud import hash_password
+from ecommerce.platform.backend.app.router.points.models import IssuedVoucher
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,11 @@ def init_db(db: Session):
             logger.info("🛠️ 초기 주문 데이터 생성 중...")
             create_orders(db)
 
+        # 🔥 8. 테스트 상품권 생성 (항상 체크)
+        if not db.query(IssuedVoucher).first():
+            logger.info("🛠️ 초기 상품권 생성 중...")
+        create_test_vouchers(db)
+
         db.commit()
         logger.info("✅ 초기 데이터 적재 완료")
         
@@ -67,6 +73,41 @@ def init_db(db: Session):
         db.rollback()
         logger.error(f"❌ 초기 데이터 적재 실패: {e}")
         raise e
+
+def create_test_vouchers(db: Session):
+    """테스트용 상품권 생성"""
+
+    existing = db.query(IssuedVoucher).filter(
+        IssuedVoucher.voucher_code.in_(["11111111", "22222222"])
+    ).first()
+
+    if existing:
+        return
+
+    # 🔥 test 사용자 조회
+    test_user = db.query(User).filter(User.email == "test@example.com").first()
+
+    if not test_user:
+        return
+
+    vouchers = [
+        IssuedVoucher(
+            user_id=test_user.id,
+            voucher_code="11111111",
+            amount=10000,
+            is_used=False
+        ),
+        IssuedVoucher(
+            user_id=test_user.id,
+            voucher_code="22222222",
+            amount=10000,
+            is_used=False
+        ),
+    ]
+
+    db.add_all(vouchers)
+    db.flush()
+
 
 def create_users(db: Session):
     """테스트 사용자 생성"""
