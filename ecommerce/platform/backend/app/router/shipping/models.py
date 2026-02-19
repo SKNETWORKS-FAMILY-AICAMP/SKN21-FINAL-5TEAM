@@ -35,7 +35,7 @@ class ShippingAddress(Base):
         BigInteger, primary_key=True, autoincrement=True, comment='배송지 고유 ID'
     )
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey('Users.id', ondelete='CASCADE'),
+        BigInteger, ForeignKey('users.id', ondelete='CASCADE'),
         nullable=False, comment='회원 ID'
     )
     recipient_name: Mapped[str] = mapped_column(

@@ -5,7 +5,7 @@ FastAPI + SQLAlchemy ORM (2.0 style)
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING
 from enum import Enum as PyEnum
 
 from sqlalchemy import (
@@ -149,6 +149,12 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
         uselist=False,
+    )
+
+    shipping_addresses: Mapped[List["ShippingAddress"]] = relationship(
+        "ShippingAddress",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
 
