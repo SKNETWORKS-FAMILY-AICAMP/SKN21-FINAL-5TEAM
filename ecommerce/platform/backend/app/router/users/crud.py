@@ -4,11 +4,9 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 
-from .models import User, UserBodyMeasurement
-
+from .models import User, UserBodyMeasurement, UserStatus
 
 pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
-
 
 # =========================
 # util
@@ -23,8 +21,12 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 # =========================
-# queries
+# user queries
 # =========================
+
+def get_all_users(db: Session) -> list[User]:
+    return db.query(User).filter(User.deleted_at.is_(None)).all()
+
 
 def get_user_by_id(db: Session, user_id: int) -> User | None:
     return (
@@ -58,8 +60,6 @@ def create_user(
     password: str,
     name: str,
     phone: str | None,
-    address1: str | None,
-    address2: str | None,
     agree_marketing_info: bool = False,
     agree_ad_sms: bool = False,
     agree_ad_email: bool = False,
@@ -69,8 +69,6 @@ def create_user(
         password_hash=hash_password(password),
         name=name,
         phone=phone,
-        address1=address1,
-        address2=address2,
         agree_marketing=agree_marketing_info,
         agree_sms=agree_ad_sms,
         agree_email=agree_ad_email,
@@ -82,7 +80,7 @@ def create_user(
 
 
 # =========================
-# profile update
+# profile
 # =========================
 
 def update_user_profile(
@@ -105,7 +103,12 @@ def update_user_profile(
     return user
 
 
-def change_password(db: Session, user: User, current_password: str, new_password: str) -> None:
+def change_password(
+    db: Session,
+    user: User,
+    current_password: str,
+    new_password: str,
+) -> None:
     if not user.password_hash:
         raise ValueError("비밀번호가 설정되어 있지 않습니다.")
 
@@ -117,7 +120,7 @@ def change_password(db: Session, user: User, current_password: str, new_password
 
 
 # =========================
-# notification (agree_* fields)
+# notification
 # =========================
 
 def update_notification_settings(
@@ -141,7 +144,7 @@ def update_notification_settings(
 
 
 # =========================
-# body measurement (1:1)
+# body measurement
 # =========================
 
 def get_body_measurement(db: Session, user_id: int) -> UserBodyMeasurement | None:
@@ -157,9 +160,6 @@ def upsert_body_measurement(
     user_id: int,
     data: dict,
 ) -> UserBodyMeasurement:
-    """
-    data: BodyMeasurementUpsertRequest.model_dump(exclude_unset=True)
-    """
     m = get_body_measurement(db, user_id)
 
     if m is None:
@@ -169,7 +169,6 @@ def upsert_body_measurement(
         db.refresh(m)
         return m
 
-    # 부분 업데이트
     for k, v in data.items():
         setattr(m, k, v)
 
@@ -179,10 +178,12 @@ def upsert_body_measurement(
 
 
 # =========================
-# withdraw (회원탈퇴)
-# - 소프트 삭제: deleted_at 업데이트
+# withdraw (soft delete)
 # =========================
 
 def withdraw_user(db: Session, user: User) -> None:
+    user.status = UserStatus.INACTIVE
     user.deleted_at = datetime.utcnow()
     db.commit()
+
+# =========================
