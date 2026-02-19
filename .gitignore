@@ -7,3 +7,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.next
+node_modules
+.DS_Store
+npm-debug.log*
+.vercel
+ecommerce\platform\frontend\public\products
