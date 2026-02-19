@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import styles from './chatbotfab.module.css';
 import OrderListUI from './OrderListUI';
+import { useAuth } from '../authcontext';
 
-type TextMessage = { role: 'user' | 'bot'; type: 'text'; text: string };
+type TextMessage = { role: 'user' | 'bot'; type: 'text'; text: string; isStreaming?: boolean };
 type OrderListMessage = {
   role: 'bot';
   type: 'order_list';
@@ -45,7 +46,13 @@ declare global {
 
 const API_BASE_URL = 'http://localhost:8000';
 
+const MIN_W = 340;
+const MIN_H = 420;
+const MAX_W = 800;
+const MAX_H = 900;
+
 export default function ChatbotFab() {
+  const { isLoggedIn } = useAuth();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMsg[]>([
@@ -56,6 +63,9 @@ export default function ChatbotFab() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const [panelSize, setPanelSize] = useState({ w: 400, h: 560 });
+  const isResizing = useRef(false);
 
   useEffect(() => {
     // 메시지 추가될 때 항상 아래로 스크롤
@@ -76,11 +86,51 @@ export default function ChatbotFab() {
     };
   }, []);
 
+  /* ===== 리사이즈 드래그 핸들러 ===== */
+  const onResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = panelSize.w;
+    const startH = panelSize.h;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isResizing.current) return;
+      // 좌상단 핸들이므로: 왼쪽으로 가면 넓어지고, 위로 가면 높아짐
+      const newW = Math.min(MAX_W, Math.max(MIN_W, startW - (ev.clientX - startX)));
+      const newH = Math.min(MAX_H, Math.max(MIN_H, startH - (ev.clientY - startY)));
+      setPanelSize({ w: newW, h: newH });
+    };
+
+    const onMouseUp = () => {
+      isResizing.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
   const toggle = () => setOpen((v) => !v);
 
   const sendMessage = async (textOverride?: string, hidden: boolean = false) => {
     const text = typeof textOverride === 'string' ? textOverride : input.trim();
     if (!text || isLoading) return;
+
+    // 로그인 체크
+    if (!isLoggedIn) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'bot',
+          type: 'text',
+          text: '챗봇을 사용하려면 로그인이 필요합니다. 로그인 후 다시 시도해주세요.',
+        },
+      ]);
+      return;
+    }
 
     // 사용자 메시지 추가 (hidden이 아닐 때만)
     if (!hidden) {
@@ -100,13 +150,14 @@ export default function ChatbotFab() {
         },
         body: JSON.stringify({
           message: text,
-          user_id: 'guest',
           previous_state: conversationState,
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`);
+        const errorText = await response.text();
+        console.error('API Response Error:', response.status, errorText);
+        throw new Error(`API Error: ${response.status} - ${errorText}`);
       }
 
       const reader = response.body?.getReader();
@@ -139,7 +190,7 @@ export default function ChatbotFab() {
                   botMessageAdded = true;
                   setMessages((prev) => [
                     ...prev,
-                    { role: 'bot', type: 'text', text: data.content }
+                    { role: 'bot', type: 'text', text: data.content, isStreaming: true }
                   ]);
                   accumulatedText = data.content;
                 } else {
@@ -150,6 +201,7 @@ export default function ChatbotFab() {
                     // 안전장치: 마지막 메시지가 봇 메시지인지 확인 (혹시 모를 Race Condition 방지)
                     if (lastMsg && lastMsg.role === 'bot' && lastMsg.type === 'text') {
                       lastMsg.text = accumulatedText;
+                      lastMsg.isStreaming = true;
                     }
                     return newMessages;
                   });
@@ -189,6 +241,15 @@ export default function ChatbotFab() {
               } else if (data.type === 'done') {
                 if (newState) setConversationState(newState);
                 setStatusMessage(null); // 완료 시 상태 메시지 확실히 제거
+                // 스트리밍 완료 표시
+                setMessages((prev) => {
+                  const newMessages = [...prev];
+                  const lastMsg = newMessages[newMessages.length - 1];
+                  if (lastMsg && lastMsg.role === 'bot' && lastMsg.type === 'text') {
+                    lastMsg.isStreaming = false;
+                  }
+                  return newMessages;
+                });
               } else if (data.type === 'error') {
                 throw new Error(data.message);
               }
@@ -277,7 +338,15 @@ export default function ChatbotFab() {
       </button>
 
       {/* ✅ 슬라이드 업 패널 */}
-      <aside className={`${styles.panel} ${open ? styles.open : ''}`} aria-hidden={!open}>
+      <aside
+        ref={panelRef}
+        className={`${styles.panel} ${open ? styles.open : ''}`}
+        aria-hidden={!open}
+        style={{ width: panelSize.w, height: panelSize.h }}
+      >
+        {/* 좌상단 리사이즈 핸들 */}
+        <div className={styles.resizeHandle} onMouseDown={onResizeStart} />
+
         <header className={styles.panelHeader}>
           <div className={styles.title}>MOYEO 챗봇</div>
           <button type="button" className={styles.closeBtn} onClick={toggle} aria-label="닫기">
@@ -301,50 +370,67 @@ export default function ChatbotFab() {
             } else if (m.type === 'address_search') {
               return (
                 <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
-                  <div className={styles.bubble}>
-                    {m.message}
-                    <div style={{ marginTop: '10px' }}>
-                      <button 
-                        className={styles.confirmBtn}
-                        onClick={openAddressSearch}
-                      >
-                        주소 입력하기
-                      </button>
+                  <div className={styles.botMsg}>
+                    <span className={styles.botIcon}>✦</span>
+                    <div className={styles.botText}>
+                      {m.message}
+                      <div style={{ marginTop: '10px' }}>
+                        <button
+                          className={styles.confirmBtn}
+                          onClick={openAddressSearch}
+                        >
+                          주소 입력하기
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#999', marginTop: '5px' }}>
+                        * 주소 선택 후 상세 주소(동/호수)를 입력해주세요.
+                      </div>
                     </div>
-                    {/* 안내 메시지 추가 */}
-                    <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
-                      * 주소 선택 후 상세 주소(동/호수)를 입력해주세요.
+                  </div>
+                </div>
+              );
+            } else if (m.role === 'user') {
+              return (
+                <div key={i} className={`${styles.msgRow} ${styles.userRow}`}>
+                  <div className={styles.bubble}>
+                    {m.type === 'text' && m.text}
+                  </div>
+                </div>
+              );
+            } else {
+              const text = m.type === 'text' ? m.text : m.message;
+              return (
+                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
+                  <div className={styles.botMsg}>
+                    <span className={styles.botIcon}>✦</span>
+                    <div className={`${styles.botText} ${m.type === 'text' && m.isStreaming ? styles.streaming : ''}`}>
+                      {text}
                     </div>
                   </div>
                 </div>
               );
             }
-            return (
-              <div
-                key={i}
-                className={`${styles.msgRow} ${m.role === 'user' ? styles.userRow : styles.botRow}`}
-              >
-                <div className={styles.bubble}>{'text' in m ? m.text : m.message}</div>
-              </div>
-            );
           })}
           
           {/* 로딩 인디케이터 또는 상태 메시지 표시 */}
           {(isLoading || statusMessage) && (
             <div className={`${styles.msgRow} ${styles.botRow}`}>
-              <div className={styles.bubble}>
-                {statusMessage ? (
-                  <div className={styles.statusMessage}>
-                    <span className={styles.spinnerSmall}></span>
-                    {statusMessage}
-                  </div>
-                ) : (
-                  <div className={styles.typingIndicator}>
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </div>
-                )}
+              <div className={styles.botMsg}>
+                <span className={styles.botIcon}>✦</span>
+                <div className={styles.botText}>
+                  {statusMessage ? (
+                    <div className={styles.statusMessage}>
+                      <span className={styles.spinnerSmall}></span>
+                      {statusMessage}
+                    </div>
+                  ) : (
+                    <div className={styles.typingIndicator}>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
