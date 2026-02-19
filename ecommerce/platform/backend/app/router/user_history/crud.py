@@ -292,7 +292,7 @@ def track_refund_request(
         생성된 UserHistory 객체
     """
     history_data = schemas.UserHistoryCreate(
-        action_type=schemas.ActionType.REFUND_REQUEST,
+        action_type=schemas.ActionType.ORDER_RE,
         product_option_type=None,
         product_option_id=None,
         order_id=order_id,
