@@ -26,4 +26,5 @@ dependencies = [
     "sqlalchemy>=2.0.46",
     "tqdm>=4.67.3",
     "uvicorn>=0.40.0",
+    "python-jose[cryptography]>=3.3.0",
 ]
