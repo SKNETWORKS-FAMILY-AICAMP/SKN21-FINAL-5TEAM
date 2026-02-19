@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     LANGCHAIN_ENDPOINT: str
     LANGCHAIN_API_KEY: str
     LANGCHAIN_PROJECT: str
+
+    # Langfuse (nodes_v3 observability)
+    LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_PUBLIC_KEY: str = ""
+    LANGFUSE_BASE_URL: str = "https://us.cloud.langfuse.com"
     
     # Backend API
     BACKEND_API_URL: str = "http://localhost:3000"
@@ -41,4 +46,4 @@ class Settings(BaseSettings):
     MAX_RECENT_MESSAGES: int = 5  # 최근 유지할 메시지 개수 (Sliding Window)
     MAX_TOTAL_MESSAGES: int = 10   # 전체 메시지 최대 개수
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]
