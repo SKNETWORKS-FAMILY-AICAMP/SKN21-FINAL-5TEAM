@@ -14,20 +14,21 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
 }
 
+/* ===== 패널 (리사이즈 가능) ===== */
 .panel {
   position: fixed;
   right: 24px;
-  bottom: 88px; /* fab 위로 */
-  width: 360px;
-  height: 520px;
+  bottom: 88px;
+  /* width / height는 inline style로 제어 */
+  display: flex;
+  flex-direction: column;
   background: #fff;
-  border: 1px solid #eaeaea;
-  border-radius: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 16px;
   overflow: hidden;
   z-index: 9999;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
 
-  /* 슬라이드 업 기본 상태(숨김) */
   transform: translateY(16px);
   opacity: 0;
   pointer-events: none;
@@ -40,12 +41,34 @@
   pointer-events: auto;
 }
 
+/* ===== 리사이즈 핸들 (좌상단) ===== */
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nw-resize;
+  z-index: 10;
+}
+.resizeHandle::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid rgba(255,255,255,0.5);
+  border-left: 2px solid rgba(255,255,255,0.5);
+}
+
 .panelHeader {
   height: 48px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  padding: 0 16px;
   background: #111;
   color: #fff;
 }
@@ -67,15 +90,16 @@
 }
 
 .msgList {
-  height: calc(100% - 48px - 54px);
-  padding: 12px;
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
   overflow-y: auto;
   background: #fafafa;
 }
 
 .msgRow {
   display: flex;
-  margin-bottom: 10px;
+  margin-bottom: 30px;
 }
 
 .userRow {
@@ -86,26 +110,72 @@
   justify-content: flex-start;
 }
 
+/* ===== 유저 말풍선 ===== */
 .bubble {
-  max-width: 78%;
-  padding: 10px 12px;
-  border-radius: 12px;
-  font-size: 13px;
-  line-height: 1.6;
-  background: #fff;
-  border: 1px solid #eaeaea;
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 18px 18px 4px 18px;
+  font-size: 13.5px;
+  line-height: 1.65;
+  background: #111;
+  color: #fff;
   white-space: pre-line;
   word-break: break-word;
 }
 
-.userRow .bubble {
-  background: #111;
-  color: #fff;
-  border-color: #111;
+/* ===== 봇 메시지 (말풍선 없음) ===== */
+.botMsg {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  align-items: flex-start;
+}
+
+.botIcon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  margin-top: 1px;
+  color: #4a90d9;
+  filter: drop-shadow(0 0 2px rgba(74, 144, 217, 0.4));
+}
+
+.botText {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: #222;
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+.streaming {
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-font-smoothing: subpixel-antialiased;
+  animation: smoothText 0.15s ease-out;
+}
+
+@keyframes smoothText {
+  0% {
+    opacity: 0.85;
+    filter: blur(0.3px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0px);
+  }
 }
 
 .inputBar {
   height: 54px;
+  min-height: 54px;
   display: flex;
   gap: 8px;
   padding: 10px;
@@ -117,16 +187,21 @@
   flex: 1;
   height: 34px;
   border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 0 10px;
+  border-radius: 10px;
+  padding: 0 12px;
   outline: none;
   font-size: 13px;
+  background: #fafafa;
+}
+.input:focus {
+  border-color: #aaa;
+  background: #fff;
 }
 
 .sendBtn {
   width: 64px;
   height: 34px;
-  border-radius: 8px;
+  border-radius: 10px;
   border: none;
   background: #111;
   color: #fff;
@@ -137,7 +212,7 @@
 /* ===== 주문 목록 UI 스타일 ===== */
 .orderListContainer {
   width: 100%;
-  max-width: 300px;
+  max-width: 100%;
   background: #fff;
   border-radius: 12px;
   padding: 12px;

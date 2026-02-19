@@ -1,7 +1,7 @@
 
 from langgraph.graph import StateGraph, START, END
 from ecommerce.chatbot.src.graph.state import AgentState
-# Import new nodes from nodes_v2
+# Import new nodes from nodes_v3
 from ecommerce.chatbot.src.graph.nodes_v2 import (
     agent_node, 
     tool_node, 
