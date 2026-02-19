@@ -1,11 +1,11 @@
 import re
 import json
 from typing import List, Optional, Dict, Any
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, SystemMessage, HumanMessage, BaseMessage
 from langsmith import traceable
 from qdrant_client import models
 from ecommerce.chatbot.src.graph.state import AgentState
-from ecommerce.chatbot.src.schemas.nlu import NLUResult
+from ecommerce.chatbot.src.schemas.nlu import NLUResult, IntentType, ActionType
 from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
 from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.chatbot.src.core.config import settings
@@ -14,42 +14,150 @@ from ecommerce.chatbot.src.prompts.system_prompts import (
     ECOMMERCE_SYSTEM_PROMPT, 
     NLU_SYSTEM_PROMPT, 
     GENERATION_SYSTEM_PROMPT_TEMPLATE,
-    CATEGORY_KEYWORDS_MAP
+    QUERY_REWRITE_PROMPT
 )
 from ecommerce.chatbot.src.tools.order_tools import (
-    get_delivery_status, 
-    get_courier_contact, 
-    update_payment_info, 
-    request_refund, 
-    get_order_details
+    get_shipping_details, 
+    update_payment_method, 
+    check_cancellation,
+    cancel_order,
+    check_return_eligibility,
+    register_return_request,
+    get_order_details,
+    get_user_orders
 )
 from ecommerce.chatbot.src.tools.service_tools import register_gift_card, get_reviews, create_review
+
+# Advanced Retrieval: Hybrid Search + Reranking Dependencies
+from fastembed import SparseTextEmbedding
+from flashrank import Ranker, RerankRequest
+
+# Initialize models globally (Load once)
+print("Loading Retrieval Models...")
+SPARSE_MODEL = SparseTextEmbedding(model_name="Qdrant/bm25")
+# FlashRank is lightweight (ONNX) but better cached
+RANKER = Ranker(model_name="ms-marco-MiniLM-L-12-v2", cache_dir="/tmp/flashrank_cache")
+print("Retrieval Models Loaded.")
+
+# ============================================================================
+# Chat History Optimization (Hybrid: Sliding Window + Key Context Extraction)
+# ============================================================================
+
+def extract_key_context(messages: List[Any]) -> Dict[str, Any]:
+    """
+    오래된 메시지에서 핵심 정보를 추출합니다.
+    
+    Args:
+        messages: 분석할 메시지 리스트
+    
+    Returns:
+        추출된 핵심 정보 (주문번호, 의도 등)
+    """
+    key_context = {
+        "order_ids": [],
+        "user_intents": [],
+        "important_entities": []
+    }
+    
+    for msg in messages:
+        content = msg.content if hasattr(msg, "content") else str(msg)
+        
+        # 1. 주문번호 추출 (ORD-XXXXX 패턴)
+        order_matches = re.findall(r"ORD-\d+", content)
+        for order_id in order_matches:
+            if order_id not in key_context["order_ids"]:
+                key_context["order_ids"].append(order_id)
+        
+        # 2. 중요 액션 키워드 추출
+        action_keywords = ["환불", "취소", "반품", "교환", "배송", "주문", "결제"]
+        for keyword in action_keywords:
+            if keyword in content and keyword not in key_context["user_intents"]:
+                key_context["user_intents"].append(keyword)
+    
+    return key_context
+
+
+def optimize_chat_history(messages: List[Any]) -> List[Any]:
+    """
+    [Hybrid 방식] Sliding Window + 핵심 정보 추출로 채팅 히스토리를 최적화합니다.
+    
+    전략:
+    1. 메시지가 MAX_RECENT_MESSAGES 이하: 그대로 유지
+    2. 메시지가 MAX_RECENT_MESSAGES 초과:
+       - 오래된 메시지에서 핵심 정보 추출 (주문번호, 의도 등)
+       - 핵심 정보를 SystemMessage로 압축
+       - 최근 MAX_RECENT_MESSAGES개만 유지
+    
+    Args:
+        messages: 원본 메시지 리스트
+    
+    Returns:
+        최적화된 메시지 리스트
+    """
+    if len(messages) <= settings.MAX_RECENT_MESSAGES:
+        return messages
+    
+    # 1. 오래된 메시지와 최근 메시지 분리
+    cutoff = len(messages) - settings.MAX_RECENT_MESSAGES
+    old_messages = messages[:cutoff]
+    recent_messages = messages[cutoff:]
+    
+    # 2. 오래된 메시지에서 핵심 정보 추출
+    key_context = extract_key_context(old_messages)
+    
+    # 3. 핵심 정보를 SystemMessage로 압축 (핵심 정보가 있을 때만)
+    context_parts = []
+    if key_context["order_ids"]:
+        context_parts.append(f"이전 대화 주문번호: {', '.join(key_context['order_ids'])}")
+    if key_context["user_intents"]:
+        context_parts.append(f"논의된 주제: {', '.join(key_context['user_intents'])}")
+    
+    optimized_messages = []
+    if context_parts:
+        summary = " | ".join(context_parts)
+        optimized_messages.append(SystemMessage(content=f"[대화 요약] {summary}"))
+    
+    # 4. 최근 메시지 추가
+    optimized_messages.extend(recent_messages)
+    
+    print(f"--- CHAT HISTORY OPTIMIZED: {len(messages)} → {len(optimized_messages)} messages ---")
+    return optimized_messages
 
 @traceable(run_type="retriever", name="Retrieve Documents")
 def retrieve(state: AgentState):
     """
     Retrieve documents from Qdrant.
     [통합 검색] 카테고리 필터 검색과 전체 검색 결과를 병합하여 최적의 문서를 찾습니다.
+    (Hybrid Search + Reranking applied)
     """
-    print("---RETRIEVE---")
-    question = state["question"]
-    category = state.get("category")
+    # Advanced Retrieval: Hybrid Search + Reranking (Models are global)
+    
     client = get_qdrant_client()
     openai = get_openai_client()
+    
+    question = state["question"]
+    category = state.get("category")
 
-    # 1. 질문 임베딩 생성
+    # 1. 질문 임베딩 생성 (Dense & Sparse)
+    # Dense
     emb_response = openai.embeddings.create(
         input=question,
         model=settings.EMBEDDING_MODEL
     )
-    query_vector = emb_response.data[0].embedding
+    query_dense_vector = emb_response.data[0].embedding
+    
+    # Sparse
+    query_sparse_vector = list(SPARSE_MODEL.embed([question]))[0]
+    query_sparse_indices = query_sparse_vector.indices.tolist()
+    query_sparse_values = query_sparse_vector.values.tolist()
 
-    # 2. 검색 전략 실행
+    # 2. 검색 전략 실행 (Hybrid Search)
     collections = [settings.COLLECTION_FAQ, settings.COLLECTION_TERMS]
-    combined_results = {} # point ID를 키로 사용하여 중복 제거
+    candidates = []
 
     for col in collections:
-        # A. 카테고리 필터 검색 (카테고리가 인식된 경우만)
+        # 필터 설정
+        query_filter = None
         if category:
             if col == settings.COLLECTION_FAQ:
                 field_name = "main_category"
@@ -59,59 +167,85 @@ def retrieve(state: AgentState):
                 if category == "회원 정보": mapped_category = "회원"
                 elif category == "주문/결제": mapped_category = "구매/결제"
                 else: mapped_category = category
-
-            try:
-                filtered_res = client.query_points(
-                    collection_name=col,
-                    query=query_vector,
-                    query_filter=models.Filter(
-                        must=[models.FieldCondition(key=field_name, match=models.MatchValue(value=mapped_category))]
-                    ),
-                    limit=3
-                ).points
-                for hit in filtered_res:
-                    combined_results[hit.id] = hit
-            except Exception as e:
-                print(f"Error filtered searching {col}: {e}")
-
-        # B. 전체 대상 검색 (카테고리 제한 없음)
-        try:
-            global_res = client.query_points(
-                collection_name=col,
-                query=query_vector,
-                limit=3
-            ).points
-            for hit in global_res:
-                if hit.id not in combined_results:
-                    combined_results[hit.id] = hit
-        except Exception as e:
-            print(f"Error global searching {col}: {e}")
-
-    # 3. 점수 순 정렬 및 상위 5개 추출
-    sorted_hits = sorted(combined_results.values(), key=lambda x: x.score, reverse=True)[:5]
-    
-    # 4. 페이로드 가공 및 유사도 검증
-    all_documents = []
-    for hit in sorted_hits:
-        if hit.score > 0.2:
-            # Note: Determine doc_type based on the hit metadata or loop context
-            # simplified for resolution here. In complex logic, we might track col.
-            payload = hit.payload
-            doc_type = "정보" # Default
-            if 'main_category' in payload: doc_type = "FAQ"
-            elif 'category' in payload: doc_type = "약관"
-
-            content_text = (
-                payload.get('question', '') + " " + payload.get('answer', '') if payload.get('question') else
-                payload.get('text', '') or 
-                payload.get('content', '') or 
-                payload.get('title', '')
-            ).strip()
             
-            if content_text:
-                all_documents.append(f"[{doc_type}] {content_text}")
+            query_filter = models.Filter(
+                must=[models.FieldCondition(key=field_name, match=models.MatchValue(value=mapped_category))]
+            )
 
-    print(f"최종 병합 및 필터링된 문서 수: {len(all_documents)}")
+        try:
+            prefetch = [
+                models.Prefetch(
+                    query=query_dense_vector,
+                    using="", # Default dense vector
+                    filter=query_filter,
+                    limit=20,
+                ),
+                models.Prefetch(
+                    query=models.SparseVector(indices=query_sparse_indices, values=query_sparse_values),
+                    using="text-sparse",
+                    filter=query_filter,
+                    limit=20,
+                ),
+            ]
+            
+            results = client.query_points(
+                collection_name=col,
+                prefetch=prefetch,
+                query=models.FusionQuery(fusion=models.Fusion.RRF), # Reciprocal Rank Fusion
+                limit=20, # Fetch top 20 candidates for reranking
+            ).points
+            
+            for hit in results:
+                # Add collection context to payload for reranker/LLM
+                hit.payload["_collection"] = col
+                candidates.append(hit)
+                
+        except Exception as e:
+            print(f"Error searching {col}: {e}")
+
+    # 3. Reranking using FlashRank
+    if not candidates:
+        return {"documents": [], "is_relevant": False}
+        
+    # Deduplicate candidates by ID (if any overlap between collections, though unlikely with UUIDs)
+    unique_candidates = {c.id: c for c in candidates}.values()
+    
+    passages = []
+    for c in unique_candidates:
+        # Construct text for reranker
+        text_content = (
+            c.payload.get('question', '') + " " + c.payload.get('answer', '') if c.payload.get('question') else
+            c.payload.get('text', '') or 
+            c.payload.get('content', '') or 
+            c.payload.get('title', '')
+        ).strip()
+        
+        passages.append({
+            "id": c.id,
+            "text": text_content,
+            "meta": c.payload
+        })
+        
+    rerank_request = RerankRequest(query=question, passages=passages)
+    reranked_results = RANKER.rerank(rerank_request)
+    
+    # 4. Top 5 Selection
+    top_results = reranked_results[:5]
+    
+    all_documents = []
+    for res in top_results:
+        payload = res["meta"]
+        score = res["score"]
+        
+        doc_type = "정보"
+        if 'main_category' in payload: doc_type = "FAQ"
+        elif 'category' in payload: doc_type = "약관"
+        
+        content_text = res["text"]
+        all_documents.append(f"[{doc_type}] {content_text}")
+        print(f"Verified Doc ({score:.4f}): {content_text[:30]}...")
+
+    print(f"최종 Reranking 후 문서 수: {len(all_documents)}")
     
     return {
         "documents": all_documents,
@@ -131,8 +265,11 @@ def generate(state: AgentState):
 
     context = "\n\n".join(documents)
     
-    # 도구 실행 결과를 명확한 JSON 문자열로 변환
-    if tool_outputs:
+    # 도구 실행 결과 또는 시스템 메시지(예: 권한 확인 실패 사유)가 있는지 확인
+    if state.get("generation") and state.get("action_status") == "failed":
+        # check_eligibility 등에서 실패 사유가 넘어온 경우
+        tool_context = f"액션 수행 불가 사유: {state.get('generation')}"
+    elif tool_outputs:
         tool_context = json.dumps(tool_outputs, ensure_ascii=False, indent=2)
     else:
         tool_context = "실행된 액션 없음"
@@ -152,7 +289,11 @@ def generate(state: AgentState):
         temperature=0
     )
     
-    return {"generation": response.choices[0].message.content}
+    final_answer = response.choices[0].message.content
+    return {
+        "generation": final_answer,
+        "messages": [AIMessage(content=final_answer)]
+    }
 
 @traceable(run_type="chain", name="Handle No Info")
 def no_info_node(state: AgentState):
@@ -160,72 +301,44 @@ def no_info_node(state: AgentState):
     검색 결과가 없을 때 실행되는 노드
     """
     print("---NO INFO FOUND---")
+    msg = "죄송합니다. 문의하신 내용에 대한 답변을 지식베이스에서 찾을 수 없습니다. 구체적인 확인을 위해 고객센터(1588-XXXX)로 문의하시거나 상담원 연결을 도와드릴까요?"
     return {
-        "generation": "죄송합니다. 문의하신 내용에 대한 답변을 지식베이스에서 찾을 수 없습니다. 구체적인 확인을 위해 고객센터(1588-XXXX)로 문의하시거나 상담원 연결을 도와드릴까요?"
+        "generation": msg,
+        "messages": [AIMessage(content=msg)]
     }
-
-@traceable(run_type="parser", name="Mock NLU")
-def mock_nlu(user_message: str) -> NLUResult:
-    """
-    [초고도화] 스코어링 기반 NLU 엔진
-    문장 내 키워드 밀도를 계산하여 최적의 카테고리를 추론합니다.
-    """
-    # 전처리: 띄어쓰기 제거 및 소문자화
-    clean_msg = user_message.replace(" ", "").lower()
-    
-    # 카테고리별 초정밀 키워드 사전 (데이터셋의 모든 세부 카테고리 반영)
-    category_map = CATEGORY_KEYWORDS_MAP
-    
-    # 카테고리별 스코어 계산
-    scores = {cat: 0 for cat in category_map}
-    for cat, keywords in category_map.items():
-        for k in keywords:
-            if k in clean_msg:
-                scores[cat] += 1
-    
-    # 점수가 높은 순으로 정렬
-    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    best_cat, max_score = sorted_scores[0]
-    
-    if max_score > 0:
-        return NLUResult(intent="search_knowledge", slots={"category": best_cat})
-    
-    return NLUResult(intent=None, slots={})
 
 @traceable(run_type="chain", name="LLM NLU Fallback")
 def call_llm_for_nlu(user_message: str) -> dict:
     """
     키워드 매칭 실패 시 LLM을 사용하여 문맥 기반으로 의도(조회/실행)를 파악합니다.
+    일반 대화/인사말도 감지하여 is_general_chat 플래그를 반환합니다.
     """
     openai = get_openai_client()
     
     system_prompt = NLU_SYSTEM_PROMPT
     
-    res = {}
-    try:
-        response = openai.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0
-        )
-        content = response.choices[0].message.content
-        print(f"[LLM NLU Raw Output]: {content}")
-        res = json.loads(content)
-        res["is_relevant"] = res.get("category") is not None
-    except Exception as e:
-        print(f"Error in call_llm_for_nlu: {e}")
-        # Fallback structure
-        res = {
-            "category": None,
-            "intent_type": "info_search",
-            "action_name": None,
-            "parameters": {},
-            "is_relevant": False
-        }
+    response = openai.chat.completions.create(
+        model=settings.OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message}
+        ],
+        response_format={"type": "json_object"},
+        temperature=0
+    )
+    
+    res = json.loads(response.choices[0].message.content)
+    
+    # 일반 대화 감지 (인사말, 잡담 등)
+    casual_keywords = ["안녕", "hi", "hello", "배고파", "심심", "날씨", "뭐해", "ㅎㅎ", "ㅋㅋ"]
+    is_casual = any(keyword in user_message.lower() for keyword in casual_keywords)
+    
+    # is_relevant 로직 개선: category가 있거나, intent_type이 있으면 relevant
+    # 일반 대화는 별도 플래그로 처리
+    has_ecommerce_intent = res.get("category") is not None or res.get("intent_type") is not None
+    
+    res["is_relevant"] = has_ecommerce_intent
+    res["is_general_chat"] = is_casual and not has_ecommerce_intent
     
     return res
 
@@ -235,29 +348,103 @@ def check_eligibility_node(state: AgentState):
     액션 수행 전 주문 상태 등을 확인하여 수행 가능 여부를 판단합니다.
     """
     print("---CHECK ELIGIBILITY---")
-    order_id = state.get("order_id")
+    order_id_raw = state.get("order_id")
     action = state.get("action_name")
-    
-    if not order_id:
-        return {"action_status": "failed", "generation": "주문 번호가 없어 확인이 불가능합니다. 주문 번호를 알려주시겠어요?"}
-    
-    order = get_order_details.invoke({"order_id": order_id})
-    if not order:
-        return {"action_status": "failed", "generation": "해당 주문 번호를 찾을 수 없습니다."}
-        
-    if action == "refund" and not order["can_refund"]:
-        return {"action_status": "failed", "generation": f"이 주문은 현재 {order['status']} 상태로 환불이 불가능합니다."}
 
-    if action == "payment_update" and order["status"] in ["배송중", "배송완료"]:
-        return {"action_status": "failed", "generation": f"죄송합니다. 현재 {order['status']} 상태여서 결제 수단을 변경할 수 없습니다."}
+    # Parse order IDs (handle multiple)
+    order_ids = []
+    if order_id_raw:
+        if "," in str(order_id_raw):
+            order_ids = [oid.strip() for oid in str(order_id_raw).split(",")]
+        else:
+            order_ids = [str(order_id_raw).strip()]
+            
+    if not order_ids:
+        # 주문 번호가 없으면 주문 목록 조회(UI)로 유도
+        print("---MISSING ORDER ID: REDIRECT TO ORDER LIST---")
+        return {
+            "action_name": ActionType.ORDER_LIST.value, 
+            "action_status": "approved", # 바로 실행하러 감
+            "is_relevant": True,
+            "requires_selection": True,  # 액션 실행을 위해 선택이 필요함
+            "prior_action": action       # 원래 의도(환불 등)를 저장하여 UI에서 문맥 유지
+        }
+    
+    user_id = state.get("user_id")
+    
+    # Process multiple orders
+    total_refund_amount = 0
+    valid_orders = []
+    error_messages = []
+    
+    for oid in order_ids:
+        # [Security Check]
+        order = get_order_details.invoke({"order_id": oid, "user_id": user_id})
         
-    # 환불은 승인 루프(Human-in-the-loop) 진입, 기타 액션은 바로 승인
-    if action == "refund":
-        print("---REFUND PENDING APPROVAL---")
+        if "error" in order:
+            error_messages.append(f"{oid}: {order['error']}")
+            continue
+            
+        # 'refund' 의도인 경우 취소(배송전) 또는 반품(배송후) 가능 여부 통합 확인
+        if action == ActionType.REFUND.value:
+            check_result = {}
+            # 1. 배송 전 -> 취소 가능 여부 확인
+            if order["status"] in ["pending", "payment_completed"]:
+                check_result = check_cancellation.invoke({"order_id": oid, "user_id": user_id})
+            # 2. 배송 후 -> 반품 가능 여부 확인
+            elif order["status"] in ["shipped", "delivered"]:
+                check_result = check_return_eligibility.invoke({
+                    "order_id": oid, 
+                    "user_id": user_id, 
+                    "reason": "단순 변심", 
+                    "is_seller_fault": False
+                })
+            else:
+                check_result = {"error": f"현재 {order['status']} 상태에서는 환불 처리가 불가능합니다."}
+    
+            # 검증 실패 시
+            if "error" in check_result:
+                error_messages.append(f"{oid}: {check_result['error']}")
+                continue
+                
+            # 검증 성공 시
+            # 도구 출력 키가 다를 수 있음 (refund_amount vs final_refund_amount)
+            refund_amount = check_result.get("final_refund_amount") or check_result.get("refund_amount", 0)
+            total_refund_amount += refund_amount
+            valid_orders.append(oid)
+            
+    # 결과 종합
+    if not valid_orders:
+        return {
+            "action_status": "failed", 
+            "generation": "선택하신 주문에 대해 처리가 불가능합니다.\\n" + "\\n".join(error_messages),
+            "messages": [AIMessage(content="선택하신 주문에 대해 처리가 불가능합니다.\\n" + "\\n".join(error_messages))]
+        }
+    
+    print("---ALL VALIDATED FOR REFUND---")
+    
+    # 부분 성공인 경우 경고 메시지 포함
+    warning = ""
+    if error_messages:
+        warning = f"\\n(처리 불가 주문 제외: {', '.join(error_messages)})"
+
+    if action == ActionType.REFUND.value:
         return {
             "action_status": "pending_approval", 
             "refund_status": "pending_approval",
-            "refund_amount": order.get("amount")
+            # 도구가 생성한 안내 메시지(수수료 포함)와 환불 예정 금액 전달
+            "generation": f"총 {len(valid_orders)}건의 주문에 대해 {total_refund_amount:,}원 환불이 가능합니다. 진행하시겠습니까?{warning}", 
+            "refund_amount": total_refund_amount,
+            "order_id": ", ".join(valid_orders)  # 유효한 주문만 남김
+        }
+
+    # 결제 수단 변경은 배송 시작 전까지만 가능
+    if action == ActionType.PAYMENT_UPDATE.value and order["status"] in ["shipped", "delivered"]:
+        msg = f"죄송합니다. 현재 {order['status']} 상태여서 결제 수단을 변경할 수 없습니다."
+        return {
+            "action_status": "failed", 
+            "generation": msg,
+            "messages": [AIMessage(content=msg)]
         }
         
     return {"action_status": "approved"}
@@ -266,16 +453,27 @@ def check_eligibility_node(state: AgentState):
 def human_approval_node(state: AgentState):
     """
     사용자에게 액션 실행 여부를 묻는 메시지를 생성합니다.
+    (check_eligibility에서 생성된 상세 메시지를 우선 사용)
     """
     print("---HUMAN APPROVAL REQUEST---")
+    
+    # 이미 생성된 메시지가 있다면 사용 (수수료 안내 등 포함됨)
+    if state.get("generation"):
+        return {
+            "generation": state.get("generation"),
+            "action_status": "pending_approval",
+            "messages": [AIMessage(content=state.get("generation"))]
+        }
+    
+    # Fallback (단순 메시지)
     order_id = state.get("order_id")
     amount = state.get("refund_amount", 0)
-    
-    msg = f"주문 번호 {order_id}의 환불 예정 금액은 {amount:,}원입니다. 정말로 환불을 진행하시겠습니까? ('네' 또는 '아니오'로 답해주세요)"
+    msg = f"주문 번호 {order_id}의 환불(또는 취소) 예정 금액은 {amount:,}원입니다. 정말로 진행하시겠습니까? ('네' 또는 '아니오'로 답해주세요)"
     
     return {
         "generation": msg,
-        "action_status": "pending_approval"
+        "action_status": "pending_approval",
+        "messages": [AIMessage(content=msg)]
     }
 
 def execute_action_node(state: AgentState):
@@ -284,33 +482,104 @@ def execute_action_node(state: AgentState):
     """
     print("---EXECUTE ACTION---")
     action = state.get("action_name")
-    order_id = state.get("order_id")
+    order_id_raw = state.get("order_id")
+    user_id = state.get("user_id")
+    
+    # If multiple order IDs are provided, use only the first one for action execution
+    # Parse order IDs (handle multiple)
+    order_ids = []
+    if order_id_raw:
+        if "," in str(order_id_raw):
+            order_ids = [oid.strip() for oid in str(order_id_raw).split(",")]
+        else:
+            order_ids = [str(order_id_raw).strip()]
+            
+    # Default behavior for single-order actions
+    order_id = order_ids[0] if order_ids else order_id_raw
+    
     # user_info에 저장된 파라미터 활용
     params = state.get("user_info", {})
     
     result = {}
-    if action == "refund":
-        result = request_refund.invoke({"order_id": order_id, "reason": "사용자 요청"})
-    elif action == "tracking":
-        result = get_delivery_status.invoke({"order_id": order_id})
-    elif action == "courier_contact":
-        result = get_courier_contact.invoke({"order_id": order_id})
-    elif action == "payment_update":
+    
+    # 1. 환불/취소 (통합 'refund' 인텐트 처리)
+    if action == ActionType.REFUND.value:
+        results = []
+        success_count = 0
+        
+        for oid in order_ids:
+            # 상태 재확인하여 취소 vs 반품 결정
+            order_info = get_order_details.invoke({"order_id": oid, "user_id": user_id})
+            
+            # 이미 처리되었거나 오류인 경우 스킵
+            if "error" in order_info:
+                results.append({"order_id": oid, "success": False, "message": order_info["error"]})
+                continue
+
+            current_result = {}
+            if order_info.get("can_cancel"):
+                 # 배송 전 -> 취소 실행
+                 current_result = request_cancellation.invoke({"order_id": oid, "user_id": user_id, "reason": "사용자 요청"})
+            elif order_info.get("can_return"):
+                 # 배송 후 -> 반품 실행
+                 current_result = register_return_request.invoke({
+                     "order_id": oid, 
+                     "user_id": user_id, 
+                     "reason": "사용자 요청", 
+                     "is_seller_fault": False
+                 })
+            else:
+                 current_result = {"success": False, "message": f"주문 {oid}: 현재 상태({order_info.get('status')})에서는 처리할 수 없습니다."}
+            
+            # 성공 여부 판단 (API 응답 구조에 따라 다를 수 있음)
+            if current_result.get("success", False) or "접수되었습니다" in str(current_result.get("message", "")) or "취소되었습니다" in str(current_result.get("message", "")):
+                success_count += 1
+            results.append(current_result)
+            
+        # 결과 메시지 생성
+        final_message = f"총 {success_count}건의 주문에 대해 환불/취소 처리가 완료되었습니다."
+        if len(order_ids) > success_count:
+            final_message += f" ({len(order_ids) - success_count}건 처리 실패)"
+            
+        return {
+            "action_status": "completed",
+            "tool_outputs": results,
+            "generation": final_message
+        }
+              
+    # 2. 배송 조회 (통합)
+    elif action == ActionType.TRACKING.value or action == ActionType.COURIER_CONTACT.value:
+        result = get_shipping_details.invoke({"order_id": order_id, "user_id": user_id})
+        
+    elif action == ActionType.ORDER_DETAIL.value:
+        result = get_order_details.invoke({"order_id": order_id, "user_id": user_id})
+        
+    elif action == ActionType.PAYMENT_UPDATE.value:
         payment_method = params.get("payment_method", "카드") # 기본값 카드
-        result = update_payment_info.invoke({"order_id": order_id, "payment_method": payment_method})
-    elif action == "gift_card":
+        result = update_payment_method.invoke({"order_id": order_id, "user_id": user_id, "payment_method": payment_method})
+        
+    elif action == ActionType.GIFT_CARD.value:
         code = params.get("gift_card_code", "UNKNOWN")
         result = register_gift_card.invoke({"code": code})
-    elif action == "review_search":
+        
+    elif action == ActionType.REVIEW_SEARCH.value:
         result = get_reviews.invoke({"limit": 5})
-    elif action == "review_create":
+        
+    elif action == ActionType.REVIEW_CREATE.value:
         product_id = params.get("product_id", "PROD-001")
         rating = params.get("review_rating", 5)
         content = params.get("review_content", "좋아요")
         result = create_review.invoke({"product_id": product_id, "rating": rating, "content": content})
-    elif action == "address_change":
+        
+    elif action == ActionType.ADDRESS_CHANGE.value:
         # 주소지 변경 Mock
         result = {"success": True, "message": f"주문 {order_id}의 주소지가 성공적으로 변경되었습니다."}
+        
+    elif action == ActionType.ORDER_LIST.value:
+        # Retrieve user_id from state
+        # Use flag from state if redirected from other action
+        requires_selection = state.get("requires_selection", False)
+        result = get_user_orders.invoke({"user_id": user_id, "requires_selection": requires_selection})
         
     return {
         "action_status": "completed",
@@ -318,30 +587,87 @@ def execute_action_node(state: AgentState):
     }
 
 
+@traceable(run_type="chain", name="Query Rewriting")
+def rewrite_query(original_query: str, history: List[Any]) -> str:
+    """
+    이전 대화 기록을 바탕으로 현재 질문을 재작성합니다.
+    히스토리 최적화를 적용하여 토큰 효율성을 높입니다.
+    """
+
+    if not history:
+        return original_query
+    
+    # 히스토리 최적화 적용 (Hybrid: Sliding Window + Key Context)
+    optimized_history = optimize_chat_history(history)
+    
+    # 최근 대화 2턴(사용자-AI) 정도만 참고해도 충분한 경우가 많음
+    recent_history = optimized_history[-6:] 
+    history_str = "\n".join([f"{msg.type}: {msg.content}" for msg in recent_history])
+    
+    openai = get_openai_client()
+    # settings에 정의된 값이 있으면 우선 사용, 없으면 import한 기본값 사용
+    system_prompt = getattr(settings, "QUERY_REWRITE_PROMPT", QUERY_REWRITE_PROMPT) 
+    
+    try:
+        response = openai.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"History:\n{history_str}\n\nCurrent: {original_query}"}
+            ],
+            temperature=0
+        )
+        rewritten = response.choices[0].message.content.strip()
+        print(f"--- QUERY REWRITTEN: '{original_query}' -> '{rewritten}' ---")
+        return rewritten
+    except Exception as e:
+        print(f"Error in query rewriting: {e}")
+        return original_query
+
 @traceable(run_type="chain", name="Update State")
 def update_state_node(state: AgentState) -> dict:
     """
     [하이브리드 NLU] 질문을 분석하여 '조회'인지 '실행'인지 결정합니다.
+    (Query Rewriting 추가됨)
     """
     print("---UPDATE STATE (Intelligent Action NLU)---")
     messages = state.get("messages", [])
-    content = messages[-1].content if hasattr(messages[-1], "content") else str(messages[-1])
     
-    # 1. 문서 검색용 카테고리 추출 (기존 mock_nlu 활용)
-    nlu_keyword = mock_nlu(content)
+    # 0. 메시지 추출
+    if not messages:
+        return {}
+        
+    last_message = messages[-1]
+    original_content = last_message.content if hasattr(last_message, "content") else str(last_message)
     
-    # 2. 액션 파악을 위한 LLM 분석 (intent_type, action_name, order_id 추출)
-    # 질문에서 주문번호(ORD-XXX) 추출 시도
-    order_id_match = re.search(r"ORD-\d+", content)
+    # 1. 쿼리 재작성 (대화 이력이 있는 경우)
+    # 현재 메시지를 제외한 이전 이력
+    history = messages[:-1]
+    refined_question = original_content
+    
+    if history:
+         refined_question = rewrite_query(original_content, history)
+    
+    # 3. 액션 파악을 위한 LLM 분석 (intent_type, action_name, order_id 추출)
+    # 질문에서 주문번호(ORD-XXX) 추출 시도 (원본/재작성 둘 다 체크)
+    order_id_match = re.search(r"ORD-\d+", original_content) or re.search(r"ORD-\d+", refined_question)
     order_id = order_id_match.group() if order_id_match else state.get("order_id")
     
-    llm_analysis = call_llm_for_nlu(content)
+    llm_analysis = call_llm_for_nlu(refined_question)
     
-    # [승인 루프 처리] 현재 대기 중인 액션이 있고 사용자가 긍정적인 답변을 한 경우
+    # [승인 루프 처리] 현재 대기 중인 액션이 있고 사용자가 응답한 경우
     current_status = state.get("action_status")
+    
+    # 3-1. 새로운 의도(Intent)가 감지되었는지 확인 (Context Switching)
+    new_intent_detected = False
     if current_status == "pending_approval":
+        if llm_analysis.get("action_name") and llm_analysis.get("intent_type") == IntentType.EXECUTION.value:
+             print("---CONTEXT SWITCH DETECTED: NEW INTENT OVERRIDES APPROVAL---")
+             new_intent_detected = True
+
+    if current_status == "pending_approval" and not new_intent_detected:
         positive_words = ["네", "어", "예", "응", "그래", "확인", "진행", "yes", "ok"]
-        content_lower = content.lower()
+        content_lower = original_content.lower() # 승인/거절은 원본 의도 중요
         if any(word in content_lower for word in positive_words):
             print("---USER APPROVED ACTION---")
             return {
@@ -360,21 +686,69 @@ def update_state_node(state: AgentState) -> dict:
     parameters = llm_analysis.get("parameters", {}) or {}
     print(f"Detected Parameters: {parameters}")
     
-    # 3. 주문 번호 우선순위: 파라미터 > 정규식 > 기존 상태
-    extracted_order_id = parameters.get("order_id") or order_id
+    # Parse single or comma-separated order IDs
+    raw_order_param = parameters.get("order_id")
+    extracted_order_ids = []
+    if raw_order_param:
+        # Split by comma and clean whitespace
+        extracted_order_ids = [oid.strip() for oid in str(raw_order_param).split(",")]
+    elif order_id:
+        # Fallback to state order_id
+        extracted_order_ids = [oid.strip() for oid in str(order_id).split(",")]
+    
+    # Store as comma-separated string for backwards compatibility
+    extracted_order_id = ", ".join(extracted_order_ids) if extracted_order_ids else None
     
     updates = {
-        "question": content,
-        "category": llm_analysis["category"] or (nlu_keyword.slots.get("category") if nlu_keyword.intent else None),
+        "question": refined_question, # NLU와 검색에 사용될 정제된 질문
+        "category": llm_analysis["category"],
         "intent_type": llm_analysis["intent_type"],
         "action_name": llm_analysis["action_name"] or state.get("action_name"),
         "order_id": extracted_order_id,
         "is_relevant": llm_analysis["is_relevant"],
-        "action_status": "idle",
+        "is_general_chat": llm_analysis.get("is_general_chat", False),  # 일반 대화 플래그 전파
+        "action_status": "idle" if new_intent_detected else state.get("action_status", "idle"), 
         "tool_outputs": [],
-        # 추후 도구 실행에 필요한 파라미터들을 user_info에 병합하여 저장
-        "user_info": {**state.get("user_info", {}), **parameters}
+        "action_status": "idle" if new_intent_detected else state.get("action_status", "idle"), 
+        "tool_outputs": [],
+        "user_info": {**state.get("user_info", {}), **parameters},
+        
+        # [Security] Auth is now handled by API (chat.py)
+        # "user_id": 7, 
+        # "is_authenticated": True 
     }
     
     print(f"Intent: {updates['intent_type']}, Action: {updates['action_name']}, Order: {updates['order_id']}")
     return updates
+
+
+@traceable(run_type="chain", name="Handle Casual Chat")
+def casual_chat_node(state: AgentState):
+    """
+    일반 대화/인사말에 친근하게 응답하는 노드
+    """
+    print("---CASUAL CHAT DETECTED---")
+    question = state.get("question", "")
+    openai = get_openai_client()
+    
+    # 간단한 프롬프트로 자연스러운 대화 생성
+    casual_prompt = """당신은 친절한 이커머스 쇼핑몰 고객센터 챗봇입니다.
+사용자가 일반적인 대화나 인사를 건넸습니다. 친근하고 자연스럽게 응답하되, 
+쇼핑몰 관련 도움이 필요하면 언제든 말씀해달라고 안내하세요.
+
+응답은 1-2문장으로 간결하게 작성하세요."""
+    
+    response = openai.chat.completions.create(
+        model=settings.OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": casual_prompt},
+            {"role": "user", "content": question}
+        ],
+        temperature=0.7  # 조금 더 자연스러운 응답을 위해 temperature 상향
+    )
+    
+    answer = response.choices[0].message.content
+    return {
+        "generation": answer,
+        "messages": [AIMessage(content=answer)]
+    }
