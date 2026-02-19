@@ -201,18 +201,32 @@ def call_llm_for_nlu(user_message: str) -> dict:
     
     system_prompt = NLU_SYSTEM_PROMPT
     
-    response = openai.chat.completions.create(
-        model=settings.OPENAI_MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
-        ],
-        response_format={"type": "json_object"},
-        temperature=0
-    )
+    res = {}
+    try:
+        response = openai.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0
+        )
+        content = response.choices[0].message.content
+        print(f"[LLM NLU Raw Output]: {content}")
+        res = json.loads(content)
+        res["is_relevant"] = res.get("category") is not None
+    except Exception as e:
+        print(f"Error in call_llm_for_nlu: {e}")
+        # Fallback structure
+        res = {
+            "category": None,
+            "intent_type": "info_search",
+            "action_name": None,
+            "parameters": {},
+            "is_relevant": False
+        }
     
-    res = json.loads(response.choices[0].message.content)
-    res["is_relevant"] = res["category"] is not None
     return res
 
 @traceable(run_type="chain", name="Check Action Eligibility")

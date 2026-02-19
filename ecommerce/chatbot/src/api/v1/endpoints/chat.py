@@ -41,6 +41,8 @@ async def chat_endpoint(request: ChatRequest):
     JSON 기반의 상태 정보를 주고받아 Stateless 환경에서도 대화 맥락을 유지합니다.
     """
     try:
+        logging.info(f"Received Chat Request: user_id={request.user_id}, message={request.message}")
+        
         # 1. 상태(State) 복구
         history = []
         if request.previous_state and "messages" in request.previous_state:
@@ -86,5 +88,6 @@ async def chat_endpoint(request: ChatRequest):
     except Exception as e:
         # 상세 에러 로그 출력 (서버 터미널용)
         import traceback
+        logging.error(f"Chat Endpoint Error: {str(e)}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"상담 처리 중 오류가 발생했습니다: {str(e)}")
