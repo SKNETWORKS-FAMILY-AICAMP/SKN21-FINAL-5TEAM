@@ -3,7 +3,6 @@ from fastapi.responses import StreamingResponse
 from langsmith import traceable
 from typing import List, Dict, Any
 import json
-import asyncio
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from ecommerce.chatbot.src.schemas.chat import ChatRequest, ChatResponse
