@@ -49,8 +49,6 @@ TOOLS = [
     create_review,
     register_gift_card,
     search_knowledge_base,
-    register_gift_card,
-    search_knowledge_base,
     open_address_search
 ]
 
