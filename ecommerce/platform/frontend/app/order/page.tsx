@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import styles from "./order.module.css";
 import { useAuth } from '../authcontext';
 
@@ -61,11 +61,22 @@ interface OrderListResponse {
 interface ShippingInfo {
   id: number;
   order_id: number;
+  courier_company: string | null;
   tracking_number: string | null;
-  carrier: string | null;
   shipped_at: string | null;
   delivered_at: string | null;
-  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ReviewData {
+  id: number;
+  user_id: number;
+  order_item_id: number;
+  rating: number;
+  content: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ==================== 상태 표시 유틸 ====================
@@ -100,16 +111,96 @@ export default function OrdersPage() {
   const [shippingInfo, setShippingInfo] = useState<ShippingInfo | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showShippingModal, setShowShippingModal] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewOrderItemId, setReviewOrderItemId] = useState<number | null>(null);
+  const [reviewContent, setReviewContent] = useState("");
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [hoverRating, setHoverRating] = useState(0);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
   const {user, isLoggedIn } = useAuth();
 
+  // ==================== 리뷰 맵 (order_item_id → ReviewData) ====================
+  const [reviewMap, setReviewMap] = useState<Record<number, ReviewData>>({});
+  const [editingReviewId, setEditingReviewId] = useState<number | null>(null);
+
+  // ==================== 커스텀 알림 상태 ====================
+  const [customAlert, setCustomAlert] = useState<{
+    type: 'alert' | 'confirm' | 'prompt';
+    message: string;
+    resolve: (value: any) => void;
+  } | null>(null);
+  const [promptInput, setPromptInput] = useState("");
+
   const API_BASE = "http://localhost:8000";
+
+  // ==================== 커스텀 알림 함수 ====================
+
+  const showAlert = useCallback((message: string): Promise<void> => {
+    return new Promise((resolve) => {
+      setCustomAlert({ type: 'alert', message, resolve });
+    });
+  }, []);
+
+  const showConfirm = useCallback((message: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setCustomAlert({ type: 'confirm', message, resolve });
+    });
+  }, []);
+
+  const showPrompt = useCallback((message: string): Promise<string | null> => {
+    return new Promise((resolve) => {
+      setPromptInput("");
+      setCustomAlert({ type: 'prompt', message, resolve });
+    });
+  }, []);
+
+  const handleAlertConfirm = () => {
+    if (!customAlert) return;
+    if (customAlert.type === 'alert') {
+      customAlert.resolve(undefined);
+    } else if (customAlert.type === 'confirm') {
+      customAlert.resolve(true);
+    } else if (customAlert.type === 'prompt') {
+      customAlert.resolve(promptInput || null);
+    }
+    setCustomAlert(null);
+  };
+
+  const handleAlertCancel = () => {
+    if (!customAlert) return;
+    if (customAlert.type === 'confirm') {
+      customAlert.resolve(false);
+    } else if (customAlert.type === 'prompt') {
+      customAlert.resolve(null);
+    }
+    setCustomAlert(null);
+  };
+
+  // ==================== 유저 리뷰 조회 ====================
+
+  const fetchUserReviews = async () => {
+    if (!user) return;
+    try {
+      const response = await fetch(`${API_BASE}/reviews/users/${user.id}/reviews`);
+      if (!response.ok) return;
+      const reviews: ReviewData[] = await response.json();
+      const map: Record<number, ReviewData> = {};
+      for (const review of reviews) {
+        map[review.order_item_id] = review;
+      }
+      setReviewMap(map);
+    } catch (err) {
+      console.error("Failed to fetch user reviews:", err);
+    }
+  };
 
   // ==================== 주문 목록 조회 ====================
 
   useEffect(() => {
     if(user){
       fetchOrders();
+      fetchUserReviews();
     }
   }, [statusFilter,user]);
 
@@ -119,7 +210,7 @@ export default function OrdersPage() {
       setError(null);
       if (!user) throw new Error("유저 정보가 없습니다");
       let url = `${API_BASE}/orders/${user.id}/orders?skip=0&limit=20`;
-      
+
       if (statusFilter !== "all") {
         url += `&status=${statusFilter}`;
       }
@@ -156,16 +247,15 @@ export default function OrdersPage() {
       setShowDetailModal(true);
     } catch (err) {
       console.error("Failed to fetch order detail:", err);
-      alert("주문 상세 정보를 불러오는데 실패했습니다");
+      showAlert("주문 상세 정보를 불러오는데 실패했습니다");
     }
   };
 
   // ==================== 배송 정보 조회 ====================
 
-  const handleShowShipping = async (orderId: number) => {
+  const handleShowShipping = async (order: Order) => {
     try {
-      // ✅ 수정된 URL: /shipping/order/{order_id}
-      const response = await fetch(`${API_BASE}/shipping/order/${orderId}`);
+      const response = await fetch(`${API_BASE}/shipping/order/${order.id}`);
 
       if (!response.ok) {
         throw new Error("배송 정보를 불러오는데 실패했습니다");
@@ -173,17 +263,18 @@ export default function OrdersPage() {
 
       const shipping: ShippingInfo = await response.json();
       setShippingInfo(shipping);
+      setSelectedOrder(order);
       setShowShippingModal(true);
     } catch (err) {
       console.error("Failed to fetch shipping info:", err);
-      alert("배송 정보를 불러오는데 실패했습니다");
+      showAlert("배송 정보를 불러오는데 실패했습니다");
     }
   };
 
   // ==================== 주문 취소 ====================
 
   const handleCancelOrder = async (orderId: number) => {
-    const reason = prompt("취소 사유를 입력해주세요:");
+    const reason = await showPrompt("취소 사유를 입력해주세요:");
     if (!reason) {
       return;
     }
@@ -215,18 +306,18 @@ export default function OrdersPage() {
         console.error("Failed to track order_del:", err);
       }
 
-      alert("주문이 취소되었습니다");
+      showAlert("주문이 취소되었습니다");
       fetchOrders(); // 목록 새로고침
     } catch (err) {
       console.error("Failed to cancel order:", err);
-      alert(err instanceof Error ? err.message : "주문 취소에 실패했습니다");
+      showAlert(err instanceof Error ? err.message : "주문 취소에 실패했습니다");
     }
   };
 
   // ==================== 환불 요청 ====================
 
   const handleRefundOrder = async (orderId: number) => {
-    const reason = prompt("환불 사유를 입력해주세요:");
+    const reason = await showPrompt("환불 사유를 입력해주세요:");
     if (!reason) {
       return;
     }
@@ -258,11 +349,11 @@ export default function OrdersPage() {
         console.error("Failed to track order_re:", err);
       }
 
-      alert("환불이 요청되었습니다");
+      showAlert("환불이 요청되었습니다");
       fetchOrders(); // 목록 새로고침
     } catch (err) {
       console.error("Failed to refund order:", err);
-      alert(err instanceof Error ? err.message : "환불 요청에 실패했습니다");
+      showAlert(err instanceof Error ? err.message : "환불 요청에 실패했습니다");
     }
   };
 
@@ -272,7 +363,8 @@ export default function OrdersPage() {
     orderId: number,
     newStatus: OrderStatus
   ) => {
-    if (!confirm(`주문 상태를 '${ORDER_STATUS_MAP[newStatus]}'(으)로 변경하시겠습니까?`)) {
+    const confirmed = await showConfirm(`주문 상태를 '${ORDER_STATUS_MAP[newStatus]}'(으)로 변경하시겠습니까?`);
+    if (!confirmed) {
       return;
     }
 
@@ -294,61 +386,104 @@ export default function OrdersPage() {
         throw new Error(errorData.detail || "상태 변경에 실패했습니다");
       }
 
-      alert("주문 상태가 변경되었습니다");
+      showAlert("주문 상태가 변경되었습니다");
       fetchOrders();
     } catch (err) {
       console.error("Failed to update status:", err);
-      alert(err instanceof Error ? err.message : "상태 변경에 실패했습니다");
+      showAlert(err instanceof Error ? err.message : "상태 변경에 실패했습니다");
     }
   };
 
-    // ==================== 리뷰 작성 =======================
-    const handleCreateReview = async (orderItemId: number) => {
-    if (!user) {
-      alert("로그인이 필요합니다");
-      return;
-    }
+    // ==================== 리뷰 작성/수정 =======================
+    const handleOpenReviewModal = (orderItemId: number) => {
+      if (!user) {
+        showAlert("로그인이 필요합니다");
+        return;
+      }
+      setReviewOrderItemId(orderItemId);
 
-    const content = prompt("리뷰 내용을 입력하세요:");
-    if (!content) return;
-
-    const ratingInput = prompt("평점을 입력하세요 (1~5):");
-    if (!ratingInput) return;
-
-    const rating = Number(ratingInput);
-    if (rating < 1 || rating > 5) {
-      alert("평점은 1~5 사이여야 합니다");
-      return;
-    }
-
-    try {
-      const response = await fetch(
-        `http://localhost:8000/reviews?user_id=${user.id}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            order_item_id: orderItemId,
-            content,
-            rating,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "리뷰 작성 실패");
+      const existingReview = reviewMap[orderItemId];
+      if (existingReview) {
+        setReviewContent(existingReview.content || "");
+        setReviewRating(existingReview.rating);
+        setEditingReviewId(existingReview.id);
+      } else {
+        setReviewContent("");
+        setReviewRating(0);
+        setEditingReviewId(null);
       }
 
-      alert("리뷰가 등록되었습니다 🎉 (100원 적립)");
+      setShowReviewModal(true);
+    };
 
-    } catch (err) {
-      console.error(err);
-      alert(err instanceof Error ? err.message : "리뷰 작성 실패");
-    }
-  };
+    const handleCloseReviewModal = () => {
+      setShowReviewModal(false);
+      setReviewOrderItemId(null);
+      setReviewContent("");
+      setReviewRating(0);
+      setEditingReviewId(null);
+    };
+
+    const handleSubmitReview = async () => {
+      if (!user || reviewOrderItemId === null) return;
+
+      if (!reviewContent.trim()) {
+        showAlert("리뷰 내용을 입력해주세요");
+        return;
+      }
+      if (reviewRating < 1 || reviewRating > 5) {
+        showAlert("평점을 선택해주세요 (1~5)");
+        return;
+      }
+
+      setReviewSubmitting(true);
+      try {
+        let response: Response;
+
+        if (editingReviewId) {
+          // 리뷰 수정 (PUT)
+          response = await fetch(
+            `${API_BASE}/reviews/${editingReviewId}?user_id=${user.id}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                content: reviewContent,
+                rating: reviewRating,
+              }),
+            }
+          );
+        } else {
+          // 리뷰 신규 작성 (POST)
+          response = await fetch(
+            `${API_BASE}/reviews?user_id=${user.id}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                order_item_id: reviewOrderItemId,
+                content: reviewContent,
+                rating: reviewRating,
+              }),
+            }
+          );
+        }
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || (editingReviewId ? "리뷰 수정 실패" : "리뷰 작성 실패"));
+        }
+
+        showAlert(editingReviewId ? "리뷰가 수정되었습니다!" : "리뷰가 등록되었습니다! (100원 적립)");
+        handleCloseReviewModal();
+        fetchUserReviews(); // 리뷰 맵 갱신
+      } catch (err) {
+        console.error(err);
+        showAlert(err instanceof Error ? err.message : (editingReviewId ? "리뷰 수정 실패" : "리뷰 작성 실패"));
+      } finally {
+        setReviewSubmitting(false);
+      }
+    };
 
     // ==================== 로딩 및 에러 처리 ====================
 
@@ -526,7 +661,7 @@ export default function OrdersPage() {
                   order.status === "delivered") && (
                   <button
                     className={styles.deliveryBtn}
-                    onClick={() => handleShowShipping(order.id)}
+                    onClick={() => handleShowShipping(order)}
                   >
                     🚚 배송조회
                   </button>
@@ -556,14 +691,13 @@ export default function OrdersPage() {
                   </button>
                 )}
 
-                {/* 배송 완료 시 리뷰 작성 가능 */}
+                {/* 배송 완료 시 리뷰 작성/수정 */}
                 {order.status === "delivered" && (
                   <button
                     className={styles.reviewBtn}
-                    // onClick={() => alert("리뷰 작성 기능은 준비중입니다")}
-                    onClick={() => handleCreateReview(order.items[0].id)}
+                    onClick={() => handleOpenReviewModal(order.items[0].id)}
                   >
-                    ⭐ 리뷰 작성
+                    {reviewMap[order.items[0]?.id] ? "✏️ 리뷰 수정" : "⭐ 리뷰 작성"}
                   </button>
                 )}
               </div>
@@ -722,13 +856,18 @@ export default function OrdersPage() {
                 <strong>운송장 번호:</strong> {shippingInfo.tracking_number}
               </div>
             )}
-            {shippingInfo.carrier && (
+            {shippingInfo.courier_company && (
               <div className={styles.modalItem}>
-                <strong>택배사:</strong> {shippingInfo.carrier}
+                <strong>택배사:</strong> {shippingInfo.courier_company}
               </div>
             )}
             <div className={styles.modalItem}>
-              <strong>배송 상태:</strong> {shippingInfo.status}
+              <strong>배송 상태:</strong>{" "}
+              {selectedOrder?.status === "delivered"
+                ? "배송 완료"
+                : selectedOrder?.status === "shipped"
+                ? "배송중"
+                : "배송 준비중"}
             </div>
             {shippingInfo.shipped_at && (
               <div className={styles.modalItem}>
@@ -742,6 +881,129 @@ export default function OrdersPage() {
                 {new Date(shippingInfo.delivered_at).toLocaleString("ko-KR")}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 리뷰 작성/수정 모달 */}
+      {showReviewModal && (
+        <div
+          className={styles.modalOverlay}
+          onClick={handleCloseReviewModal}
+        >
+          <div
+            className={styles.modalContent}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className={styles.closeBtn}
+              onClick={handleCloseReviewModal}
+            >
+              ✕
+            </button>
+
+            <h2>{editingReviewId ? "리뷰 수정" : "리뷰 작성"}</h2>
+
+            {/* 별점 선택 */}
+            <div style={{ margin: "20px 0" }}>
+              <strong>평점</strong>
+              <div
+                className={styles.starRating}
+                onMouseLeave={() => setHoverRating(0)}
+              >
+                {[1, 2, 3, 4, 5].map((star) => {
+                  const activeRating = hoverRating || reviewRating;
+                  return (
+                    <span
+                      key={star}
+                      className={`${styles.star} ${star <= activeRating ? styles.starActive : ""}`}
+                      onClick={() => setReviewRating(star === reviewRating ? 0 : star)}
+                      onMouseEnter={() => setHoverRating(star)}
+                    >
+                      ★
+                    </span>
+                  );
+                })}
+                <span style={{ marginLeft: "8px", fontSize: "14px", color: "#666" }}>
+                  {`${reviewRating}점`}
+                </span>
+              </div>
+            </div>
+
+            {/* 리뷰 내용 */}
+            <div style={{ marginBottom: "20px" }}>
+              <strong>리뷰 내용</strong>
+              <textarea
+                className={styles.reviewTextarea}
+                value={reviewContent}
+                onChange={(e) => setReviewContent(e.target.value)}
+                placeholder="상품에 대한 솔직한 리뷰를 작성해주세요."
+                style={{ marginTop: "8px" }}
+              />
+            </div>
+
+            {/* 제출 버튼 */}
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+              <button
+                className={styles.detailBtn}
+                onClick={handleCloseReviewModal}
+                style={{ backgroundColor: "#999" }}
+              >
+                취소
+              </button>
+              <button
+                className={styles.submitReviewBtn}
+                onClick={handleSubmitReview}
+                disabled={reviewSubmitting}
+              >
+                {reviewSubmitting
+                  ? (editingReviewId ? "수정 중..." : "등록 중...")
+                  : (editingReviewId ? "리뷰 수정" : "리뷰 등록")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 커스텀 알림 모달 */}
+      {customAlert && (
+        <div className={styles.customAlertOverlay}>
+          <div className={styles.customAlertBox}>
+            <div className={styles.customAlertMessage}>
+              {customAlert.message}
+            </div>
+
+            {customAlert.type === 'prompt' && (
+              <input
+                type="text"
+                className={styles.customAlertInput}
+                value={promptInput}
+                onChange={(e) => setPromptInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAlertConfirm();
+                }}
+                autoFocus
+                placeholder="내용을 입력해주세요"
+              />
+            )}
+
+            <div className={styles.customAlertButtons}>
+              {(customAlert.type === 'confirm' || customAlert.type === 'prompt') && (
+                <button
+                  className={`${styles.customAlertBtn} ${styles.customAlertBtnSecondary}`}
+                  onClick={handleAlertCancel}
+                >
+                  취소
+                </button>
+              )}
+              <button
+                className={`${styles.customAlertBtn} ${styles.customAlertBtnPrimary}`}
+                onClick={handleAlertConfirm}
+                autoFocus={customAlert.type === 'alert'}
+              >
+                확인
+              </button>
+            </div>
           </div>
         </div>
       )}
