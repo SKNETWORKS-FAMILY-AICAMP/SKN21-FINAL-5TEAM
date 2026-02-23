@@ -5,6 +5,7 @@ from langchain_core.messages import ToolMessage, AIMessage, SystemMessage, Human
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import ToolNode
 from langsmith import traceable
+from pydantic import SecretStr
 
 from ecommerce.chatbot.src.graph.state import AgentState
 from ecommerce.chatbot.src.core.config import settings
@@ -52,8 +53,112 @@ TOOLS = [
     open_address_search
 ]
 
+# Sensitive Tools requiring Human Approval
+SENSITIVE_TOOLS = [
+    "cancel_order", 
+    "register_return_request", 
+    "register_exchange_request", 
+    "update_payment_method"
+]
+
 # Initialize ToolNode -> workflow.py로 이동
 tool_node = ToolNode(TOOLS)
+
+# Context Compaction Settings
+MAX_HISTORY_TOKENS = 8000
+KEEP_RECENT_TURNS = 3
+SUMMARY_MODEL = "gpt-4o-mini"
+
+
+def _estimate_tokens(messages: List) -> int:
+    """메시지 토큰 수 대략 추정 (1토큰 ≈ 4자)"""
+    total_chars = sum(len(str(getattr(m, "content", ""))) for m in messages)
+    return total_chars // 4
+
+
+def _group_messages_into_turns(messages: List) -> List[List]:
+    """메시지를 user+assistant 기준 턴으로 그룹화"""
+    turns: List[List] = []
+    current_turn: List = []
+
+    for msg in messages:
+        if isinstance(msg, HumanMessage):
+            if current_turn:
+                turns.append(current_turn)
+            current_turn = [msg]
+        else:
+            if not current_turn:
+                current_turn = [msg]
+            else:
+                current_turn.append(msg)
+
+    if current_turn:
+        turns.append(current_turn)
+
+    return turns
+
+
+def _clear_old_turns(messages: List, keep_recent_turns: int) -> List:
+    """최근 N턴 제외 메시지를 [cleared]로 치환"""
+    turns = _group_messages_into_turns(messages)
+    if len(turns) <= keep_recent_turns:
+        return messages
+
+    old_turns = turns[:-keep_recent_turns]
+    recent_turns = turns[-keep_recent_turns:]
+
+    cleared_messages: List = []
+    for turn in old_turns:
+        for msg in turn:
+            if isinstance(msg, HumanMessage):
+                cleared_messages.append(HumanMessage(content="[cleared]"))
+            elif isinstance(msg, AIMessage):
+                cleared_messages.append(AIMessage(content="[cleared]"))
+            elif isinstance(msg, ToolMessage):
+                cleared_messages.append(ToolMessage(content="[cleared]", tool_call_id=msg.tool_call_id))
+
+    recent_messages = [msg for turn in recent_turns for msg in turn]
+    return cleared_messages + recent_messages
+
+
+def _summarize_messages(messages: List) -> str | None:
+    """전체 대화를 다음 턴용으로 요약"""
+    if not messages:
+        return None
+
+    transcript = "\n".join(
+        f"{type(m).__name__}: {str(getattr(m, 'content', ''))[:300]}"
+        for m in messages
+    )
+
+    try:
+        summary_llm = ChatOpenAI(
+            model=SUMMARY_MODEL,
+            temperature=0,
+            api_key=SecretStr(settings.OPENAI_API_KEY),
+        )
+        response = summary_llm.invoke([
+            SystemMessage(content="다음 고객상담 대화를 다음 턴에 필요한 사실/상태/의도 중심으로 5문장 이내로 요약하세요."),
+            HumanMessage(content=transcript[:12000]),
+        ])
+        return response.content if isinstance(response.content, str) else None
+    except Exception as e:
+        print(f"[Compaction] Summary failed: {e}")
+        return None
+
+
+def _compress_messages_for_context(messages: List) -> List:
+    """토큰 초과 시: 전체 요약 + 최근 3턴 제외 cleared"""
+    if _estimate_tokens(messages) <= MAX_HISTORY_TOKENS:
+        return messages
+
+    print(f"[Compaction] token={_estimate_tokens(messages)} > {MAX_HISTORY_TOKENS}, compacting...")
+    summary = _summarize_messages(messages)
+    cleared = _clear_old_turns(messages, KEEP_RECENT_TURNS)
+
+    if summary:
+        return [HumanMessage(content=f"[conversation_summary]\n{summary}")] + cleared
+    return cleared
 
 @traceable(run_type="chain", name="Agent Node (Tool Calling)")
 def agent_node(state: AgentState):
@@ -64,6 +169,7 @@ def agent_node(state: AgentState):
     
     # 1. 메시지 준비
     messages = state["messages"]
+    messages = _compress_messages_for_context(messages)
     
     # 2. 시스템 프롬프트 준비
     # 매 턴마다 시스템 프롬프트를 컨텍스트로 주입 (state에 저장하지 않음)
@@ -92,7 +198,7 @@ def agent_node(state: AgentState):
     llm = ChatOpenAI(
         model=settings.OPENAI_MODEL,
         temperature=0,
-        api_key=settings.OPENAI_API_KEY
+        api_key=SecretStr(settings.OPENAI_API_KEY)
     )
     
     # 4. 도구 바인딩
@@ -150,14 +256,6 @@ def route_after_validation(state: AgentState) -> Literal["tools", "human_approva
             
     return "tools"
 
-
-# Sensitive Tools requiring Human Approval
-SENSITIVE_TOOLS = [
-    "cancel_order", 
-    "register_return_request", 
-    "register_exchange_request", 
-    "update_payment_method"
-]
 
 def smart_validation_node(state: AgentState):
     """

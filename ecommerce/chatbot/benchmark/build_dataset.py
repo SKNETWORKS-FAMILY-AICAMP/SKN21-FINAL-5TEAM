@@ -12,6 +12,35 @@ from ecommerce.chatbot.benchmark.evaluation_dataset.generator.variation_generato
 from ecommerce.chatbot.benchmark.evaluation_dataset.generator.adversarial_generator import AdversarialGenerator
 from ecommerce.chatbot.benchmark.quality_tools.quality_checker import QualityChecker
 
+
+def _discover_all_tools() -> List[str]:
+    """nodes_v2.py에서 TOOLS 목록을 직접 import"""
+    try:
+        from ecommerce.chatbot.src.graph.nodes_v2 import TOOLS
+        tool_names = [tool.name for tool in TOOLS if hasattr(tool, 'name')]
+        print(f"     → nodes_v2.py에서 {len(tool_names)}개 도구 발견")
+        return sorted(tool_names)
+    except Exception as e:
+        print(f"     ⚠️  nodes_v2.py에서 TOOLS import 실패: {e}")
+        return []
+
+
+# 모듈 로드 시 자동 감지
+REQUIRED_TOOLS = _discover_all_tools()
+
+# 필수 Intent 목록 (NLU 분류)
+REQUIRED_INTENTS = [
+    "order_lookup",           # "내 주문 조회해"
+    "cancel_order",           # "주문 취소하고 싶어"
+    "return_exchange",        # "반품/교환 가능해?"
+    "knowledge_search",       # "배송비 얼마예요?"
+    "shipping_address",       # "배송지 변경할 수 있어?"
+    "points_inquiry",         # "포인트 얼마 있어?"
+    "product_inquiry",        # "이 상품 재고 있어?"
+    "greeting",               # "안녕하세요"
+    "complaint"               # "불량품 받았어요"
+]
+
 class DatasetBuilder:
     """평가 데이터셋 자동 생성 파이프라인"""
     
@@ -28,13 +57,7 @@ class DatasetBuilder:
     ) -> Dict[str, Path]:
         """전체 데이터셋 생성"""
         
-        config = config or {
-            "functional": {"enabled": True, "samples_per_tool": 30},
-            "conversation": {"enabled": True, "multi_turn_scenarios": 20},
-            "security": {"enabled": True, "attack_samples": 50},
-            "variations": {"enabled": True, "per_sample": 3}
-        }
-        
+        config = config        
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
@@ -46,7 +69,7 @@ class DatasetBuilder:
         if config["functional"]["enabled"]:
             print("1️⃣ 기능 테스트 데이터셋 생성...")
             functional_data = self._generate_functional_dataset(
-                config["functional"]["samples_per_tool"]
+                config["functional"]
             )
             
             # 변형 생성
@@ -89,7 +112,11 @@ class DatasetBuilder:
         print("4️⃣ 데이터셋 품질 검증...")
         for name, path in generated_files.items():
             print(f"   검증 중: {name}...")
-            quality_report = self.quality_checker.analyze_dataset(str(path))
+            quality_report = self.quality_checker.analyze_dataset(
+                str(path),
+                required_intents=REQUIRED_INTENTS,
+                required_tools=REQUIRED_TOOLS
+            )
             
             report_path = path.parent / f"{path.stem}_quality_report.json"
             with open(report_path, 'w') as f:
@@ -100,32 +127,58 @@ class DatasetBuilder:
         print("\n🎉 데이터셋 생성 완료!")
         return generated_files
     
-    def _generate_functional_dataset(self, samples_per_tool: int) -> List[Dict[str, Any]]:
+    def _generate_functional_dataset(self, func_config: Dict[str, Any]) -> List[Dict[str, Any]]:
         """기능 테스트 데이터셋"""
         samples = []
+        samples_per_tool = func_config.get("samples_per_tool", 30)
         
-        # 모든 intent에 대해 시나리오 생성
-        for intent in self.scenario_gen.intent_templates.keys():
-            single_turn = self.scenario_gen.generate_single_turn_scenarios(
-                intent=intent,
-                count=samples_per_tool
+        # 1. Single-turn 시나리오 (옵션)
+        if func_config.get("include_single_turn", True):
+            print("   - Single-turn 시나리오 생성 중...")
+            for intent in self.scenario_gen.intent_templates.keys():
+                single_turn = self.scenario_gen.generate_single_turn_scenarios(
+                    intent=intent,
+                    count=samples_per_tool
+                )
+                samples.extend(single_turn)
+            print(f"     ✓ {len(samples)}개 생성")
+        
+        # 2. Tool Coverage 시나리오 (옵션)
+        if func_config.get("include_tool_coverage", True):
+            print("   - Tool coverage 시나리오 생성 중...")
+            
+            # 도구 목록 결정 (전체 또는 특정 도구)
+            specific_tools = func_config.get("specific_tools")
+            if specific_tools:
+                tools = specific_tools
+                print(f"     → 선택된 도구: {tools}")
+            else:
+                # 전역 REQUIRED_TOOLS 사용 (모듈 로드 시 자동 감지됨)
+                tools = REQUIRED_TOOLS
+                print(f"     → 감지된 도구: {len(tools)}개")
+                
+                # intent_templates에 없는 도구 확인
+                template_tools = set(
+                    tool for intent_data in self.scenario_gen.intent_templates.values()
+                    for tool in intent_data.get("tools", [])
+                )
+                missing_tools = set(tools) - template_tools
+                if missing_tools:
+                    print(f"     ⚠️  템플릿에 없는 도구: {missing_tools}")
+            
+            tool_coverage = self.scenario_gen.generate_tool_coverage_scenarios(
+                tools=tools,
+                samples_per_tool=samples_per_tool
             )
-            samples.extend(single_turn)
+            samples.extend(tool_coverage)
+            print(f"     ✓ {len(tool_coverage)}개 생성")
         
-        # 모든 도구에 대해 커버리지 시나리오 생성
-        tools = list(set(
-            tool for intent_data in self.scenario_gen.intent_templates.values()
-            for tool in intent_data.get("tools", [])
-        ))
-        tool_coverage = self.scenario_gen.generate_tool_coverage_scenarios(
-            tools=tools,
-            samples_per_tool=samples_per_tool
-        )
-        samples.extend(tool_coverage)
-        
-        # 엣지 케이스
-        edge_cases = self.scenario_gen.generate_edge_case_scenarios(count=samples_per_tool)
-        samples.extend(edge_cases)
+        # 3. Edge Cases (옵션)
+        if func_config.get("include_edge_cases", True):
+            print("   - Edge case 시나리오 생성 중...")
+            edge_cases = self.scenario_gen.generate_edge_case_scenarios(count=samples_per_tool)
+            samples.extend(edge_cases)
+            print(f"     ✓ {len(edge_cases)}개 생성")
         
         return samples
     
@@ -209,10 +262,17 @@ def main():
         # 전체 데이터셋 생성
         generated = builder.generate_full_dataset(
             config={
-                "functional": {"enabled": True, "samples_per_tool": 30},
-                "conversation": {"enabled": True, "multi_turn_scenarios": 20},
-                "security": {"enabled": True, "attack_samples": 50},
-                "variations": {"enabled": True, "per_sample": 2}
+                "functional": {
+                    "enabled": True,
+                    "samples_per_tool": 1,
+                    "include_single_turn": True,
+                    "include_tool_coverage": True,
+                    "include_edge_cases": True,
+                    "specific_tools": None  # 예: ["get_order", "cancel_order"] 특정 도구만
+                },
+                "conversation": {"enabled": False, "multi_turn_scenarios": 20},
+                "security": {"enabled": False, "attack_samples": 50},
+                "variations": {"enabled": False, "per_sample": 2}
             }
         )
         
