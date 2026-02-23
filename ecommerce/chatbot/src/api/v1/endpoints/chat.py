@@ -82,6 +82,9 @@ async def chat_streaming_endpoint(
                 "current_task": None,
                 "documents": [],
                 "tool_outputs": [],
+                "task_list": [],
+                "execution_plan": {},
+                "task_results": [],
                 **(request.previous_state or {}),
                 "is_authenticated": True,
                 "user_info": {

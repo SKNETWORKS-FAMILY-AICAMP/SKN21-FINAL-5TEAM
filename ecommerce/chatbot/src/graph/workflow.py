@@ -3,6 +3,12 @@ from langgraph.graph import StateGraph, START, END
 from ecommerce.chatbot.src.graph.state import AgentState
 # Import new nodes from nodes_v3
 from ecommerce.chatbot.src.graph.nodes_v2 import (
+    decomposer_node,
+    orchestrator_node,
+    route_after_orchestration,
+    sequential_worker_node,
+    parallel_worker_node,
+    route_after_workers,
     agent_node, 
     tool_node, 
     should_continue, 
@@ -16,13 +22,18 @@ from ecommerce.chatbot.src.graph.nodes_v2 import (
 
 def create_graph():
     """
-    Tool Calling 기반의 Agent 워크플로우를 생성합니다.
-    구조: Agent -> (Tools or End) -> Process Output -> End
-    [Updated] Validation & Human Approval 추가
+    저성능 모델 친화형 워크플로우를 생성합니다.
+    구조:
+    START -> Decomposer -> Orchestrator -> (Sequential/Parallel Workers or Agent)
+          -> Validation -> Approval -> Tools -> (Agent or Output) -> End
     """
     workflow = StateGraph(AgentState)
 
     # 1. 노드 등록
+    workflow.add_node("decomposer", decomposer_node)
+    workflow.add_node("orchestrator", orchestrator_node)
+    workflow.add_node("sequential_worker", sequential_worker_node)
+    workflow.add_node("parallel_worker", parallel_worker_node)
     workflow.add_node("agent", agent_node)
     workflow.add_node("validation", smart_validation_node)
     workflow.add_node("approval", human_approval_node)
@@ -30,7 +41,38 @@ def create_graph():
     workflow.add_node("process_output", process_output_node)
 
     # 2. 엣지 연결
-    workflow.add_edge(START, "agent")
+    workflow.add_edge(START, "decomposer")
+    workflow.add_edge("decomposer", "orchestrator")
+
+    # [Orchestrator -> Worker/Agent]
+    workflow.add_conditional_edges(
+        "orchestrator",
+        route_after_orchestration,
+        {
+            "sequential_worker": "sequential_worker",
+            "parallel_worker": "parallel_worker",
+            "agent": "agent",
+        }
+    )
+
+    # [Workers -> Validation or Process Output]
+    workflow.add_conditional_edges(
+        "sequential_worker",
+        route_after_workers,
+        {
+            "validation": "validation",
+            "process_output": "process_output",
+        }
+    )
+
+    workflow.add_conditional_edges(
+        "parallel_worker",
+        route_after_workers,
+        {
+            "validation": "validation",
+            "process_output": "process_output",
+        }
+    )
     
     # [Agent -> Decision: Tools or End]
     # 도구 호출이 없으면 바로 종료(Process Output), 있으면 검증(Validation)으로 이동

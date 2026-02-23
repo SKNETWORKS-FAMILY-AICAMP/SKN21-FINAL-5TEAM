@@ -1,15 +1,23 @@
 import json
-from typing import List, Literal
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from enum import Enum
+from typing import Any, Dict, List, Literal
+from uuid import uuid4
 
 from langchain_core.messages import ToolMessage, AIMessage, SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import ToolNode
 from langsmith import traceable
-from pydantic import SecretStr
+from pydantic import BaseModel, Field, SecretStr
 
 from ecommerce.chatbot.src.graph.state import AgentState
 from ecommerce.chatbot.src.core.config import settings
 from ecommerce.chatbot.src.prompts.system_prompts import ECOMMERCE_SYSTEM_PROMPT
+from ecommerce.chatbot.src.prompts.agent_prompts import (
+    TOOL_USAGE_INSTRUCTIONS,
+    CONTEXT_SUMMARY_SYSTEM_PROMPT,
+    APPROVAL_CHECK_PROMPT_TEMPLATE,
+)
 
 # Import Tools
 from ecommerce.chatbot.src.tools.order_tools import (
@@ -54,12 +62,19 @@ TOOLS = [
 ]
 
 # Sensitive Tools requiring Human Approval
-SENSITIVE_TOOLS = [
+SENSITIVE_TOOLS = {
     "cancel_order", 
     "register_return_request", 
     "register_exchange_request", 
     "update_payment_method"
-]
+}
+
+ORDER_ID_REQUIRED_TOOLS = {
+    "check_refund_eligibility",
+    "cancel_order",
+    "register_return_request",
+    "register_exchange_request",
+}
 
 # Initialize ToolNode -> workflow.py로 이동
 tool_node = ToolNode(TOOLS)
@@ -68,6 +83,471 @@ tool_node = ToolNode(TOOLS)
 MAX_HISTORY_TOKENS = 8000
 KEEP_RECENT_TURNS = 3
 SUMMARY_MODEL = "gpt-4o-mini"
+
+
+class TaskType(str, Enum):
+    ORDER_QUERY = "ORDER_QUERY"
+    POLICY_CHECK = "POLICY_CHECK"
+    FAQ_RETRIEVAL = "FAQ_RETRIEVAL"
+    ORDER_ACTION = "ORDER_ACTION"
+    GENERAL_CHAT = "GENERAL_CHAT"
+
+
+class TaskItem(BaseModel):
+    task: TaskType
+    args: Dict[str, Any] | str | None = Field(default_factory=dict)
+
+
+class DecompositionResult(BaseModel):
+    tasks: List[TaskItem] = Field(default_factory=list)
+
+
+DECOMPOSER_PROMPT = """
+당신은 사용자 요청을 실행 가능한 작업 목록으로 분해하는 Planner입니다.
+반드시 JSON 스키마(DecompositionResult)에 맞춰 응답하세요.
+
+작업 타입 정의:
+- ORDER_QUERY: 주문/배송/주문내역 조회
+- POLICY_CHECK: 환불/반품/교환/결제/배송 정책 확인
+- FAQ_RETRIEVAL: 일반 FAQ/정보 검색
+- ORDER_ACTION: 취소/환불/교환/결제수단변경 같은 실제 액션
+- GENERAL_CHAT: 위에 해당하지 않는 일반 대화
+
+규칙:
+1) 복합 요청이면 여러 작업으로 분해하세요.
+2) args에는 필요한 최소 파라미터만 넣으세요.
+3) order_id가 없는데 환불/취소/교환을 요청하면 ORDER_ACTION으로 넣되 args에 action만 넣어도 됩니다.
+4) 반드시 tasks 배열을 반환하세요. 비어 있으면 GENERAL_CHAT 1개를 반환하세요.
+"""
+
+
+def _get_last_user_message(messages: List) -> str:
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage) and isinstance(msg.content, str):
+            return msg.content.strip()
+    return ""
+
+
+def _normalize_task_args(args: Dict[str, Any] | str | None) -> Dict[str, Any]:
+    if args is None:
+        return {}
+    if isinstance(args, dict):
+        return args
+    if isinstance(args, str):
+        return {"query": args}
+    return {}
+
+
+def _decompose_tasks(user_message: str) -> List[Dict[str, Any]]:
+    llm = _make_llm(model=settings.OPENAI_MODEL, temperature=0)
+    structured_llm = llm.with_structured_output(DecompositionResult)
+
+    # 1차 시도
+    parsed = structured_llm.invoke([
+        SystemMessage(content=DECOMPOSER_PROMPT),
+        HumanMessage(content=user_message[:2000]),
+    ])
+
+    tasks = parsed.tasks if isinstance(parsed, DecompositionResult) else []
+
+    # 2차 재시도 (실패/빈 배열 방어)
+    if not tasks:
+        retry_msg = (
+            "이전 응답이 비어 있었습니다. 반드시 tasks 배열에 최소 1개 이상 넣어 반환하세요.\n"
+            f"사용자 요청: {user_message[:2000]}"
+        )
+        parsed = structured_llm.invoke([
+            SystemMessage(content=DECOMPOSER_PROMPT),
+            HumanMessage(content=retry_msg),
+        ])
+        tasks = parsed.tasks if isinstance(parsed, DecompositionResult) else []
+
+    if not tasks:
+        return [{"task": TaskType.GENERAL_CHAT.value, "args": {}}]
+
+    normalized: List[Dict[str, Any]] = []
+    for item in tasks:
+        normalized.append(
+            {
+                "task": item.task.value,
+                "args": _normalize_task_args(item.args),
+            }
+        )
+    return normalized
+
+
+def _resolve_user_id(state: AgentState) -> int:
+    user_info = state.get("user_info", {})
+    try:
+        return int(user_info.get("id", 1))
+    except Exception:
+        return 1
+
+
+def _task_priority(task_name: str) -> int:
+    # 의존성이 있는 작업을 앞에 배치
+    if task_name == TaskType.ORDER_QUERY.value:
+        return 1
+    if task_name == TaskType.POLICY_CHECK.value:
+        return 2
+    if task_name == TaskType.ORDER_ACTION.value:
+        return 3
+    if task_name == TaskType.FAQ_RETRIEVAL.value:
+        return 4
+    return 5
+
+
+def _build_task_summary(task_results: List[Dict[str, Any]]) -> str:
+    if not task_results:
+        return "요청을 처리했지만 결과를 만들지 못했습니다. 다시 말씀해 주세요."
+
+    lines: List[str] = []
+    for idx, item in enumerate(task_results, start=1):
+        task_name = item.get("task", "UNKNOWN")
+        result = item.get("result")
+
+        if isinstance(result, dict):
+            if result.get("error"):
+                lines.append(f"{idx}. [{task_name}] 오류: {result['error']}")
+                continue
+            if result.get("message"):
+                lines.append(f"{idx}. [{task_name}] {result['message']}")
+                continue
+            if result.get("documents"):
+                lines.append(f"{idx}. [{task_name}] 관련 정보를 찾았습니다. ({len(result['documents'])}건)")
+                continue
+
+        lines.append(f"{idx}. [{task_name}] 처리 완료")
+
+    return "\n".join(lines)
+
+
+def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, Any]:
+    task_name = task.get("task", TaskType.GENERAL_CHAT.value)
+    args = _normalize_task_args(task.get("args"))
+    user_id = _resolve_user_id(state)
+
+    if task_name == TaskType.ORDER_QUERY.value:
+        order_id = args.get("order_id")
+        if order_id:
+            result = get_order_details.invoke({"order_id": order_id, "user_id": user_id})
+        else:
+            result = get_user_orders.invoke(
+                {
+                    "user_id": user_id,
+                    "requires_selection": bool(args.get("requires_selection", False)),
+                    "action_context": args.get("action_context"),
+                }
+            )
+        return {"task": task_name, "result": result}
+
+    if task_name == TaskType.POLICY_CHECK.value:
+        query = args.get("query") or args.get("policy") or _get_last_user_message(state.get("messages", []))
+        category = args.get("category", "취소/반품/교환")
+        result = search_knowledge_base.invoke({"query": query, "category": category})
+        return {"task": task_name, "result": result}
+
+    if task_name == TaskType.FAQ_RETRIEVAL.value:
+        query = args.get("query") or _get_last_user_message(state.get("messages", []))
+        category = args.get("category")
+        payload = {"query": query}
+        if category:
+            payload["category"] = category
+        result = search_knowledge_base.invoke(payload)
+        return {"task": task_name, "result": result}
+
+    if task_name == TaskType.ORDER_ACTION.value:
+        action = str(args.get("action", "")).lower()
+        order_id = args.get("order_id")
+        reason = args.get("reason", "고객 요청")
+
+        if action in {"cancel", "refund", "exchange"} and not order_id:
+            result = get_user_orders.invoke(
+                {
+                    "user_id": user_id,
+                    "requires_selection": True,
+                    "action_context": action,
+                }
+            )
+            return {
+                "task": task_name,
+                "result": result,
+                "current_task": {
+                    "type": action if action in {"cancel", "refund", "exchange"} else "general",
+                    "status": "validating",
+                    "target_id": None,
+                    "reason": reason,
+                    "missing_info": ["order_id"],
+                },
+            }
+
+        tool_name = None
+        tool_args: Dict[str, Any] = {}
+        current_task_type = "general"
+
+        if action == "cancel":
+            tool_name = "cancel_order"
+            tool_args = {
+                "order_id": order_id,
+                "user_id": user_id,
+                "reason": reason,
+                "confirmed": True,
+            }
+            current_task_type = "cancel"
+        elif action == "refund":
+            tool_name = "check_refund_eligibility"
+            tool_args = {
+                "order_id": order_id,
+                "user_id": user_id,
+                "reason": reason,
+            }
+            current_task_type = "refund"
+        elif action == "exchange":
+            tool_name = "check_exchange_eligibility"
+            tool_args = {
+                "order_id": order_id,
+                "user_id": user_id,
+                "reason": reason,
+                "new_option_id": args.get("new_option_id"),
+            }
+            current_task_type = "exchange"
+        elif action in {"shipping", "shipping_status", "track_shipping"}:
+            tool_name = "get_shipping_details"
+            tool_args = {"order_id": order_id, "user_id": user_id}
+        elif action in {"payment_update", "update_payment_method"}:
+            tool_name = "update_payment_method"
+            tool_args = {
+                "order_id": order_id,
+                "user_id": user_id,
+                "payment_method": args.get("payment_method", "카드"),
+                "card_number": args.get("card_number"),
+            }
+        elif action in {"address_search", "pickup_address"}:
+            tool_name = "open_address_search"
+            tool_args = {}
+
+        if not tool_name:
+            return {
+                "task": task_name,
+                "result": {"error": f"지원하지 않는 ORDER_ACTION 입니다: {action or 'unknown'}"},
+            }
+
+        return {
+            "task": task_name,
+            "requires_tool_call": True,
+            "tool_call": {
+                "id": f"call_{uuid4().hex[:12]}",
+                "name": tool_name,
+                "args": tool_args,
+                "type": "tool_call",
+            },
+            "current_task": {
+                "type": current_task_type,
+                "status": "validating",
+                "target_id": order_id,
+                "reason": reason,
+                "missing_info": None,
+            },
+        }
+
+    return {"task": TaskType.GENERAL_CHAT.value, "result": {"message": "일반 대화로 처리합니다."}}
+
+
+@traceable(run_type="chain", name="Input Decomposer Node")
+def decomposer_node(state: AgentState):
+    """
+    사용자 발화를 Task List(Pydantic) 형태로 분해합니다.
+    """
+    print("---DECOMPOSER NODE---")
+    messages = state.get("messages", [])
+    user_message = _get_last_user_message(messages)
+
+    if not user_message:
+        return {
+            "task_list": [{"task": TaskType.GENERAL_CHAT.value, "args": {}}],
+            "execution_plan": {"mode": "agent", "reason": "empty_user_message"},
+        }
+
+    try:
+        task_list = _decompose_tasks(user_message)
+        return {
+            "question": user_message,
+            "task_list": task_list,
+        }
+    except Exception as e:
+        print(f"[Decomposer] failed: {e}")
+        return {
+            "question": user_message,
+            "task_list": [{"task": TaskType.GENERAL_CHAT.value, "args": {}}],
+            "execution_plan": {"mode": "agent", "reason": "decomposer_failed"},
+        }
+
+
+def orchestrator_node(state: AgentState):
+    """
+    Task 리스트를 기반으로 순차/병렬 실행 계획을 결정합니다.
+    """
+    print("---ORCHESTRATOR NODE---")
+    task_list = state.get("task_list", [])
+
+    if not task_list:
+        return {"execution_plan": {"mode": "agent", "reason": "empty_task_list", "tasks": []}}
+
+    tasks_sorted = sorted(task_list, key=lambda t: _task_priority(str(t.get("task", ""))))
+    task_names = [str(t.get("task", "")) for t in tasks_sorted]
+
+    if task_names == [TaskType.GENERAL_CHAT.value]:
+        mode = "agent"
+        reason = "general_chat_only"
+    elif TaskType.ORDER_ACTION.value in task_names:
+        mode = "sequential"
+        reason = "order_action_requires_controlled_execution"
+    elif TaskType.ORDER_QUERY.value in task_names and TaskType.POLICY_CHECK.value in task_names:
+        mode = "sequential"
+        reason = "policy_check_depends_on_order_context"
+    elif len(tasks_sorted) > 1:
+        mode = "parallel"
+        reason = "independent_information_tasks"
+    else:
+        mode = "sequential"
+        reason = "single_task"
+
+    return {
+        "task_list": tasks_sorted,
+        "execution_plan": {
+            "mode": mode,
+            "reason": reason,
+            "tasks": task_names,
+        },
+    }
+
+
+def route_after_orchestration(state: AgentState) -> Literal["agent", "sequential_worker", "parallel_worker"]:
+    plan = state.get("execution_plan", {})
+    mode = plan.get("mode", "agent")
+
+    if mode == "sequential":
+        return "sequential_worker"
+    if mode == "parallel":
+        return "parallel_worker"
+    return "agent"
+
+
+def sequential_worker_node(state: AgentState):
+    """
+    Task를 순차 실행합니다. (의존성 있는 작업 전용)
+    """
+    print("---SEQUENTIAL WORKER NODE---")
+    task_list = state.get("task_list", [])
+
+    task_results: List[Dict[str, Any]] = []
+    tool_calls: List[Dict[str, Any]] = []
+    current_task = state.get("current_task")
+
+    for task in task_list:
+        executed = _execute_single_task(task, state)
+        task_results.append(executed)
+
+        if executed.get("requires_tool_call") and executed.get("tool_call"):
+            tool_calls.append(executed["tool_call"])
+
+        if executed.get("current_task"):
+            current_task = executed["current_task"]
+
+    updates: Dict[str, Any] = {"task_results": task_results}
+
+    if tool_calls:
+        updates["messages"] = [
+            AIMessage(
+                content="요청하신 작업을 순차 실행하기 위해 필요한 도구를 호출합니다.",
+                tool_calls=tool_calls,
+            )
+        ]
+        if current_task:
+            updates["current_task"] = current_task
+        return updates
+
+    summary = _build_task_summary(task_results)
+    updates["messages"] = [AIMessage(content=summary)]
+    updates["generation"] = summary
+    if current_task:
+        updates["current_task"] = current_task
+    return updates
+
+
+def parallel_worker_node(state: AgentState):
+    """
+    독립 Task를 병렬 실행합니다.
+    """
+    print("---PARALLEL WORKER NODE---")
+    task_list = state.get("task_list", [])
+    if not task_list:
+        msg = "실행할 작업이 없습니다."
+        return {"task_results": [], "messages": [AIMessage(content=msg)], "generation": msg}
+
+    task_results: List[Dict[str, Any]] = []
+    tool_calls: List[Dict[str, Any]] = []
+    current_task = state.get("current_task")
+
+    max_workers = min(4, max(1, len(task_list)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {executor.submit(_execute_single_task, task, state): task for task in task_list}
+        for future in as_completed(future_map):
+            try:
+                executed = future.result()
+            except Exception as e:
+                task = future_map[future]
+                executed = {
+                    "task": task.get("task", "UNKNOWN"),
+                    "result": {"error": f"병렬 실행 실패: {str(e)}"},
+                }
+
+            task_results.append(executed)
+
+            if executed.get("requires_tool_call") and executed.get("tool_call"):
+                tool_calls.append(executed["tool_call"])
+
+            if executed.get("current_task"):
+                current_task = executed["current_task"]
+
+    updates: Dict[str, Any] = {"task_results": task_results}
+
+    if tool_calls:
+        updates["messages"] = [
+            AIMessage(
+                content="독립 작업을 병렬로 분석한 뒤 필요한 도구를 호출합니다.",
+                tool_calls=tool_calls,
+            )
+        ]
+        if current_task:
+            updates["current_task"] = current_task
+        return updates
+
+    summary = _build_task_summary(task_results)
+    updates["messages"] = [AIMessage(content=summary)]
+    updates["generation"] = summary
+    if current_task:
+        updates["current_task"] = current_task
+    return updates
+
+
+def route_after_workers(state: AgentState) -> Literal["validation", "process_output"]:
+    messages = state.get("messages", [])
+    if not messages:
+        return "process_output"
+
+    last_message = messages[-1]
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "validation"
+    return "process_output"
+
+
+def _make_llm(model: str, temperature: float = 0) -> ChatOpenAI:
+    return ChatOpenAI(
+        model=model,
+        temperature=temperature,
+        api_key=SecretStr(settings.OPENAI_API_KEY),
+    )
 
 
 def _estimate_tokens(messages: List) -> int:
@@ -132,13 +612,9 @@ def _summarize_messages(messages: List) -> str | None:
     )
 
     try:
-        summary_llm = ChatOpenAI(
-            model=SUMMARY_MODEL,
-            temperature=0,
-            api_key=SecretStr(settings.OPENAI_API_KEY),
-        )
+        summary_llm = _make_llm(model=SUMMARY_MODEL, temperature=0)
         response = summary_llm.invoke([
-            SystemMessage(content="다음 고객상담 대화를 다음 턴에 필요한 사실/상태/의도 중심으로 5문장 이내로 요약하세요."),
+            SystemMessage(content=CONTEXT_SUMMARY_SYSTEM_PROMPT),
             HumanMessage(content=transcript[:12000]),
         ])
         return response.content if isinstance(response.content, str) else None
@@ -149,10 +625,11 @@ def _summarize_messages(messages: List) -> str | None:
 
 def _compress_messages_for_context(messages: List) -> List:
     """토큰 초과 시: 전체 요약 + 최근 3턴 제외 cleared"""
-    if _estimate_tokens(messages) <= MAX_HISTORY_TOKENS:
+    token_count = _estimate_tokens(messages)
+    if token_count <= MAX_HISTORY_TOKENS:
         return messages
 
-    print(f"[Compaction] token={_estimate_tokens(messages)} > {MAX_HISTORY_TOKENS}, compacting...")
+    print(f"[Compaction] token={token_count} > {MAX_HISTORY_TOKENS}, compacting...")
     summary = _summarize_messages(messages)
     cleared = _clear_old_turns(messages, KEEP_RECENT_TURNS)
 
@@ -178,28 +655,22 @@ def agent_node(state: AgentState):
             user_context += f"User Info: {json.dumps(state['user_info'], ensure_ascii=False)}\n"
     
     # [Context Injection] Prior Action (이전 의도 주입)
-    if state.get("prior_action"):
-        user_context += f"\n[Prior Context]\nUser was trying to perform action: '{state['prior_action']}'.\nIf the user selects an order, proceed with this action.\n"
+    prior_action = state.get("prior_action")
+    if not prior_action:
+        current_task = state.get("current_task")
+        if current_task:
+            prior_action = current_task.get("type")
+    if prior_action:
+        user_context += (
+            f"\n[Prior Context]\nUser was trying to perform action: '{prior_action}'.\n"
+            "If the user selects an order, proceed with this action.\n"
+        )
 
-    tool_instructions = """
-\n[Tool Usage Instructions]
-1. 사용자가 주문 조회, 환불, 배송 확인 등을 요청하면 주저하지 말고 즉시 관련 도구(Tool)를 호출하세요. "확인해보겠습니다"라고 말하기 전에 도구부터 호출하세요.
-2. 도구 실행에 'user_id'가 필요한 경우, 위 [User Context]에 있는 User ID를 사용하세요.
-3. 주문 번호가 문맥에 있다면 해당 주문 번호를 사용하세요.
-4. 사용자가 특정 주문을 선택해야 하는 상황(예: "환불해줘"라고만 하고 주문번호를 안 줌)이라면, get_user_orders를 호출하되 `requires_selection=True` 파라미터를 꼭 설정하세요.
-5. 이때, `action_context` 파라미터에 원래 의도('refund', 'exchange', 'cancel')를 반드시 포함하세요. (예: `action_context='refund'`)
-6. [CRITICAL] 사용자로부터 '주소'(배송지, 수거지 등)를 입력받아야 할 경우, 절대로 텍스트로 "주소를 입력해주세요"라고 질문하지 마십시오. 대신 무조건 `open_address_search` 도구를 호출하여 주소 검색 팝업을 띄우십시오. 이는 필수 규칙입니다.
-    """
-
-    final_prompt = ECOMMERCE_SYSTEM_PROMPT + user_context + tool_instructions
+    final_prompt = ECOMMERCE_SYSTEM_PROMPT + user_context + TOOL_USAGE_INSTRUCTIONS
     system_msg = SystemMessage(content=final_prompt)
     
     # 3. LLM 설정 (ChatOpenAI 사용 권장 for bind_tools)
-    llm = ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        temperature=0,
-        api_key=SecretStr(settings.OPENAI_API_KEY)
-    )
+    llm = _make_llm(model=settings.OPENAI_MODEL, temperature=0)
     
     # 4. 도구 바인딩
     llm_with_tools = llm.bind_tools(TOOLS)
@@ -246,7 +717,7 @@ def route_after_validation(state: AgentState) -> Literal["tools", "human_approva
     current_task = state.get("current_task")
     
     # 이미 승인된 상태라면 바로 도구 실행
-    if current_task and current_task.get("status") == "approved":
+    if current_task and current_task.get("status") == "executing":
         return "tools"
 
     # 민감한 도구가 있는지 확인 (Human Approval 필요 여부)
@@ -294,7 +765,7 @@ def smart_validation_node(state: AgentState):
         args = tool_call["args"]
         
         # 1. 환불/반품/취소/교환 시 order_id 누락 체크
-        if tool_name in ["check_refund_eligibility", "cancel_order", "register_return_request", "register_exchange_request"]:
+        if tool_name in ORDER_ID_REQUIRED_TOOLS:
             order_id = args.get("order_id")
             # order_id가 없거나, "ORD-" 형식이 아니거나, 빈 문자열인 경우
             if not order_id or "ORD-" not in str(order_id):
@@ -309,9 +780,12 @@ def smart_validation_node(state: AgentState):
                 # 원래 의도 저장 (e.g., 'refund')
                 # tool_name을 간단한 action name으로 매핑
                 task_type = "general"
-                if tool_name == "cancel_order": task_type = "cancel"
-                elif tool_name == "register_exchange_request": task_type = "exchange"
-                else: task_type = "refund" # check_refund_eligibility, register_return_request 등
+                if tool_name == "cancel_order":
+                    task_type = "cancel"
+                elif tool_name == "register_exchange_request":
+                    task_type = "exchange"
+                else:
+                    task_type = "refund"  # check_refund_eligibility, register_return_request 등
                 
                 # Update TaskContext
                 current_task["type"] = task_type
@@ -384,7 +858,7 @@ def human_approval_node(state: AgentState):
     
     # 이미 승인된 상태라면 통과
     current_task = state.get("current_task")
-    if current_task and current_task.get("status") == "approved":
+    if current_task and current_task.get("status") == "executing":
         print("---APPROVAL: ALREADY APPROVED---")
         return {}
         
@@ -409,31 +883,29 @@ def human_approval_node(state: AgentState):
             break
             
     if last_user_msg and hasattr(last_user_msg, "content"):
-        content = last_user_msg.content.strip() if last_user_msg.content else ""
+        raw_content = last_user_msg.content
+        content = raw_content.strip() if isinstance(raw_content, str) else ""
         print(f"---APPROVAL CHECK: Last User Msg='{content}'---")
         
         # A. LLM 기반 승인 여부 판단 (LLM-based Confirmation Check)
         try:
             # 빠른 응답을 위해 3.5-turbo 등 가벼운 모델 사용 권장 (여기서는 기본 설정 따름)
-            approval_llm = ChatOpenAI(temperature=0, model="gpt-4o-mini") 
+            approval_llm = _make_llm(model="gpt-4o-mini", temperature=0)
             
-            prompt = (
-                f"User Message: '{content}'\n"
-                f"Pending Tool Call: {sensitive_calls[0]['name']} (Args: {sensitive_calls[0].get('args')})\n"
-                "System: The user was asked to confirm this action. "
-                "Does the user's message imply confirmation/agreement to proceed? "
-                "Or does it provide necessary information (slot filling) which implies proceeding? "
-                "Answer 'YES' if they agree or provide info. "
-                "Answer 'NO' if they refuse or ask something else. "
-                "Answer only YES or NO."
+            prompt = APPROVAL_CHECK_PROMPT_TEMPLATE.format(
+                user_message=content,
+                tool_name=sensitive_calls[0]["name"],
+                tool_args=sensitive_calls[0].get("args"),
             )
             
             response = approval_llm.invoke([HumanMessage(content=prompt)])
-            decision = response.content.strip().upper()
+            decision_text = response.content if isinstance(response.content, str) else ""
+            decision = decision_text.strip().upper()
             print(f"---APPROVAL LLM DECISION: {decision} ({content})---")
             
             if "YES" in decision:
-                if current_task: current_task["status"] = "approved"
+                if current_task:
+                    current_task["status"] = "executing"
                 return {"current_task": current_task}
                 
         except Exception as e:
@@ -441,8 +913,9 @@ def human_approval_node(state: AgentState):
             # Fallback to keyword matching if LLM fails
             positive_keywords = ["응", "네", "예", "맞아", "진행", "해줘", "yes", "ok", "confirm", "좋아", "수락"]
             if any(keyword in content.lower() for keyword in positive_keywords):
-                print(f"---APPROVAL: Detected positive keyword (Fallback)---")
-                if current_task: current_task["status"] = "approved"
+                print("---APPROVAL: Detected positive keyword (Fallback)---")
+                if current_task:
+                    current_task["status"] = "executing"
                 return {"current_task": current_task}
             
         # B. 인자 매칭 (Implicit Confirmation via Slot Filling)
@@ -450,20 +923,20 @@ def human_approval_node(state: AgentState):
         # 사용자가 해당 정보를 제공하며 진행을 의도한 것으로 간주
         try:
             tool_args = sensitive_calls[0].get("args", {})
-            for key, value in tool_args.items():
+            for _, value in tool_args.items():
                 if isinstance(value, str) and len(value) > 1 and value in content:
                     # 예: arg="경기도", content="경기도로 보내줘" -> 매칭
                     print(f"---APPROVAL: Detected argument match ('{value}') in user message---")
-                    if current_task: current_task["status"] = "approved"
+                    if current_task:
+                        current_task["status"] = "executing"
                     return {"current_task": current_task}
         except Exception as e:
             print(f"---APPROVAL CHECK ERROR: {e}---")
 
     # 2. state에 pending_approval 상태가 있을 때 (이전 턴에서 시스템이 물어본 경우)
     if current_task and current_task.get("status") == "approving":
-         # 위 로직에서 걸러지지 않았더라도, pending 상태에서 다시 왔다면 승인으로 간주
-         pass
-         current_task["status"] = "approved"
+            # 위 로직에서 걸러지지 않았더라도, pending 상태에서 다시 왔다면 승인으로 간주
+         current_task["status"] = "executing"
          return {"current_task": current_task}
     
     # 2. 첫 진입 (action_status가 'idle'이거나 없거나) -> 승인 요청 UI 띄움
@@ -490,21 +963,22 @@ def human_approval_node(state: AgentState):
         }
     
     # "pending_approval" 상태에서 다시 여기로 왔다면 승인된 것으로 간주하고 통과
-    current_task["status"] = "approved"
+    if current_task:
+        current_task["status"] = "executing"
     return {"current_task": current_task}
 
 
 def route_after_approval(state: AgentState) -> Literal["tools", "process_output"]:
     """
     승인 노드 이후의 경로를 결정합니다.
-    - approved: 도구 실행 (tools)
-    - pending_approval: 사용자 입력 대기 (process_output -> end)
+    - executing: 도구 실행 (tools)
+    - 그 외: 사용자 입력 대기/대화 종료 처리 (process_output)
     """
     current_task = state.get("current_task")
     status = current_task.get("status") if current_task else "idle"
     print(f"---ROUTE AFTER APPROVAL: {status}---")
     
-    if status == "approved":
+    if status == "executing":
         return "tools"
     
     return "process_output"
@@ -529,6 +1003,8 @@ def process_output_node(state: AgentState):
         if isinstance(msg, ToolMessage):
             try:
                 content = msg.content
+                if not isinstance(content, str):
+                    continue
                 data = json.loads(content)
                 if isinstance(data, dict):
                     # 일반 UI Action
@@ -559,6 +1035,8 @@ def route_after_tools(state: AgentState) -> Literal["agent", "process_output"]:
     if isinstance(last_message, ToolMessage):
         try:
             content = last_message.content
+            if not isinstance(content, str):
+                return "agent"
             data = json.loads(content)
             if isinstance(data, dict):
                 # UI Action이 포함되어 있으면 텍스트 생성 생략하고 바로 종료
