@@ -7,7 +7,6 @@ from typing import Optional, List
 
 from pydantic import BaseModel, Field, ConfigDict
 
-# Product 모듈의 ProductType enum 사용
 from ecommerce.platform.backend.app.router.products.models import ProductType, UsedProductStatus
 
 

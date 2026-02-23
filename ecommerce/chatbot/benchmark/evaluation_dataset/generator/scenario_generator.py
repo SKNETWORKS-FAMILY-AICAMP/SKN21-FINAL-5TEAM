@@ -9,13 +9,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy.orm import Session
-from openai import OpenAI
 
 from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.router.orders.models import Order
-from ecommerce.platform.backend.app.router.products.models import Product
-from ecommerce.platform.backend.app.router.users.models import User
-from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
+from ecommerce.platform.backend.app.models import Order, Product, User, ShippingAddress
 from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 
 
@@ -303,8 +299,21 @@ class ScenarioGenerator:
         
         for tool in tools:
             if tool not in intent_tool_map:
-                print(f"⚠️  도구 '{tool}'에 대한 템플릿이 없습니다")
-                continue
+                print(f"⚠️  도구 '{tool}'에 대한 템플릿이 없습니다. GPT로 자동 생성 중...")
+                # GPT로 템플릿 자동 생성
+                auto_template = self._auto_generate_tool_template(tool)
+                if auto_template:
+                    # 동적으로 intent_templates에 추가
+                    generated_intent = f"auto_{tool}"
+                    self.intent_templates[generated_intent] = auto_template
+                    intent_tool_map[tool] = [generated_intent]
+                    
+                    # 파일에도 저장 (다음 실행시 재사용)
+                    self._save_auto_template(generated_intent, auto_template)
+                    print(f"   ✅ '{tool}' 템플릿 자동 생성 완료")
+                else:
+                    print(f"   ❌ '{tool}' 템플릿 생성 실패")
+                    continue
             
             # 해당 도구를 사용하는 intent 선택
             intents = intent_tool_map[tool]
@@ -325,6 +334,96 @@ class ScenarioGenerator:
                 scenarios.extend(tool_scenarios)
         
         return scenarios
+    
+    def _auto_generate_tool_template(self, tool_name: str) -> Optional[Dict[str, Any]]:
+        """
+        GPT를 사용해서 도구의 템플릿 자동 생성
+        
+        Args:
+            tool_name: 도구 이름
+            
+        Returns:
+            생성된 템플릿 (intent_templates 형식)
+        """
+        try:
+            # nodes_v2.py에서 실제 도구 객체 가져오기
+            from ecommerce.chatbot.src.graph.nodes_v2 import TOOLS
+            tool_obj = None
+            for t in TOOLS:
+                if hasattr(t, 'name') and t.name == tool_name:
+                    tool_obj = t
+                    break
+            
+            if not tool_obj:
+                return None
+            
+            # 도구 정보 추출
+            tool_description = tool_obj.description if hasattr(tool_obj, 'description') else ""
+            tool_args = str(tool_obj.args) if hasattr(tool_obj, 'args') else ""
+            
+            # GPT 프롬프트
+            prompt = f"""당신은 전자상거래 챗봇 테스트 데이터 생성 전문가입니다.
+
+다음 도구에 대한 테스트 시나리오를 생성해주세요:
+
+도구 이름: {tool_name}
+설명: {tool_description}
+파라미터: {tool_args}
+
+요구사항:
+1. 한국어로 자연스러운 사용자 질문 5개 생성
+2. 다양한 표현 사용 (존댓말/반말, 짧은 문장/긴 문장)
+3. 실제 사용자가 할 법한 질문
+
+JSON 형식으로 응답:
+{{
+    "examples": ["질문1", "질문2", "질문3", "질문4", "질문5"],
+    "tools": ["{tool_name}"]
+}}
+"""
+            
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.8
+            )
+            
+            result = json.loads(response.choices[0].message.content)
+            
+            # 기존 intent_templates 형식에 맞게 변환
+            template = {
+                "templates": result.get("examples", []),  # examples → templates
+                "tools": result.get("tools", [tool_name])
+            }
+            return template
+            
+        except Exception as e:
+            print(f"   ⚠️  GPT 템플릿 생성 실패: {e}")
+            return None
+    
+    def _save_auto_template(self, intent_name: str, template: Dict[str, Any]):
+        """
+        자동 생성된 템플릿을 intent_templates.json에 저장
+        """
+        try:
+            template_file = Path(__file__).parent.parent / "templates" / "intent_templates.json"
+            
+            # 기존 템플릿 읽기
+            with open(template_file, 'r', encoding='utf-8') as f:
+                templates = json.load(f)
+            
+            # 새 템플릿 추가
+            templates[intent_name] = template
+            
+            # 파일에 저장
+            with open(template_file, 'w', encoding='utf-8') as f:
+                json.dump(templates, f, ensure_ascii=False, indent=2)
+            
+            print(f"   💾 '{intent_name}' 템플릿을 파일에 저장했습니다")
+            
+        except Exception as e:
+            print(f"   ⚠️  템플릿 파일 저장 실패: {e}")
     
     # ============================================
     # 엣지 케이스 생성
