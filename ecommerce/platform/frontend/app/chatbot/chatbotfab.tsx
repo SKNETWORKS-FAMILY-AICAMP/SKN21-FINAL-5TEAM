@@ -6,7 +6,7 @@ import styles from './chatbotfab.module.css';
 import OrderListUI from './OrderListUI';
 import { useAuth } from '../authcontext';
 
-type TextMessage = { role: 'user' | 'bot'; type: 'text'; text: string; isStreaming?: boolean };
+type TextMessage = { role: 'user' | 'bot'; type: 'text'; text: string; isStreaming?: boolean; showDivider?: boolean };
 type OrderListMessage = {
   role: 'bot';
   type: 'order_list';
@@ -52,6 +52,33 @@ const MIN_H = 420;
 const MAX_W = 800;
 const MAX_H = 900;
 
+function AnimatedText({ text, className, speed = 20 }: { text: string; className?: string; speed?: number }) {
+  const [displayed, setDisplayed] = useState('');
+
+  useEffect(() => {
+    if (!text) {
+      setDisplayed('');
+      return;
+    }
+
+    // 텍스트가 완전히 바뀐 경우 자연스럽게 처음부터 다시 표시
+    setDisplayed((prev) => (text.startsWith(prev) ? prev : ''));
+
+    const timer = window.setInterval(() => {
+      setDisplayed((prev) => {
+        if (prev.length >= text.length) return prev;
+        const remaining = text.length - prev.length;
+        const step = remaining > 24 ? 3 : remaining > 12 ? 2 : 1;
+        return text.slice(0, prev.length + step);
+      });
+    }, speed);
+
+    return () => window.clearInterval(timer);
+  }, [text, speed]);
+
+  return <span className={className}>{displayed}</span>;
+}
+
 export default function ChatbotFab() {
   const { isLoggedIn } = useAuth();
   const [open, setOpen] = useState(false);
@@ -62,6 +89,7 @@ export default function ChatbotFab() {
   const [conversationState, setConversationState] = useState<Record<string, unknown> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [streamingText, setStreamingText] = useState('');
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
@@ -141,6 +169,7 @@ export default function ChatbotFab() {
     setInput('');
     setIsLoading(true);
     setStatusMessage(null); // 초기화
+    setStreamingText('');
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/v1/chat/stream`, {
@@ -165,7 +194,6 @@ export default function ChatbotFab() {
       const decoder = new TextDecoder();
       let accumulatedText = '';
       let newState = null;
-      let botMessageAdded = false;
 
       if (reader) {
         while (true) {
@@ -183,34 +211,34 @@ export default function ChatbotFab() {
                 // 상태 저장
                 newState = data.state;
               } else if (data.type === 'text_chunk') {
-                if (!botMessageAdded) {
-                  // 첫 텍스트 청크 수신 시 로딩바 제거 (텍스트 작성 중에는 로딩바 안 보이게)
-                  setIsLoading(false);
-                  setStatusMessage(null); // 텍스트 나오면 상태 메시지 제거
-                  
-                  botMessageAdded = true;
+                setIsLoading(false);
+                accumulatedText += data.content;
+                setStreamingText(accumulatedText);
+              } else if (data.type === 'status_update') {
+                  // 백엔드에서 전달되는 실시간 노드/모델 상태 메시지 업데이트
+                  const composedStatus =
+                    typeof data.status === 'string' && data.status.trim().length > 0
+                      ? data.status
+                      : typeof data.node === 'string' && data.node.trim().length > 0
+                      ? `${data.node} 노드를 처리하고 있습니다...`
+                      : typeof data.model === 'string' && data.model.trim().length > 0
+                      ? `모델 응답을 생성하고 있습니다... (${data.model})`
+                      : null;
+
+                  if (composedStatus) {
+                    setStatusMessage(composedStatus);
+                  }
+              } else if (data.type === 'ui_action') {
+                if (accumulatedText.trim()) {
+                  const completedText = accumulatedText;
                   setMessages((prev) => [
                     ...prev,
-                    { role: 'bot', type: 'text', text: data.content, isStreaming: true }
+                    { role: 'bot', type: 'text', text: completedText, isStreaming: false, showDivider: true },
                   ]);
-                  accumulatedText = data.content;
-                } else {
-                  accumulatedText += data.content;
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    const lastMsg = newMessages[newMessages.length - 1];
-                    // 안전장치: 마지막 메시지가 봇 메시지인지 확인 (혹시 모를 Race Condition 방지)
-                    if (lastMsg && lastMsg.role === 'bot' && lastMsg.type === 'text') {
-                      lastMsg.text = accumulatedText;
-                      lastMsg.isStreaming = true;
-                    }
-                    return newMessages;
-                  });
                 }
-              } else if (data.type === 'status_update') {
-                  // 도구 실행 상태 메시지 업데이트
-                  setStatusMessage(data.status);
-              } else if (data.type === 'ui_action') {
+                accumulatedText = '';
+                setStreamingText('');
+
                 if (data.ui_action === 'show_order_list') {
                   setIsLoading(false);
                   setStatusMessage(null);
@@ -242,15 +270,14 @@ export default function ChatbotFab() {
               } else if (data.type === 'done') {
                 if (newState) setConversationState(newState);
                 setStatusMessage(null); // 완료 시 상태 메시지 확실히 제거
-                // 스트리밍 완료 표시
-                setMessages((prev) => {
-                  const newMessages = [...prev];
-                  const lastMsg = newMessages[newMessages.length - 1];
-                  if (lastMsg && lastMsg.role === 'bot' && lastMsg.type === 'text') {
-                    lastMsg.isStreaming = false;
-                  }
-                  return newMessages;
-                });
+                if (accumulatedText.trim()) {
+                  const completedText = accumulatedText;
+                  setMessages((prev) => [
+                    ...prev,
+                    { role: 'bot', type: 'text', text: completedText, isStreaming: false, showDivider: true },
+                  ]);
+                }
+                setStreamingText('');
               } else if (data.type === 'error') {
                 throw new Error(data.message);
               }
@@ -261,6 +288,7 @@ export default function ChatbotFab() {
     } catch (error) {
       console.error('Chat API error:', error);
       setStatusMessage(null);
+      setStreamingText('');
       setMessages((prev) => [
         ...prev,
         {
@@ -271,7 +299,6 @@ export default function ChatbotFab() {
       ]);
     } finally {
       setIsLoading(false);
-      setStatusMessage(null);
     }
   };
 
@@ -285,9 +312,25 @@ export default function ChatbotFab() {
       ...prev,
       order_id: orderIdString,
     }));
-    
-    // sendConfirm 대신 sendMessage 사용 (hidden=true로 메시지 숨김)
-    sendMessage(`주문 ${orderIdString}를 선택했어`, true);
+
+    // 선택 이벤트를 구조화된 JSON으로 전송 (백엔드 deterministic 파싱)
+    const inferredAction =
+      typeof conversationState?.current_task === 'object' &&
+      conversationState?.current_task !== null &&
+      'type' in conversationState.current_task
+        ? String((conversationState.current_task as Record<string, unknown>).type)
+        : null;
+
+    const selectionPayload = {
+      event: 'order_selected',
+      selected_order_id: selectedOrderIds[0],
+      selected_order_ids: selectedOrderIds,
+      action: inferredAction,
+      source: 'order_list_ui',
+    };
+
+    // 사용자 채팅에는 숨기고 상태 전송만 수행
+    sendMessage(JSON.stringify(selectionPayload), true);
   };
 
   const openAddressSearch = () => {
@@ -407,8 +450,12 @@ export default function ChatbotFab() {
                 <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
                   <div className={styles.botMsg}>
                     <span className={styles.botIcon}>✦</span>
-                    <div className={`${styles.botText} ${m.type === 'text' && m.isStreaming ? styles.streaming : ''}`}>
-                      {text}
+                    <div
+                      className={`${styles.botText} ${
+                        m.type === 'text' && m.isStreaming ? styles.streaming : ''
+                      } ${m.type === 'text' && m.showDivider ? styles.persistentDivider : ''}`}
+                    >
+                      {m.type === 'text' ? <ReactMarkdown>{text}</ReactMarkdown> : text}
                     </div>
                   </div>
                 </div>
@@ -416,24 +463,31 @@ export default function ChatbotFab() {
             }
           })}
           
-          {/* 로딩 인디케이터 또는 상태 메시지 표시 */}
-          {(isLoading || statusMessage) && (
+          {/* 생성 중 상태 + 스트리밍 프리뷰 */}
+          {(isLoading || statusMessage || streamingText) && (
             <div className={`${styles.msgRow} ${styles.botRow}`}>
               <div className={styles.botMsg}>
                 <span className={styles.botIcon}>✦</span>
                 <div className={styles.botText}>
                   {statusMessage ? (
-                    <div className={styles.statusMessage}>
+                    <div className={styles.statusMessageSoft}>
                       <span className={styles.spinnerSmall}></span>
-                      {statusMessage}
+                      <AnimatedText text={statusMessage} className={styles.statusTypewriter} speed={28} />
                     </div>
-                  ) : (
-                    <div className={styles.typingIndicator}>
-                      <span></span>
-                      <span></span>
-                      <span></span>
+                  ) : isLoading && !streamingText ? (
+                    <div className={styles.statusMessageSoft}>
+                      <span className={styles.spinnerSmall}></span>
+                    </div>
+                  ) : null}
+
+                  {streamingText && (
+                    <div className={styles.streamingPreviewWrap}>
+                      <div className={styles.streamingPreviewText}>
+                        <AnimatedText text={streamingText} speed={14} />
+                      </div>
                     </div>
                   )}
+
                 </div>
               </div>
             </div>
