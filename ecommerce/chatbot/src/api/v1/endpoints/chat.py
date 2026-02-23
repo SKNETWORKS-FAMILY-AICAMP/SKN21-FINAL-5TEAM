@@ -23,6 +23,19 @@ TOOL_STATUS_MESSAGES = {
     "request_human_handoff": "상담원 연결을 시도하고 있습니다...",
 }
 
+# 그래프 노드 이름 → 상태 메시지 매핑
+NODE_STATUS_MESSAGES = {
+    "decomposer": "요청을 분해하고 있습니다...",
+    "orchestrator": "처리 계획을 세우고 있습니다...",
+    "sequential_worker": "작업을 순차적으로 처리하고 있습니다...",
+    "parallel_worker": "작업을 병렬로 처리하고 있습니다...",
+    "validation": "실행 전 안전성/유효성을 검토하고 있습니다...",
+    "approval": "승인 필요 여부를 확인하고 있습니다...",
+    "tools": "필요한 도구를 호출하고 있습니다...",
+    "agent": "답변을 구성하고 있습니다...",
+    "process_output": "최종 응답을 정리하고 있습니다...",
+}
+
 # 메시지 직렬화/역직렬화 (컴프리헨션)
 def serialize_messages(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
     role_map = {HumanMessage: "user", AIMessage: "assistant"}
@@ -52,8 +65,8 @@ def _parse_tool_output(output) -> dict | None:
 
 def _build_metadata(final_state: dict) -> dict:
     """최종 상태에서 메타데이터 추출"""
-    current_task = final_state.get("current_task", {})
-    status = current_task.get("status", "idle")
+    current_task = final_state.get("current_task") or {}
+    status = current_task.get("status", "idle") if isinstance(current_task, dict) else "idle"
     
     return {
         "type": "metadata",
@@ -117,6 +130,19 @@ async def chat_streaming_endpoint(
                     status_msg = TOOL_STATUS_MESSAGES.get(event["name"])
                     if status_msg:
                         yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg}, ensure_ascii=False)}\n\n"
+
+                # B-1. 그래프 노드 실행 시작 (실제 진행 단계 표시)
+                elif event_type == "on_chain_start":
+                    node_name = event.get("name")
+                    status_msg = NODE_STATUS_MESSAGES.get(node_name)
+                    if status_msg:
+                        yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg, 'node': node_name}, ensure_ascii=False)}\n\n"
+
+                # B-2. 모델 호출 시작 (모델 실행 단계 표시)
+                elif event_type == "on_chat_model_start":
+                    model_name = event.get("name") or "chat_model"
+                    status_msg = f"모델이 응답을 생성하고 있습니다... ({model_name})"
+                    yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg, 'model': model_name}, ensure_ascii=False)}\n\n"
 
                 # C. 도구 실행 완료 (UI 액션)
                 elif event_type == "on_tool_end":

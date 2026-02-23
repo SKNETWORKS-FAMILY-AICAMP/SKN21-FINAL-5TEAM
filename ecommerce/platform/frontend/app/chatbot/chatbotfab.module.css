@@ -113,7 +113,7 @@
 /* ===== 유저 말풍선 ===== */
 .bubble {
   max-width: 80%;
-  padding: 10px 14px;
+  padding: 0px 8px;
   border-radius: 18px 18px 4px 18px;
   font-size: 13.5px;
   line-height: 1.65;
@@ -162,6 +162,27 @@
   animation: smoothText 0.15s ease-out;
 }
 
+.streamingPreviewWrap {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
+  animation: fadeUpIn 0.35s ease-out;
+}
+
+.streamingPreviewText {
+  color: #2a2a2a;
+  line-height: 1.75;
+  letter-spacing: 0.01em;
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+.persistentDivider {
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
+}
+
 @keyframes smoothText {
   0% {
     opacity: 0.85;
@@ -173,40 +194,74 @@
   }
 }
 
+@keyframes fadeUpIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .inputBar {
-  height: 54px;
-  min-height: 54px;
+  height: 64px;
+  min-height: 64px;
   display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 10px;
+  padding: 10px 12px;
   border-top: 1px solid #eee;
   background: #fff;
 }
 
 .input {
   flex: 1;
-  height: 34px;
+  height: 42px;
+  resize: none;
+  box-sizing: border-box;
   border: 1px solid #ddd;
-  border-radius: 10px;
-  padding: 0 12px;
+  border-radius: 14px;
+  padding: 10px 14px;
+  line-height: 1.3;
   outline: none;
   font-size: 13px;
+  font-family: inherit;
   background: #fafafa;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 .input:focus {
-  border-color: #aaa;
+  border-color: #9aa4b2;
   background: #fff;
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.06);
 }
 
 .sendBtn {
-  width: 64px;
-  height: 34px;
-  border-radius: 10px;
+  min-width: 72px;
+  height: 42px;
+  padding: 0 16px;
+  border-radius: 14px;
   border: none;
   background: #111;
   color: #fff;
   cursor: pointer;
   font-size: 13px;
+  font-weight: 600;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.sendBtn:hover:not(:disabled) {
+  background: #222;
+}
+
+.sendBtn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.sendBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 /* ===== 주문 목록 UI 스타일 ===== */
@@ -396,6 +451,22 @@
   font-size: 13px;
   color: #666;
   font-weight: 500;
+}
+
+.statusMessageSoft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #8f97a3;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  animation: fadeUpIn 0.25s ease-out;
+}
+
+.statusTypewriter {
+  white-space: pre-line;
+  word-break: break-word;
 }
 
 .spinnerSmall {

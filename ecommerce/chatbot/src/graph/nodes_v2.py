@@ -95,7 +95,10 @@ class TaskType(str, Enum):
 
 class TaskItem(BaseModel):
     task: TaskType
-    args: Dict[str, Any] | str | None = Field(default_factory=dict)
+    args: Dict[str, Any] = Field(default_factory=dict)
+    
+    class Config:
+        extra = "forbid"
 
 
 class DecompositionResult(BaseModel):
@@ -128,7 +131,8 @@ def _get_last_user_message(messages: List) -> str:
     return ""
 
 
-def _normalize_task_args(args: Dict[str, Any] | str | None) -> Dict[str, Any]:
+def _normalize_task_args(args: Any) -> Dict[str, Any]:
+    """Normalize various arg formats to Dict[str, Any]"""
     if args is None:
         return {}
     if isinstance(args, dict):
@@ -138,9 +142,94 @@ def _normalize_task_args(args: Dict[str, Any] | str | None) -> Dict[str, Any]:
     return {}
 
 
+def _extract_order_id_from_text(text: str) -> str | None:
+    """
+    사용자 입력에서 주문번호(ORD-...)를 간단히 추출합니다.
+    정규식 없이 토큰 스캔으로 처리합니다.
+    """
+    if not text:
+        return None
+
+    # 0) JSON payload 우선 처리 (프론트에서 이벤트를 구조화 전송하는 경우)
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            # 단일 선택
+            single_keys = ["order_id", "selected_order_id"]
+            for key in single_keys:
+                value = payload.get(key)
+                if isinstance(value, str) and value.upper().startswith("ORD-"):
+                    return value.strip()
+
+            # 다중 선택
+            selected = payload.get("selected_order_ids")
+            if isinstance(selected, list):
+                for item in selected:
+                    if isinstance(item, str) and item.upper().startswith("ORD-"):
+                        return item.strip()
+    except Exception:
+        pass
+
+    # 공백 기준 기본 토큰화 + 주변 문장부호 제거
+    raw_tokens = text.replace("\n", " ").split(" ")
+    for token in raw_tokens:
+        candidate = token.strip().strip(".,!?()[]{}'\"")
+        if candidate.upper().startswith("ORD-") and len(candidate) >= 8:
+            # 한국어 조사/특수문자 제거를 위해 ORD- 이후 유효문자만 유지
+            # 예: "ORD-20260212-0003를" -> "ORD-20260212-0003"
+            cleaned_chars: List[str] = []
+            for ch in candidate:
+                if ch.isascii() and (ch.isalnum() or ch == "-"):
+                    cleaned_chars.append(ch)
+                else:
+                    break
+            cleaned = "".join(cleaned_chars)
+            if cleaned.upper().startswith("ORD-") and len(cleaned) >= 8:
+                return cleaned
+    return None
+
+
+def _extract_action_from_json_payload(text: str) -> str | None:
+    """
+    프론트 이벤트 JSON에서 action(cancel/refund/exchange ...)을 추출합니다.
+    """
+    if not text:
+        return None
+
+    try:
+        payload = json.loads(text)
+        if not isinstance(payload, dict):
+            return None
+
+        action = payload.get("action")
+        if isinstance(action, str) and action.strip():
+            return action.strip().lower()
+    except Exception:
+        return None
+
+    return None
+
+
+def _extract_json_payload(text: str) -> Dict[str, Any] | None:
+    """
+    사용자 입력이 JSON 문자열인 경우 dict로 반환합니다.
+    """
+    if not text:
+        return None
+
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            return payload
+    except Exception:
+        return None
+
+    return None
+
+
 def _decompose_tasks(user_message: str) -> List[Dict[str, Any]]:
     llm = _make_llm(model=settings.OPENAI_MODEL, temperature=0)
-    structured_llm = llm.with_structured_output(DecompositionResult)
+    structured_llm = llm.with_structured_output(DecompositionResult, method="function_calling")
 
     # 1차 시도
     parsed = structured_llm.invoke([
@@ -258,6 +347,22 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
 
     if task_name == TaskType.ORDER_ACTION.value:
         action = str(args.get("action", "")).lower()
+        
+        # 한글 액션명을 영어로 정규화
+        action_map = {
+            "취소": "cancel",
+            "환불": "refund",
+            "반품": "refund",
+            "교환": "exchange",
+            "배송조회": "shipping",
+            "배송": "shipping",
+            "결제변경": "payment_update",
+            "결제수단변경": "payment_update",
+            "주소검색": "address_search",
+            "수거지": "address_search",
+        }
+        action = action_map.get(action, action)
+        
         order_id = args.get("order_id")
         reason = args.get("reason", "고객 요청")
 
@@ -303,11 +408,53 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
             }
             current_task_type = "refund"
         elif action == "exchange":
+            target_item = args.get("target_item") or args.get("product_name") or args.get("product_id")
+            desired_option_text = (
+                args.get("desired_option")
+                or args.get("desired_color")
+                or args.get("desired_size")
+                or args.get("site_option")
+            )
+            has_option_input = (args.get("new_option_id") is not None) or bool(desired_option_text)
+
+            missing_info: List[str] = []
+            if not target_item:
+                missing_info.append("target_item")
+            if not has_option_input:
+                missing_info.append("desired_option")
+
+            # 교환은 대상 상품 + 변경 옵션 정보가 있어야 진행
+            if missing_info:
+                return {
+                    "task": task_name,
+                    "result": {
+                        "message": (
+                            "교환 진행을 위해 추가 정보가 필요합니다.\n"
+                            "- 교환할 상품(target_item)\n"
+                            "- 변경할 옵션(desired_option 또는 new_option_id)\n"
+                            "예: {\"event\":\"exchange_detail\",\"order_id\":\"ORD-...\",\"target_item\":\"셔츠\",\"desired_option\":\"블랙 L\"}"
+                        )
+                    },
+                    "current_task": {
+                        "type": "exchange",
+                        "status": "validating",
+                        "target_id": order_id,
+                        "reason": reason,
+                        "missing_info": missing_info,
+                    },
+                }
+
+            reason_parts = [reason]
+            if target_item:
+                reason_parts.append(f"대상상품:{target_item}")
+            if desired_option_text:
+                reason_parts.append(f"변경옵션:{desired_option_text}")
+
             tool_name = "check_exchange_eligibility"
             tool_args = {
                 "order_id": order_id,
                 "user_id": user_id,
-                "reason": reason,
+                "reason": " / ".join(reason_parts),
                 "new_option_id": args.get("new_option_id"),
             }
             current_task_type = "exchange"
@@ -368,6 +515,68 @@ def decomposer_node(state: AgentState):
             "execution_plan": {"mode": "agent", "reason": "empty_user_message"},
         }
 
+    # [State-aware Resume]
+    # 이전 턴에서 주문 선택이 필요한 액션(환불/취소/교환)이 pending이면
+    # decomposition을 다시 하지 않고 바로 ORDER_ACTION으로 복구합니다.
+    current_task = state.get("current_task") or {}
+    task_type = current_task.get("type") if isinstance(current_task, dict) else None
+    missing_info = current_task.get("missing_info") if isinstance(current_task, dict) else None
+    status = current_task.get("status") if isinstance(current_task, dict) else None
+
+    should_resume_order_action = (
+        isinstance(current_task, dict)
+        and task_type in {"cancel", "refund", "exchange"}
+        and isinstance(missing_info, list)
+        and len(missing_info) > 0
+        and status in {"validating", "approving"}
+    )
+
+    if should_resume_order_action:
+        payload = _extract_json_payload(user_message) or {}
+        payload_action = _extract_action_from_json_payload(user_message)
+        selected_order_id = payload.get("order_id") or payload.get("selected_order_id") or _extract_order_id_from_text(user_message)
+
+        resume_args: Dict[str, Any] = {
+            "action": payload_action or task_type,
+            "reason": current_task.get("reason", "고객 요청"),
+        }
+
+        if isinstance(selected_order_id, str) and selected_order_id:
+            resume_args["order_id"] = selected_order_id
+
+        # 교환 작업의 추가 슬롯 복구
+        if task_type == "exchange":
+            target_item = (
+                payload.get("target_item")
+                or payload.get("product_name")
+                or payload.get("product_id")
+            )
+            if target_item:
+                resume_args["target_item"] = target_item
+
+            if payload.get("new_option_id") is not None:
+                resume_args["new_option_id"] = payload.get("new_option_id")
+
+            desired_option = (
+                payload.get("desired_option")
+                or payload.get("desired_color")
+                or payload.get("desired_size")
+                or payload.get("site_option")
+            )
+            if desired_option:
+                resume_args["desired_option"] = desired_option
+
+        return {
+            "question": user_message,
+            "execution_plan": {"mode": "sequential", "reason": "resumed_order_action"},
+            "task_list": [
+                {
+                    "task": TaskType.ORDER_ACTION.value,
+                    "args": resume_args,
+                }
+            ],
+        }
+
     try:
         task_list = _decompose_tasks(user_message)
         return {
@@ -396,15 +605,25 @@ def orchestrator_node(state: AgentState):
     tasks_sorted = sorted(task_list, key=lambda t: _task_priority(str(t.get("task", ""))))
     task_names = [str(t.get("task", "")) for t in tasks_sorted]
 
+    has_order_action = TaskType.ORDER_ACTION.value in task_names
+    has_policy_check = TaskType.POLICY_CHECK.value in task_names
+    has_order_query = TaskType.ORDER_QUERY.value in task_names
+
     if task_names == [TaskType.GENERAL_CHAT.value]:
         mode = "agent"
         reason = "general_chat_only"
-    elif TaskType.ORDER_ACTION.value in task_names:
-        mode = "sequential"
-        reason = "order_action_requires_controlled_execution"
-    elif TaskType.ORDER_QUERY.value in task_names and TaskType.POLICY_CHECK.value in task_names:
+    # POLICY_CHECK + ORDER_ACTION은 서로 독립이므로 병렬 실행 가능
+    elif has_order_action and has_policy_check and not has_order_query:
+        mode = "parallel"
+        reason = "policy_and_action_independent"
+    # ORDER_QUERY + POLICY_CHECK은 ORDER context 의존 가능성이 있어 순차 유지
+    elif has_order_query and has_policy_check:
         mode = "sequential"
         reason = "policy_check_depends_on_order_context"
+    # ORDER_ACTION 단독은 제어를 위해 순차 유지
+    elif has_order_action:
+        mode = "sequential"
+        reason = "order_action_requires_controlled_execution"
     elif len(tasks_sorted) > 1:
         mode = "parallel"
         reason = "independent_information_tasks"
@@ -456,6 +675,10 @@ def sequential_worker_node(state: AgentState):
 
     updates: Dict[str, Any] = {"task_results": task_results}
 
+    # current_task는 항상 유지 (주문 선택 UI 이후 context 보존)
+    if current_task:
+        updates["current_task"] = current_task
+
     if tool_calls:
         updates["messages"] = [
             AIMessage(
@@ -463,15 +686,11 @@ def sequential_worker_node(state: AgentState):
                 tool_calls=tool_calls,
             )
         ]
-        if current_task:
-            updates["current_task"] = current_task
         return updates
 
     summary = _build_task_summary(task_results)
     updates["messages"] = [AIMessage(content=summary)]
     updates["generation"] = summary
-    if current_task:
-        updates["current_task"] = current_task
     return updates
 
 
@@ -512,6 +731,10 @@ def parallel_worker_node(state: AgentState):
 
     updates: Dict[str, Any] = {"task_results": task_results}
 
+    # current_task는 항상 유지
+    if current_task:
+        updates["current_task"] = current_task
+
     if tool_calls:
         updates["messages"] = [
             AIMessage(
@@ -519,15 +742,11 @@ def parallel_worker_node(state: AgentState):
                 tool_calls=tool_calls,
             )
         ]
-        if current_task:
-            updates["current_task"] = current_task
         return updates
 
     summary = _build_task_summary(task_results)
     updates["messages"] = [AIMessage(content=summary)]
     updates["generation"] = summary
-    if current_task:
-        updates["current_task"] = current_task
     return updates
 
 
@@ -998,7 +1217,14 @@ def process_output_node(state: AgentState):
         "tool_outputs": [] # 하위 호환성 (선택사항)
     }
     
-    # UI Action 추출 (최근 ToolMessage 검색)
+    # UI Action 추출 1: task_results에서 (Worker 직접 실행)
+    task_results = state.get("task_results", [])
+    for task_result in task_results:
+        result_data = task_result.get("result")
+        if isinstance(result_data, dict) and result_data.get("ui_action"):
+            result["tool_outputs"].append(result_data)
+    
+    # UI Action 추출 2: ToolMessage에서 (Tool Node 실행)
     for msg in reversed(messages):
         if isinstance(msg, ToolMessage):
             try:
