@@ -5,8 +5,8 @@ from datetime import datetime
 from typing import List, Optional
 
 # 같은 폴더 기준 import
-from .models import ShippingAddress
-from .schemas import ShippingAddressCreate, ShippingAddressUpdate
+from .models import ShippingAddress, ShippingInfo
+from .schemas import ShippingAddressCreate, ShippingAddressUpdate, ShippingInfoCreate, ShippingInfoUpdate
 
 
 # =====================
@@ -142,3 +142,57 @@ def get_default_shipping_address(db: Session, user_id: int) -> Optional[Shipping
         )
         .first()
     )
+
+
+# =====================
+# 주문별 배송 정보 조회
+# =====================
+def get_shipping_info_by_order_id(db: Session, order_id: int) -> Optional[ShippingInfo]:
+    """주문 ID로 배송 정보 조회"""
+    return (
+        db.query(ShippingInfo)
+        .filter(ShippingInfo.order_id == order_id)
+        .first()
+    )
+
+
+# =====================
+# 배송 정보 전체 목록 조회
+# =====================
+def get_all_shipping_info(db: Session, skip: int = 0, limit: int = 50) -> List[ShippingInfo]:
+    """모든 배송 정보 조회"""
+    return (
+        db.query(ShippingInfo)
+        .order_by(ShippingInfo.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+# =====================
+# 배송 정보 생성
+# =====================
+def create_shipping_info(db: Session, data: ShippingInfoCreate) -> ShippingInfo:
+    """새 배송 정보 생성"""
+    shipping_info = ShippingInfo(**data.model_dump())
+    db.add(shipping_info)
+    db.commit()
+    db.refresh(shipping_info)
+    return shipping_info
+
+
+# =====================
+# 배송 정보 수정
+# =====================
+def update_shipping_info(db: Session, shipping_info_id: int, data: ShippingInfoUpdate) -> Optional[ShippingInfo]:
+    """배송 정보 수정"""
+    shipping_info = db.query(ShippingInfo).filter(ShippingInfo.id == shipping_info_id).first()
+    if not shipping_info:
+        return None
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(shipping_info, key, value)
+    db.commit()
+    db.refresh(shipping_info)
+    return shipping_info
