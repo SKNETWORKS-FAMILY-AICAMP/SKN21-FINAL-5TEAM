@@ -13,7 +13,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from ecommerce.platform.backend.app.database import Base
-# Product 모듈의 ProductType enum 사용
 from ecommerce.platform.backend.app.router.products.models import ProductType
 
 if TYPE_CHECKING:
