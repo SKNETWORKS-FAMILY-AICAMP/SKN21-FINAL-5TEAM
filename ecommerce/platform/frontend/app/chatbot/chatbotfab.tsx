@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import styles from './chatbotfab.module.css';
 import OrderListUI from './OrderListUI';
 import { useAuth } from '../authcontext';
@@ -62,7 +63,7 @@ export default function ChatbotFab() {
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const [panelSize, setPanelSize] = useState({ w: 400, h: 560 });
   const isResizing = useRef(false);
@@ -326,8 +327,11 @@ export default function ChatbotFab() {
 
 
 
-  const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
-    if (e.key === 'Enter' && !isLoading) sendMessage();
+  const onKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
+      e.preventDefault();
+      sendMessage();
+    }
   };
 
   return (
@@ -393,7 +397,7 @@ export default function ChatbotFab() {
               return (
                 <div key={i} className={`${styles.msgRow} ${styles.userRow}`}>
                   <div className={styles.bubble}>
-                    {m.type === 'text' && m.text}
+                    {m.type === 'text' && <ReactMarkdown>{m.text}</ReactMarkdown>}
                   </div>
                 </div>
               );
@@ -437,7 +441,7 @@ export default function ChatbotFab() {
         </div>
 
         <div className={styles.inputBar}>
-          <input
+          <textarea
             ref={inputRef}
             className={styles.input}
             value={input}
@@ -445,6 +449,7 @@ export default function ChatbotFab() {
             onKeyDown={onKeyDown}
             placeholder="메시지를 입력하세요"
             disabled={isLoading}
+            rows={1}
           />
           <button
             type="button"

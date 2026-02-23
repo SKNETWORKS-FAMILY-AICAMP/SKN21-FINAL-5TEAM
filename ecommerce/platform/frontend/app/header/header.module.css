@@ -194,3 +194,50 @@
   color: #000;
   border-left: 2px solid #111;
 }
+
+/* ======================
+   Admin Header
+====================== */
+
+.adminLogout {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.adminLogout:hover {
+  color: #fff;
+}
+
+/* ======================
+   Admin Sidebar Menu
+====================== */
+
+.adminMenu {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0;
+}
+
+.adminMenu li a {
+  display: block;
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 500;
+  color: #333;
+  text-decoration: none;
+  border-left: 3px solid transparent;
+}
+
+.adminMenu li a:hover {
+  background: #f8f8f8;
+  color: #000;
+}
+
+.adminMenuActive {
+  background: #f0f0f0;
+  color: #000 !important;
+  border-left-color: #111 !important;
+  font-weight: 600 !important;
+}
