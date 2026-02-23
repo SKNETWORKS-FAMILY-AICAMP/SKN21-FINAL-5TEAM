@@ -99,6 +99,7 @@
 
 .msgRow {
   display: flex;
+  width: 100%;
   margin-bottom: 30px;
 }
 
@@ -112,7 +113,7 @@
 
 /* ===== 유저 말풍선 ===== */
 .bubble {
-  max-width: 80%;
+  max-width: 76%;
   padding: 0px 8px;
   border-radius: 18px 18px 4px 18px;
   font-size: 13.5px;
@@ -127,7 +128,8 @@
 .botMsg {
   display: flex;
   gap: 10px;
-  width: 100%;
+  width: auto;
+  max-width: min(78%, 680px);
   align-items: flex-start;
 }
 
@@ -145,7 +147,8 @@
 }
 
 .botText {
-  flex: 1;
+  flex: 0 1 auto;
+  width: 100%;
   min-width: 0;
   font-size: 13.5px;
   line-height: 1.7;
@@ -399,6 +402,76 @@
 }
 
 .confirmBtn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.addressCard {
+  width: 100%;
+  background: #fff;
+  border: 1px solid #e7eaf0;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.addressCardTitle {
+  font-size: 13px;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.addressFieldGroup {
+  margin-top: 8px;
+}
+
+.addressFieldLabel {
+  font-size: 11px;
+  color: #777;
+  margin-bottom: 4px;
+}
+
+.addressFieldValue {
+  min-height: 32px;
+  border: 1px solid #eceff4;
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 12px;
+  color: #222;
+  background: #fafbfd;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.addressInput {
+  width: 100%;
+  height: 34px;
+  border: 1px solid #d8dde6;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.addressInput:focus {
+  border-color: #9aa4b2;
+  box-shadow: 0 0 0 2px rgba(17, 17, 17, 0.06);
+}
+
+.addressSubmitBtn {
+  margin-top: 10px;
+  width: 100%;
+  height: 34px;
+  border-radius: 8px;
+  border: none;
+  background: #111;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.addressSubmitBtn:disabled {
   background: #ccc;
   cursor: not-allowed;
 }

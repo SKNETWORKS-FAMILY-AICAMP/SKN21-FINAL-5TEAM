@@ -37,11 +37,34 @@ type AddressSearchMessage = {
   message: string;
 };
 
+type AddressSelectionPayload = {
+  event: 'address_selected';
+  action?: string | null;
+  source: 'address_search_ui';
+  address: {
+    road_address: string | null;
+    jibun_address: string | null;
+    post_code: string | null;
+    detail_address: string;
+    full_address: string;
+  };
+};
+
 type ChatMsg = TextMessage | OrderListMessage | ConfirmationMessage | AddressSearchMessage;
+
+type DaumPostcodeData = {
+  roadAddress?: string;
+  jibunAddress?: string;
+  zonecode?: string;
+};
 
 declare global {
   interface Window {
-    daum: any;
+    daum?: {
+      Postcode: new (options: { oncomplete: (data: DaumPostcodeData) => void }) => {
+        open: () => void;
+      };
+    };
   }
 }
 
@@ -56,13 +79,12 @@ function AnimatedText({ text, className, speed = 20 }: { text: string; className
   const [displayed, setDisplayed] = useState('');
 
   useEffect(() => {
-    if (!text) {
-      setDisplayed('');
-      return;
-    }
+    if (!text) return;
 
-    // 텍스트가 완전히 바뀐 경우 자연스럽게 처음부터 다시 표시
-    setDisplayed((prev) => (text.startsWith(prev) ? prev : ''));
+    // 텍스트가 완전히 바뀐 경우 자연스럽게 처음부터 다시 표시 (동기 setState 회피)
+    const resetTimer = window.setTimeout(() => {
+      setDisplayed((prev) => (text.startsWith(prev) ? prev : ''));
+    }, 0);
 
     const timer = window.setInterval(() => {
       setDisplayed((prev) => {
@@ -73,10 +95,117 @@ function AnimatedText({ text, className, speed = 20 }: { text: string; className
       });
     }, speed);
 
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(resetTimer);
+      window.clearInterval(timer);
+    };
   }, [text, speed]);
 
-  return <span className={className}>{displayed}</span>;
+  return <span className={className}>{text ? displayed : ''}</span>;
+}
+
+function AddressSearchCard({
+  message,
+  disabled,
+  onSubmit,
+}: {
+  message: string;
+  disabled: boolean;
+  onSubmit: (payload: AddressSelectionPayload) => void;
+}) {
+  const [roadAddress, setRoadAddress] = useState('');
+  const [jibunAddress, setJibunAddress] = useState('');
+  const [postCode, setPostCode] = useState('');
+  const [detailAddress, setDetailAddress] = useState('');
+
+  const openSearch = () => {
+    if (!window.daum || !window.daum.Postcode) {
+      alert('주소 검색 서비스를 불러오는 중입니다. 잠시만 기다려주세요.');
+      return;
+    }
+
+    new window.daum.Postcode({
+      oncomplete: (data: DaumPostcodeData) => {
+        const selectedRoadAddress = typeof data.roadAddress === 'string' ? data.roadAddress.trim() : '';
+        const selectedJibunAddress = typeof data.jibunAddress === 'string' ? data.jibunAddress.trim() : '';
+        const selectedPostCode = typeof data.zonecode === 'string' ? data.zonecode.trim() : '';
+
+        setRoadAddress(selectedRoadAddress);
+        setJibunAddress(selectedJibunAddress);
+        setPostCode(selectedPostCode);
+      },
+    }).open();
+  };
+
+  const submitAddress = () => {
+    const baseAddress = (roadAddress || jibunAddress).trim();
+    const detail = detailAddress.trim();
+
+    if (!baseAddress) {
+      alert('먼저 주소 검색으로 메인 주소를 선택해주세요.');
+      return;
+    }
+
+    if (!detail) {
+      alert('상세 주소를 입력해주세요.');
+      return;
+    }
+
+    const fullAddress = `${baseAddress} ${detail}`.trim();
+
+    onSubmit({
+      event: 'address_selected',
+      source: 'address_search_ui',
+      address: {
+        road_address: roadAddress || null,
+        jibun_address: jibunAddress || null,
+        post_code: postCode || null,
+        detail_address: detail,
+        full_address: fullAddress,
+      },
+    });
+  };
+
+  return (
+    <div className={styles.addressCard}>
+      <div className={styles.addressCardTitle}>{message}</div>
+
+      <button type="button" className={styles.confirmBtn} onClick={openSearch} disabled={disabled}>
+        주소 검색하기
+      </button>
+
+      <div className={styles.addressFieldGroup}>
+        <div className={styles.addressFieldLabel}>우편번호</div>
+        <div className={styles.addressFieldValue}>{postCode || '-'}</div>
+      </div>
+
+      <div className={styles.addressFieldGroup}>
+        <div className={styles.addressFieldLabel}>도로명주소</div>
+        <div className={styles.addressFieldValue}>{roadAddress || '-'}</div>
+      </div>
+
+      <div className={styles.addressFieldGroup}>
+        <div className={styles.addressFieldLabel}>지번주소</div>
+        <div className={styles.addressFieldValue}>{jibunAddress || '-'}</div>
+      </div>
+
+      <div className={styles.addressFieldGroup}>
+        <div className={styles.addressFieldLabel}>상세주소</div>
+        <input
+          type="text"
+          className={styles.addressInput}
+          value={detailAddress}
+          onChange={(e) => setDetailAddress(e.target.value)}
+          placeholder="동/호수 등 상세주소를 입력하세요"
+          disabled={disabled}
+        />
+      </div>
+
+      <button type="button" className={styles.addressSubmitBtn} onClick={submitAddress} disabled={disabled}>
+        주소 정보 전송
+      </button>
+    </div>
+  );
 }
 
 export default function ChatbotFab() {
@@ -247,7 +376,7 @@ export default function ChatbotFab() {
                     {
                       role: 'bot',
                       type: 'order_list',
-                      message: '주문 목록입니다.',
+                      message: '최근 30일간의 주문 목록입니다.',
                       orders: data.ui_data,
                       requiresSelection: data.requires_selection,
                     },
@@ -302,6 +431,17 @@ export default function ChatbotFab() {
     }
   };
 
+  const getInferredAction = () => {
+    if (
+      typeof conversationState?.current_task === 'object' &&
+      conversationState?.current_task !== null &&
+      'type' in conversationState.current_task
+    ) {
+      return String((conversationState.current_task as Record<string, unknown>).type);
+    }
+    return null;
+  };
+
   const handleOrderSelect = (selectedOrderIds: string[]) => {
     if (selectedOrderIds.length === 0) return;
 
@@ -314,12 +454,7 @@ export default function ChatbotFab() {
     }));
 
     // 선택 이벤트를 구조화된 JSON으로 전송 (백엔드 deterministic 파싱)
-    const inferredAction =
-      typeof conversationState?.current_task === 'object' &&
-      conversationState?.current_task !== null &&
-      'type' in conversationState.current_task
-        ? String((conversationState.current_task as Record<string, unknown>).type)
-        : null;
+    const inferredAction = getInferredAction();
 
     const selectionPayload = {
       event: 'order_selected',
@@ -333,39 +468,24 @@ export default function ChatbotFab() {
     sendMessage(JSON.stringify(selectionPayload), true);
   };
 
-  const openAddressSearch = () => {
-    if (!window.daum || !window.daum.Postcode) {
-      alert("주소 검색 서비스를 불러오는 중입니다. 잠시만 기다려주세요.");
-      return;
-    }
-    
-    new window.daum.Postcode({
-      oncomplete: function(data: any) {
-        // 도로명 주소
-        let fullAddr = data.roadAddress;
-        let extraAddr = '';
+  const handleAddressSubmit = (payload: AddressSelectionPayload) => {
+    const inferredAction = getInferredAction();
+    const finalPayload: AddressSelectionPayload = {
+      ...payload,
+      action: inferredAction,
+    };
 
-        // 법정동명이 있을 경우 추가한다. (법정리는 제외)
-        // 법정동의 경우 마지막 문자가 "동/로/가"로 끝난다.
-        if(data.bname !== '' && /[동|로|가]$/g.test(data.bname)){
-            extraAddr += data.bname;
-        }
-        // 건물명이 있고, 공동주택일 경우 추가한다.
-        if(data.buildingName !== '' && data.apartment === 'Y'){
-            extraAddr += (extraAddr !== '' ? ', ' + data.buildingName : data.buildingName);
-        }
-        // 표시할 참고항목이 있을 경우, 괄호까지 추가한 최종 문자열을 만든다.
-        if(extraAddr !== ''){
-            extraAddr = ' (' + extraAddr + ')';
-        }
-        // 조합된 참고항목을 해당 필드에 넣는다.
-        fullAddr += extraAddr;
-        
-        // [MODIFIED] 자동으로 전송하지 않고, 입력창에 채워넣음
-        setInput(fullAddr + ' '); // 뒤에 상세주소 입력 편하게 공백 추가
-        inputRef.current?.focus(); // 입력창 포커스
-      }
-    }).open();
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: 'bot',
+        type: 'text',
+        text: `주소 정보를 전달했습니다.\n- 우편번호: ${payload.address.post_code ?? '-'}\n- 주소: ${payload.address.full_address}`,
+      },
+    ]);
+
+    // 사용자 채팅에는 숨기고 구조화된 이벤트 JSON만 백엔드로 전달
+    sendMessage(JSON.stringify(finalPayload), true);
   };
 
 
@@ -406,12 +526,17 @@ export default function ChatbotFab() {
             if (m.type === 'order_list') {
               return (
                 <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
-                  <OrderListUI
-                    message={m.message}
-                    orders={m.orders}
-                    onSelect={handleOrderSelect}
-                    requiresSelection={m.requiresSelection}
-                  />
+                  <div className={styles.botMsg}>
+                    <span className={styles.botIcon}>✦</span>
+                    <div className={styles.botText}>
+                      <OrderListUI
+                        message={m.message}
+                        orders={m.orders}
+                        onSelect={handleOrderSelect}
+                        requiresSelection={m.requiresSelection}
+                      />
+                    </div>
+                  </div>
                 </div>
               );
             } else if (m.type === 'address_search') {
@@ -420,18 +545,11 @@ export default function ChatbotFab() {
                   <div className={styles.botMsg}>
                     <span className={styles.botIcon}>✦</span>
                     <div className={styles.botText}>
-                      {m.message}
-                      <div style={{ marginTop: '10px' }}>
-                        <button
-                          className={styles.confirmBtn}
-                          onClick={openAddressSearch}
-                        >
-                          주소 입력하기
-                        </button>
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#999', marginTop: '5px' }}>
-                        * 주소 선택 후 상세 주소(동/호수)를 입력해주세요.
-                      </div>
+                      <AddressSearchCard
+                        message={m.message}
+                        disabled={isLoading}
+                        onSubmit={handleAddressSubmit}
+                      />
                     </div>
                   </div>
                 </div>

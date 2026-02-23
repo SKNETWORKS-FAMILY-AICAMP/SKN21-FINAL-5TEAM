@@ -17,6 +17,7 @@ TOOL_STATUS_MESSAGES = {
     "get_user_orders": "주문 내역을 조회하고 있습니다...",
     "get_order_detail": "주문 상세 정보를 확인하고 있습니다...",
     "get_shipping_details": "배송 상태를 조회하고 있습니다...",
+    "save_shipping_address_from_ui": "입력하신 주소를 저장하고 있습니다...",
     "register_return_request": "반품 신청을 처리하고 있습니다...",
     "register_exchange_request": "교환 신청을 처리하고 있습니다...",
     "cancel_order": "주문 취소를 처리하고 있습니다...",

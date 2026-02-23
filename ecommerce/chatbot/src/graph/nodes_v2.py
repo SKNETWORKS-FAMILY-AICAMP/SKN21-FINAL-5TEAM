@@ -39,7 +39,8 @@ from ecommerce.chatbot.src.tools.service_tools import (
 )
 from ecommerce.chatbot.src.tools.retrieval_tools import search_knowledge_base
 from ecommerce.chatbot.src.tools.address_tools import (
-    open_address_search
+    open_address_search,
+    save_shipping_address_from_ui,
 )
 
 # Define Tool List
@@ -58,7 +59,8 @@ TOOLS = [
     create_review,
     register_gift_card,
     search_knowledge_base,
-    open_address_search
+    open_address_search,
+    save_shipping_address_from_ui,
 ]
 
 # Sensitive Tools requiring Human Approval
@@ -80,7 +82,7 @@ ORDER_ID_REQUIRED_TOOLS = {
 tool_node = ToolNode(TOOLS)
 
 # Context Compaction Settings
-MAX_HISTORY_TOKENS = 8000
+MAX_HISTORY_TOKENS = 3000
 KEEP_RECENT_TURNS = 3
 SUMMARY_MODEL = "gpt-4o-mini"
 
@@ -121,6 +123,12 @@ DECOMPOSER_PROMPT = """
 2) args에는 필요한 최소 파라미터만 넣으세요.
 3) order_id가 없는데 환불/취소/교환을 요청하면 ORDER_ACTION으로 넣되 args에 action만 넣어도 됩니다.
 4) 반드시 tasks 배열을 반환하세요. 비어 있으면 GENERAL_CHAT 1개를 반환하세요.
+5) 하나 이상의 실행 가능한 작업(ORDER_ACTION/ORDER_QUERY/POLICY_CHECK/FAQ_RETRIEVAL)이 있으면 GENERAL_CHAT을 함께 넣지 마세요.
+6) [현재 작업 상태]가 refund/exchange 이고 status가 validating 또는 approving이며 target_id가 존재하면,
+   사용자의 최신 발화가 이전 절차를 "계속 진행"하려는 맥락인지 우선 판단하세요.
+   이 경우 다음 단계는 ORDER_ACTION 하나만 반환하고 args는 action='address_search', order_id=target_id 로 설정하세요.
+7) 이전 Assistant가 이미 "반품/교환 진행 여부"를 질문했고 사용자가 진행 의사를 보인 턴이라면,
+   환불 가능 여부 재확인(action='refund')으로 되돌아가지 말고 주소 수집 단계(action='address_search')로 진행하세요.
 """
 
 
@@ -227,14 +235,80 @@ def _extract_json_payload(text: str) -> Dict[str, Any] | None:
     return None
 
 
-def _decompose_tasks(user_message: str) -> List[Dict[str, Any]]:
+def _extract_address_selection_args(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """주소 선택 이벤트 payload를 ORDER_ACTION 인자로 평탄화합니다."""
+    address_obj = payload.get("address")
+    address_data = address_obj if isinstance(address_obj, dict) else {}
+
+    def _pick(*keys: str) -> Any:
+        for key in keys:
+            if key in address_data and address_data.get(key) is not None:
+                return address_data.get(key)
+            if key in payload and payload.get(key) is not None:
+                return payload.get(key)
+        return None
+
+    return {
+        "action": "address_selected",
+        "road_address": _pick("road_address", "roadAddress"),
+        "jibun_address": _pick("jibun_address", "jibunAddress"),
+        "post_code": _pick("post_code", "postCode", "zonecode", "zip_code"),
+        "detail_address": _pick("detail_address", "detailAddress"),
+        "recipient_name": _pick("recipient_name", "recipientName"),
+        "phone": _pick("phone", "phone_number"),
+        "is_default": bool(_pick("is_default", "isDefault") or False),
+    }
+
+
+def _build_decomposer_context(messages: List, max_items: int = 8) -> str:
+    """
+    Decomposer에 전달할 최근 대화 컨텍스트를 구성합니다.
+    - HumanMessage/AIMessage만 사용
+    - [cleared] 메시지는 제외
+    - 최근 max_items개만 유지
+    """
+    lines: List[str] = []
+
+    for msg in messages:
+        content = getattr(msg, "content", None)
+        if not isinstance(content, str):
+            continue
+        content = content.strip()
+        if not content or content == "[cleared]":
+            continue
+
+        if isinstance(msg, HumanMessage):
+            lines.append(f"USER: {content[:240]}")
+        elif isinstance(msg, AIMessage):
+            lines.append(f"ASSISTANT: {content[:240]}")
+
+    if not lines:
+        return ""
+
+    return "\n".join(lines[-max_items:])
+
+
+def _decompose_tasks(user_message: str, messages: List, current_task: Any = None) -> List[Dict[str, Any]]:
     llm = _make_llm(model=settings.OPENAI_MODEL, temperature=0)
     structured_llm = llm.with_structured_output(DecompositionResult, method="function_calling")
+
+    conversation_context = _build_decomposer_context(messages)
+    task_context = ""
+    if isinstance(current_task, dict) and current_task:
+        task_context = json.dumps(current_task, ensure_ascii=False)
+
+    decomposer_input = (
+        f"[최근 대화 컨텍스트]\n{conversation_context or '(없음)'}\n\n"
+        f"[현재 사용자 입력]\n{user_message[:2000]}\n\n"
+        f"[현재 작업 상태]\n{task_context or '(없음)'}\n\n"
+        "주의: 현재 사용자 입력이 짧거나 모호하더라도, 직전 대화 문맥과 현재 작업 상태를 우선 반영해 "
+        "GENERAL_CHAT으로 과도하게 분류하지 말고 적절한 작업으로 분해하세요."
+    )
 
     # 1차 시도
     parsed = structured_llm.invoke([
         SystemMessage(content=DECOMPOSER_PROMPT),
-        HumanMessage(content=user_message[:2000]),
+        HumanMessage(content=decomposer_input),
     ])
 
     tasks = parsed.tasks if isinstance(parsed, DecompositionResult) else []
@@ -243,7 +317,7 @@ def _decompose_tasks(user_message: str) -> List[Dict[str, Any]]:
     if not tasks:
         retry_msg = (
             "이전 응답이 비어 있었습니다. 반드시 tasks 배열에 최소 1개 이상 넣어 반환하세요.\n"
-            f"사용자 요청: {user_message[:2000]}"
+            f"사용자 요청: {decomposer_input[:4000]}"
         )
         parsed = structured_llm.invoke([
             SystemMessage(content=DECOMPOSER_PROMPT),
@@ -472,6 +546,19 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
         elif action in {"address_search", "pickup_address"}:
             tool_name = "open_address_search"
             tool_args = {}
+        elif action in {"address_selected", "save_address"}:
+            tool_name = "save_shipping_address_from_ui"
+            tool_args = {
+                "user_id": user_id,
+                "road_address": args.get("road_address"),
+                "jibun_address": args.get("jibun_address"),
+                "post_code": args.get("post_code"),
+                "detail_address": args.get("detail_address"),
+                "recipient_name": args.get("recipient_name"),
+                "phone": args.get("phone"),
+                "is_default": bool(args.get("is_default", False)),
+            }
+            current_task_type = "search"
 
         if not tool_name:
             return {
@@ -513,6 +600,20 @@ def decomposer_node(state: AgentState):
         return {
             "task_list": [{"task": TaskType.GENERAL_CHAT.value, "args": {}}],
             "execution_plan": {"mode": "agent", "reason": "empty_user_message"},
+        }
+
+    # 주소 UI 선택 이벤트는 LLM 분해 없이 deterministic 처리
+    incoming_payload = _extract_json_payload(user_message)
+    if isinstance(incoming_payload, dict) and incoming_payload.get("event") == "address_selected":
+        return {
+            "question": user_message,
+            "execution_plan": {"mode": "sequential", "reason": "address_selected_payload"},
+            "task_list": [
+                {
+                    "task": TaskType.ORDER_ACTION.value,
+                    "args": _extract_address_selection_args(incoming_payload),
+                }
+            ],
         }
 
     # [State-aware Resume]
@@ -578,7 +679,7 @@ def decomposer_node(state: AgentState):
         }
 
     try:
-        task_list = _decompose_tasks(user_message)
+        task_list = _decompose_tasks(user_message, messages, current_task if isinstance(current_task, dict) else None)
         return {
             "question": user_message,
             "task_list": task_list,
