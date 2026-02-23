@@ -208,6 +208,111 @@
   border-radius: 4px;
   margin-bottom: 15px;
   font-size: 14px;
+  box-sizing: border-box;
+}
+
+.starRating {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.star {
+  font-size: 28px;
+  color: #ddd;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.star:hover {
+  color: #ffc107;
+}
+
+.starActive {
+  color: #ffc107;
+}
+
+/* -------------------- 커스텀 알림 모달 -------------------- */
+.customAlertOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+}
+
+.customAlertBox {
+  background-color: #fff;
+  padding: 32px;
+  border-radius: 10px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+.customAlertMessage {
+  font-size: 15px;
+  color: #333;
+  line-height: 1.6;
+  margin-bottom: 24px;
+  text-align: center;
+  word-break: keep-all;
+}
+
+.customAlertInput {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+  margin-bottom: 20px;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.customAlertInput:focus {
+  border-color: #000;
+}
+
+.customAlertButtons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.customAlertBtn {
+  padding: 10px 28px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.customAlertBtnPrimary {
+  background-color: #000;
+  color: #fff;
+}
+
+.customAlertBtnPrimary:hover {
+  background-color: #333;
+}
+
+.customAlertBtnSecondary {
+  background-color: #e0e0e0;
+  color: #333;
+}
+
+.customAlertBtnSecondary:hover {
+  background-color: #ccc;
 }
 
 /* -------------------- 애니메이션 -------------------- */
