@@ -63,19 +63,42 @@
 }
 
 .panelHeader {
-  height: 48px;
-  min-height: 48px;
+  min-height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 8px 12px;
   background: #111;
   color: #fff;
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
 .title {
   font-size: 14px;
   font-weight: 600;
+}
+
+.modelControls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.modelSelect {
+  max-width: 180px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid #333;
+  background: #1d1d1d;
+  color: #fff;
+  font-size: 12px;
+  padding: 0 8px;
 }
 
 .closeBtn {

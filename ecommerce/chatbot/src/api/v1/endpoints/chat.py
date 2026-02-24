@@ -90,6 +90,10 @@ async def chat_streaming_endpoint(
 
     async def event_generator():
         try:
+            previous_state = request.previous_state or {}
+            requested_provider = (request.provider or previous_state.get("llm_provider") or "openai").strip().lower()
+            requested_model = (request.model or previous_state.get("llm_model") or "").strip()
+
             # 1. 상태 초기화
             current_state = {
                 "retry_count": 0,
@@ -99,23 +103,26 @@ async def chat_streaming_endpoint(
                 "task_list": [],
                 "execution_plan": {},
                 "task_results": [],
-                **(request.previous_state or {}),
+                **previous_state,
                 "is_authenticated": True,
                 "user_info": {
                     "id": current_user.id,
                     "name": current_user.name,
                     "email": current_user.email,
                 },
+                "llm_provider": requested_provider,
+                "llm_model": requested_model or None,
             }
             
             # 메시지 복구 및 추가
-            serialized_history = request.previous_state.get("messages", []) if request.previous_state else []
-            history = deserialize_messages(serialized_history) if request.previous_state else []
+            serialized_history = previous_state.get("messages", []) if previous_state else []
+            history = deserialize_messages(serialized_history) if previous_state else []
             
             current_state["messages"] = history + [HumanMessage(content=request.message)]
 
             # 2. 이벤트 스트리밍
             final_state = None
+            has_streamed_text = False
             async for event in graph_app.astream_events(current_state, version="v2"):
                 event_type = event["event"]
 
@@ -124,6 +131,7 @@ async def chat_streaming_endpoint(
                     chunk = event.get("data", {}).get("chunk")
                     content = chunk.content if chunk else None
                     if content:
+                        has_streamed_text = True
                         yield f"data: {json.dumps({'type': 'text_chunk', 'content': content}, ensure_ascii=False)}\n\n"
 
                 # B. 도구 실행 시작 (상태 메시지)
@@ -165,6 +173,9 @@ async def chat_streaming_endpoint(
 
             # 3. 메타데이터 전송
             if final_state:
+                final_text = final_state.get("generation") if isinstance(final_state, dict) else None
+                if not has_streamed_text and isinstance(final_text, str) and final_text.strip():
+                    yield f"data: {json.dumps({'type': 'text_chunk', 'content': final_text}, ensure_ascii=False)}\n\n"
                 yield f"data: {json.dumps(_build_metadata(final_state), ensure_ascii=False)}\n\n"
 
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
