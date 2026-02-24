@@ -320,7 +320,7 @@ export default function ChatbotFab() {
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
-  const [panelSize, setPanelSize] = useState({ w: 400, h: 560 });
+  const [panelSize, setPanelSize] = useState({ w: 550, h: 660 });
   const isResizing = useRef(false);
   const [selectedModel, setSelectedModel] = useState<string>(OPENAI_MODELS[0]);
   const [isModelModalOpen, setIsModelModalOpen] = useState(false);
