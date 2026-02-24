@@ -37,7 +37,6 @@ from ecommerce.chatbot.src.tools.address_tools import (
 TOOLS = [
     get_order_details,
     get_shipping_details,
-    get_user_orders,
     update_payment_method,
     change_product_option,
     cancel_order,
