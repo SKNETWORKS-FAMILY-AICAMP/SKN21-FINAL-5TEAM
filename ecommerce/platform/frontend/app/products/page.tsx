@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import Image from 'next/image';
 import styles from './product.module.css';
 
 const PRODUCTS_PER_PAGE = 10;
@@ -122,6 +121,8 @@ export default function ProductsPage() {
   const [selectedSizeLabelByProduct, setSelectedSizeLabelByProduct] =
     useState<Record<number, string>>({});
 
+  const [imageMap, setImageMap] = useState<Record<number, string>>({});
+
   // helper
   const requireLogin = (callback: () => void) => {
     if (isLoggedIn === null) return;
@@ -213,6 +214,25 @@ export default function ProductsPage() {
         if (!res.ok) {
           alert('장바구니 추가 실패');
           return;
+        }
+
+        const cartItem = await res.json();
+
+        // User History에 장바구니 추가 기록
+        try {
+          await fetch(`${API_BASE}/user-history/users/${user!.id}/track/cart-action`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action_type: 'cart_add',
+              cart_item_id: cartItem.id,
+              product_option_type: 'new',
+              product_option_id: optionId,
+              quantity: 1,
+            }),
+          });
+        } catch (err) {
+          console.error('Failed to track cart action:', err);
         }
 
         if (goPayment) {
@@ -329,6 +349,27 @@ export default function ProductsPage() {
     return products.slice(start, start + PRODUCTS_PER_PAGE);
   }, [products, currentPage]);
 
+  useEffect(() => {
+    const fetchImages = async () => {
+      const newMap: Record<number, string> = {};
+      await Promise.all(
+        currentProducts.map(async (p) => {
+          try {
+            const res = await fetch(`${API_BASE}/products/images/new/${p.id}`);
+            if (!res.ok) return;
+            const images = await res.json();
+            const primary = images.find((img: any) => img.is_primary);
+            if (primary || images[0]) {
+              newMap[p.id] = (primary || images[0]).image_url;
+            }
+          } catch {}
+        })
+      );
+      setImageMap(prev => ({ ...prev, ...newMap }));
+    };
+    if (currentProducts.length > 0) fetchImages();
+  }, [currentProducts]);
+
   return (
     <main className={styles.main}>
       <header>
@@ -365,13 +406,13 @@ export default function ProductsPage() {
             <li key={product.id} className={styles.productCard}>
               <div className={styles.cardBody}>
                 <div className={styles.productImage}>
-                  <Image
-                    src={`/products/${product.id}.jpg`}
-                    alt={product.name}
-                    fill
-                    sizes="(max-width: 1200px) 20vw, 240px"
-                    style={{ objectFit: 'cover' }}
-                  />
+                  {imageMap[product.id] && (
+                    <img
+                      src={imageMap[product.id]}
+                      alt={product.name}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  )}
                 </div>
 
                 <p className={styles.productName}>{product.name}</p>
