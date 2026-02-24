@@ -196,6 +196,7 @@ class UsedProductResponse(UsedProductBase):
     """중고 품목 응답 스키마"""
     id: int
     seller_id: int
+    condition: UsedProductConditionResponse  # 추가
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime]
