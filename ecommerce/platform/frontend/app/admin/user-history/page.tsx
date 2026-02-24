@@ -348,19 +348,22 @@ export default function AdminUserHistoryPage() {
                     </button>
 
                     <div className={styles.pageNumbers}>
-                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                        const pageNum = Math.max(1, Math.min(currentPage - 2 + i, totalPages - 4 + i));
-                        if (pageNum > totalPages) return null;
-                        return (
-                          <button
-                            key={pageNum}
-                            className={`${styles.pageNumber} ${currentPage === pageNum ? styles.pageNumberActive : ''}`}
-                            onClick={() => setCurrentPage(pageNum)}
-                          >
-                            {pageNum}
-                          </button>
-                        );
-                      })}
+                      {(() => {
+                        const pageCount = Math.min(5, totalPages);
+                        const start = Math.max(1, Math.min(currentPage - Math.floor(pageCount / 2), totalPages - pageCount + 1));
+                        return Array.from({ length: pageCount }, (_, i) => {
+                          const pageNum = start + i;
+                          return (
+                            <button
+                              key={pageNum}
+                              className={`${styles.pageNumber} ${currentPage === pageNum ? styles.pageNumberActive : ''}`}
+                              onClick={() => setCurrentPage(pageNum)}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        });
+                      })()}
                     </div>
 
                     <button
