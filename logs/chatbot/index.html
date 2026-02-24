@@ -27,11 +27,13 @@
     <section class="header">
       <h1>Chatbot Log Index</h1>
       <p class="muted">logs directory: /Users/junseok/Projects/SKN21-FINAL-5TEAM/logs/chatbot</p>
-      <p class="muted" id="totalConversations">total conversations: 2</p>
+      <p class="muted" id="totalConversations">total conversations: 4</p>
             <div class="actions">
-                <button onclick="generateAllMissingReports()">generate missing reports (browser)</button>
-                <button onclick="pickLogsFolder()">refresh from folder</button>
-                <span class="muted">브라우저에서 즉시 HTML 리포트를 생성해 새 탭으로 엽니다.</span>
+                <button onclick="connectLogsFolder()">connect logs folder</button>
+                <button onclick="syncConnectedFolder(true)">sync & generate/update html</button>
+                <button onclick="syncConnectedFolder(false)">refresh only</button>
+                <button onclick="toggleAutoSync()" id="autoSyncBtn">auto-sync: off</button>
+                <span class="muted" id="folderStatus">실시간 디렉토리 디버깅을 위해 logs/chatbot 폴더를 연결하세요.</span>
             </div>
             <input id="folderPicker" type="file" webkitdirectory directory multiple style="display:none" />
     </section>
@@ -54,7 +56,7 @@
           </tr>
         </thead>
                 <tbody id="logsTbody">
-                    <tr><td>conv_00b9d7be6f57</td><td><a href="conv_00b9d7be6f57.jsonl" target="_blank">jsonl</a></td><td><span class='muted'>not generated</span></td><td><button onclick="generateReportFromJsonl('conv_00b9d7be6f57.jsonl')">generate in page</button></td><td>4</td><td>openai</td><td>gpt-4o-mini</td><td>success</td><td>10321</td><td>10272</td><td>2026-02-24 11:20:32</td></tr><tr><td>conv_2af4fe1d01d5</td><td><a href="conv_2af4fe1d01d5.jsonl" target="_blank">jsonl</a></td><td><a href="conv_2af4fe1d01d5.html" target="_blank">open report</a></td><td><button onclick="generateReportFromJsonl('conv_2af4fe1d01d5.jsonl')">generate in page</button></td><td>1</td><td>openai</td><td>gpt-4o-mini</td><td>success</td><td>3276</td><td>2883</td><td>2026-02-24 11:09:59</td></tr>
+                    <tr><td>conv_0f4e1e77217b</td><td><a href="conv_0f4e1e77217b.jsonl" target="_blank">jsonl</a></td><td><a href="conv_0f4e1e77217b.html" target="_blank">open report</a></td><td><button onclick="generateReportFromJsonl('conv_0f4e1e77217b.jsonl')">generate in page</button></td><td>1</td><td>huggingface</td><td>Qwen/Qwen3-0.6B</td><td>success</td><td>12892</td><td>0</td><td>2026-02-24 11:48:01</td></tr><tr><td>conv_d8d535b50940</td><td><a href="conv_d8d535b50940.jsonl" target="_blank">jsonl</a></td><td><a href="conv_d8d535b50940.html" target="_blank">open report</a></td><td><button onclick="generateReportFromJsonl('conv_d8d535b50940.jsonl')">generate in page</button></td><td>2</td><td>huggingface</td><td>Qwen/Qwen3-0.6B</td><td>success</td><td>32271</td><td>0</td><td>2026-02-24 11:44:29</td></tr><tr><td>conv_00b9d7be6f57</td><td><a href="conv_00b9d7be6f57.jsonl" target="_blank">jsonl</a></td><td><a href="conv_00b9d7be6f57.html" target="_blank">open report</a></td><td><button onclick="generateReportFromJsonl('conv_00b9d7be6f57.jsonl')">generate in page</button></td><td>4</td><td>openai</td><td>gpt-4o-mini</td><td>success</td><td>10321</td><td>10272</td><td>2026-02-24 11:20:32</td></tr><tr><td>conv_2af4fe1d01d5</td><td><a href="conv_2af4fe1d01d5.jsonl" target="_blank">jsonl</a></td><td><a href="conv_2af4fe1d01d5.html" target="_blank">open report</a></td><td><button onclick="generateReportFromJsonl('conv_2af4fe1d01d5.jsonl')">generate in page</button></td><td>1</td><td>openai</td><td>gpt-4o-mini</td><td>success</td><td>3276</td><td>2883</td><td>2026-02-24 11:09:59</td></tr>
         </tbody>
       </table>
     </div>
@@ -69,6 +71,11 @@
                 .replaceAll('>', '&gt;');
         }
 
+        let connectedDirHandle = null;
+        let autoSyncTimer = null;
+        const jsonlHandleMap = new Map();
+        const htmlHandleMap = new Map();
+
         function parseJsonl(text) {
             return text
                 .split(/\r?\n/)
@@ -80,7 +87,15 @@
                 .filter(obj => obj && typeof obj === 'object');
         }
 
-        function buildTurnCard(turn, idx) {
+                function pretty(v) {
+                        if (v === null || v === undefined) return '';
+                        if (typeof v === 'object') {
+                                try { return JSON.stringify(v, null, 2); } catch { return String(v); }
+                        }
+                        return String(v);
+                }
+
+                function buildTurnCard(turn, idx) {
             const metrics = turn.metrics || {};
             const token = metrics.token_usage || {};
             const timeline = turn.timeline || {};
@@ -95,24 +110,51 @@
                         <td>${esc(item[keyName])}</td>
                         <td>${esc(item.at)}</td>
                         <td>${esc(item.duration_ms)}</td>
+                                                <td>
+                                                    <details>
+                                                        <summary>view payload</summary>
+                                                        <div style="display:grid;gap:8px;margin-top:8px;">
+                                                            <div><b>input</b><pre style="white-space:pre-wrap;background:#111827;color:#e5e7eb;padding:8px;border-radius:8px;max-height:240px;overflow:auto;">${esc(pretty(item.input))}</pre></div>
+                                                            <div><b>output</b><pre style="white-space:pre-wrap;background:#111827;color:#e5e7eb;padding:8px;border-radius:8px;max-height:240px;overflow:auto;">${esc(pretty(item.output))}</pre></div>
+                                                            <div><b>usage</b><pre style="white-space:pre-wrap;background:#111827;color:#e5e7eb;padding:8px;border-radius:8px;max-height:180px;overflow:auto;">${esc(pretty(item.usage))}</pre></div>
+                                                        </div>
+                                                    </details>
+                                                </td>
                     </tr>
                 `).join('');
                 return `
                     <h4>${title}</h4>
-                    <table style="width:100%;border-collapse:collapse;font-size:13px">
-                        <thead><tr><th>event</th><th>name</th><th>at</th><th>duration_ms</th></tr></thead>
+                                        <table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+                                                <thead><tr><th>event</th><th>name</th><th>at</th><th>duration_ms</th><th>input/output</th></tr></thead>
                         <tbody>${rows}</tbody>
                     </table>
                 `;
             };
 
             return `
-                <section style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin:16px 0;">
-                    <h3>Turn ${idx}</h3>
+                                <section style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin:16px 0;box-shadow:0 1px 2px rgba(16,24,40,.04);">
+                                        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+                                            <h3 style="margin:0;">Turn ${idx}</h3>
+                                            <span style="padding:4px 8px;border-radius:999px;font-size:12px;background:${turn.status === 'success' ? '#dcfce7' : '#fee2e2'};color:${turn.status === 'success' ? '#166534' : '#991b1b'};">${esc(turn.status || '')}</span>
+                                        </div>
                     <p><b>turn_id:</b> ${esc(turn.turn_id)} | <b>status:</b> ${esc(turn.status)} | <b>duration_ms:</b> ${esc(metrics.duration_ms)}</p>
                     <p><b>tokens:</b> in=${esc(token.input_tokens)}, out=${esc(token.output_tokens)}, total=${esc(token.total_tokens)}</p>
-                    <h4>User Input</h4><pre style="white-space:pre-wrap;background:#111827;color:#e5e7eb;padding:10px;border-radius:8px">${esc(userMsg)}</pre>
-                    <h4>Assistant Output</h4><pre style="white-space:pre-wrap;background:#111827;color:#e5e7eb;padding:10px;border-radius:8px">${esc(generation)}</pre>
+                                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                                            <div>
+                                                <h4 style="margin:8px 0;">User Input</h4>
+                                                <pre style="white-space:pre-wrap;background:#111827;color:#e5e7eb;padding:10px;border-radius:8px">${esc(userMsg)}</pre>
+                                            </div>
+                                            <div>
+                                                <h4 style="margin:8px 0;">Assistant Output</h4>
+                                                <pre style="white-space:pre-wrap;background:#111827;color:#e5e7eb;padding:10px;border-radius:8px">${esc(generation)}</pre>
+                                            </div>
+                                        </div>
+                                        <details style="margin-top:8px;"><summary>State snapshots</summary>
+                                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">
+                                                <div><b>input state summary</b><pre style="white-space:pre-wrap;background:#111827;color:#e5e7eb;padding:8px;border-radius:8px;max-height:260px;overflow:auto;">${esc(pretty(turn.input?.state_summary || null))}</pre></div>
+                                                <div><b>output state summary</b><pre style="white-space:pre-wrap;background:#111827;color:#e5e7eb;padding:8px;border-radius:8px;max-height:260px;overflow:auto;">${esc(pretty(turn.output?.state_summary || null))}</pre></div>
+                                            </div>
+                                        </details>
                     ${renderTable('Nodes', timeline.nodes || [], 'node')}
                     ${renderTable('Tools', timeline.tools || [], 'tool')}
                     ${renderTable('Models', timeline.models || [], 'model')}
@@ -145,23 +187,111 @@
             }
         }
 
-        function generateAllMissingReports() {
-            const rows = Array.from(document.querySelectorAll('tbody tr'));
-            rows.forEach(row => {
-                const htmlCell = row.children[2];
-                const hasHtml = htmlCell && htmlCell.querySelector('a');
-                if (!hasHtml) {
-                    const btn = row.children[3]?.querySelector('button');
-                    if (btn) btn.click();
-                }
-            });
+        function _setFolderStatus(text) {
+            const el = document.getElementById('folderStatus');
+            if (el) el.textContent = text;
         }
 
-        function pickLogsFolder() {
-            const picker = document.getElementById('folderPicker');
-            if (!picker) return;
-            picker.value = '';
-            picker.click();
+        function _formatDate(ts) {
+            const d = new Date(ts);
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        }
+
+        async function connectLogsFolder() {
+            if (!window.showDirectoryPicker) {
+                alert('이 브라우저는 폴더 직접 연결(File System Access API)을 지원하지 않습니다.');
+                return;
+            }
+
+            try {
+                connectedDirHandle = await window.showDirectoryPicker();
+                await syncConnectedFolder(true);
+            } catch (e) {
+                if (e && e.name !== 'AbortError') alert('폴더 연결 실패: ' + e.message);
+            }
+        }
+
+        async function _readTextFromHandle(fileHandle) {
+            const file = await fileHandle.getFile();
+            return await file.text();
+        }
+
+        async function _openJsonlFromHandle(fileName) {
+            const handle = jsonlHandleMap.get(fileName);
+            if (!handle) return;
+            const file = await handle.getFile();
+            const url = URL.createObjectURL(file);
+            window.open(url, '_blank');
+        }
+
+        async function _openHtmlFromHandle(fileName) {
+            const handle = htmlHandleMap.get(fileName);
+            if (!handle) return;
+            const file = await handle.getFile();
+            const url = URL.createObjectURL(file);
+            window.open(url, '_blank');
+        }
+
+        async function _generateReportFromHandle(fileName) {
+            const handle = jsonlHandleMap.get(fileName);
+            if (!handle) return;
+
+            const text = await _readTextFromHandle(handle);
+            const turns = parseJsonl(text);
+            const htmlText = buildReportHtml(fileName, turns);
+            const blob = new Blob([htmlText], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+        }
+
+        async function _generateAndSaveHtml(fileName) {
+            if (!connectedDirHandle) return;
+            const jsonlHandle = jsonlHandleMap.get(fileName);
+            if (!jsonlHandle) return;
+
+            const text = await _readTextFromHandle(jsonlHandle);
+            const turns = parseJsonl(text);
+            const htmlText = buildReportHtml(fileName, turns);
+
+            const htmlName = fileName.replace(/\.jsonl$/i, '.html');
+            const htmlHandle = await connectedDirHandle.getFileHandle(htmlName, { create: true });
+            const writable = await htmlHandle.createWritable();
+            await writable.write(htmlText);
+            await writable.close();
+
+            htmlHandleMap.set(htmlName, htmlHandle);
+        }
+
+        function _buildRowFromParsed(item) {
+            const htmlCell = item.htmlExists
+                ? `<button onclick="_openHtmlFromHandle('${esc(item.htmlName)}')">open report</button>`
+                : `<span class="muted">not generated</span>`;
+
+            const syncBadge = item.htmlExists
+                ? (item.html_state === 'stale'
+                    ? `<span style="padding:2px 8px;border-radius:999px;background:#fff7ed;color:#9a3412;font-size:12px;">stale</span>`
+                    : `<span style="padding:2px 8px;border-radius:999px;background:#dcfce7;color:#166534;font-size:12px;">fresh</span>`)
+                : `<span style="padding:2px 8px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:12px;">missing</span>`;
+
+            return `
+                <tr>
+                    <td>${esc(item.conversation_id)}</td>
+                    <td><button onclick="_openJsonlFromHandle('${esc(item.jsonlName)}')">open jsonl</button></td>
+                    <td>${htmlCell}<div style="margin-top:6px;">${syncBadge}</div></td>
+                    <td style="display:flex;gap:6px;flex-wrap:wrap;">
+                      <button onclick="_generateReportFromHandle('${esc(item.jsonlName)}')">generate in page</button>
+                      <button onclick="_generateAndSaveHtml('${esc(item.jsonlName)}')">generate & save</button>
+                    </td>
+                    <td>${esc(item.turns)}</td>
+                    <td>${esc(item.provider)}</td>
+                    <td>${esc(item.model)}</td>
+                    <td>${esc(item.status)}</td>
+                    <td>${esc(item.duration_ms)}</td>
+                    <td>${esc(item.tokens)}</td>
+                    <td>${esc(item.updated_at)}</td>
+                </tr>
+            `;
         }
 
         function _buildRowFromParsed(item) {
@@ -186,7 +316,7 @@
             `;
         }
 
-        function _summarizeFromTurns(conversationId, turns, updatedAt, jsonlLink, htmlLink, htmlExists) {
+        function _summarizeFromTurns(conversationId, turns, updatedAt, jsonlLink, htmlLink, htmlExists, htmlState = 'missing') {
             const first = turns[0] || {};
             const last = turns[turns.length - 1] || first;
             let duration = 0;
@@ -204,6 +334,7 @@
                 jsonlLink,
                 htmlLink,
                 htmlExists,
+                html_state: htmlState,
                 turns: turns.length,
                 provider: last.provider || first.provider || '',
                 model: last.model || first.model || '',
@@ -212,6 +343,124 @@
                 tokens,
                 updated_at: updatedAt,
             };
+        }
+
+        async function syncConnectedFolder(generateMissing) {
+            if (!connectedDirHandle) {
+                _setFolderStatus('폴더가 연결되지 않았습니다. connect logs folder를 눌러주세요.');
+                return;
+            }
+
+            jsonlHandleMap.clear();
+            htmlHandleMap.clear();
+            const items = [];
+
+            for await (const [name, handle] of connectedDirHandle.entries()) {
+                if (handle.kind !== 'file') continue;
+                if (/^conv_.*\.jsonl$/i.test(name)) jsonlHandleMap.set(name, handle);
+                if (/^conv_.*\.html$/i.test(name)) htmlHandleMap.set(name, handle);
+            }
+
+            const jsonlNames = Array.from(jsonlHandleMap.keys()).sort();
+            if (!jsonlNames.length) {
+                const tbody = document.getElementById('logsTbody');
+                if (tbody) tbody.innerHTML = '<tr><td colspan="11">No log files found.</td></tr>';
+                _setFolderStatus('연결된 폴더에 conv_*.jsonl 파일이 없습니다.');
+                return;
+            }
+
+            let generatedCount = 0;
+            let updatedCount = 0;
+
+            for (const jsonlName of jsonlNames) {
+                const jsonlHandle = jsonlHandleMap.get(jsonlName);
+                const file = await jsonlHandle.getFile();
+                const text = await file.text();
+                const turns = parseJsonl(text);
+                if (!turns.length) continue;
+
+                const convId = (turns[0] && turns[0].conversation_id) || jsonlName.replace(/\.jsonl$/i, '');
+                const updatedAt = _formatDate(file.lastModified);
+                const htmlName = jsonlName.replace(/\.jsonl$/i, '.html');
+                let htmlExists = htmlHandleMap.has(htmlName);
+                let htmlState = htmlExists ? 'fresh' : 'missing';
+
+                if (htmlExists) {
+                    try {
+                        const htmlFile = await htmlHandleMap.get(htmlName).getFile();
+                        if ((htmlFile.lastModified || 0) < (file.lastModified || 0)) {
+                            htmlState = 'stale';
+                        }
+                    } catch (_) {
+                        htmlState = 'stale';
+                    }
+                }
+
+                if (generateMissing && (!htmlExists || htmlState === 'stale')) {
+                    await _generateAndSaveHtml(jsonlName);
+                    const regeneratedExists = htmlHandleMap.has(htmlName);
+                    if (regeneratedExists) {
+                        if (!htmlExists) generatedCount += 1;
+                        else updatedCount += 1;
+                        htmlExists = true;
+                        htmlState = 'fresh';
+                    }
+                }
+
+                items.push(
+                    _summarizeFromTurns(
+                        convId,
+                        turns,
+                        updatedAt,
+                        jsonlName,
+                        htmlName,
+                        htmlExists,
+                        htmlState,
+                    )
+                );
+            }
+
+            items.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+            const tbody = document.getElementById('logsTbody');
+            if (!tbody) return;
+
+            tbody.innerHTML = items.length
+                ? items.map(_buildRowFromParsed).join('')
+                : '<tr><td colspan="11">No log files found.</td></tr>';
+
+            const total = document.getElementById('totalConversations');
+            if (total) total.textContent = `total conversations: ${items.length} (connected folder)`;
+
+            _setFolderStatus(
+                generateMissing
+                    ? `동기화 완료: ${items.length}개 로그 확인, HTML 신규 ${generatedCount}개 생성 / 기존 ${updatedCount}개 업데이트.`
+                    : `새로고침 완료: ${items.length}개 로그 확인.`
+            );
+        }
+
+        function toggleAutoSync() {
+            const btn = document.getElementById('autoSyncBtn');
+            if (autoSyncTimer) {
+                clearInterval(autoSyncTimer);
+                autoSyncTimer = null;
+                if (btn) btn.textContent = 'auto-sync: off';
+                _setFolderStatus('auto-sync 비활성화');
+                return;
+            }
+
+            autoSyncTimer = setInterval(() => {
+                syncConnectedFolder(true).catch(() => null);
+            }, 5000);
+            if (btn) btn.textContent = 'auto-sync: on';
+            _setFolderStatus('auto-sync 활성화 (5초 간격)');
+        }
+
+        // 기존 fallback(파일 선택) 유지
+        function pickLogsFolder() {
+            const picker = document.getElementById('folderPicker');
+            if (!picker) return;
+            picker.value = '';
+            picker.click();
         }
 
         async function refreshRowsFromFolderFiles(files) {
