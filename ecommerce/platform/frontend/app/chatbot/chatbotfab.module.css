@@ -33,6 +33,7 @@
   opacity: 0;
   pointer-events: none;
   transition: transform 0.2s ease, opacity 0.2s ease;
+  overscroll-behavior: contain;
 }
 
 .open {
@@ -41,33 +42,43 @@
   pointer-events: auto;
 }
 
-/* ===== 리사이즈 핸들 (좌상단) ===== */
-.resizeHandle {
+/* ===== 리사이즈 핸들 (좌측/상단/좌상단) ===== */
+.resizeHandleLeft {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  width: 8px;
+  height: calc(100% - 10px);
+  cursor: ew-resize;
+  z-index: 14;
+}
+
+.resizeHandleTop {
+  position: absolute;
+  top: 0;
+  left: 10px;
+  width: calc(100% - 10px);
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 14;
+}
+
+.resizeHandleCorner {
   position: absolute;
   top: 0;
   left: 0;
-  width: 18px;
-  height: 18px;
-  cursor: nw-resize;
-  z-index: 10;
-}
-.resizeHandle::after {
-  content: '';
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  width: 7px;
-  height: 7px;
-  border-top: 2px solid rgba(255,255,255,0.5);
-  border-left: 2px solid rgba(255,255,255,0.5);
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+  z-index: 15;
 }
 
 .panelHeader {
-  min-height: 64px;
+  min-height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 4px 12px;
   background: #111;
   color: #fff;
 }
@@ -118,6 +129,7 @@
   padding: 16px;
   overflow-y: auto;
   background: #fafafa;
+  overscroll-behavior: contain;
 }
 
 .msgRow {
@@ -328,14 +340,55 @@
 }
 
 .inputBar {
-  height: 64px;
-  min-height: 64px;
+  height: 56px;
+  min-height: 56px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 8px 12px 4px;
   border-top: 1px solid #eee;
   background: #fff;
+}
+
+.bottomControls {
+  position: relative;
+  padding-bottom: 8px;
+}
+
+.modelPickerBtn {
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: #6f7785;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  white-space: nowrap;
+  transition: color 0.18s ease;
+}
+
+.modelPickerBtn:hover:not(:disabled) {
+  color: #49515f;
+}
+
+.modelPickerBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.modelPickerRow {
+  height: 18px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  position: relative;
+  width: 100%;
+  margin-top: -2px;
 }
 
 .input {
@@ -384,6 +437,67 @@
 .sendBtn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.modelDropdown {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  width: min(320px, calc(100% - 24px));
+  max-height: 220px;
+  border-radius: 12px;
+  background: rgba(16, 18, 23, 0.98);
+  border: 1px solid #2a313f;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35);
+  z-index: 40;
+  overflow: hidden;
+  animation: fadeUpIn 0.16s ease-out;
+}
+
+.modelDropdownTitle {
+  height: 34px;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 13px;
+  color: #aab3c2;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.modelDropdownList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  overflow-y: auto;
+  max-height: 186px;
+  overscroll-behavior: contain;
+}
+
+.modelOptionBtn {
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #e2e7f1;
+  text-align: left;
+  padding: 0 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.modelOptionBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.modelOptionBtnActive {
+  background: rgba(121, 159, 255, 0.22);
+  border-color: rgba(121, 159, 255, 0.45);
+  color: #eaf0ff;
+  font-weight: 700;
 }
 
 /* ===== 주문 목록 UI 스타일 ===== */

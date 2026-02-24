@@ -6,7 +6,12 @@ import { useEffect, useMemo, useState } from 'react';
 import styles from './page.module.css';
 
 const API_BASE = 'http://localhost:8000';
-const PRODUCT_IDS = [1,2,3,4,5,6,7,8,9,1550];
+
+type Product = {
+  id: number;
+  name: string;
+  price: number;
+};
 
 type ProductOption = {
   id: number;
@@ -28,6 +33,8 @@ export default function HomePage() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
 
+  const [products, setProducts] = useState<Product[]>([]);
+
   const [sizeModalOpenFor, setSizeModalOpenFor] = useState<number | null>(null);
   const [options, setOptions] = useState<ProductOption[]>([]);
   const [optionsLoading, setOptionsLoading] = useState(false);
@@ -39,7 +46,25 @@ export default function HomePage() {
     useState<Record<number, string>>({});
 
   // ===========================
-  // 로그인 & 유저 정보 가져오기
+  // 상품 DB에서 불러오기
+  // ===========================
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/products/new?limit=10`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setProducts(data);
+      } catch (e) {
+        console.error('상품 로딩 실패', e);
+      }
+    };
+
+    fetchProducts();
+  }, []);
+
+  // ===========================
+  // 로그인 & 유저 정보
   // ===========================
   useEffect(() => {
     fetch(`${API_BASE}/users/me`, {
@@ -129,9 +154,6 @@ export default function HomePage() {
     closeSizeModal();
   };
 
-  // ===========================
-  // 장바구니
-  // ===========================
   const addToCart = async (productId: number, goPayment: boolean) => {
     requireLogin(async () => {
       const optionId = selectedOptionIdByProduct[productId];
@@ -159,25 +181,6 @@ export default function HomePage() {
         if (!res.ok) {
           alert('장바구니 추가 실패');
           return;
-        }
-
-        const cartItem = await res.json();
-
-        // User History에 장바구니 추가 기록
-        try {
-          await fetch(`${API_BASE}/user-history/users/${user!.id}/track/cart-action`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action_type: 'cart_add',
-              cart_item_id: cartItem.id,
-              product_option_type: 'new',
-              product_option_id: optionId,
-              quantity: 1,
-            }),
-          });
-        } catch (err) {
-          console.error('Failed to track cart_add:', err);
         }
 
         if (goPayment) {
@@ -208,21 +211,24 @@ export default function HomePage() {
         </header>
 
         <ul className={styles.productGrid}>
-          {PRODUCT_IDS.map((id) => {
-            const selectedLabel = selectedSizeLabelByProduct[id];
+          {products.map((product) => {
+            const selectedLabel =
+              selectedSizeLabelByProduct[product.id];
 
             return (
-              <li key={id} className={styles.productCard}>
+              <li key={product.id} className={styles.productCard}>
                 <div
                   className={styles.cardBody}
                   onClick={() =>
-                    requireLogin(() => router.push(`/products/${id}`))
+                    requireLogin(() =>
+                      router.push(`/products/${product.id}`)
+                    )
                   }
                 >
                   <div className={styles.productImage}>
                     <Image
-                      src={`/products/${id}.jpg`}
-                      alt="상품"
+                      src={`/products/${product.id}.jpg`}
+                      alt={product.name}
                       fill
                       style={{ objectFit: 'cover' }}
                     />
@@ -230,36 +236,37 @@ export default function HomePage() {
 
                   <div className={styles.productInfo}>
                     <p>상품명</p>
-                    <p>BASIC LOGO SWEATSHIRT NAVY</p>
-                    <p>가격 5억</p>
+                    <p>{product.name}</p>
+                    <p>
+                      가격 {product.price?.toLocaleString()}원
+                    </p>
                   </div>
                 </div>
 
                 <div className={styles.hoverOverlay}>
                   <button
                     className={styles.hoverButton}
-                    onClick={() => openSizeModal(id)}
+                    onClick={() => openSizeModal(product.id)}
                   >
                     {selectedLabel || '사이즈 선택'}
                   </button>
 
                   <button
                     className={styles.hoverButton}
-                    onClick={() => addToCart(id, false)}
+                    onClick={() => addToCart(product.id, false)}
                   >
                     장바구니
                   </button>
 
                   <button
                     className={`${styles.hoverButton} ${styles.primary}`}
-                    onClick={() => addToCart(id, true)}
+                    onClick={() => addToCart(product.id, true)}
                   >
                     바로 구매
                   </button>
                 </div>
 
-
-                {sizeModalOpenFor === id && (
+                {sizeModalOpenFor === product.id && (
                   <div
                     style={{
                       position: 'fixed',
@@ -298,7 +305,9 @@ export default function HomePage() {
                           {uniqueSizes.map(({ size, opt }) => (
                             <button
                               key={size}
-                              onClick={() => selectOption(id, opt)}
+                              onClick={() =>
+                                selectOption(product.id, opt)
+                              }
                             >
                               {size}
                             </button>
