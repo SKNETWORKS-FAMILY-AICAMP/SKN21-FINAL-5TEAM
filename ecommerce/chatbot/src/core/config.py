@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # Runtime LLM routing
     LLM_PROVIDER: str = "openai"  # openai | huggingface
     HF_MODEL_ID: str = "Qwen/Qwen3-0.6B"
+    HF_QUANTIZATION: str = "auto"  # auto | none | bnb-4bit | bnb-8bit | dynamic-int8
 
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIM: int = 1536
