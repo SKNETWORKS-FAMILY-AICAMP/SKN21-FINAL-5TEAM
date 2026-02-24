@@ -1,6 +1,5 @@
-from typing import Annotated, TypedDict, List, Dict, Any, Union, Optional, Literal
+from typing import Annotated, TypedDict, List, Dict, Any, Optional, Literal
 from langgraph.graph.message import add_messages
-from langchain_core.messages import BaseMessage
 
 # OrderInfo as a Dict for slot information (from remote version)
 OrderInfo = Dict[str, Any]
@@ -46,6 +45,10 @@ class AgentState(TypedDict):
     # 7. 런타임 LLM 설정 (요청별)
     llm_provider: Optional[str]          # openai | huggingface
     llm_model: Optional[str]             # gpt-4o-mini | Qwen/Qwen3-0.6B ...
+
+    # 8. 대화/로깅 메타데이터
+    conversation_id: Optional[str]       # 프론트와 왕복되는 대화 ID
+    turn_id: Optional[str]               # 요청 단위 턴 ID
 
 class TaskContext(TypedDict):
     """
