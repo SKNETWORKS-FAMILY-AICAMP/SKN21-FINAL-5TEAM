@@ -52,6 +52,7 @@ type AddressSelectionPayload = {
 
 type ChatMsg = TextMessage | OrderListMessage | ConfirmationMessage | AddressSearchMessage;
 type LlmProvider = 'openai' | 'huggingface';
+type ModelOption = { id: string; provider: LlmProvider; label: string };
 
 type DaumPostcodeData = {
   roadAddress?: string;
@@ -71,13 +72,26 @@ declare global {
 
 const API_BASE_URL = 'http://localhost:8000';
 
-const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4.1'] as const;
+const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.2'] as const;
 const HF_MODELS = ['Qwen/Qwen3-0.6B', 'Qwen/Qwen2.5-1.5B-Instruct'] as const;
+
+const MODEL_OPTIONS: ModelOption[] = [
+  ...OPENAI_MODELS.map((id) => ({ id, provider: 'openai' as const, label: id })),
+  ...HF_MODELS.map((id) => ({ id, provider: 'huggingface' as const, label: id })),
+];
+
+function resolveProviderByModel(modelId: string): LlmProvider {
+  if (HF_MODELS.includes(modelId as (typeof HF_MODELS)[number])) {
+    return 'huggingface';
+  }
+  return 'openai';
+}
 
 const MIN_W = 340;
 const MIN_H = 420;
 const MAX_W = 800;
 const MAX_H = 900;
+type ResizeMode = 'corner' | 'left' | 'top';
 
 function AnimatedText({ text, className, speed = 20 }: { text: string; className?: string; speed?: number }) {
   const [displayed, setDisplayed] = useState('');
@@ -306,29 +320,22 @@ export default function ChatbotFab() {
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
-  const [panelSize, setPanelSize] = useState({ w: 400, h: 560 });
+  const [panelSize, setPanelSize] = useState({ w: 550, h: 660 });
   const isResizing = useRef(false);
-  const [provider, setProvider] = useState<LlmProvider>('openai');
   const [selectedModel, setSelectedModel] = useState<string>(OPENAI_MODELS[0]);
+  const [isModelModalOpen, setIsModelModalOpen] = useState(false);
 
   useEffect(() => {
-    const storedProvider = localStorage.getItem('chatbot_llm_provider');
     const storedModel = localStorage.getItem('chatbot_llm_model');
 
-    if (storedProvider === 'openai' || storedProvider === 'huggingface') {
-      setProvider(storedProvider);
-      if (storedModel && storedModel.trim().length > 0) {
-        setSelectedModel(storedModel);
-      } else {
-        setSelectedModel(storedProvider === 'openai' ? OPENAI_MODELS[0] : HF_MODELS[0]);
-      }
+    if (storedModel && MODEL_OPTIONS.some((m) => m.id === storedModel)) {
+      setSelectedModel(storedModel);
     }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('chatbot_llm_provider', provider);
     localStorage.setItem('chatbot_llm_model', selectedModel);
-  }, [provider, selectedModel]);
+  }, [selectedModel]);
 
   useEffect(() => {
     // 메시지 추가될 때 항상 아래로 스크롤
@@ -349,8 +356,31 @@ export default function ChatbotFab() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleEscKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+
+      if (isModelModalOpen) {
+        setIsModelModalOpen(false);
+        return;
+      }
+
+      if (open) {
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleEscKey);
+    return () => window.removeEventListener('keydown', handleEscKey);
+  }, [isModelModalOpen, open]);
+
+  const handlePanelWheelCapture: React.WheelEventHandler<HTMLElement> = (e) => {
+    // 챗봇 위에서의 휠 이벤트가 페이지(배경)까지 전파되지 않도록 차단
+    e.stopPropagation();
+  };
+
   /* ===== 리사이즈 드래그 핸들러 ===== */
-  const onResizeStart = (e: React.MouseEvent) => {
+  const onResizeStart = (e: React.MouseEvent, mode: ResizeMode) => {
     e.preventDefault();
     isResizing.current = true;
     const startX = e.clientX;
@@ -360,9 +390,24 @@ export default function ChatbotFab() {
 
     const onMouseMove = (ev: MouseEvent) => {
       if (!isResizing.current) return;
-      // 좌상단 핸들이므로: 왼쪽으로 가면 넓어지고, 위로 가면 높아짐
-      const newW = Math.min(MAX_W, Math.max(MIN_W, startW - (ev.clientX - startX)));
-      const newH = Math.min(MAX_H, Math.max(MIN_H, startH - (ev.clientY - startY)));
+      const deltaX = ev.clientX - startX;
+      const deltaY = ev.clientY - startY;
+
+      if (mode === 'left') {
+        const newW = Math.min(MAX_W, Math.max(MIN_W, startW - deltaX));
+        setPanelSize((prev) => ({ ...prev, w: newW }));
+        return;
+      }
+
+      if (mode === 'top') {
+        const newH = Math.min(MAX_H, Math.max(MIN_H, startH - deltaY));
+        setPanelSize((prev) => ({ ...prev, h: newH }));
+        return;
+      }
+
+      // corner
+      const newW = Math.min(MAX_W, Math.max(MIN_W, startW - deltaX));
+      const newH = Math.min(MAX_H, Math.max(MIN_H, startH - deltaY));
       setPanelSize({ w: newW, h: newH });
     };
 
@@ -406,6 +451,7 @@ export default function ChatbotFab() {
     setStreamingText('');
 
     try {
+      const provider = resolveProviderByModel(selectedModel);
       const response = await fetch(`${API_BASE_URL}/api/v1/chat/stream`, {
         method: 'POST',
         credentials: 'include',
@@ -617,44 +663,15 @@ export default function ChatbotFab() {
         className={`${styles.panel} ${open ? styles.open : ''}`}
         aria-hidden={!open}
         style={{ width: panelSize.w, height: panelSize.h }}
+        onWheelCapture={handlePanelWheelCapture}
       >
-        {/* 좌상단 리사이즈 핸들 */}
-        <div className={styles.resizeHandle} onMouseDown={onResizeStart} />
+        {/* 리사이즈 핸들: 좌측/상단/좌상단 */}
+        <div className={styles.resizeHandleLeft} onMouseDown={(e) => onResizeStart(e, 'left')} />
+        <div className={styles.resizeHandleTop} onMouseDown={(e) => onResizeStart(e, 'top')} />
+        <div className={styles.resizeHandleCorner} onMouseDown={(e) => onResizeStart(e, 'corner')} />
 
         <header className={styles.panelHeader}>
-          <div className={styles.headerLeft}>
-            <div className={styles.title}>MOYEO 챗봇</div>
-            <div className={styles.modelControls}>
-              <select
-                className={styles.modelSelect}
-                value={provider}
-                onChange={(e) => {
-                  const nextProvider = e.target.value as LlmProvider;
-                  setProvider(nextProvider);
-                  setSelectedModel(nextProvider === 'openai' ? OPENAI_MODELS[0] : HF_MODELS[0]);
-                }}
-                disabled={isLoading}
-                aria-label="모델 제공자 선택"
-              >
-                <option value="openai">OpenAI</option>
-                <option value="huggingface">Hugging Face (Local)</option>
-              </select>
-
-              <select
-                className={styles.modelSelect}
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                disabled={isLoading}
-                aria-label="모델 선택"
-              >
-                {(provider === 'openai' ? OPENAI_MODELS : HF_MODELS).map((modelName) => (
-                  <option key={modelName} value={modelName}>
-                    {modelName}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+          <div className={styles.title}>MOYEO AI 고객상담사</div>
 
           <button type="button" className={styles.closeBtn} onClick={toggle} aria-label="닫기">
             ✕
@@ -752,25 +769,61 @@ export default function ChatbotFab() {
           )}
         </div>
 
-        <div className={styles.inputBar}>
-          <textarea
-            ref={inputRef}
-            className={styles.input}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="메시지를 입력하세요"
-            disabled={isLoading}
-            rows={1}
-          />
-          <button
-            type="button"
-            className={styles.sendBtn}
-            onClick={() => sendMessage()}
-            disabled={isLoading}
-          >
-            전송
-          </button>
+        <div className={styles.bottomControls}>
+          <div className={styles.inputBar}>
+            <textarea
+              ref={inputRef}
+              className={styles.input}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="메시지를 입력하세요"
+              disabled={isLoading}
+              rows={1}
+            />
+            <button
+              type="button"
+              className={styles.sendBtn}
+              onClick={() => sendMessage()}
+              disabled={isLoading}
+            >
+              전송
+            </button>
+          </div>
+
+          <div className={styles.modelPickerRow}>
+            <button
+              type="button"
+              className={styles.modelPickerBtn}
+              onClick={() => setIsModelModalOpen((prev) => !prev)}
+              disabled={isLoading}
+              aria-label="모델 선택 열기"
+              title={`현재 모델: ${selectedModel}`}
+            >
+              {selectedModel} ▾
+            </button>
+
+            {isModelModalOpen && (
+              <div className={styles.modelDropdown}>
+                <div className={styles.modelDropdownTitle}>Model</div>
+                <div className={styles.modelDropdownList}>
+                  {MODEL_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={`${styles.modelOptionBtn} ${selectedModel === option.id ? styles.modelOptionBtnActive : ''}`}
+                      onClick={() => {
+                        setSelectedModel(option.id);
+                        setIsModelModalOpen(false);
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </aside>
     </>

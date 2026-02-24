@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from langsmith import traceable
 from typing import List, Dict, Any
 import json
+from uuid import uuid4
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from ecommerce.chatbot.src.schemas.chat import ChatRequest
 from ecommerce.chatbot.src.graph.workflow import graph_app
+from ecommerce.chatbot.src.infrastructure.conversation_logger import ConversationRunLogger
 from ecommerce.platform.backend.app.core.auth import get_current_user
 from ecommerce.platform.backend.app.router.users.models import User
 
@@ -27,9 +28,7 @@ TOOL_STATUS_MESSAGES = {
 # 그래프 노드 이름 → 상태 메시지 매핑
 NODE_STATUS_MESSAGES = {
     "decomposer": "요청을 분해하고 있습니다...",
-    "orchestrator": "처리 계획을 세우고 있습니다...",
-    "sequential_worker": "작업을 순차적으로 처리하고 있습니다...",
-    "parallel_worker": "작업을 병렬로 처리하고 있습니다...",
+    "fixed_worker": "작업을 고정 전략으로 처리하고 있습니다...",
     "validation": "실행 전 안전성/유효성을 검토하고 있습니다...",
     "approval": "승인 필요 여부를 확인하고 있습니다...",
     "tools": "필요한 도구를 호출하고 있습니다...",
@@ -82,17 +81,19 @@ def _build_metadata(final_state: dict) -> dict:
 
 
 @router.post("/stream")
-@traceable(run_type="chain", name="Chat Streaming Endpoint")
 async def chat_streaming_endpoint(
     request: ChatRequest, current_user: User = Depends(get_current_user)
 ):
     """스트리밍 방식으로 챗봇 응답 반환 (astream_events 사용)"""
 
     async def event_generator():
+        run_logger = None
         try:
             previous_state = request.previous_state or {}
             requested_provider = (request.provider or previous_state.get("llm_provider") or "openai").strip().lower()
             requested_model = (request.model or previous_state.get("llm_model") or "").strip()
+            conversation_id = previous_state.get("conversation_id") or f"conv_{uuid4().hex[:12]}"
+            turn_id = f"turn_{uuid4().hex[:12]}"
 
             # 1. 상태 초기화
             current_state = {
@@ -101,7 +102,6 @@ async def chat_streaming_endpoint(
                 "documents": [],
                 "tool_outputs": [],
                 "task_list": [],
-                "execution_plan": {},
                 "task_results": [],
                 **previous_state,
                 "is_authenticated": True,
@@ -112,6 +112,8 @@ async def chat_streaming_endpoint(
                 },
                 "llm_provider": requested_provider,
                 "llm_model": requested_model or None,
+                "conversation_id": conversation_id,
+                "turn_id": turn_id,
             }
             
             # 메시지 복구 및 추가
@@ -120,9 +122,19 @@ async def chat_streaming_endpoint(
             
             current_state["messages"] = history + [HumanMessage(content=request.message)]
 
+            run_logger = ConversationRunLogger(
+                conversation_id=conversation_id,
+                turn_id=turn_id,
+                user_id=current_user.id,
+                provider=requested_provider,
+                model=requested_model or None,
+            )
+            run_logger.set_input(request.message, current_state)
+
             # 2. 이벤트 스트리밍
             final_state = None
             has_streamed_text = False
+            last_langgraph_input = None
             async for event in graph_app.astream_events(current_state, version="v2"):
                 event_type = event["event"]
 
@@ -136,6 +148,11 @@ async def chat_streaming_endpoint(
 
                 # B. 도구 실행 시작 (상태 메시지)
                 elif event_type == "on_tool_start":
+                    tool_start_data = event.get("data", {})
+                    run_logger.log_tool_start(
+                        event.get("name", "unknown_tool"),
+                        tool_start_data.get("input") if tool_start_data.get("input") is not None else tool_start_data,
+                    )
                     status_msg = TOOL_STATUS_MESSAGES.get(event["name"])
                     if status_msg:
                         yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg}, ensure_ascii=False)}\n\n"
@@ -143,6 +160,14 @@ async def chat_streaming_endpoint(
                 # B-1. 그래프 노드 실행 시작 (실제 진행 단계 표시)
                 elif event_type == "on_chain_start":
                     node_name = event.get("name")
+                    if node_name == "LangGraph":
+                        last_langgraph_input = event.get("data", {}).get("input")
+                    else:
+                        node_start_data = event.get("data", {})
+                        run_logger.log_node_start(
+                            node_name or "unknown_node",
+                            node_start_data.get("input") if node_start_data.get("input") is not None else node_start_data,
+                        )
                     status_msg = NODE_STATUS_MESSAGES.get(node_name)
                     if status_msg:
                         yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg, 'node': node_name}, ensure_ascii=False)}\n\n"
@@ -150,11 +175,28 @@ async def chat_streaming_endpoint(
                 # B-2. 모델 호출 시작 (모델 실행 단계 표시)
                 elif event_type == "on_chat_model_start":
                     model_name = event.get("name") or "chat_model"
+                    model_start_data = event.get("data", {})
+                    run_logger.log_model_start(
+                        model_name,
+                        model_start_data.get("input") if model_start_data.get("input") is not None else model_start_data,
+                    )
                     status_msg = f"모델이 응답을 생성하고 있습니다... ({model_name})"
                     yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg, 'model': model_name}, ensure_ascii=False)}\n\n"
 
+                elif event_type == "on_chat_model_end":
+                    model_end_data = event.get("data", {})
+                    run_logger.log_model_end(
+                        event.get("name") or "chat_model",
+                        model_end_data.get("output") if model_end_data.get("output") is not None else model_end_data,
+                    )
+
                 # C. 도구 실행 완료 (UI 액션)
                 elif event_type == "on_tool_end":
+                    tool_end_data = event.get("data", {})
+                    run_logger.log_tool_end(
+                        event.get("name", "unknown_tool"),
+                        tool_end_data.get("output") if tool_end_data.get("output") is not None else tool_end_data,
+                    )
                     tool_output = _parse_tool_output(event["data"].get("output"))
                     
                     if tool_output and tool_output.get("ui_action"):
@@ -170,6 +212,14 @@ async def chat_streaming_endpoint(
                 # D. 최종 상태 캡처
                 elif event_type == "on_chain_end" and event["name"] == "LangGraph":
                     final_state = event["data"].get("output")
+                    if isinstance(last_langgraph_input, dict) and isinstance(final_state, dict):
+                        run_logger.log_state_change(last_langgraph_input, final_state)
+                elif event_type == "on_chain_end":
+                    node_end_data = event.get("data", {})
+                    run_logger.log_node_end(
+                        event.get("name") or "unknown_node",
+                        node_end_data.get("output") if node_end_data.get("output") is not None else node_end_data,
+                    )
 
             # 3. 메타데이터 전송
             if final_state:
@@ -177,12 +227,23 @@ async def chat_streaming_endpoint(
                 if not has_streamed_text and isinstance(final_text, str) and final_text.strip():
                     yield f"data: {json.dumps({'type': 'text_chunk', 'content': final_text}, ensure_ascii=False)}\n\n"
                 yield f"data: {json.dumps(_build_metadata(final_state), ensure_ascii=False)}\n\n"
+                log_path = run_logger.finalize(final_state, success=True)
+                yield f"data: {json.dumps({'type': 'audit_log', 'conversation_id': conversation_id, 'turn_id': turn_id, 'log_path': log_path}, ensure_ascii=False)}\n\n"
+            else:
+                log_path = run_logger.finalize({"messages": current_state.get("messages", [])}, success=True)
+                yield f"data: {json.dumps({'type': 'audit_log', 'conversation_id': conversation_id, 'turn_id': turn_id, 'log_path': log_path}, ensure_ascii=False)}\n\n"
 
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         except Exception as e:
             import traceback
             traceback.print_exc()
+            try:
+                if run_logger:
+                    run_logger.log_error("chat_streaming_endpoint", str(e))
+                    run_logger.finalize(None, success=False, error_message=str(e))
+            except Exception:
+                pass
             yield f"data: {json.dumps({'type': 'error', 'message': f'오류가 발생했습니다: {str(e)}'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
