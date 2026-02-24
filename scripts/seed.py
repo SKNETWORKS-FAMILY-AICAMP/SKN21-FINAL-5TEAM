@@ -2,15 +2,46 @@
 Database Seeding Script
 서버 시작 시 초기 데이터를 DB에 적재하는 스크립트입니다.
 """
+import os
+import sys
+
+# -------------------------------------------------
+# 프로젝트 루트를 PYTHONPATH에 추가 (직접 실행용)
+# -------------------------------------------------
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
+sys.path.append(PROJECT_ROOT)
+
+# -------------------------------------------------
+# 표준 라이브러리
+# -------------------------------------------------
 import logging
 import random
+import csv
+from pathlib import Path
 from datetime import datetime, timedelta
 from decimal import Decimal
 from sqlalchemy.orm import Session
+
+import ecommerce.platform.backend.app.router.users.models
+import ecommerce.platform.backend.app.router.products.models
+import ecommerce.platform.backend.app.router.orders.models
+import ecommerce.platform.backend.app.router.shipping.models
+import ecommerce.platform.backend.app.router.points.models
+import ecommerce.platform.backend.app.router.carts.models
+import ecommerce.platform.backend.app.router.reviews.models
+import ecommerce.platform.backend.app.router.payments.models
+import ecommerce.platform.backend.app.router.inventories.models
+import ecommerce.platform.backend.app.router.user_history.models
+
+# -------------------------------------------------
+# 실제 사용할 클래스 import
+# -------------------------------------------------
 from ecommerce.platform.backend.app.router.users.models import User, UserStatus, UserRole
 from ecommerce.platform.backend.app.router.products.models import (
     Category, Product, ProductOption, ProductType,
-    UsedProduct, UsedProductOption, UsedProductCondition, UsedProductStatus
+    UsedProduct, UsedProductOption, UsedProductCondition, UsedProductStatus,
+    ProductImage
 )
 from ecommerce.platform.backend.app.router.orders.models import Order, OrderItem
 from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
@@ -19,6 +50,9 @@ from ecommerce.platform.backend.app.router.users.crud import hash_password
 from ecommerce.platform.backend.app.router.points.models import IssuedVoucher
 
 logger = logging.getLogger(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
 
 def init_db(db: Session):
     """
@@ -40,6 +74,14 @@ def init_db(db: Session):
         if not db.query(Product).first():
             logger.info("🛠️ 초기 상품 데이터 생성 중...")
             create_products(db)
+                    
+        # 상품 옵션 데이터 확인 및 생성
+        if not db.query(ProductOption).first():
+            create_product_options(db)
+
+        # 상품 이미지 데이터 확인 및 생성
+        if not db.query(ProductImage).first():
+            create_product_images(db)
         
         # 4. 중고 상품 상태 데이터 확인 및 생성
         if not db.query(UsedProductCondition).first():
@@ -64,7 +106,7 @@ def init_db(db: Session):
         # 🔥 8. 테스트 상품권 생성 (항상 체크)
         if not db.query(IssuedVoucher).first():
             logger.info("🛠️ 초기 상품권 생성 중...")
-        create_test_vouchers(db)
+            create_test_vouchers(db)
 
         db.commit()
         logger.info("✅ 초기 데이터 적재 완료")
@@ -137,64 +179,87 @@ def create_users(db: Session):
     db.add_all(users)
     db.flush() 
 
+# ============================================
+# categoty
+# ============================================
 def create_categories(db: Session):
-    """카테고리 생성"""
-    categories = {
-        "상의": ["티셔츠", "셔츠/블라우스", "니트/스웨터", "후드/맨투맨"],
-        "하의": ["청바지", "슬랙스", "스커트", "트레이닝 바지"],
-        "아우터": ["코트", "자켓", "패딩", "가디건"],
-        "신발": ["스니커즈", "구두", "부츠", "샌들"]
-    }
-    
-    for main_name, sub_names in categories.items():
-        main_cat = Category(name=main_name, parent_id=None, display_order=1)
-        db.add(main_cat)
-        db.flush() 
-        
-        for idx, sub_name in enumerate(sub_names):
-            sub_cat = Category(name=sub_name, parent_id=main_cat.id, display_order=idx+1)
-            db.add(sub_cat)
+    file_path = DATA_DIR / "categories.csv"
+
+    with open(file_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            db.add(Category(
+                id=int(row["id"]),
+                name=row["name"],
+                parent_id=int(row["parent_id"]) if row["parent_id"] else None,
+                display_order=int(row["display_order"]),
+                is_active = str(row["is_active"]).strip().lower() in ("1", "true", "t", "yes", "y"),
+                created_at=datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S") if row["created_at"] else None,
+                updated_at=datetime.strptime(row["updated_at"], "%Y-%m-%d %H:%M:%S") if row["updated_at"] else None,
+            ))
     db.flush()
 
+# ============================================
+# product
+# ============================================
 def create_products(db: Session):
-    """상품 및 옵션 생성"""
-    # 상의 - 티셔츠 카테고리 조회
-    tshirt_cat = db.query(Category).filter(Category.name == "티셔츠").first()
-    
-    if not tshirt_cat:
-        return
+    file_path = DATA_DIR / "products.csv"
 
-    products = [
-        Product(
-            category_id=tshirt_cat.id,
-            name="베이직 코튼 티셔츠",
-            description="편안한 착용감의 기본 티셔츠입니다.",
-            price=Decimal("15000"),
-            is_active=True,
-            tags="티셔츠,기본템,데일리"
-        ),
-        Product(
-            category_id=tshirt_cat.id,
-            name="오버핏 로고 티셔츠",
-            description="트렌디한 오버핏 실루엣의 티셔츠입니다.",
-            price=Decimal("25000"),
-            is_active=True,
-            tags="오버핏,로고,스트릿"
-        )
-    ]
-    
-    db.add_all(products)
+    with open(file_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            db.add(Product(
+                id=int(row["id"]),
+                category_id=int(row["category_id"]),
+                name=row["name"],
+                description=row["description"],
+                price=Decimal(row["price"]),
+                is_active = str(row["is_active"]).strip().lower() in ("1", "true", "t", "yes", "y"),
+                tags=row["tags"],
+                created_at=datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S") if row["created_at"] else None,
+                updated_at=datetime.strptime(row["updated_at"], "%Y-%m-%d %H:%M:%S") if row["updated_at"] else None,
+            ))
     db.flush()
     
-    # 옵션 추가
-    for product in products:
-        options = [
-            ProductOption(product_id=product.id, size_name="M", color="White", quantity=100, is_active=True),
-            ProductOption(product_id=product.id, size_name="L", color="White", quantity=100, is_active=True),
-            ProductOption(product_id=product.id, size_name="M", color="Black", quantity=50, is_active=True),
-            ProductOption(product_id=product.id, size_name="L", color="Black", quantity=50, is_active=True),
-        ]
-        db.add_all(options)
+# ============================================
+# product option   
+# ============================================
+def create_product_options(db: Session):
+    file_path = DATA_DIR / "productoptions.csv"
+
+    with open(file_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            db.add(ProductOption(
+                id=int(row["id"]),
+                product_id=int(row["product_id"]),
+                size_name=row["size_name"],
+                color=row["color"],
+                quantity=int(row["quantity"]),
+                is_active = str(row["is_active"]).strip().lower() in ("1", "true", "t", "yes", "y"),
+                created_at=datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S") if row["created_at"] else None,
+                updated_at=datetime.strptime(row["updated_at"], "%Y-%m-%d %H:%M:%S") if row["updated_at"] else None,
+            ))
+    db.flush()
+
+# ============================================
+# product image
+# ============================================
+def create_product_images(db: Session):
+    file_path = DATA_DIR / "productimages.csv"
+
+    with open(file_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            db.add(ProductImage(
+                id=int(row["id"]),
+                product_type=row["product_type"],
+                product_id=int(row["product_id"]),
+                image_url=row["image_url"],
+                display_order=int(row["display_order"]),
+                is_primary = str(row["is_primary"]).strip().lower() in ("1", "true", "t", "yes", "y"),
+                created_at=datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S") if row["created_at"] else None,
+            ))
     db.flush()
 
 def create_used_product_conditions(db: Session):
@@ -377,3 +442,18 @@ def create_orders(db: Session):
         db.add(item3)
 
     db.flush()
+
+if __name__ == "__main__":
+    from ecommerce.platform.backend.app.database import SessionLocal
+
+    db = SessionLocal()
+
+    try:
+        init_db(db)
+        print("✅ 적재 완료")
+
+    except Exception as e:
+        print("❌ 에러 발생:", e)
+
+    finally:
+        db.close()

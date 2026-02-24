@@ -363,7 +363,7 @@
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  padding: 0;
+  padding: 2px 8px;
   display: inline-flex;
   align-items: center;
   width: fit-content;
