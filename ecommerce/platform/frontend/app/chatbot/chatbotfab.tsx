@@ -70,7 +70,7 @@ declare global {
   }
 }
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.2'] as const;
 const HF_MODELS = ['Qwen/Qwen3-0.6B', 'Qwen/Qwen2.5-1.5B-Instruct'] as const;
