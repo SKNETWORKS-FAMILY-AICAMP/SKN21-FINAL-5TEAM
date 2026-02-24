@@ -4,21 +4,15 @@
 """
 
 from langchain_core.tools import tool
-from sqlalchemy.orm import Session
-from datetime import datetime
+from sqlalchemy.orm import Session, joinedload
+from datetime import datetime, timedelta
 
 from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.router.orders.models import Order, OrderItem
+from ecommerce.platform.backend.app.models import (
+    Order, OrderItem, User, ShippingInfo, ShippingAddress,
+    Product, ProductOption
+)
 from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
-from ecommerce.platform.backend.app.router.shipping.models import ShippingInfo, ShippingAddress
-from ecommerce.platform.backend.app.router.users.models import User
-# Fix for SQLAlchemy relationship errors (registry population)
-from ecommerce.platform.backend.app.router.payments.models import Payment
-from ecommerce.platform.backend.app.router.products.models import ProductOption, Product
-from ecommerce.platform.backend.app.router.points.models import PointHistory
-from ecommerce.platform.backend.app.router.carts.models import Cart
-from ecommerce.platform.backend.app.router.reviews.models import Review
-from ecommerce.platform.backend.app.router.inventories.models import InventoryTransaction
     
 def get_db():
     """DB 세션 생성 (generator)"""
@@ -33,9 +27,13 @@ def get_db():
 # Helper Functions (Internal Use)
 # ============================================
 
+# [Performance Optimization] 메모리 캐시 (단일 턴 내 중복 조회 방지)
+_order_cache: dict[str, tuple[Order, datetime]] = {}
+CACHE_TTL_SECONDS = 60  # 캐시 유효 시간: 60초
+
 def _get_order_with_auth(db: Session, order_id: str, user_id: int) -> tuple[Order | None, dict | None]:
     """
-    주문을 조회하고 권한을 체크합니다.
+    주문을 조회하고 권한을 체크합니다. (캐싱 적용)
     
     Args:
         db: DB 세션
@@ -46,8 +44,20 @@ def _get_order_with_auth(db: Session, order_id: str, user_id: int) -> tuple[Orde
         (Order 객체, None) 성공 시
         (None, error dict) 실패 시
     """
-    from sqlalchemy.orm import joinedload
     
+    # 1. 캐시 확인
+    cache_key = f"{user_id}:{order_id}"
+    if cache_key in _order_cache:
+        cached_order, cached_at = _order_cache[cache_key]
+        age = (datetime.now() - cached_at).total_seconds()
+        if age < CACHE_TTL_SECONDS:
+            print(f"[Cache HIT] order_id={order_id}, age={age:.1f}s")
+            return cached_order, None
+        else:
+            # 캐시 만료
+            del _order_cache[cache_key]
+    
+    # 2. DB 조회
     order = (
         db.query(Order)
         .options(
@@ -64,6 +74,10 @@ def _get_order_with_auth(db: Session, order_id: str, user_id: int) -> tuple[Orde
     # [Security] Authorization Check
     if order.user_id != user_id:
         return None, {"error": "PERMISSION_DENIED: 본인의 주문만 접근할 수 있습니다."}
+    
+    # 3. 캐시 저장
+    _order_cache[cache_key] = (order, datetime.now())
+    print(f"[Cache MISS] order_id={order_id}, cached.")
     
     return order, None
 
@@ -148,6 +162,7 @@ def get_order_details(order_id: str, user_id: int) -> dict:
         order, error = _get_order_with_auth(db, order_id, user_id)
         if error:
             return error
+        assert order is not None  # Type narrowing
         
         items = []
         for item in order.items:
@@ -198,103 +213,6 @@ def _check_return_period(delivered_at: datetime | None) -> tuple[bool, str | Non
     return True, None
 
 
-def _check_cancellation(order_id: str, user_id: int) -> dict:
-    """
-    취소 가능 여부와 환불 예정 금액을 확인합니다 (배송 전 전용, Internal).
-    """
-    db = SessionLocal()
-    try:
-        order, error = _get_order_with_auth(db, order_id, user_id)
-        if error:
-            return error
-        
-        # 배송 전 상태 확인
-        if order.status not in [OrderStatus.PENDING, OrderStatus.PAID]:
-            return {
-                "error": f"현재 주문 상태({order.status.value})에서는 취소가 불가능합니다. 배송이 시작된 경우 반품을 이용해주세요."
-            }
-        
-        return {
-            "eligible": True,
-            "type": "cancellation",
-            "order_id": order_id,
-            "current_status": order.status.value,
-            "refund_amount": float(order.total_amount),
-            "message": (
-                f"취소 가능 여부 확인 완료\n"
-                f"주문 금액 {float(order.total_amount):,.0f}원이 전액 환불됩니다.\n"
-                f"정말 취소하시겠습니까?"
-            )
-        }
-    except Exception as e:
-        return {"error": f"취소 가능 여부 확인 실패: {str(e)}"}
-    finally:
-        db.close()
-
-def _check_return_eligibility(
-    order_id: str, 
-    user_id: int, 
-    reason: str,
-    is_seller_fault: bool = False
-) -> dict:
-    """
-    반품(환불) 가능 여부와 배송비를 계산합니다 (배송 후 전용, Internal).
-    """
-    db = SessionLocal()
-    try:
-        order, error = _get_order_with_auth(db, order_id, user_id)
-        if error:
-            return error
-        
-        # 배송 후 상태 확인 (배송중/배송완료)
-        if order.status not in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
-             return {
-                "error": f"현재 주문 상태({order.status.value})에서는 반품 처리가 불가능합니다. (배송 전 취소 이용 권장)"
-            }
-        
-        # 배송완료일 기준 7일 이내 검증
-        if order.status == OrderStatus.DELIVERED and order.shipping_info:
-            is_valid, error_msg = _check_return_period(order.shipping_info.delivered_at)
-            if not is_valid:
-                return {"error": error_msg}
-        
-        # 귀책사유에 따른 배송비 계산
-        shipping_fee = float(order.shipping_fee)
-        return_shipping_fee = 0.0
-        
-        if is_seller_fault:
-            return_shipping_fee = 0.0
-            refund_amount = float(order.total_amount)
-            responsibility = "판매자"
-        else:
-            return_shipping_fee = shipping_fee * 2  # 왕복 배송비
-            refund_amount = float(order.total_amount) - return_shipping_fee
-            responsibility = "구매자"
-        
-        final_refund = max(0, refund_amount)
-        
-        return {
-            "eligible": True,
-            "type": "return",
-            "order_id": order_id,
-            "reason": reason,
-            "responsibility": responsibility,
-            "original_amount": float(order.total_amount),
-            "return_shipping_fee": return_shipping_fee,
-            "final_refund_amount": final_refund,
-            "message": (
-                f"반품 가능 여부 확인 완료\n"
-                f"- 귀책사유: {responsibility}\n"
-                f"- 반품 배송비: {return_shipping_fee:,.0f}원 차감\n"
-                f"- 최종 환불 예정 금액: {final_refund:,.0f}원\n\n"
-                f"반품 접수를 진행하시겠습니까?"
-            )
-        }
-    except Exception as e:
-        return {"error": f"반품 확인 실패: {str(e)}"}
-    finally:
-        db.close()
-
 @tool
 def cancel_order(order_id: str, user_id: int, reason: str, confirmed: bool = True) -> dict:
     """
@@ -317,6 +235,7 @@ def cancel_order(order_id: str, user_id: int, reason: str, confirmed: bool = Tru
         order, error = _get_order_with_auth(db, order_id, user_id)
         if error:
             return error
+        assert order is not None  # Type narrowing
             
         if order.status not in [OrderStatus.PENDING, OrderStatus.PAID]:
             return {"error": "배송이 시작되어 취소할 수 없습니다."}
@@ -357,26 +276,77 @@ def check_refund_eligibility(
     Returns:
         환불 가능 여부(eligible), 유형(type: cancellation/return), 환불 예정 금액, 안내 메시지 등
     """
-    # 1. 주문 상태 확인을 위해 먼저 DB 조회 (Internal helper 사용 안함, 비용 절감)
     db = SessionLocal()
     try:
         order, error = _get_order_with_auth(db, order_id, user_id)
         if error:
             return error
+        assert order is not None  # Type narrowing
         
         status = order.status
+        
+        # 배송 전 -> 취소 로직
+        if status in [OrderStatus.PENDING, OrderStatus.PAID]:
+            return {
+                "eligible": True,
+                "type": "cancellation",
+                "order_id": order_id,
+                "current_status": status.value,
+                "refund_amount": float(order.total_amount),
+                "message": (
+                    f"취소 가능 여부 확인 완료\n"
+                    f"주문 금액 {float(order.total_amount):,.0f}원이 전액 환불됩니다.\n"
+                    f"정말 취소하시겠습니까?"
+                )
+            }
+        
+        # 배송 후 -> 반품 로직
+        elif status in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
+            # 배송완료일 기준 7일 이내 검증
+            if status == OrderStatus.DELIVERED and order.shipping_info:
+                is_valid, error_msg = _check_return_period(order.shipping_info.delivered_at)
+                if not is_valid:
+                    return {"error": error_msg}
+            
+            # 귀책사유에 따른 배송비 계산
+            shipping_fee = float(order.shipping_fee)
+            
+            if is_seller_fault:
+                return_shipping_fee = 0.0
+                refund_amount = float(order.total_amount)
+                responsibility = "판매자"
+            else:
+                return_shipping_fee = shipping_fee * 2  # 왕복 배송비
+                refund_amount = float(order.total_amount) - return_shipping_fee
+                responsibility = "구매자"
+            
+            final_refund = max(0, refund_amount)
+            
+            return {
+                "eligible": True,
+                "type": "return",
+                "order_id": order_id,
+                "reason": reason,
+                "responsibility": responsibility,
+                "original_amount": float(order.total_amount),
+                "return_shipping_fee": return_shipping_fee,
+                "final_refund_amount": final_refund,
+                "message": (
+                    f"반품 가능 여부 확인 완료\n"
+                    f"- 귀책사유: {responsibility}\n"
+                    f"- 반품 배송비: {return_shipping_fee:,.0f}원 차감\n"
+                    f"- 최종 환불 예정 금액: {final_refund:,.0f}원\n\n"
+                    f"반품 접수를 진행하시겠습니까?"
+                )
+            }
+        
+        else:
+            return {"error": f"현재 주문 상태({status.value})에서는 환불/취소 처리가 불가능합니다."}
+    
+    except Exception as e:
+        return {"error": f"환불 가능 여부 확인 실패: {str(e)}"}
     finally:
         db.close()
-        
-    # 2. 상태에 따라 분기
-    if status in [OrderStatus.PENDING, OrderStatus.PAID]:
-        # 배송 전 -> 취소 로직
-        return _check_cancellation(order_id, user_id)
-    elif status in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
-        # 배송 후 -> 반품 로직
-        return _check_return_eligibility(order_id, user_id, reason, is_seller_fault)
-    else:
-        return {"error": f"현재 주문 상태({status.value})에서는 환불/취소 처리가 불가능합니다."}
 
 
 @tool
@@ -406,6 +376,7 @@ def register_return_request(
         order, error = _get_order_with_auth(db, order_id, user_id)
         if error:
             return error
+        assert order is not None  # Type narrowing
             
         if order.status not in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
             return {"error": "배송이 완료되지 않아 반품을 접수할 수 없습니다."}
@@ -434,7 +405,7 @@ def check_exchange_eligibility(
     order_id: str,
     user_id: int,
     reason: str,
-    new_option_id: int = None
+    new_option_id: int | None = None
 ) -> dict:
     """
     교환 가능 재고 확인 및 배송비를 계산합니다.
@@ -453,6 +424,7 @@ def check_exchange_eligibility(
         order, error = _get_order_with_auth(db, order_id, user_id)
         if error:
             return error
+        assert order is not None  # Type narrowing
         
         # 교환 불가 상태
         if order.status in [OrderStatus.CANCELLED, OrderStatus.REFUNDED]:
@@ -521,6 +493,7 @@ def change_product_option(order_id: str, user_id: int, new_option_id: int) -> di
         order, error = _get_order_with_auth(db, order_id, user_id)
         if error:
             return error
+        assert order is not None  # Type narrowing
             
         if order.status not in [OrderStatus.PENDING, OrderStatus.PAID]:
             return {"error": "배송이 시작되어 옵션을 변경할 수 없습니다. 교환 신청을 이용해주세요."}
@@ -548,7 +521,7 @@ def register_exchange_request(
     user_id: int,
     reason: str,
     pickup_address: str,
-    new_option_id: int = None,
+    new_option_id: int | None = None,
     confirmed: bool = True
 ) -> dict:
     """
@@ -573,13 +546,14 @@ def register_exchange_request(
         order, error = _get_order_with_auth(db, order_id, user_id)
         if error:
             return error
+        assert order is not None  # Type narrowing
             
         if order.status not in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
              return {"error": "배송 전입니다. 옵션 변경 기능을 이용해주세요."}
              
         # 상태 변경
         previous_status = order.status
-        order.status = OrderStatus.PROCESSING
+        order.status = OrderStatus.PREPARING  # 교환 처리중
         order.shipping_request = (
             f"Exchange Requested. Reason: {reason}, "
             f"Pickup: {pickup_address}, New Option: {new_option_id}"
@@ -617,6 +591,7 @@ def get_shipping_details(order_id: str, user_id: int) -> dict:
         order, error = _get_order_with_auth(db, order_id, user_id)
         if error:
             return error
+        assert order is not None  # Type narrowing
             
         shipping_info = order.shipping_info
         if not shipping_info:
@@ -648,7 +623,7 @@ def get_shipping_details(order_id: str, user_id: int) -> dict:
 
 
 @tool
-def get_user_orders(user_id: int = 1, limit: int = 5, days: int = 30, requires_selection: bool = False, action_context: str = None) -> dict:
+def get_user_orders(user_id: int = 1, limit: int = 5, days: int = 30, requires_selection: bool = False, action_context: str | None = None) -> dict:
     """
     사용자의 최근 주문 목록을 조회합니다 (UI 렌더링용).
     
@@ -728,7 +703,7 @@ def get_user_orders(user_id: int = 1, limit: int = 5, days: int = 30, requires_s
 
 
 @tool
-def update_payment_method(order_id: str, user_id: int, payment_method: str, card_number: str = None) -> dict:
+def update_payment_method(order_id: str, user_id: int, payment_method: str, card_number: str | None = None) -> dict:
     """
     주문의 결제 정보를 변경합니다.
     
@@ -746,6 +721,7 @@ def update_payment_method(order_id: str, user_id: int, payment_method: str, card
         order, error = _get_order_with_auth(db, order_id, user_id)
         if error:
             return error
+        assert order is not None  # Type narrowing
             
         order.payment_method = payment_method
         if card_number:

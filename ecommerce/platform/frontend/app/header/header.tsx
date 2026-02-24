@@ -1,9 +1,15 @@
 'use client';
 
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import styles from './header.module.css';
 import Link from 'next/link';
 import { useAuth } from '../authcontext';
+
+const ADMIN_MENU = [
+  { title: '유저 히스토리', href: '/admin/user-history' },
+  { title: '배송정보 작성', href: '/admin/shipping' },
+];
 
 const CATEGORY = [
   {
@@ -78,9 +84,55 @@ const CATEGORY = [
 export default function Header() {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<number | null>(null);
+  const pathname = usePathname();
 
   // 🔑 전역 로그인 상태 (Context)
   const { isLoggedIn } = useAuth();
+
+  const isAdmin = pathname.startsWith('/admin');
+
+  if (isAdmin) {
+    return (
+      <>
+        <header className={styles.header}>
+          <div className={styles.left}>
+            <button className={styles.menu} onClick={() => setOpen(true)}>
+              ☰
+            </button>
+          </div>
+
+          <div className={styles.right}>
+            <Link href="/auth/logout" className={styles.adminLogout}>
+              로그아웃
+            </Link>
+          </div>
+        </header>
+
+        {open && <div className={styles.overlay} onClick={() => setOpen(false)} />}
+
+        <aside className={`${styles.sidebar} ${open ? styles.open : ''}`}>
+          <div className={styles.sidebarHeader}>
+            <span>관리자 메뉴</span>
+            <button onClick={() => setOpen(false)}>✕</button>
+          </div>
+
+          <ul className={styles.adminMenu}>
+            {ADMIN_MENU.map((item) => (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={pathname === item.href ? styles.adminMenuActive : ''}
+                  onClick={() => setOpen(false)}
+                >
+                  {item.title}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </aside>
+      </>
+    );
+  }
 
   return (
     <>
