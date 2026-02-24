@@ -63,19 +63,42 @@
 }
 
 .panelHeader {
-  height: 48px;
-  min-height: 48px;
+  min-height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 8px 12px;
   background: #111;
   color: #fff;
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
 .title {
   font-size: 14px;
   font-weight: 600;
+}
+
+.modelControls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.modelSelect {
+  max-width: 180px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid #333;
+  background: #1d1d1d;
+  color: #fff;
+  font-size: 12px;
+  padding: 0 8px;
 }
 
 .closeBtn {
@@ -99,6 +122,7 @@
 
 .msgRow {
   display: flex;
+  width: 100%;
   margin-bottom: 30px;
 }
 
@@ -112,8 +136,8 @@
 
 /* ===== 유저 말풍선 ===== */
 .bubble {
-  max-width: 80%;
-  padding: 10px 14px;
+  max-width: 76%;
+  padding: 0px 8px;
   border-radius: 18px 18px 4px 18px;
   font-size: 13.5px;
   line-height: 1.65;
@@ -127,7 +151,8 @@
 .botMsg {
   display: flex;
   gap: 10px;
-  width: 100%;
+  width: auto;
+  max-width: min(78%, 680px);
   align-items: flex-start;
 }
 
@@ -145,7 +170,8 @@
 }
 
 .botText {
-  flex: 1;
+  flex: 0 1 auto;
+  width: 100%;
   min-width: 0;
   font-size: 13.5px;
   line-height: 1.7;
@@ -162,6 +188,123 @@
   animation: smoothText 0.15s ease-out;
 }
 
+.streamingPreviewWrap {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
+  animation: fadeUpIn 0.35s ease-out;
+}
+
+.streamingPreviewText {
+  color: #2a2a2a;
+  line-height: 1.75;
+  letter-spacing: 0.01em;
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+.persistentDivider {
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
+}
+
+.reasoningWrap {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.reasoningToggle {
+  width: auto;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #6b7482;
+  border-radius: 999px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.reasoningToggle:hover {
+  background: #f2f5fb;
+  border-color: #d6dce8;
+  color: #3f4754;
+}
+
+.reasoningToggleOpen {
+  border-color: transparent;
+  background: transparent;
+  color: #3b4350;
+}
+
+.reasoningToggleText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reasoningChevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 13px;
+  transition: transform 0.22s ease;
+}
+
+.reasoningChevronOpen {
+  transform: rotate(180deg);
+}
+
+.reasoningPanel {
+  width: 100%;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateY(-4px);
+  transition: max-height 0.28s ease, opacity 0.22s ease, transform 0.22s ease;
+}
+
+.reasoningPanelOpen {
+  max-height: 320px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reasoningInner {
+  margin-top: 8px;
+  border-left: 3px solid #d2d7e3;
+  background: #fbfcfe;
+  border-radius: 0 10px 10px 0;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.72;
+  color: #606a7a;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.reasoningStreamingText {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.finalAnswerWrap {
+  margin-top: 10px;
+  animation: fadeUpIn 0.25s ease-out;
+}
+
 @keyframes smoothText {
   0% {
     opacity: 0.85;
@@ -173,40 +316,74 @@
   }
 }
 
+@keyframes fadeUpIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .inputBar {
-  height: 54px;
-  min-height: 54px;
+  height: 64px;
+  min-height: 64px;
   display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 10px;
+  padding: 10px 12px;
   border-top: 1px solid #eee;
   background: #fff;
 }
 
 .input {
   flex: 1;
-  height: 34px;
+  height: 42px;
+  resize: none;
+  box-sizing: border-box;
   border: 1px solid #ddd;
-  border-radius: 10px;
-  padding: 0 12px;
+  border-radius: 14px;
+  padding: 10px 14px;
+  line-height: 1.3;
   outline: none;
   font-size: 13px;
+  font-family: inherit;
   background: #fafafa;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 .input:focus {
-  border-color: #aaa;
+  border-color: #9aa4b2;
   background: #fff;
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.06);
 }
 
 .sendBtn {
-  width: 64px;
-  height: 34px;
-  border-radius: 10px;
+  min-width: 72px;
+  height: 42px;
+  padding: 0 16px;
+  border-radius: 14px;
   border: none;
   background: #111;
   color: #fff;
   cursor: pointer;
   font-size: 13px;
+  font-weight: 600;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.sendBtn:hover:not(:disabled) {
+  background: #222;
+}
+
+.sendBtn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.sendBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 /* ===== 주문 목록 UI 스타일 ===== */
@@ -348,6 +525,76 @@
   cursor: not-allowed;
 }
 
+.addressCard {
+  width: 100%;
+  background: #fff;
+  border: 1px solid #e7eaf0;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.addressCardTitle {
+  font-size: 13px;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.addressFieldGroup {
+  margin-top: 8px;
+}
+
+.addressFieldLabel {
+  font-size: 11px;
+  color: #777;
+  margin-bottom: 4px;
+}
+
+.addressFieldValue {
+  min-height: 32px;
+  border: 1px solid #eceff4;
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 12px;
+  color: #222;
+  background: #fafbfd;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.addressInput {
+  width: 100%;
+  height: 34px;
+  border: 1px solid #d8dde6;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.addressInput:focus {
+  border-color: #9aa4b2;
+  box-shadow: 0 0 0 2px rgba(17, 17, 17, 0.06);
+}
+
+.addressSubmitBtn {
+  margin-top: 10px;
+  width: 100%;
+  height: 34px;
+  border-radius: 8px;
+  border: none;
+  background: #111;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.addressSubmitBtn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
 /* ===== 타이핑 인디케이터 애니메이션 ===== */
 .typingIndicator {
   display: flex;
@@ -396,6 +643,22 @@
   font-size: 13px;
   color: #666;
   font-weight: 500;
+}
+
+.statusMessageSoft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #8f97a3;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  animation: fadeUpIn 0.25s ease-out;
+}
+
+.statusTypewriter {
+  white-space: pre-line;
+  word-break: break-word;
 }
 
 .spinnerSmall {

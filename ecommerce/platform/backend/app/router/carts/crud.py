@@ -7,14 +7,8 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_
 from ecommerce.platform.backend.app.router.carts import models, schemas
 
-# Product 모듈의 모델 및 enum 사용
 from ecommerce.platform.backend.app.router.products.models import (
-    ProductOption, 
-    Product,
-    UsedProductOption, 
-    UsedProduct,
-    UsedProductCondition,
-    ProductType  # ProductType enum 추가
+    ProductOption, Product, UsedProductOption, UsedProduct, UsedProductCondition, ProductType
 )
 
 # ============================================
