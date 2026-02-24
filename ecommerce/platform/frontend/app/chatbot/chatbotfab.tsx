@@ -108,6 +108,86 @@ function AnimatedText({ text, className, speed = 20 }: { text: string; className
   return <span className={className}>{text ? displayed : ''}</span>;
 }
 
+function parseThinkContent(rawText: string): { hasThink: boolean; reasoning: string; answer: string } {
+  if (!rawText || !rawText.includes('<think>')) {
+    return { hasThink: false, reasoning: '', answer: rawText };
+  }
+
+  const thinkOpenIdx = rawText.indexOf('<think>');
+  const thinkCloseIdx = rawText.indexOf('</think>');
+
+  if (thinkOpenIdx < 0) {
+    return { hasThink: false, reasoning: '', answer: rawText };
+  }
+
+  const beforeThink = rawText.slice(0, thinkOpenIdx).trim();
+  if (thinkCloseIdx > thinkOpenIdx) {
+    const reasoning = rawText.slice(thinkOpenIdx + '<think>'.length, thinkCloseIdx).trim();
+    const afterThink = rawText.slice(thinkCloseIdx + '</think>'.length).trim();
+    return {
+      hasThink: true,
+      reasoning,
+      answer: [beforeThink, afterThink].filter(Boolean).join('\n\n').trim(),
+    };
+  }
+
+  const reasoningOnly = rawText.slice(thinkOpenIdx + '<think>'.length).trim();
+  return {
+    hasThink: true,
+    reasoning: reasoningOnly,
+    answer: beforeThink,
+  };
+}
+
+function ReasoningAccordion({ reasoning, isStreaming }: { reasoning: string; isStreaming?: boolean }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className={styles.reasoningWrap}>
+      <button
+        type="button"
+        className={`${styles.reasoningToggle} ${isOpen ? styles.reasoningToggleOpen : ''}`}
+        onClick={() => setIsOpen((prev) => !prev)}
+        aria-expanded={isOpen}
+      >
+        <span className={styles.reasoningToggleText}>
+          {isStreaming ? '추론 과정 생성 중...' : '생각 과정 보기'}
+        </span>
+        <span className={`${styles.reasoningChevron} ${isOpen ? styles.reasoningChevronOpen : ''}`}>⌄</span>
+      </button>
+
+      <div className={`${styles.reasoningPanel} ${isOpen ? styles.reasoningPanelOpen : ''}`}>
+        <div className={styles.reasoningInner}>
+          {isStreaming ? (
+            <AnimatedText text={reasoning} className={styles.reasoningStreamingText} speed={10} />
+          ) : (
+            <ReactMarkdown>{reasoning}</ReactMarkdown>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BotTextContent({ text, isStreaming = false }: { text: string; isStreaming?: boolean }) {
+  const parsed = parseThinkContent(text);
+
+  if (!parsed.hasThink) {
+    return isStreaming ? <AnimatedText text={text} speed={14} /> : <ReactMarkdown>{text}</ReactMarkdown>;
+  }
+
+  return (
+    <>
+      <ReasoningAccordion reasoning={parsed.reasoning} isStreaming={isStreaming} />
+      {parsed.answer ? (
+        <div className={styles.finalAnswerWrap}>
+          <ReactMarkdown>{parsed.answer}</ReactMarkdown>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function AddressSearchCard({
   message,
   disabled,
@@ -633,7 +713,7 @@ export default function ChatbotFab() {
                         m.type === 'text' && m.isStreaming ? styles.streaming : ''
                       } ${m.type === 'text' && m.showDivider ? styles.persistentDivider : ''}`}
                     >
-                      {m.type === 'text' ? <ReactMarkdown>{text}</ReactMarkdown> : text}
+                      {m.type === 'text' ? <BotTextContent text={text} isStreaming={Boolean(m.isStreaming)} /> : text}
                     </div>
                   </div>
                 </div>
@@ -661,7 +741,7 @@ export default function ChatbotFab() {
                   {streamingText && (
                     <div className={styles.streamingPreviewWrap}>
                       <div className={styles.streamingPreviewText}>
-                        <AnimatedText text={streamingText} speed={14} />
+                        <BotTextContent text={streamingText} isStreaming />
                       </div>
                     </div>
                   )}
