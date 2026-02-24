@@ -209,6 +209,102 @@
   border-top: 1px solid rgba(17, 17, 17, 0.08);
 }
 
+.reasoningWrap {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.reasoningToggle {
+  width: auto;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #6b7482;
+  border-radius: 999px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.reasoningToggle:hover {
+  background: #f2f5fb;
+  border-color: #d6dce8;
+  color: #3f4754;
+}
+
+.reasoningToggleOpen {
+  border-color: transparent;
+  background: transparent;
+  color: #3b4350;
+}
+
+.reasoningToggleText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reasoningChevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 13px;
+  transition: transform 0.22s ease;
+}
+
+.reasoningChevronOpen {
+  transform: rotate(180deg);
+}
+
+.reasoningPanel {
+  width: 100%;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateY(-4px);
+  transition: max-height 0.28s ease, opacity 0.22s ease, transform 0.22s ease;
+}
+
+.reasoningPanelOpen {
+  max-height: 320px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reasoningInner {
+  margin-top: 8px;
+  border-left: 3px solid #d2d7e3;
+  background: #fbfcfe;
+  border-radius: 0 10px 10px 0;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.72;
+  color: #606a7a;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.reasoningStreamingText {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.finalAnswerWrap {
+  margin-top: 10px;
+  animation: fadeUpIn 0.25s ease-out;
+}
+
 @keyframes smoothText {
   0% {
     opacity: 0.85;
