@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../authcontext';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 /**
  * 인증 액션을 user history에 기록
@@ -44,7 +44,7 @@ export default function LogoutPage() {
           await trackAuthAction(user.id, 'logout');
         }
 
-        await fetch('http://localhost:8000/users/logout', {
+        await fetch(`${API_BASE_URL}/users/logout`, {
           method: 'POST',
           credentials: 'include', // 🔑 쿠키 포함
         });

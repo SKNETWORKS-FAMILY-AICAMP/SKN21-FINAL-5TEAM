@@ -134,7 +134,7 @@ export default function OrdersPage() {
   } | null>(null);
   const [promptInput, setPromptInput] = useState("");
 
-  const API_BASE = "http://localhost:8000";
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
   // ==================== 커스텀 알림 함수 ====================
 

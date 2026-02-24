@@ -24,7 +24,7 @@ export default function ProfilePage() {
      로그인 가드 + 유저 정보 로드
   ========================= */
   useEffect(() => {
-    fetch('http://localhost:8000/users/me', {
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
       credentials: 'include',
     })
       .then(async (res) => {
@@ -64,7 +64,7 @@ export default function ProfilePage() {
   });
 
   const handleSaveProfile = async () => {
-    await fetch(`http://localhost:8000/users/me`, {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
       method: 'PATCH',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -85,7 +85,7 @@ export default function ProfilePage() {
   const handleSavePassword = async () => {
     if (passwordForm.newPassword !== passwordForm.confirmPassword) return;
 
-    await fetch(`http://localhost:8000/users/me/password`, {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me/password`, {
       method: 'PATCH',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -108,7 +108,7 @@ export default function ProfilePage() {
   });
 
   const handleSaveAlarm = async () => {
-    await fetch(`http://localhost:8000/users/me`, {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
       method: 'PATCH',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -145,7 +145,7 @@ export default function ProfilePage() {
   // };
 
   // const handleSaveStyle = async () => {
-  //   await fetch(`http://localhost:8000/users/me/body-measurement`, {
+  //   await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me/body-measurement`, {
   //     method: 'PUT',
   //     credentials: 'include',
   //     headers: { 'Content-Type': 'application/json' },
@@ -159,7 +159,7 @@ export default function ProfilePage() {
   ========================= */
   const loadBodyMeasurement = async () => {
     const res = await fetch(
-      'http://localhost:8000/users/me/body-measurement',
+      `${process.env.NEXT_PUBLIC_API_URL}/users/me/body-measurement`,
       { credentials: 'include' }
     );
 
@@ -198,7 +198,7 @@ export default function ProfilePage() {
   };
 
   const handleSaveStyle = async () => {
-    await fetch('http://localhost:8000/users/me/body-measurement', {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me/body-measurement`, {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -215,7 +215,7 @@ export default function ProfilePage() {
      회원 탈퇴
   ========================= */
   const handleWithdraw = async () => {
-    await fetch('http://localhost:8000/users/me', {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
       method: 'DELETE',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -231,7 +231,7 @@ export default function ProfilePage() {
      로그아웃
   ========================= */
   const handleLogout = async () => {
-    await fetch('http://localhost:8000/users/logout', {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/logout`, {
       method: 'POST',
       credentials: 'include',
     });
