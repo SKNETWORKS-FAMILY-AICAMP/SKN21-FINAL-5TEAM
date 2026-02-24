@@ -1,0 +1,218 @@
+{
+  "order_id": {
+    "description": "주문번호 패턴",
+    "patterns": [
+      "ORD-{date}-{seq:03d}",
+      "주문번호 {random_digits}",
+      "{random_upper_alpha}-{random_digits}",
+      "ORD{random_digits}"
+    ],
+    "real_data_source": "orders.order_number"
+  },
+  
+  "product_name": {
+    "description": "상품명 패턴",
+    "patterns": [
+      "{brand} {item_type}",
+      "{color} {item_type}",
+      "{material} {item_type}",
+      "{season} {collection} {item_type}"
+    ],
+    "values": {
+      "brand": ["나이키", "아디다스", "자라", "유니클로", "H&M"],
+      "item_type": ["티셔츠", "청바지", "스니커즈", "코트", "가디건", "셔츠"],
+      "color": ["블랙", "화이트", "네이비", "그레이", "베이지"],
+      "material": ["코튼", "데님", "니트", "가죽", "울"],
+      "season": ["봄", "여름", "가을", "겨울"],
+      "collection": ["신상", "베스트", "세일", "한정판"]
+    },
+    "real_data_source": "products.name"
+  },
+  
+  "date": {
+    "description": "날짜 표현",
+    "patterns": [
+      "20{yy}-{mm:02d}-{dd:02d}",
+      "{yyyy}년 {mm}월 {dd}일",
+      "{mm}/{dd}",
+      "{relative_date}"
+    ],
+    "values": {
+      "relative_date": [
+        "오늘", "어제", "그제", "이번주", "지난주", "이번달", "지난달",
+        "3일 전", "일주일 전", "한달 전", "최근"
+      ]
+    }
+  },
+  
+  "price": {
+    "description": "가격 표현",
+    "patterns": [
+      "{amount}원",
+      "{amount}만원",
+      "{formatted_price}",
+      "약 {amount}원"
+    ],
+    "ranges": {
+      "low": [10000, 50000],
+      "medium": [50000, 100000],
+      "high": [100000, 500000]
+    },
+    "real_data_source": "products.price"
+  },
+  
+  "quantity": {
+    "description": "수량 표현",
+    "patterns": [
+      "{n}개",
+      "{n}",
+      "{n}장",
+      "{n}벌"
+    ],
+    "ranges": [1, 10]
+  },
+  
+  "size": {
+    "description": "사이즈 표현",
+    "values": {
+      "standard": ["S", "M", "L", "XL", "2XL", "3XL"],
+      "numeric": ["90", "95", "100", "105", "110"],
+      "shoes": ["230", "240", "250", "260", "270", "280"],
+      "korean": ["소", "중", "대", "특대"]
+    }
+  },
+  
+  "color": {
+    "description": "색상 표현",
+    "values": [
+      "블랙", "화이트", "그레이", "네이비", "베이지",
+      "레드", "블루", "그린", "옐로우", "핑크",
+      "브라운", "카키", "버건디", "민트", "라벤더"
+    ]
+  },
+  
+  "address": {
+    "description": "주소 표현",
+    "patterns": [
+      "{city} {district} {dong}",
+      "{city} {district} {dong} {detail}",
+      "{postal_code} {city} {district}"
+    ],
+    "values": {
+      "city": ["서울시", "경기도", "부산시", "대구시", "인천시"],
+      "district": ["강남구", "서초구", "송파구", "마포구", "용산구", "성동구"],
+      "dong": ["역삼동", "논현동", "삼성동", "대치동", "서초동"],
+      "detail": ["123번길 45", "로 67", "타워 8층"]
+    },
+    "real_data_source": "shipping_addresses.address"
+  },
+  
+  "phone": {
+    "description": "전화번호 표현",
+    "patterns": [
+      "010-{n1:04d}-{n2:04d}",
+      "010{n1:04d}{n2:04d}",
+      "010 {n1:04d} {n2:04d}"
+    ]
+  },
+  
+  "email": {
+    "description": "이메일 표현",
+    "patterns": [
+      "{username}@{domain}.com",
+      "{username}@{domain}.co.kr"
+    ],
+    "values": {
+      "domain": ["naver", "gmail", "kakao", "daum", "hanmail"]
+    }
+  },
+  
+  "shipping_status": {
+    "description": "배송 상태",
+    "values": [
+      "주문 접수", "결제 완료", "상품 준비중", "배송 중",
+      "배송 완료", "취소", "반품", "교환"
+    ],
+    "mapping": {
+      "pending": "주문 접수",
+      "paid": "결제 완료",
+      "preparing": "상품 준비중",
+      "shipped": "배송 중",
+      "delivered": "배송 완료",
+      "cancelled": "취소",
+      "refunded": "환불 완료"
+    }
+  },
+  
+  "cancel_reason": {
+    "description": "취소 사유",
+    "values": [
+      "단순 변심",
+      "상품 정보 상이",
+      "배송지 변경",
+      "다른 상품 구매",
+      "가격 변동",
+      "색상/사이즈 변경",
+      "중복 주문",
+      "결제 오류"
+    ]
+  },
+  
+  "return_reason": {
+    "description": "반품/교환 사유",
+    "values": [
+      "사이즈 불만족",
+      "색상 불만족",
+      "제품 불량/하자",
+      "오배송",
+      "상품 정보 상이",
+      "단순 변심",
+      "배송 중 파손",
+      "기타"
+    ]
+  },
+  
+  "payment_method": {
+    "description": "결제 수단",
+    "values": [
+      "신용카드",
+      "체크카드",
+      "계좌이체",
+      "무통장입금",
+      "카카오페이",
+      "네이버페이",
+      "토스",
+      "페이코"
+    ]
+  },
+  
+  "point_amount": {
+    "description": "포인트 금액",
+    "patterns": [
+      "{amount}P",
+      "{amount}원",
+      "{amount}포인트"
+    ],
+    "ranges": {
+      "small": [1000, 5000],
+      "medium": [5000, 10000],
+      "large": [10000, 50000]
+    },
+    "real_data_source": "users.points"
+  },
+  
+  "period": {
+    "description": "기간 표현",
+    "values": [
+      "7일 이내",
+      "14일 이내",
+      "30일 이내",
+      "1주일",
+      "2주일",
+      "1개월",
+      "3개월",
+      "6개월",
+      "1년"
+    ]
+  }
+}
