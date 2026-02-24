@@ -148,7 +148,11 @@ async def chat_streaming_endpoint(
 
                 # B. 도구 실행 시작 (상태 메시지)
                 elif event_type == "on_tool_start":
-                    run_logger.log_tool_start(event.get("name", "unknown_tool"), event.get("data", {}).get("input"))
+                    tool_start_data = event.get("data", {})
+                    run_logger.log_tool_start(
+                        event.get("name", "unknown_tool"),
+                        tool_start_data.get("input") if tool_start_data.get("input") is not None else tool_start_data,
+                    )
                     status_msg = TOOL_STATUS_MESSAGES.get(event["name"])
                     if status_msg:
                         yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg}, ensure_ascii=False)}\n\n"
@@ -159,7 +163,11 @@ async def chat_streaming_endpoint(
                     if node_name == "LangGraph":
                         last_langgraph_input = event.get("data", {}).get("input")
                     else:
-                        run_logger.log_node_start(node_name or "unknown_node", event.get("data", {}).get("input"))
+                        node_start_data = event.get("data", {})
+                        run_logger.log_node_start(
+                            node_name or "unknown_node",
+                            node_start_data.get("input") if node_start_data.get("input") is not None else node_start_data,
+                        )
                     status_msg = NODE_STATUS_MESSAGES.get(node_name)
                     if status_msg:
                         yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg, 'node': node_name}, ensure_ascii=False)}\n\n"
@@ -167,16 +175,28 @@ async def chat_streaming_endpoint(
                 # B-2. 모델 호출 시작 (모델 실행 단계 표시)
                 elif event_type == "on_chat_model_start":
                     model_name = event.get("name") or "chat_model"
-                    run_logger.log_model_start(model_name, event.get("data", {}).get("input"))
+                    model_start_data = event.get("data", {})
+                    run_logger.log_model_start(
+                        model_name,
+                        model_start_data.get("input") if model_start_data.get("input") is not None else model_start_data,
+                    )
                     status_msg = f"모델이 응답을 생성하고 있습니다... ({model_name})"
                     yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg, 'model': model_name}, ensure_ascii=False)}\n\n"
 
                 elif event_type == "on_chat_model_end":
-                    run_logger.log_model_end(event.get("name") or "chat_model", event.get("data", {}).get("output"))
+                    model_end_data = event.get("data", {})
+                    run_logger.log_model_end(
+                        event.get("name") or "chat_model",
+                        model_end_data.get("output") if model_end_data.get("output") is not None else model_end_data,
+                    )
 
                 # C. 도구 실행 완료 (UI 액션)
                 elif event_type == "on_tool_end":
-                    run_logger.log_tool_end(event.get("name", "unknown_tool"), event.get("data", {}).get("output"))
+                    tool_end_data = event.get("data", {})
+                    run_logger.log_tool_end(
+                        event.get("name", "unknown_tool"),
+                        tool_end_data.get("output") if tool_end_data.get("output") is not None else tool_end_data,
+                    )
                     tool_output = _parse_tool_output(event["data"].get("output"))
                     
                     if tool_output and tool_output.get("ui_action"):
@@ -195,7 +215,11 @@ async def chat_streaming_endpoint(
                     if isinstance(last_langgraph_input, dict) and isinstance(final_state, dict):
                         run_logger.log_state_change(last_langgraph_input, final_state)
                 elif event_type == "on_chain_end":
-                    run_logger.log_node_end(event.get("name") or "unknown_node", event.get("data", {}).get("output"))
+                    node_end_data = event.get("data", {})
+                    run_logger.log_node_end(
+                        event.get("name") or "unknown_node",
+                        node_end_data.get("output") if node_end_data.get("output") is not None else node_end_data,
+                    )
 
             # 3. 메타데이터 전송
             if final_state:
