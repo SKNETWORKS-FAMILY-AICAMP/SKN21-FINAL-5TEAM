@@ -8,7 +8,6 @@ from uuid import uuid4
 from langchain_core.messages import ToolMessage, AIMessage, SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import ToolNode
-from langsmith import traceable
 from pydantic import BaseModel, Field, SecretStr
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
@@ -844,7 +843,6 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
     return {"task": TaskType.GENERAL_CHAT.value, "result": {"message": "일반 대화로 처리합니다."}}
 
 
-@traceable(run_type="chain", name="Input Decomposer Node")
 def decomposer_node(state: AgentState):
     """
     사용자 발화를 Task List(Pydantic) 형태로 분해합니다.
@@ -1230,7 +1228,6 @@ def _compress_messages_for_context(messages: List, provider: str, model_name: st
         return [HumanMessage(content=f"[conversation_summary]\n{summary}")] + cleared
     return cleared
 
-@traceable(run_type="chain", name="Agent Node (Tool Calling)")
 def agent_node(state: AgentState):
     """
     LLM이 대화 히스토리와 도구 목록을 보고 답변하거나 도구를 호출합니다.
