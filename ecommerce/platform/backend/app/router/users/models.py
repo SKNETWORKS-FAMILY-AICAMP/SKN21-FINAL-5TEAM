@@ -147,6 +147,12 @@ class User(Base):
         cascade="all, delete-orphan"
     )
 
+    shipping_addresses: Mapped[List["ShippingAddress"]] = relationship(
+        "ShippingAddress",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
 
 class UserBodyMeasurement(Base):
     """사용자 신체 치수"""
