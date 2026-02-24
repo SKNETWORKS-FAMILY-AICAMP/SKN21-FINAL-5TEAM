@@ -21,7 +21,7 @@ export default function MyPage() {
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
+    fetch("${process.env.NEXT_PUBLIC_API_URL}/users/me", {
       credentials: "include",
     })
       .then(async (res) => {
@@ -73,7 +73,7 @@ export default function MyPage() {
   });
 
   const handleSaveProfile = async () => {
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
+    await fetch("${process.env.NEXT_PUBLIC_API_URL}/users/me", {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -94,7 +94,7 @@ export default function MyPage() {
   const handleSavePassword = async () => {
     if (passwordForm.newPassword !== passwordForm.confirmPassword) return;
 
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me/password`, {
+    await fetch("${process.env.NEXT_PUBLIC_API_URL}/users/me/password", {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -117,7 +117,7 @@ export default function MyPage() {
   });
 
   const handleSaveAlarm = async () => {
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
+    await fetch("${process.env.NEXT_PUBLIC_API_URL}/users/me", {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -149,7 +149,7 @@ export default function MyPage() {
 
   const loadBodyMeasurement = async () => {
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/users/me/body-measurement`,
+      "${process.env.NEXT_PUBLIC_API_URL}/users/me/body-measurement",
       { credentials: "include" }
     );
     if (!res.ok) return;
@@ -167,7 +167,7 @@ export default function MyPage() {
   };
 
   const handleSaveStyle = async () => {
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me/body-measurement`, {
+    await fetch("${process.env.NEXT_PUBLIC_API_URL}/users/me/body-measurement", {
       method: "PUT",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -182,7 +182,7 @@ export default function MyPage() {
   const [withdrawReason, setWithdrawReason] = useState("");
 
   const handleWithdraw = async () => {
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
+    await fetch("${process.env.NEXT_PUBLIC_API_URL}/users/me", {
       method: "DELETE",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -195,7 +195,7 @@ export default function MyPage() {
      로그아웃
   ========================= */
   const handleLogout = async () => {
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/logout`, {
+    await fetch("${process.env.NEXT_PUBLIC_API_URL}/users/logout", {
       method: "POST",
       credentials: "include",
     });
@@ -338,6 +338,13 @@ export default function MyPage() {
             <div className={styles.shortcutValue}>충전하기</div>
           </button>
 
+          <button className={styles.shortcutItem}>
+            <div className={styles.shortcutTitle}>
+              <span>쿠폰</span>
+              <span className={styles.arrow}>›</span>
+            </div>
+            <div className={styles.shortcutValue}>2장</div>
+          </button>
         </section>
 
        {/* ===== Menu List ===== */}
@@ -353,7 +360,8 @@ export default function MyPage() {
             <li onClick={() => router.push("/shipping")} style={{ cursor: "pointer" }}>
               배송지 관리
             </li>
-            <li>유즈드</li>
+            <li onClick={() => router.push("/used")} style={{ cursor: "pointer" }}>
+             유즈드</li>
 
             <li onClick={() => setOpenModal("style")} style={{ cursor: "pointer" }}>
               나의 맞춤 정보(체형)
@@ -376,6 +384,13 @@ export default function MyPage() {
               style={{ cursor: "pointer", color: "#e53935" }}
             >
               회원탈퇴
+            </li>
+
+            <li
+              onClick={() => router.push("/mypage/ask")}
+              style={{ cursor: "pointer" }}
+            >
+              1:1 문의 내역
             </li>
           </ul>
         </section>

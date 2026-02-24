@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import styles from './page.module.css';
@@ -44,8 +45,6 @@ export default function HomePage() {
   const [selectedSizeLabelByProduct, setSelectedSizeLabelByProduct] =
     useState<Record<number, string>>({});
 
-  const [imageMap, setImageMap] = useState<Record<number, string>>({});
-
   // ===========================
   // 상품 DB에서 불러오기
   // ===========================
@@ -63,27 +62,6 @@ export default function HomePage() {
 
     fetchProducts();
   }, []);
-
-  useEffect(() => {
-    const fetchImages = async () => {
-      const newMap: Record<number, string> = {};
-      await Promise.all(
-        products.map(async (p) => {
-          try {
-            const res = await fetch(`${API_BASE}/products/images/new/${p.id}`);
-            if (!res.ok) return;
-            const images = await res.json();
-            const primary = images.find((img: any) => img.is_primary);
-            if (primary || images[0]) {
-              newMap[p.id] = (primary || images[0]).image_url;
-            }
-          } catch {}
-        })
-      );
-      setImageMap(newMap);
-    };
-    if (products.length > 0) fetchImages();
-  }, [products]);
 
   // ===========================
   // 로그인 & 유저 정보
@@ -205,25 +183,6 @@ export default function HomePage() {
           return;
         }
 
-        const cartItem = await res.json();
-
-        // User History에 장바구니 추가 기록
-        try {
-          await fetch(`${API_BASE}/user-history/users/${user!.id}/track/cart-action`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action_type: 'cart_add',
-              cart_item_id: cartItem.id,
-              product_option_type: 'new',
-              product_option_id: optionId,
-              quantity: 1,
-            }),
-          });
-        } catch (err) {
-          console.error('Failed to track cart action:', err);
-        }
-
         if (goPayment) {
           router.push('/payment');
         } else {
@@ -267,20 +226,19 @@ export default function HomePage() {
                   }
                 >
                   <div className={styles.productImage}>
-                    {imageMap[product.id] && (
-                      <img
-                        src={imageMap[product.id]}
-                        alt={product.name}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    )}
+                    <Image
+                      src={`/products/${product.id}.jpg`}
+                      alt={product.name}
+                      fill
+                      style={{ objectFit: 'cover' }}
+                    />
                   </div>
 
                   <div className={styles.productInfo}>
                     <p>상품명</p>
                     <p>{product.name}</p>
                     <p>
-                      가격 {product.price?.toLocaleString()}원
+                      가격 {Math.round(product.price ?? 0).toLocaleString()}원
                     </p>
                   </div>
                 </div>

@@ -1,0 +1,25 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# 시스템 의존성 (PyMySQL, cryptography 빌드용)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv 설치
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# 의존성 먼저 복사 (캐시 활용)
+COPY pyproject.toml uv.lock ./
+
+# 의존성 설치
+RUN uv sync --frozen --no-dev
+
+# 소스 코드 복사
+COPY . .
+
+EXPOSE 8000
+
+CMD ["uv", "run", "uvicorn", "ecommerce.platform.backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]

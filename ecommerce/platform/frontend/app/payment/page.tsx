@@ -167,7 +167,7 @@ export default function PaymentPage() {
   const { user, isLoggedIn } = useAuth();
   const [imageMap, setImageMap] = useState<Record<number, string>>({});
 
-  const API_BASE = "http://localhost:8000";
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL;
   const PAYMENT_METHOD = "card"; // 고정: 신용카드만 가능
 
   // ==================== User History 기록 함수 ====================
