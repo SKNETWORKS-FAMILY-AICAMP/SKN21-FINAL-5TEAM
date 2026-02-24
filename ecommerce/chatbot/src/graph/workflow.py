@@ -1,17 +1,14 @@
 
 from langgraph.graph import StateGraph, START, END
 from ecommerce.chatbot.src.graph.state import AgentState
-# Import new nodes from nodes_v3
 from ecommerce.chatbot.src.graph.nodes_v2 import (
     decomposer_node,
-    orchestrator_node,
-    route_after_orchestration,
-    sequential_worker_node,
-    parallel_worker_node,
+    route_after_decomposer,
+    fixed_worker_node,
     route_after_workers,
-    agent_node, 
-    tool_node, 
-    should_continue, 
+    agent_node,
+    tool_node,
+    should_continue,
     process_output_node,
     smart_validation_node,
     human_approval_node,
@@ -22,18 +19,16 @@ from ecommerce.chatbot.src.graph.nodes_v2 import (
 
 def create_graph():
     """
-    저성능 모델 친화형 워크플로우를 생성합니다.
+    고정 실행 전략 워크플로우
     구조:
-    START -> Decomposer -> Orchestrator -> (Sequential/Parallel Workers or Agent)
-          -> Validation -> Approval -> Tools -> (Agent or Output) -> End
+    START -> Decomposer -> (Fixed Worker | Agent)
+        -> Validation -> Approval -> Tools -> (Agent | Output) -> End
     """
     workflow = StateGraph(AgentState)
 
     # 1. 노드 등록
     workflow.add_node("decomposer", decomposer_node)
-    workflow.add_node("orchestrator", orchestrator_node)
-    workflow.add_node("sequential_worker", sequential_worker_node)
-    workflow.add_node("parallel_worker", parallel_worker_node)
+    workflow.add_node("fixed_worker", fixed_worker_node)
     workflow.add_node("agent", agent_node)
     workflow.add_node("validation", smart_validation_node)
     workflow.add_node("approval", human_approval_node)
@@ -42,31 +37,20 @@ def create_graph():
 
     # 2. 엣지 연결
     workflow.add_edge(START, "decomposer")
-    workflow.add_edge("decomposer", "orchestrator")
 
-    # [Orchestrator -> Worker/Agent]
+    # [Decomposer -> Fixed Worker/Agent]
     workflow.add_conditional_edges(
-        "orchestrator",
-        route_after_orchestration,
+        "decomposer",
+        route_after_decomposer,
         {
-            "sequential_worker": "sequential_worker",
-            "parallel_worker": "parallel_worker",
+            "fixed_worker": "fixed_worker",
             "agent": "agent",
         }
     )
 
-    # [Workers -> Validation or Process Output]
+    # [Fixed Worker -> Validation or Process Output]
     workflow.add_conditional_edges(
-        "sequential_worker",
-        route_after_workers,
-        {
-            "validation": "validation",
-            "process_output": "process_output",
-        }
-    )
-
-    workflow.add_conditional_edges(
-        "parallel_worker",
+        "fixed_worker",
         route_after_workers,
         {
             "validation": "validation",
@@ -120,7 +104,6 @@ def create_graph():
         }
     )
     
-    # [Process Output -> End]
     workflow.add_edge("process_output", END)
 
     return workflow.compile()
