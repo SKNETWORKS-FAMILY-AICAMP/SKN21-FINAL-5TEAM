@@ -51,6 +51,7 @@ type AddressSelectionPayload = {
 };
 
 type ChatMsg = TextMessage | OrderListMessage | ConfirmationMessage | AddressSearchMessage;
+type LlmProvider = 'openai' | 'huggingface';
 
 type DaumPostcodeData = {
   roadAddress?: string;
@@ -69,6 +70,9 @@ declare global {
 }
 
 const API_BASE_URL = 'http://localhost:8000';
+
+const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4.1'] as const;
+const HF_MODELS = ['Qwen/Qwen3-0.6B', 'Qwen/Qwen2.5-1.5B-Instruct'] as const;
 
 const MIN_W = 340;
 const MIN_H = 420;
@@ -224,6 +228,27 @@ export default function ChatbotFab() {
   const panelRef = useRef<HTMLElement | null>(null);
   const [panelSize, setPanelSize] = useState({ w: 400, h: 560 });
   const isResizing = useRef(false);
+  const [provider, setProvider] = useState<LlmProvider>('openai');
+  const [selectedModel, setSelectedModel] = useState<string>(OPENAI_MODELS[0]);
+
+  useEffect(() => {
+    const storedProvider = localStorage.getItem('chatbot_llm_provider');
+    const storedModel = localStorage.getItem('chatbot_llm_model');
+
+    if (storedProvider === 'openai' || storedProvider === 'huggingface') {
+      setProvider(storedProvider);
+      if (storedModel && storedModel.trim().length > 0) {
+        setSelectedModel(storedModel);
+      } else {
+        setSelectedModel(storedProvider === 'openai' ? OPENAI_MODELS[0] : HF_MODELS[0]);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('chatbot_llm_provider', provider);
+    localStorage.setItem('chatbot_llm_model', selectedModel);
+  }, [provider, selectedModel]);
 
   useEffect(() => {
     // 메시지 추가될 때 항상 아래로 스크롤
@@ -310,6 +335,8 @@ export default function ChatbotFab() {
         body: JSON.stringify({
           message: text,
           previous_state: conversationState,
+          provider,
+          model: selectedModel,
         }),
       });
 
@@ -515,7 +542,40 @@ export default function ChatbotFab() {
         <div className={styles.resizeHandle} onMouseDown={onResizeStart} />
 
         <header className={styles.panelHeader}>
-          <div className={styles.title}>MOYEO 챗봇</div>
+          <div className={styles.headerLeft}>
+            <div className={styles.title}>MOYEO 챗봇</div>
+            <div className={styles.modelControls}>
+              <select
+                className={styles.modelSelect}
+                value={provider}
+                onChange={(e) => {
+                  const nextProvider = e.target.value as LlmProvider;
+                  setProvider(nextProvider);
+                  setSelectedModel(nextProvider === 'openai' ? OPENAI_MODELS[0] : HF_MODELS[0]);
+                }}
+                disabled={isLoading}
+                aria-label="모델 제공자 선택"
+              >
+                <option value="openai">OpenAI</option>
+                <option value="huggingface">Hugging Face (Local)</option>
+              </select>
+
+              <select
+                className={styles.modelSelect}
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                disabled={isLoading}
+                aria-label="모델 선택"
+              >
+                {(provider === 'openai' ? OPENAI_MODELS : HF_MODELS).map((modelName) => (
+                  <option key={modelName} value={modelName}>
+                    {modelName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <button type="button" className={styles.closeBtn} onClick={toggle} aria-label="닫기">
             ✕
           </button>

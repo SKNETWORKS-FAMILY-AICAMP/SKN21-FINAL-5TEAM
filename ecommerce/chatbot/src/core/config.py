@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str
     OPENAI_MODEL: str = "gpt-4o-mini"  # Default to 4o
+
+    # Runtime LLM routing
+    LLM_PROVIDER: str = "openai"  # openai | huggingface
+    HF_MODEL_ID: str = "Qwen/Qwen3-0.6B"
+
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIM: int = 1536
 
