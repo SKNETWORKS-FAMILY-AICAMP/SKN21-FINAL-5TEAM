@@ -29,7 +29,6 @@ class AgentState(TypedDict):
     # 4. 액션 제어 및 도구 실행 결과
     tool_outputs: List[Dict[str, Any]]
     task_list: List[Dict[str, Any]]          # Decomposer가 추출한 작업 목록
-    execution_plan: Dict[str, Any]           # Orchestrator가 결정한 실행 계획
     task_results: List[Dict[str, Any]]       # Worker 실행 결과 누적
     
     # 5. [Refactored State] Structured Task Context
