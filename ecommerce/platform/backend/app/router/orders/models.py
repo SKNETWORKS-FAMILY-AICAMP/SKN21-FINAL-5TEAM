@@ -116,7 +116,8 @@ class Order(Base):
     )
     user_history: Mapped[List["UserHistory"]] = relationship(
         "UserHistory",
-        back_populates="order"
+        back_populates="order",
+        cascade="all, delete-orphan"
     )
 
 # ============================================
