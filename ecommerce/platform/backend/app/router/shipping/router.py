@@ -95,11 +95,12 @@ def create_shipping_info(
     if existing:
         raise HTTPException(status_code=400, detail="해당 주문에 이미 배송 정보가 존재합니다.")
 
-    # 주문 상태를 '상품 준비중'으로 변경
+    # 주문 상태를 '상품 준비중'으로 변경 (취소/환불 상태는 유지)
     order = db.query(Order).filter(Order.id == data.order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
-    order.status = OrderStatus.PREPARING
+    if order.status not in (OrderStatus.CANCELLED, OrderStatus.REFUNDED):
+        order.status = OrderStatus.PREPARING
 
     shipping_info = crud.create_shipping_info(db, data)
     return shipping_info

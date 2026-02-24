@@ -26,6 +26,7 @@ interface OrderItem {
   unit_price: string;
   subtotal: string;
   created_at: string;
+  product_id?: number; // 상품 ID (백엔드에서 제공)
   product_name?: string; // 상품명 (백엔드에서 제공)
   product_brand?: string; // 브랜드 (카테고리명)
   product_size?: string; // 사이즈
@@ -119,6 +120,7 @@ export default function OrdersPage() {
   const [hoverRating, setHoverRating] = useState(0);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
   const {user, isLoggedIn } = useAuth();
+  const [imageMap, setImageMap] = useState<Record<string, string>>({});
 
   // ==================== 리뷰 맵 (order_item_id → ReviewData) ====================
   const [reviewMap, setReviewMap] = useState<Record<number, ReviewData>>({});
@@ -223,6 +225,28 @@ export default function OrdersPage() {
 
       const data: OrderListResponse = await response.json();
       setOrders(data.orders);
+
+      // productimages 테이블에서 이미지 가져오기
+      const allItems = data.orders.flatMap(order => order.items);
+      const uniqueItems = allItems.filter((item, idx, arr) =>
+        item.product_id && arr.findIndex(i => i.product_id === item.product_id && i.product_option_type === item.product_option_type) === idx
+      );
+      const newMap: Record<string, string> = {};
+      await Promise.all(
+        uniqueItems.map(async (item) => {
+          if (!item.product_id) return;
+          try {
+            const imgRes = await fetch(`${API_BASE}/products/images/${item.product_option_type}/${item.product_id}`);
+            if (!imgRes.ok) return;
+            const images = await imgRes.json();
+            const primary = images.find((img: any) => img.is_primary);
+            if (primary || images[0]) {
+              newMap[`${item.product_option_type}_${item.product_id}`] = (primary || images[0]).image_url;
+            }
+          } catch {}
+        })
+      );
+      setImageMap(prev => ({ ...prev, ...newMap }));
     } catch (err) {
       console.error("Failed to fetch orders:", err);
       setError(err instanceof Error ? err.message : "알 수 없는 오류");
@@ -576,14 +600,12 @@ export default function OrdersPage() {
                 {order.items.map((item) => (
                   <div key={item.id} className={styles.orderItem}>
                     <div className={styles.itemImage}>
-                      <img
-                        src="/placeholder-product.png"
-                        alt="상품 이미지"
-                        onError={(e) => {
-                          e.currentTarget.src =
-                            "https://via.placeholder.com/80";
-                        }}
-                      />
+                      {imageMap[`${item.product_option_type}_${item.product_id}`] && (
+                        <img
+                          src={imageMap[`${item.product_option_type}_${item.product_id}`]}
+                          alt={item.product_name || '상품 이미지'}
+                        />
+                      )}
                     </div>
                     <div className={styles.itemInfo}>
                       <div className={styles.itemBrand}>

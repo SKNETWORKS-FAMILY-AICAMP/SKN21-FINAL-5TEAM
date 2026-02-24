@@ -21,6 +21,7 @@ interface ProductOptionInfo {
 
 interface ProductInfo {
   id: number;
+  product_id: number;  // 실제 상품 ID (이미지 조회용)
   name: string;
   brand: string;
   price: string;
@@ -164,6 +165,7 @@ export default function PaymentPage() {
   const [pointsToUse, setPointsToUse] = useState<string>("0");
   const [shippingRequest, setShippingRequest] = useState<string>("");
   const { user, isLoggedIn } = useAuth();
+  const [imageMap, setImageMap] = useState<Record<number, string>>({});
 
   const API_BASE = "http://localhost:8000";
   const PAYMENT_METHOD = "card"; // 고정: 신용카드만 가능
@@ -239,6 +241,24 @@ export default function PaymentPage() {
 
       const data: CartDetailWithSummary = await response.json();
       setCartData(data);
+
+      // productimages 테이블에서 이미지 가져오기
+      const newMap: Record<number, string> = {};
+      await Promise.all(
+        data.cart.items.map(async (item) => {
+          const productType = item.product.is_used ? 'used' : 'new';
+          try {
+            const imgRes = await fetch(`${API_BASE}/products/images/${productType}/${item.product.product_id}`);
+            if (!imgRes.ok) return;
+            const images = await imgRes.json();
+            const primary = images.find((img: any) => img.is_primary);
+            if (primary || images[0]) {
+              newMap[item.product.product_id] = (primary || images[0]).image_url;
+            }
+          } catch {}
+        })
+      );
+      setImageMap(prev => ({ ...prev, ...newMap }));
 
       console.log("Cart loaded:", data);
     } catch (err) {
@@ -706,7 +726,7 @@ export default function PaymentPage() {
               <div key={item.id} className={styles.cartItem}>
                 <div style={{ width: "80px", height: "80px", marginRight: "12px" }}>
                   <img
-                    src={item.product.image}
+                    src={imageMap[item.product.product_id] || item.product.image}
                     alt={item.product.name}
                     style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "4px" }}
                   />

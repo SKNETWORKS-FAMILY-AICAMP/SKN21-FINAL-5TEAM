@@ -538,6 +538,7 @@ def get_product_info_for_item(db: Session, item: models.OrderItem) -> dict:
         }
     """
     default_info = {
+        "product_id": None,
         "product_name": f"상품 옵션 ID: {item.product_option_id}",
         "product_brand": None,
         "product_size": None,
@@ -556,6 +557,7 @@ def get_product_info_for_item(db: Session, item: models.OrderItem) -> dict:
 
             if option and option.product:
                 return {
+                    "product_id": option.product.id,
                     "product_name": option.product.name,
                     "product_brand": option.product.category.name if option.product.category else None,
                     "product_size": option.size_name,
@@ -577,6 +579,7 @@ def get_product_info_for_item(db: Session, item: models.OrderItem) -> dict:
                     condition_name = option.used_product.condition.condition_name
 
                 return {
+                    "product_id": option.used_product.id,
                     "product_name": option.used_product.name,
                     "product_brand": option.used_product.category.name if option.used_product.category else None,
                     "product_size": option.size_name,
@@ -632,6 +635,7 @@ def enrich_order_with_product_names(db: Session, order: models.Order) -> dict:
             "unit_price": str(item.unit_price),
             "subtotal": str(item.subtotal),
             "created_at": item.created_at.isoformat(),
+            "product_id": product_info["product_id"],
             "product_name": product_info["product_name"],
             "product_brand": product_info["product_brand"],
             "product_size": product_info["product_size"],
