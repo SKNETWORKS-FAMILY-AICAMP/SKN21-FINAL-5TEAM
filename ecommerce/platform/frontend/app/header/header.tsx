@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import styles from './header.module.css';
 import Link from 'next/link';
 import { useAuth } from '../authcontext';
@@ -11,91 +11,83 @@ const ADMIN_MENU = [
   { title: '배송정보 작성', href: '/admin/shipping' },
 ];
 
-const CATEGORY = [
-  {
-    title: '의류',
-    items: [
-      '상의',
-      '하의',
-      '원피스',
-      '이너웨어',
-      '라운지웨어 / 나이트웨어',
-      '의류 세트',
-      '사리',
-      '양말',
-    ],
-  },
-  {
-    title: '신발',
-    items: [
-      '슈즈',
-      '슬리퍼',
-      '샌들',
-    ],
-  },
-  {
-    title: '잡화',
-    items: [
-      '가방',
-      '시계',
-      '지갑',
-      '주얼리',
-      '선글라스',
-      '벨트',
-      '스카프',
-      '장갑',
-      '모자',
-      '커프링크',
-      '신발 액세서리',
-      '물병',
-      '기타 잡화',
-    ],
-  },
-  {
-    title: '퍼스널 케어',
-    items: [
-      '향수',
-      '네일',
-      '립',
-      '메이크업',
-      '스킨',
-      '스킨 케어',
-      '헤어',
-      '바디',
-      '뷰티 액세서리',
-    ],
-  },
-  {
-    title: '스포츠 용품',
-    items: [
-      '스포츠 장비',
-      '손목밴드',
-    ],
-  },
-  {
-    title: '홈',
-    items: [
-      '홈 패브릭',
-    ],
-  },
-  {
-    title: '기타',
-    items: [
-      '사은품',
-      '바우처',
-    ],
-  },
-];
+interface CategoryItem {
+  id: number;
+  name: string;
+}
+
+interface CategoryGroup {
+  id: number;
+  name: string;
+  children: CategoryItem[];
+}
+
+interface UiCategory {
+  title: string;
+  items: CategoryItem[];
+}
 
 export default function Header() {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<number | null>(null);
+  const [categories, setCategories] = useState<UiCategory[]>([]);
+  const [keyword, setKeyword] = useState('');
   const pathname = usePathname();
+  const router = useRouter();
 
-  // 🔑 전역 로그인 상태 (Context)
   const { isLoggedIn } = useAuth();
-
   const isAdmin = pathname.startsWith('/admin');
+
+  /* =========================
+     카테고리 DB 연동
+  ========================== */
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const res = await fetch(
+          'http://localhost:8000/products/categories/menu'
+        );
+
+        if (!res.ok) {
+          throw new Error('카테고리 응답 실패');
+        }
+
+        const data: CategoryGroup[] = await res.json();
+
+        // 기존 CATEGORY 구조와 동일하게 변환
+        const mapped: UiCategory[] = data.map((parent) => ({
+          title: parent.name,
+          items: parent.children ?? [],
+        }));
+
+        setCategories(mapped);
+      } catch (err) {
+        console.error('카테고리 로딩 실패:', err);
+      }
+    };
+
+    fetchCategories();
+  }, []);
+
+  /* =========================
+     검색 처리
+  ========================== */
+
+  const handleSearch = () => {
+    if (!keyword.trim()) return;
+    router.push(`/products?keyword=${encodeURIComponent(keyword)}`);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
+  /* =========================
+     관리자 헤더
+  ========================== */
 
   if (isAdmin) {
     return (
@@ -127,7 +119,9 @@ export default function Header() {
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  className={pathname === item.href ? styles.adminMenuActive : ''}
+                  className={
+                    pathname === item.href ? styles.adminMenuActive : ''
+                  }
                   onClick={() => setOpen(false)}
                 >
                   {item.title}
@@ -140,6 +134,10 @@ export default function Header() {
     );
   }
 
+  /* =========================
+     일반 헤더
+  ========================== */
+
   return (
     <>
       <header className={styles.header}>
@@ -147,27 +145,54 @@ export default function Header() {
           <button className={styles.menu} onClick={() => setOpen(true)}>
             ☰
           </button>
-          <Link href="/" className={styles.logo}>
-            MOYEO
-          </Link>
+
+          <div className={styles.brand}>
+            <Link
+              href="/"
+              className={`${styles.logo} ${
+                !pathname.startsWith('/used') ? styles.activeBrand : ''
+              }`}
+            >
+              MOYEO
+            </Link>
+
+            <span className={styles.divider}>|</span>
+
+            <Link
+              href="/used"
+              className={`${styles.logo} ${
+                pathname.startsWith('/used') ? styles.activeBrand : ''
+              }`}
+            >
+              USED
+            </Link>
+          </div>
+        </div>
+
+        {/* 검색창 추가 */}
+        <div className={styles.searchWrapper}>
+          <input
+            type="text"
+            placeholder="상품명을 검색하세요"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className={styles.searchInput}
+          />
         </div>
 
         <nav className={styles.right}>
-          <Link href="/search">검색</Link>
           <Link href="/like">좋아요</Link>
           <Link href="/mypage">마이</Link>
           <Link href="/cart">장바구니</Link>
 
-          {/* ✅ 새로고침 없이 즉시 반영 */}
           {!isLoggedIn && <Link href="/auth/login">로그인</Link>}
           {isLoggedIn && <Link href="/auth/logout">로그아웃</Link>}
         </nav>
       </header>
 
-      {/* Overlay */}
       {open && <div className={styles.overlay} onClick={() => setOpen(false)} />}
 
-      {/* Sidebar */}
       <aside className={`${styles.sidebar} ${open ? styles.open : ''}`}>
         <div className={styles.sidebarHeader}>
           <span>카테고리</span>
@@ -175,7 +200,7 @@ export default function Header() {
         </div>
 
         <ul className={styles.category}>
-          {CATEGORY.map((cat, idx) => (
+          {categories.map((cat, idx) => (
             <li key={cat.title}>
               <button
                 className={styles.categoryTitle}
@@ -188,12 +213,12 @@ export default function Header() {
               {active === idx && (
                 <ul className={styles.subCategory}>
                   {cat.items.map((item) => (
-                    <li key={item}>
+                    <li key={item.id}>
                       <Link
-                        href={`/products?category=${encodeURIComponent(item)}`}
+                        href={`/products?category_id=${item.id}`}
                         onClick={() => setOpen(false)}
                       >
-                        {item}
+                        {item.name}
                       </Link>
                     </li>
                   ))}

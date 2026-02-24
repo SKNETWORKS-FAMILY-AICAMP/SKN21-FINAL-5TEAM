@@ -360,9 +360,8 @@ export default function MyPage() {
             <li onClick={() => router.push("/shipping")} style={{ cursor: "pointer" }}>
               배송지 관리
             </li>
-            <li>재입고 알림 내역</li>
-            <li>최근 본 상품</li>
-            <li>유즈드</li>
+            <li onClick={() => router.push("/used")} style={{ cursor: "pointer" }}>
+             유즈드</li>
 
             <li onClick={() => setOpenModal("style")} style={{ cursor: "pointer" }}>
               나의 맞춤 정보(체형)
