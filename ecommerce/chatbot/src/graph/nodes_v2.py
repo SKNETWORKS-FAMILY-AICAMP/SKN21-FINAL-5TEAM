@@ -14,11 +14,14 @@ import torch
 
 from ecommerce.chatbot.src.graph.state import AgentState
 from ecommerce.chatbot.src.core.config import settings
-from ecommerce.chatbot.src.prompts.system_prompts import ECOMMERCE_SYSTEM_PROMPT
+from ecommerce.chatbot.src.prompts.system_prompts import get_ecommerce_system_prompt
 from ecommerce.chatbot.src.prompts.agent_prompts import (
-    TOOL_USAGE_INSTRUCTIONS,
-    CONTEXT_SUMMARY_SYSTEM_PROMPT,
-    APPROVAL_CHECK_PROMPT_TEMPLATE,
+    get_tool_usage_instructions,
+    get_context_summary_system_prompt,
+    get_approval_check_prompt_template,
+    get_decomposer_prompt,
+    get_worker_response_prompt_template,
+    get_hf_decomposer_prompt_template,
 )
 
 # Import Tools
@@ -112,31 +115,6 @@ class TaskItem(BaseModel):
 
 class DecompositionResult(BaseModel):
     tasks: List[TaskItem] = Field(default_factory=list)
-
-
-DECOMPOSER_PROMPT = """
-당신은 사용자 요청을 실행 가능한 작업 목록으로 분해하는 Planner입니다.
-반드시 JSON 스키마(DecompositionResult)에 맞춰 응답하세요.
-
-작업 타입 정의:
-- ORDER_QUERY: 주문/배송/주문내역 조회
-- POLICY_CHECK: 환불/반품/교환/결제/배송 정책 확인
-- FAQ_RETRIEVAL: 일반 FAQ/정보 검색
-- ORDER_ACTION: 취소/환불/교환/결제수단변경 같은 실제 액션
-- GENERAL_CHAT: 위에 해당하지 않는 일반 대화
-
-규칙:
-1) 복합 요청이면 여러 작업으로 분해하세요.
-2) args에는 필요한 최소 파라미터만 넣으세요.
-3) order_id가 없는데 환불/취소/교환을 요청하면 ORDER_ACTION으로 넣되 args에 action만 넣어도 됩니다.
-4) 반드시 tasks 배열을 반환하세요. 비어 있으면 GENERAL_CHAT 1개를 반환하세요.
-5) 하나 이상의 실행 가능한 작업(ORDER_ACTION/ORDER_QUERY/POLICY_CHECK/FAQ_RETRIEVAL)이 있으면 GENERAL_CHAT을 함께 넣지 마세요.
-6) [현재 작업 상태]가 refund/exchange 이고 status가 validating 또는 approving이며 target_id가 존재하면,
-   사용자의 최신 발화가 이전 절차를 "계속 진행"하려는 맥락인지 우선 판단하세요.
-   이 경우 다음 단계는 ORDER_ACTION 하나만 반환하고 args는 action='address_search', order_id=target_id 로 설정하세요.
-7) 이전 Assistant가 이미 "반품/교환 진행 여부"를 질문했고 사용자가 진행 의사를 보인 턴이라면,
-   환불 가능 여부 재확인(action='refund')으로 되돌아가지 말고 주소 수집 단계(action='address_search')로 진행하세요.
-"""
 
 
 def _get_last_user_message(messages: List) -> str:
@@ -432,6 +410,8 @@ def _decompose_tasks(
     state: Optional[AgentState] = None,
 ) -> List[Dict[str, Any]]:
     provider, model_name = _resolve_llm_config(state)
+    decomposer_prompt = get_decomposer_prompt(provider=provider, model_name=model_name)
+    hf_decomposer_prompt_template = get_hf_decomposer_prompt_template(provider=provider, model_name=model_name)
 
     conversation_context = _build_decomposer_context(messages)
     task_context = ""
@@ -454,7 +434,7 @@ def _decompose_tasks(
 
         # 1차 시도
         parsed = structured_llm.invoke([
-            SystemMessage(content=DECOMPOSER_PROMPT),
+            SystemMessage(content=decomposer_prompt),
             HumanMessage(content=decomposer_input),
         ])
         tasks = parsed.tasks if isinstance(parsed, DecompositionResult) else []
@@ -466,18 +446,14 @@ def _decompose_tasks(
                 f"사용자 요청: {decomposer_input[:4000]}"
             )
             parsed = structured_llm.invoke([
-                SystemMessage(content=DECOMPOSER_PROMPT),
+                SystemMessage(content=decomposer_prompt),
                 HumanMessage(content=retry_msg),
             ])
             tasks = parsed.tasks if isinstance(parsed, DecompositionResult) else []
     else:
-        hf_prompt = (
-            f"{DECOMPOSER_PROMPT}\n\n"
-            "출력 규칙:\n"
-            "- 반드시 JSON 객체만 출력\n"
-            "- 최상위 키는 tasks\n"
-            "- 예시: {\"tasks\":[{\"task\":\"GENERAL_CHAT\",\"args\":{}}]}\n\n"
-            f"{decomposer_input}"
+        hf_prompt = hf_decomposer_prompt_template.format(
+            decomposer_prompt=decomposer_prompt,
+            decomposer_input=decomposer_input,
         )
 
         raw = _hf_invoke([HumanMessage(content=hf_prompt)], model_name, temperature=0).content
@@ -603,30 +579,18 @@ def _generate_worker_response(state: AgentState, task_results: List[Dict[str, An
     user_question = state.get("question") or _get_last_user_message(state.get("messages", []))
     context_text = "\n".join(f"{idx+1}. {doc}" for idx, doc in enumerate(docs[:8]))
     tool_context = _build_tool_context_summary(task_results)
+    provider, model_name = _resolve_llm_config(state)
+    system_prompt = get_ecommerce_system_prompt(provider=provider, model_name=model_name)
+    worker_response_prompt_template = get_worker_response_prompt_template(provider=provider, model_name=model_name)
 
-    prompt = f"""{ECOMMERCE_SYSTEM_PROMPT}
-
-당신은 이커머스 고객센터 상담원입니다.
-아래 검색 문서와 실행 결과를 근거로, 사용자의 질문에 대한 최종 답변을 한국어로 작성하세요.
-
-[사용자 질문]
-{user_question}
-
-[검색 문서]
-{context_text}
-
-[실행 요약]
-{tool_context}
-
-작성 규칙:
-1) 반드시 검색 문서 내용에 근거해 답변합니다.
-2) 핵심 정책/조건을 먼저, 필요한 경우 절차를 번호로 정리합니다.
-3) 문서에 없는 내용은 추측하지 말고 "확인되지 않았다"고 안내합니다.
-4) 장황하지 않게 4~8문장 내외로 답변합니다.
-"""
+    prompt = worker_response_prompt_template.format(
+        system_prompt=system_prompt,
+        user_question=user_question,
+        context_text=context_text,
+        tool_context=tool_context,
+    )
 
     try:
-        provider, model_name = _resolve_llm_config(state)
         if provider == "openai":
             llm = _make_openai_llm(model=model_name, temperature=0)
             response = llm.invoke([HumanMessage(content=prompt)])
@@ -1130,19 +1094,20 @@ def _summarize_messages(messages: List, provider: str, model_name: str) -> str |
         f"{type(m).__name__}: {str(getattr(m, 'content', ''))[:300]}"
         for m in messages
     )
+    context_summary_system_prompt = get_context_summary_system_prompt(provider=provider, model_name=model_name)
 
     try:
         if provider == "openai":
             summary_llm = _make_openai_llm(model=model_name or SUMMARY_MODEL, temperature=0)
             response = summary_llm.invoke([
-                SystemMessage(content=CONTEXT_SUMMARY_SYSTEM_PROMPT),
+                SystemMessage(content=context_summary_system_prompt),
                 HumanMessage(content=transcript[:12000]),
             ])
             return response.content if isinstance(response.content, str) else None
 
         response = _hf_invoke(
             [
-                SystemMessage(content=CONTEXT_SUMMARY_SYSTEM_PROMPT),
+                SystemMessage(content=context_summary_system_prompt),
                 HumanMessage(content=transcript[:12000]),
             ],
             model_name,
@@ -1174,6 +1139,8 @@ def agent_node(state: AgentState):
     """
     print("---AGENT NODE---")
     provider, model_name = _resolve_llm_config(state)
+    system_prompt = get_ecommerce_system_prompt(provider=provider, model_name=model_name)
+    tool_usage_instructions = get_tool_usage_instructions(provider=provider, model_name=model_name)
     
     # 1. 메시지 준비
     messages = state["messages"]
@@ -1197,7 +1164,7 @@ def agent_node(state: AgentState):
             "If the user selects an order, proceed with this action.\n"
         )
 
-    final_prompt = ECOMMERCE_SYSTEM_PROMPT + user_context + TOOL_USAGE_INSTRUCTIONS
+    final_prompt = system_prompt + user_context + tool_usage_instructions
     system_msg = SystemMessage(content=final_prompt)
     current_messages = [system_msg] + messages
     
@@ -1418,7 +1385,8 @@ def human_approval_node(state: AgentState):
         # A. LLM 기반 승인 여부 판단 (LLM-based Confirmation Check)
         try:
             provider, model_name = _resolve_llm_config(state)
-            prompt = APPROVAL_CHECK_PROMPT_TEMPLATE.format(
+            approval_check_prompt_template = get_approval_check_prompt_template(provider=provider, model_name=model_name)
+            prompt = approval_check_prompt_template.format(
                 user_message=content,
                 tool_name=sensitive_calls[0]["name"],
                 tool_args=sensitive_calls[0].get("args"),
