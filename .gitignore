@@ -13,3 +13,4 @@ node_modules
 npm-debug.log*
 .vercel
 ecommerce\platform\frontend\public\products
+logs/
