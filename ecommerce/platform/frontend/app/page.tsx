@@ -238,7 +238,7 @@ export default function HomePage() {
                     <p>상품명</p>
                     <p>{product.name}</p>
                     <p>
-                      가격 {product.price?.toLocaleString()}원
+                      가격 {Math.round(product.price ?? 0).toLocaleString()}원
                     </p>
                   </div>
                 </div>
