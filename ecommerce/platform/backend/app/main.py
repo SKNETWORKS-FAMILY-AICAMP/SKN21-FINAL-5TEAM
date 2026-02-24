@@ -18,8 +18,6 @@ from ecommerce.platform.backend.app.router.user_history.router import router as 
 import ecommerce.platform.backend.app.router.users.models
 import ecommerce.platform.backend.app.router.user_history.models
 import logging
-import os
-from ecommerce.chatbot.src.core.config import settings
 from ecommerce.chatbot.src.api.v1.endpoints.chat import router as chatbot_router
 from starlette.middleware.sessions import SessionMiddleware # 미드웨워 추가
 
@@ -99,13 +97,6 @@ def auto_add_missing_columns():
 # ============================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # LangSmith 환경 변수 설정 (Chatbot)
-    os.environ["LANGCHAIN_TRACING_V2"] = settings.LANGCHAIN_TRACING_V2
-    os.environ["LANGCHAIN_ENDPOINT"] = settings.LANGCHAIN_ENDPOINT
-    os.environ["LANGCHAIN_API_KEY"] = settings.LANGCHAIN_API_KEY
-    os.environ["LANGCHAIN_PROJECT"] = settings.LANGCHAIN_PROJECT
-    logging.info(f"🔗 LangSmith tracing enabled for project: {settings.LANGCHAIN_PROJECT}")
-
     # 서버 시작 시
     logging.info("서버 시작")
 
