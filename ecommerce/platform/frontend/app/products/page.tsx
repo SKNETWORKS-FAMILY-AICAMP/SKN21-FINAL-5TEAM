@@ -6,7 +6,7 @@ import styles from './product.module.css';
 
 const PRODUCTS_PER_PAGE = 10;
 const PAGE_GROUP_SIZE = 10;
-const API_BASE = 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
 const CATEGORY_MAP: Record<string, string[]> = {
   상의: [

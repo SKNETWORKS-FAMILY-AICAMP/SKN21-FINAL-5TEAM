@@ -21,7 +21,7 @@ export default function MyPage() {
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    fetch("http://localhost:8000/users/me", {
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
       credentials: "include",
     })
       .then(async (res) => {
@@ -37,7 +37,7 @@ export default function MyPage() {
         setUser(data);
 
         if (data.id) {
-          fetch(`http://localhost:8000/points/users/${data.id}/balance`)
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/points/users/${data.id}/balance`)
             .then(res => res.json())
             .then(balanceData => {
               setPointBalance(balanceData.current_balance ?? 0);
@@ -73,7 +73,7 @@ export default function MyPage() {
   });
 
   const handleSaveProfile = async () => {
-    await fetch("http://localhost:8000/users/me", {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -94,7 +94,7 @@ export default function MyPage() {
   const handleSavePassword = async () => {
     if (passwordForm.newPassword !== passwordForm.confirmPassword) return;
 
-    await fetch("http://localhost:8000/users/me/password", {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me/password`, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -117,7 +117,7 @@ export default function MyPage() {
   });
 
   const handleSaveAlarm = async () => {
-    await fetch("http://localhost:8000/users/me", {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -149,7 +149,7 @@ export default function MyPage() {
 
   const loadBodyMeasurement = async () => {
     const res = await fetch(
-      "http://localhost:8000/users/me/body-measurement",
+      `${process.env.NEXT_PUBLIC_API_URL}/users/me/body-measurement`,
       { credentials: "include" }
     );
     if (!res.ok) return;
@@ -167,7 +167,7 @@ export default function MyPage() {
   };
 
   const handleSaveStyle = async () => {
-    await fetch("http://localhost:8000/users/me/body-measurement", {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me/body-measurement`, {
       method: "PUT",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -182,7 +182,7 @@ export default function MyPage() {
   const [withdrawReason, setWithdrawReason] = useState("");
 
   const handleWithdraw = async () => {
-    await fetch("http://localhost:8000/users/me", {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
       method: "DELETE",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -195,7 +195,7 @@ export default function MyPage() {
      로그아웃
   ========================= */
   const handleLogout = async () => {
-    await fetch("http://localhost:8000/users/logout", {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/logout`, {
       method: "POST",
       credentials: "include",
     });
@@ -239,7 +239,7 @@ export default function MyPage() {
                       setVoucherLoading(true);
 
                       const res = await fetch(
-                        `http://localhost:8000/points/users/${user.id}/vouchers/redeem`,
+                        `${process.env.NEXT_PUBLIC_API_URL}/points/users/${user.id}/vouchers/redeem`,
                         {
                           method: "POST",
                           headers: {
@@ -260,7 +260,7 @@ export default function MyPage() {
 
                       // 🔥 포인트 재조회
                       const balanceRes = await fetch(
-                        `http://localhost:8000/points/users/${user.id}/balance`
+                        `${process.env.NEXT_PUBLIC_API_URL}/points/users/${user.id}/balance`
                       );
                       const balanceData = await balanceRes.json();
                       setPointBalance(balanceData.current_balance ?? 0);
@@ -311,7 +311,7 @@ export default function MyPage() {
             className={styles.shortcutItem}
             onClick={async () => {
               const res = await fetch(
-                `http://localhost:8000/points/users/${user.id}/history`
+                `${process.env.NEXT_PUBLIC_API_URL}/points/users/${user.id}/history`
               );
               const data = await res.json();
               setPointHistory(data);
