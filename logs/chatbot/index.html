@@ -1,0 +1,256 @@
+
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chatbot Log Index</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 24px; background: #f7f8fa; color: #1f2937; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .muted { color: #6b7280; }
+    .table-wrap { overflow-x: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px; text-align: left; vertical-align: top; }
+    th { background: #f9fafb; position: sticky; top: 0; }
+    tr:hover td { background: #f9fafb; }
+        button { background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+        button:hover { background: #1d4ed8; }
+    a { color: #2563eb; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+        .actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <section class="header">
+      <h1>Chatbot Log Index</h1>
+      <p class="muted">logs directory: /Users/junseok/Projects/SKN21-FINAL-5TEAM/logs/chatbot</p>
+      <p class="muted" id="totalConversations">total conversations: 2</p>
+            <div class="actions">
+                <button onclick="generateAllMissingReports()">generate missing reports (browser)</button>
+                <button onclick="pickLogsFolder()">refresh from folder</button>
+                <span class="muted">브라우저에서 즉시 HTML 리포트를 생성해 새 탭으로 엽니다.</span>
+            </div>
+            <input id="folderPicker" type="file" webkitdirectory directory multiple style="display:none" />
+    </section>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>conversation_id</th>
+            <th>raw log</th>
+            <th>html report</th>
+            <th>in-page generate</th>
+            <th>turns</th>
+            <th>provider</th>
+            <th>model</th>
+            <th>status</th>
+            <th>total_duration_ms</th>
+            <th>total_tokens</th>
+            <th>updated_at</th>
+          </tr>
+        </thead>
+                <tbody id="logsTbody">
+                    <tr><td>conv_00b9d7be6f57</td><td><a href="conv_00b9d7be6f57.jsonl" target="_blank">jsonl</a></td><td><span class='muted'>not generated</span></td><td><button onclick="generateReportFromJsonl('conv_00b9d7be6f57.jsonl')">generate in page</button></td><td>4</td><td>openai</td><td>gpt-4o-mini</td><td>success</td><td>10321</td><td>10272</td><td>2026-02-24 11:20:32</td></tr><tr><td>conv_2af4fe1d01d5</td><td><a href="conv_2af4fe1d01d5.jsonl" target="_blank">jsonl</a></td><td><a href="conv_2af4fe1d01d5.html" target="_blank">open report</a></td><td><button onclick="generateReportFromJsonl('conv_2af4fe1d01d5.jsonl')">generate in page</button></td><td>1</td><td>openai</td><td>gpt-4o-mini</td><td>success</td><td>3276</td><td>2883</td><td>2026-02-24 11:09:59</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+    <script>
+        function esc(v) {
+            if (v === null || v === undefined) return '';
+            return String(v)
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;');
+        }
+
+        function parseJsonl(text) {
+            return text
+                .split(/\r?\n/)
+                .map(line => line.trim())
+                .filter(Boolean)
+                .map(line => {
+                    try { return JSON.parse(line); } catch { return null; }
+                })
+                .filter(obj => obj && typeof obj === 'object');
+        }
+
+        function buildTurnCard(turn, idx) {
+            const metrics = turn.metrics || {};
+            const token = metrics.token_usage || {};
+            const timeline = turn.timeline || {};
+            const userMsg = turn.input?.user_message || '';
+            const generation = turn.output?.generation || '';
+
+            const renderTable = (title, arr, keyName) => {
+                if (!Array.isArray(arr) || !arr.length) return `<h4>${title}</h4><p style="color:#6b7280">No data</p>`;
+                const rows = arr.map(item => `
+                    <tr>
+                        <td>${esc(item.event)}</td>
+                        <td>${esc(item[keyName])}</td>
+                        <td>${esc(item.at)}</td>
+                        <td>${esc(item.duration_ms)}</td>
+                    </tr>
+                `).join('');
+                return `
+                    <h4>${title}</h4>
+                    <table style="width:100%;border-collapse:collapse;font-size:13px">
+                        <thead><tr><th>event</th><th>name</th><th>at</th><th>duration_ms</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                `;
+            };
+
+            return `
+                <section style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin:16px 0;">
+                    <h3>Turn ${idx}</h3>
+                    <p><b>turn_id:</b> ${esc(turn.turn_id)} | <b>status:</b> ${esc(turn.status)} | <b>duration_ms:</b> ${esc(metrics.duration_ms)}</p>
+                    <p><b>tokens:</b> in=${esc(token.input_tokens)}, out=${esc(token.output_tokens)}, total=${esc(token.total_tokens)}</p>
+                    <h4>User Input</h4><pre style="white-space:pre-wrap;background:#111827;color:#e5e7eb;padding:10px;border-radius:8px">${esc(userMsg)}</pre>
+                    <h4>Assistant Output</h4><pre style="white-space:pre-wrap;background:#111827;color:#e5e7eb;padding:10px;border-radius:8px">${esc(generation)}</pre>
+                    ${renderTable('Nodes', timeline.nodes || [], 'node')}
+                    ${renderTable('Tools', timeline.tools || [], 'tool')}
+                    ${renderTable('Models', timeline.models || [], 'model')}
+                </section>
+            `;
+        }
+
+        function buildReportHtml(jsonlPath, turns) {
+            const convId = turns[0]?.conversation_id || jsonlPath;
+            const cards = turns.map((t, i) => buildTurnCard(t, i + 1)).join('');
+            return `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Browser Generated Report</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:24px;background:#f7f8fa;color:#1f2937}.container{max-width:1200px;margin:0 auto}</style>
+</head><body><div class="container"><h1>Browser Generated Report</h1><p><b>source:</b> ${esc(jsonlPath)}</p><p><b>conversation_id:</b> ${esc(convId)} | <b>turns:</b> ${turns.length}</p>${cards || '<p>No valid rows found.</p>'}</div></body></html>`;
+        }
+
+        async function generateReportFromJsonl(jsonlPath) {
+            try {
+                const resp = await fetch(jsonlPath);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const text = await resp.text();
+                const turns = parseJsonl(text);
+                const html = buildReportHtml(jsonlPath, turns);
+                const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+            } catch (e) {
+                alert('리포트 생성 실패: ' + e.message + '\n(파일을 로컬 file://로 열었으면 fetch 제약이 있을 수 있습니다)');
+            }
+        }
+
+        function generateAllMissingReports() {
+            const rows = Array.from(document.querySelectorAll('tbody tr'));
+            rows.forEach(row => {
+                const htmlCell = row.children[2];
+                const hasHtml = htmlCell && htmlCell.querySelector('a');
+                if (!hasHtml) {
+                    const btn = row.children[3]?.querySelector('button');
+                    if (btn) btn.click();
+                }
+            });
+        }
+
+        function pickLogsFolder() {
+            const picker = document.getElementById('folderPicker');
+            if (!picker) return;
+            picker.value = '';
+            picker.click();
+        }
+
+        function _buildRowFromParsed(item) {
+            const htmlCell = item.htmlExists
+                ? `<a href="${esc(item.htmlLink)}" target="_blank">open report</a>`
+                : `<span class="muted">not generated</span>`;
+
+            return `
+                <tr>
+                    <td>${esc(item.conversation_id)}</td>
+                    <td><a href="${esc(item.jsonlLink)}" target="_blank">jsonl</a></td>
+                    <td>${htmlCell}</td>
+                    <td><button onclick="generateReportFromJsonl('${esc(item.jsonlLink)}')">generate in page</button></td>
+                    <td>${esc(item.turns)}</td>
+                    <td>${esc(item.provider)}</td>
+                    <td>${esc(item.model)}</td>
+                    <td>${esc(item.status)}</td>
+                    <td>${esc(item.duration_ms)}</td>
+                    <td>${esc(item.tokens)}</td>
+                    <td>${esc(item.updated_at)}</td>
+                </tr>
+            `;
+        }
+
+        function _summarizeFromTurns(conversationId, turns, updatedAt, jsonlLink, htmlLink, htmlExists) {
+            const first = turns[0] || {};
+            const last = turns[turns.length - 1] || first;
+            let duration = 0;
+            let tokens = 0;
+
+            turns.forEach(t => {
+                const m = t.metrics || {};
+                const tu = m.token_usage || {};
+                duration += Number(m.duration_ms || 0);
+                tokens += Number(tu.total_tokens || 0);
+            });
+
+            return {
+                conversation_id: conversationId,
+                jsonlLink,
+                htmlLink,
+                htmlExists,
+                turns: turns.length,
+                provider: last.provider || first.provider || '',
+                model: last.model || first.model || '',
+                status: last.status || first.status || '',
+                duration_ms: duration,
+                tokens,
+                updated_at: updatedAt,
+            };
+        }
+
+        async function refreshRowsFromFolderFiles(files) {
+            const jsonlFiles = Array.from(files || []).filter(f => /(^|\/)conv_.*\.jsonl$/i.test(f.webkitRelativePath || f.name));
+            if (!jsonlFiles.length) {
+                alert('conv_*.jsonl 파일을 찾지 못했습니다. logs/chatbot 폴더를 선택해 주세요.');
+                return;
+            }
+
+            const items = [];
+            for (const file of jsonlFiles) {
+                const text = await file.text();
+                const turns = parseJsonl(text);
+                if (!turns.length) continue;
+
+                const convId = (turns[0] && turns[0].conversation_id) || file.name.replace(/\.jsonl$/i, '');
+                const updatedAt = new Date(file.lastModified).toISOString().replace('T', ' ').slice(0, 19);
+                const jsonlLink = URL.createObjectURL(file);
+                const htmlLink = '';
+
+                items.push(_summarizeFromTurns(convId, turns, updatedAt, jsonlLink, htmlLink, false));
+            }
+
+            items.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+            const tbody = document.getElementById('logsTbody');
+            if (!tbody) return;
+
+            tbody.innerHTML = items.length
+                ? items.map(_buildRowFromParsed).join('')
+                : '<tr><td colspan="11">No log files found.</td></tr>';
+
+            const total = document.getElementById('totalConversations');
+            if (total) total.textContent = `total conversations: ${items.length} (folder refresh)`;
+        }
+
+        document.getElementById('folderPicker')?.addEventListener('change', async (e) => {
+            const files = e.target && e.target.files ? e.target.files : [];
+            await refreshRowsFromFolderFiles(files);
+        });
+    </script>
+</body>
+</html>
