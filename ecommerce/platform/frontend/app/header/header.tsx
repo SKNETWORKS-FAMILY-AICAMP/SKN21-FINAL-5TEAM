@@ -99,6 +99,9 @@ export default function Header() {
             <button className={styles.menu} onClick={() => setOpen(true)}>
               ☰
             </button>
+            <Link href="/admin/user-history" className={styles.logo}>
+              MOYEO
+            </Link>
           </div>
 
           <div className={styles.right}>
@@ -148,7 +151,6 @@ export default function Header() {
 
         <nav className={styles.right}>
           <Link href="/search">검색</Link>
-          <Link href="/like">좋아요</Link>
           <Link href="/mypage">마이</Link>
           <Link href="/cart">장바구니</Link>
 
