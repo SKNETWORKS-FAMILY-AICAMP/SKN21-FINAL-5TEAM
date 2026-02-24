@@ -854,7 +854,6 @@ def decomposer_node(state: AgentState):
     if not user_message:
         return {
             "task_list": [{"task": TaskType.GENERAL_CHAT.value, "args": {}}],
-            "execution_plan": {"mode": "agent", "reason": "empty_user_message"},
         }
 
     # 주소 UI 선택 이벤트는 LLM 분해 없이 deterministic 처리
@@ -862,7 +861,6 @@ def decomposer_node(state: AgentState):
     if isinstance(incoming_payload, dict) and incoming_payload.get("event") == "address_selected":
         return {
             "question": user_message,
-            "execution_plan": {"mode": "sequential", "reason": "address_selected_payload"},
             "task_list": [
                 {
                     "task": TaskType.ORDER_ACTION.value,
@@ -924,7 +922,6 @@ def decomposer_node(state: AgentState):
 
         return {
             "question": user_message,
-            "execution_plan": {"mode": "sequential", "reason": "resumed_order_action"},
             "task_list": [
                 {
                     "task": TaskType.ORDER_ACTION.value,
@@ -949,82 +946,60 @@ def decomposer_node(state: AgentState):
         return {
             "question": user_message,
             "task_list": [{"task": TaskType.GENERAL_CHAT.value, "args": {}}],
-            "execution_plan": {"mode": "agent", "reason": "decomposer_failed"},
         }
 
 
-def orchestrator_node(state: AgentState):
+def route_after_decomposer(state: AgentState) -> Literal["fixed_worker", "agent"]:
     """
-    Task 리스트를 기반으로 순차/병렬 실행 계획을 결정합니다.
+    Decomposer 결과를 고정 규칙으로 분기합니다.
+    - 실행 가능한 task가 있으면 fixed_worker
+    - GENERAL_CHAT만 있거나 비어 있으면 agent
     """
-    print("---ORCHESTRATOR NODE---")
     task_list = state.get("task_list", [])
-
     if not task_list:
-        return {"execution_plan": {"mode": "agent", "reason": "empty_task_list", "tasks": []}}
+        return "agent"
 
-    tasks_sorted = sorted(task_list, key=lambda t: _task_priority(str(t.get("task", ""))))
-    task_names = [str(t.get("task", "")) for t in tasks_sorted]
-
-    has_order_action = TaskType.ORDER_ACTION.value in task_names
-    has_policy_check = TaskType.POLICY_CHECK.value in task_names
-    has_order_query = TaskType.ORDER_QUERY.value in task_names
-
-    if task_names == [TaskType.GENERAL_CHAT.value]:
-        mode = "agent"
-        reason = "general_chat_only"
-    # POLICY_CHECK + ORDER_ACTION은 서로 독립이므로 병렬 실행 가능
-    elif has_order_action and has_policy_check and not has_order_query:
-        mode = "parallel"
-        reason = "policy_and_action_independent"
-    # ORDER_QUERY + POLICY_CHECK은 ORDER context 의존 가능성이 있어 순차 유지
-    elif has_order_query and has_policy_check:
-        mode = "sequential"
-        reason = "policy_check_depends_on_order_context"
-    # ORDER_ACTION 단독은 제어를 위해 순차 유지
-    elif has_order_action:
-        mode = "sequential"
-        reason = "order_action_requires_controlled_execution"
-    elif len(tasks_sorted) > 1:
-        mode = "parallel"
-        reason = "independent_information_tasks"
-    else:
-        mode = "sequential"
-        reason = "single_task"
-
-    return {
-        "task_list": tasks_sorted,
-        "execution_plan": {
-            "mode": mode,
-            "reason": reason,
-            "tasks": task_names,
-        },
-    }
+    executable_tasks = [
+        task for task in task_list
+        if str(task.get("task", "")) != TaskType.GENERAL_CHAT.value
+    ]
+    return "fixed_worker" if executable_tasks else "agent"
 
 
-def route_after_orchestration(state: AgentState) -> Literal["agent", "sequential_worker", "parallel_worker"]:
-    plan = state.get("execution_plan", {})
-    mode = plan.get("mode", "agent")
-
-    if mode == "sequential":
-        return "sequential_worker"
-    if mode == "parallel":
-        return "parallel_worker"
-    return "agent"
-
-
-def sequential_worker_node(state: AgentState):
+def fixed_worker_node(state: AgentState):
     """
-    Task를 순차 실행합니다. (의존성 있는 작업 전용)
+    고정 실행 전략:
+    - ORDER_QUERY / ORDER_ACTION 등은 순차 실행
+    - Retrieval 계열(POLICY_CHECK/FAQ_RETRIEVAL)은 항상 병렬 실행
     """
-    print("---SEQUENTIAL WORKER NODE---")
+    print("---FIXED WORKER NODE---")
     task_list = state.get("task_list", [])
+
+    executable_tasks = [
+        task for task in task_list
+        if str(task.get("task", "")) != TaskType.GENERAL_CHAT.value
+    ]
+
+    if not executable_tasks:
+        msg = "처리할 실행 가능한 작업이 없습니다."
+        return {"task_results": [], "messages": [AIMessage(content=msg)], "generation": msg}
+
+    retrieval_task_names = {TaskType.POLICY_CHECK.value, TaskType.FAQ_RETRIEVAL.value}
+    sequential_tasks = sorted(
+        [t for t in executable_tasks if str(t.get("task", "")) not in retrieval_task_names],
+        key=lambda t: _task_priority(str(t.get("task", ""))),
+    )
+    retrieval_tasks = [
+        t for t in executable_tasks
+        if str(t.get("task", "")) in retrieval_task_names
+    ]
 
     task_results: List[Dict[str, Any]] = []
     tool_calls: List[Dict[str, Any]] = []
     current_task = state.get("current_task")
 
-    for task in task_list:
+    # 1) 순차 작업 먼저 처리
+    for task in sequential_tasks:
         executed = _execute_single_task(task, state)
         task_results.append(executed)
 
@@ -1034,72 +1009,37 @@ def sequential_worker_node(state: AgentState):
         if executed.get("current_task"):
             current_task = executed["current_task"]
 
-    updates: Dict[str, Any] = {"task_results": task_results}
+    # 2) Retrieval은 항상 병렬 처리
+    if retrieval_tasks:
+        max_workers = min(4, max(1, len(retrieval_tasks)))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {executor.submit(_execute_single_task, task, state): task for task in retrieval_tasks}
+            for future in as_completed(future_map):
+                try:
+                    executed = future.result()
+                except Exception as e:
+                    task = future_map[future]
+                    executed = {
+                        "task": task.get("task", "UNKNOWN"),
+                        "result": {"error": f"retrieval 병렬 실행 실패: {str(e)}"},
+                    }
 
-    # current_task는 항상 유지 (주문 선택 UI 이후 context 보존)
+                task_results.append(executed)
+
+                if executed.get("requires_tool_call") and executed.get("tool_call"):
+                    tool_calls.append(executed["tool_call"])
+
+                if executed.get("current_task"):
+                    current_task = executed["current_task"]
+
+    updates: Dict[str, Any] = {"task_results": task_results}
     if current_task:
         updates["current_task"] = current_task
 
     if tool_calls:
         updates["messages"] = [
             AIMessage(
-                content="요청하신 작업을 순차 실행하기 위해 필요한 도구를 호출합니다.",
-                tool_calls=tool_calls,
-            )
-        ]
-        return updates
-
-    final_response = _generate_worker_response(state, task_results)
-    updates["messages"] = [AIMessage(content=final_response)]
-    updates["generation"] = final_response
-    return updates
-
-
-def parallel_worker_node(state: AgentState):
-    """
-    독립 Task를 병렬 실행합니다.
-    """
-    print("---PARALLEL WORKER NODE---")
-    task_list = state.get("task_list", [])
-    if not task_list:
-        msg = "실행할 작업이 없습니다."
-        return {"task_results": [], "messages": [AIMessage(content=msg)], "generation": msg}
-
-    task_results: List[Dict[str, Any]] = []
-    tool_calls: List[Dict[str, Any]] = []
-    current_task = state.get("current_task")
-
-    max_workers = min(4, max(1, len(task_list)))
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_map = {executor.submit(_execute_single_task, task, state): task for task in task_list}
-        for future in as_completed(future_map):
-            try:
-                executed = future.result()
-            except Exception as e:
-                task = future_map[future]
-                executed = {
-                    "task": task.get("task", "UNKNOWN"),
-                    "result": {"error": f"병렬 실행 실패: {str(e)}"},
-                }
-
-            task_results.append(executed)
-
-            if executed.get("requires_tool_call") and executed.get("tool_call"):
-                tool_calls.append(executed["tool_call"])
-
-            if executed.get("current_task"):
-                current_task = executed["current_task"]
-
-    updates: Dict[str, Any] = {"task_results": task_results}
-
-    # current_task는 항상 유지
-    if current_task:
-        updates["current_task"] = current_task
-
-    if tool_calls:
-        updates["messages"] = [
-            AIMessage(
-                content="독립 작업을 병렬로 분석한 뒤 필요한 도구를 호출합니다.",
+                content="요청하신 작업을 처리하기 위해 필요한 도구를 호출합니다.",
                 tool_calls=tool_calls,
             )
         ]

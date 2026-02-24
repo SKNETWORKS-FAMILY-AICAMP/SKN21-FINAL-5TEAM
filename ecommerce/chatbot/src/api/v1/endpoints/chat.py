@@ -28,9 +28,7 @@ TOOL_STATUS_MESSAGES = {
 # 그래프 노드 이름 → 상태 메시지 매핑
 NODE_STATUS_MESSAGES = {
     "decomposer": "요청을 분해하고 있습니다...",
-    "orchestrator": "처리 계획을 세우고 있습니다...",
-    "sequential_worker": "작업을 순차적으로 처리하고 있습니다...",
-    "parallel_worker": "작업을 병렬로 처리하고 있습니다...",
+    "fixed_worker": "작업을 고정 전략으로 처리하고 있습니다...",
     "validation": "실행 전 안전성/유효성을 검토하고 있습니다...",
     "approval": "승인 필요 여부를 확인하고 있습니다...",
     "tools": "필요한 도구를 호출하고 있습니다...",
@@ -104,7 +102,6 @@ async def chat_streaming_endpoint(
                 "documents": [],
                 "tool_outputs": [],
                 "task_list": [],
-                "execution_plan": {},
                 "task_results": [],
                 **previous_state,
                 "is_authenticated": True,
