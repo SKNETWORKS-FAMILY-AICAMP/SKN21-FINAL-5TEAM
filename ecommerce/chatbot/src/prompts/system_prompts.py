@@ -1,5 +1,4 @@
 # 답변 생성을 위한 시스템 프롬프트 (Model/Provider 별)
-# - 아래 두 상수만 수정하면 모델별 톤/규칙을 쉽게 관리할 수 있습니다.
 OPENAI_ECOMMERCE_SYSTEM_PROMPT = """
 당신은 MOYEO 쇼핑몰의 AI CS 상담원입니다.
 절대 반말을 사용하지 마세요. 항상 존댓말로 답변하세요.
