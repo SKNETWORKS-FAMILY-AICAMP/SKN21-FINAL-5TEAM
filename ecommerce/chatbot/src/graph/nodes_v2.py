@@ -555,6 +555,93 @@ def _build_task_summary(task_results: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _collect_retrieved_documents(task_results: List[Dict[str, Any]]) -> List[str]:
+    docs: List[str] = []
+    for item in task_results:
+        result = item.get("result")
+        if isinstance(result, dict) and isinstance(result.get("documents"), list):
+            for doc in result["documents"]:
+                if isinstance(doc, str) and doc.strip():
+                    docs.append(doc.strip())
+    return docs
+
+
+def _build_tool_context_summary(task_results: List[Dict[str, Any]]) -> str:
+    lines: List[str] = []
+    for idx, item in enumerate(task_results, start=1):
+        task_name = item.get("task", "UNKNOWN")
+        result = item.get("result")
+
+        if isinstance(result, dict):
+            if result.get("error"):
+                lines.append(f"{idx}. [{task_name}] 오류: {result['error']}")
+                continue
+            if result.get("message"):
+                lines.append(f"{idx}. [{task_name}] {result['message']}")
+                continue
+            if result.get("documents"):
+                lines.append(f"{idx}. [{task_name}] 문서 {len(result['documents'])}건 검색")
+                continue
+
+        lines.append(f"{idx}. [{task_name}] 처리 완료")
+
+    return "\n".join(lines)
+
+
+def _generate_worker_response(state: AgentState, task_results: List[Dict[str, Any]]) -> str:
+    """
+    Worker에서 수집한 task_results를 기반으로 사용자에게 보여줄 최종 답변을 생성합니다.
+    - 검색 문서가 있으면 LLM으로 문서 기반 답변 생성
+    - 실패 시 요약 문자열로 폴백
+    """
+    summary = _build_task_summary(task_results)
+    docs = _collect_retrieved_documents(task_results)
+
+    # 문서가 없으면 기존 요약 응답 유지
+    if not docs:
+        return summary
+
+    user_question = state.get("question") or _get_last_user_message(state.get("messages", []))
+    context_text = "\n".join(f"{idx+1}. {doc}" for idx, doc in enumerate(docs[:8]))
+    tool_context = _build_tool_context_summary(task_results)
+
+    prompt = f"""{ECOMMERCE_SYSTEM_PROMPT}
+
+당신은 이커머스 고객센터 상담원입니다.
+아래 검색 문서와 실행 결과를 근거로, 사용자의 질문에 대한 최종 답변을 한국어로 작성하세요.
+
+[사용자 질문]
+{user_question}
+
+[검색 문서]
+{context_text}
+
+[실행 요약]
+{tool_context}
+
+작성 규칙:
+1) 반드시 검색 문서 내용에 근거해 답변합니다.
+2) 핵심 정책/조건을 먼저, 필요한 경우 절차를 번호로 정리합니다.
+3) 문서에 없는 내용은 추측하지 말고 "확인되지 않았다"고 안내합니다.
+4) 장황하지 않게 4~8문장 내외로 답변합니다.
+"""
+
+    try:
+        provider, model_name = _resolve_llm_config(state)
+        if provider == "openai":
+            llm = _make_openai_llm(model=model_name, temperature=0)
+            response = llm.invoke([HumanMessage(content=prompt)])
+        else:
+            response = _hf_invoke([HumanMessage(content=prompt)], model_name, temperature=0)
+
+        if isinstance(response.content, str) and response.content.strip():
+            return response.content.strip()
+    except Exception as e:
+        print(f"[WorkerGeneration] failed: {e}")
+
+    return summary
+
+
 def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, Any]:
     task_name = task.get("task", TaskType.GENERAL_CHAT.value)
     args = _normalize_task_args(task.get("args"))
@@ -964,9 +1051,9 @@ def sequential_worker_node(state: AgentState):
         ]
         return updates
 
-    summary = _build_task_summary(task_results)
-    updates["messages"] = [AIMessage(content=summary)]
-    updates["generation"] = summary
+    final_response = _generate_worker_response(state, task_results)
+    updates["messages"] = [AIMessage(content=final_response)]
+    updates["generation"] = final_response
     return updates
 
 
@@ -1020,9 +1107,9 @@ def parallel_worker_node(state: AgentState):
         ]
         return updates
 
-    summary = _build_task_summary(task_results)
-    updates["messages"] = [AIMessage(content=summary)]
-    updates["generation"] = summary
+    final_response = _generate_worker_response(state, task_results)
+    updates["messages"] = [AIMessage(content=final_response)]
+    updates["generation"] = final_response
     return updates
 
 
