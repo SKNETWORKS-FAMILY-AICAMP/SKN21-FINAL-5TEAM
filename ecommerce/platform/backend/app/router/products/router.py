@@ -9,7 +9,7 @@ from decimal import Decimal
 import logging
 
 from ecommerce.platform.backend.app.database import get_db
-from ecommerce.platform.backend.app.router.products import crud, schemas
+from ecommerce.platform.backend.app.router.products import crud, schemas, models
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -20,6 +20,42 @@ router = APIRouter(
 
 
 # ==================== 카테고리 ====================
+
+@router.get("/categories/menu")
+def get_category_menu(db: Session = Depends(get_db)):
+    """
+    햄버거 메뉴용 카테고리 조회
+    대분류 + 중분류까지만 반환
+    """
+
+    # 1️⃣ parent_id가 NULL인 것만 대분류
+    parents = db.query(models.Category).filter(
+        models.Category.parent_id.is_(None),
+        models.Category.is_active == True
+    ).all()
+
+    result = []
+
+    for parent in parents:
+        # 2️⃣ 중분류: parent_id = 대분류 id
+        children = db.query(models.Category).filter(
+            models.Category.parent_id == parent.id,
+            models.Category.is_active == True
+        ).all()
+
+        result.append({
+            "id": parent.id,
+            "name": parent.name,
+            "children": [
+                {
+                    "id": child.id,
+                    "name": child.name
+                }
+                for child in children
+            ]
+        })
+
+    return result
 
 @router.get("/categories", response_model=List[schemas.CategoryResponse])
 def list_categories(
@@ -72,7 +108,6 @@ def delete_category(category_id: int, db: Session = Depends(get_db)):
     if not crud.delete_category(db, category_id):
         raise HTTPException(status_code=404, detail="카테고리를 찾을 수 없습니다")
     return None
-
 
 # ==================== 신상품 ====================
 
