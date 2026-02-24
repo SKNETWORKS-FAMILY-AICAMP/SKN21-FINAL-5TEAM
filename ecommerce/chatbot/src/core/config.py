@@ -28,12 +28,6 @@ class Settings(BaseSettings):
     QDRANT_URL: str
     QDRANT_API_KEY: str
     
-    # LangSmith
-    LANGCHAIN_TRACING_V2: str
-    LANGCHAIN_ENDPOINT: str
-    LANGCHAIN_API_KEY: str
-    LANGCHAIN_PROJECT: str
-
     # Langfuse (nodes_v3 observability)
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_PUBLIC_KEY: str = ""

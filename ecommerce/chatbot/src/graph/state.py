@@ -29,7 +29,6 @@ class AgentState(TypedDict):
     # 4. 액션 제어 및 도구 실행 결과
     tool_outputs: List[Dict[str, Any]]
     task_list: List[Dict[str, Any]]          # Decomposer가 추출한 작업 목록
-    execution_plan: Dict[str, Any]           # Orchestrator가 결정한 실행 계획
     task_results: List[Dict[str, Any]]       # Worker 실행 결과 누적
     
     # 5. [Refactored State] Structured Task Context
@@ -41,6 +40,7 @@ class AgentState(TypedDict):
     is_general_chat: bool
     retry_count: int
     requires_selection: Optional[bool]  # 주문 목록 조회 시 선택 UI 표시 여부
+    is_evaluation: Optional[bool]       # 벤치마크 평가 진행 여부
 
     # 7. 런타임 LLM 설정 (요청별)
     llm_provider: Optional[str]          # openai | huggingface

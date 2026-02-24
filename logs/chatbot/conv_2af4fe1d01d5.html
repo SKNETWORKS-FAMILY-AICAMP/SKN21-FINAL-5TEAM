@@ -1,0 +1,1303 @@
+
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chatbot Audit Log Viewer</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 24px; background: #f7f8fa; color: #1f2937; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; }
+    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .summary .item { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; }
+    .turn-card { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin: 16px 0; }
+    .turn-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .badge { padding: 4px 8px; border-radius: 8px; font-size: 12px; }
+    .status-success { background: #dcfce7; color: #166534; }
+    .status-error { background: #fee2e2; color: #991b1b; }
+    .kv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .io-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    @media (max-width: 900px) { .io-grid { grid-template-columns: 1fr; } }
+    .table-wrap { overflow-x: auto; margin-bottom: 12px; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { border: 1px solid #e5e7eb; padding: 8px; vertical-align: top; }
+    th { background: #f9fafb; text-align: left; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #111827; color: #e5e7eb; padding: 10px; border-radius: 8px; }
+    details { margin: 8px 0; }
+    .muted { color: #6b7280; }
+    .warn { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 12px; margin: 12px 0; }
+    .error-item { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px; margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <section class="header">
+      <h1>Chatbot Audit Log Viewer</h1>
+      <p class="muted">source: /Users/junseok/Projects/SKN21-FINAL-5TEAM/logs/chatbot/conv_2af4fe1d01d5.jsonl</p>
+      <div class="summary">
+        <div class="item"><b>conversation_id</b><br>conv_2af4fe1d01d5</div>
+        <div class="item"><b>turns</b><br>1</div>
+        <div class="item"><b>total_duration_ms</b><br>3276</div>
+        <div class="item"><b>total_tokens</b><br>2883</div>
+      </div>
+    </section>
+
+    
+    <section class='turn-card'><div class='turn-header'><h3>Turn 1</h3><span class='badge status-success'>success</span></div><div class='kv-grid'><div><b>turn_id</b><br>turn_0eb7e30f5bfa</div><div><b>started_at</b><br>2026-02-24T02:09:56.360747+00:00</div><div><b>finished_at</b><br>2026-02-24T02:09:59.637651+00:00</div><div><b>duration_ms</b><br>3276</div><div><b>input_tokens</b><br>2848</div><div><b>output_tokens</b><br>35</div><div><b>total_tokens</b><br>2883</div><div><b>provider/model</b><br>openai / gpt-4o-mini</div></div><div class='io-grid'><div><h4>User Input</h4><pre>안녕</pre></div><div><h4>Assistant Output</h4><pre>안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?</pre></div></div><details><summary>Input State Summary</summary><pre>{
+  &quot;keys&quot;: [
+    &quot;conversation_id&quot;,
+    &quot;current_task&quot;,
+    &quot;documents&quot;,
+    &quot;execution_plan&quot;,
+    &quot;is_authenticated&quot;,
+    &quot;llm_model&quot;,
+    &quot;llm_provider&quot;,
+    &quot;messages&quot;,
+    &quot;retry_count&quot;,
+    &quot;task_list&quot;,
+    &quot;task_results&quot;,
+    &quot;tool_outputs&quot;,
+    &quot;turn_id&quot;,
+    &quot;user_info&quot;
+  ],
+  &quot;message_count&quot;: 1,
+  &quot;last_message&quot;: {
+    &quot;type&quot;: &quot;HumanMessage&quot;,
+    &quot;role&quot;: &quot;user&quot;,
+    &quot;content&quot;: &quot;안녕&quot;
+  },
+  &quot;task_list_len&quot;: 0,
+  &quot;task_results_len&quot;: 0,
+  &quot;execution_plan&quot;: {},
+  &quot;current_task&quot;: null,
+  &quot;generation&quot;: &quot;&quot;
+}</pre></details><details><summary>Output State Summary</summary><pre>{
+  &quot;keys&quot;: [
+    &quot;conversation_id&quot;,
+    &quot;current_task&quot;,
+    &quot;documents&quot;,
+    &quot;execution_plan&quot;,
+    &quot;generation&quot;,
+    &quot;is_authenticated&quot;,
+    &quot;llm_model&quot;,
+    &quot;llm_provider&quot;,
+    &quot;messages&quot;,
+    &quot;question&quot;,
+    &quot;retry_count&quot;,
+    &quot;task_list&quot;,
+    &quot;task_results&quot;,
+    &quot;tool_outputs&quot;,
+    &quot;turn_id&quot;,
+    &quot;user_info&quot;
+  ],
+  &quot;message_count&quot;: 2,
+  &quot;last_message&quot;: {
+    &quot;type&quot;: &quot;AIMessage&quot;,
+    &quot;role&quot;: &quot;assistant&quot;,
+    &quot;content&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+  },
+  &quot;task_list_len&quot;: 1,
+  &quot;task_results_len&quot;: 0,
+  &quot;execution_plan&quot;: {
+    &quot;mode&quot;: &quot;agent&quot;,
+    &quot;reason&quot;: &quot;general_chat_only&quot;,
+    &quot;tasks&quot;: [
+      &quot;GENERAL_CHAT&quot;
+    ]
+  },
+  &quot;current_task&quot;: null,
+  &quot;generation&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+}</pre></details><h4>Nodes</h4><div class='table-wrap'><table><thead><tr><th>event</th><th>name</th><th>at</th><th>duration_ms</th><th>payload</th></tr></thead><tbody><tr><td>start</td><td>decomposer</td><td>2026-02-24T02:09:56.410049+00:00</td><td></td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: {
+    &quot;messages&quot;: [
+      {
+        &quot;type&quot;: &quot;HumanMessage&quot;,
+        &quot;role&quot;: &quot;user&quot;,
+        &quot;content&quot;: &quot;안녕&quot;
+      }
+    ],
+    &quot;documents&quot;: [],
+    &quot;is_authenticated&quot;: true,
+    &quot;user_info&quot;: {
+      &quot;id&quot;: 1,
+      &quot;name&quot;: &quot;테스트유저&quot;,
+      &quot;email&quot;: &quot;test@example.com&quot;
+    },
+    &quot;tool_outputs&quot;: [],
+    &quot;task_list&quot;: [],
+    &quot;execution_plan&quot;: {},
+    &quot;task_results&quot;: [],
+    &quot;current_task&quot;: null,
+    &quot;retry_count&quot;: 0,
+    &quot;llm_provider&quot;: &quot;openai&quot;,
+    &quot;llm_model&quot;: &quot;gpt-4o-mini&quot;,
+    &quot;conversation_id&quot;: &quot;conv_2af4fe1d01d5&quot;,
+    &quot;turn_id&quot;: &quot;turn_0eb7e30f5bfa&quot;
+  },
+  &quot;output&quot;: null,
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>start</td><td>RunnableSequence</td><td>2026-02-24T02:09:56.505538+00:00</td><td></td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: [
+    {
+      &quot;type&quot;: &quot;SystemMessage&quot;,
+      &quot;role&quot;: &quot;system&quot;,
+      &quot;content&quot;: &quot;\n당신은 사용자 요청을 실행 가능한 작업 목록으로 분해하는 Planner입니다.\n반드시 JSON 스키마(DecompositionResult)에 맞춰 응답하세요.\n\n작업 타입 정의:\n- ORDER_QUERY: 주문/배송/주문내역 조회\n- POLICY_CHECK: 환불/반품/교환/결제/배송 정책 확인\n- FAQ_RETRIEVAL: 일반 FAQ/정보 검색\n- ORDER_ACTION: 취소/환불/교환/결제수단변경 같은 실제 액션\n- GENERAL_CHAT: 위에 해당하지 않는 일반 대화\n\n규칙:\n1) 복합 요청이면 여러 작업으로 분해하세요.\n2) args에는 필요한 최소 파라미터만 넣으세요.\n3) order_id가 없는데 환불/취소/교환을 요청하면 ORDER_ACTION으로 넣되 args에 action만 넣어도 됩니다.\n4) 반드시 tasks 배열을 반환하세요. 비어 있으면 GENERAL_CHAT 1개를 반환하세요.\n5) 하나 이상의 실행 가능한 작업(ORDER_ACTION/ORDER_QUERY/POLICY_CHECK/FAQ_RETRIEVAL)이 있으면 GENERAL_CHAT을 함께 넣지 마세요.\n6) [현재 작업 상태]가 refund/exchange 이고 status가 validating 또는 approving이며 target_id가 존재하면,\n   사용자의 최신 발화가 이전 절차를 \&quot;계속 진행\&quot;하려는 맥락인지 우선 판단하세요.\n   이 경우 다음 단계는 ORDER_ACTION 하나만 반환하고 args는 action=&#x27;address_search&#x27;, order_id=target_id 로 설정하세요.\n7) 이전 Assistant가 이미 \&quot;반품/교환 진행 여부\&quot;를 질문했고 사용자가 진행 의사를 보인 턴이라면,\n   환불 가능 여부 재확인(action=&#x27;refund&#x27;)으로 되돌아가지 말고 주소 수집 단계(action=&#x27;address_search&#x27;)로 진행하세요.\n&quot;
+    },
+    {
+      &quot;type&quot;: &quot;HumanMessage&quot;,
+      &quot;role&quot;: &quot;user&quot;,
+      &quot;content&quot;: &quot;[최근 대화 컨텍스트]\nUSER: 안녕\n\n[현재 사용자 입력]\n안녕\n\n[현재 작업 상태]\n(없음)\n\n주의: 현재 사용자 입력이 짧거나 모호하더라도, 직전 대화 문맥과 현재 작업 상태를 우선 반영해 GENERAL_CHAT으로 과도하게 분류하지 말고 적절한 작업으로 분해하세요.&quot;
+    }
+  ],
+  &quot;output&quot;: null,
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>end</td><td>RunnableSequence</td><td>2026-02-24T02:09:57.557640+00:00</td><td>1052</td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: null,
+  &quot;output&quot;: &quot;tasks=[TaskItem(task=&lt;TaskType.GENERAL_CHAT: &#x27;GENERAL_CHAT&#x27;&gt;, args={})]&quot;,
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>end</td><td>decomposer</td><td>2026-02-24T02:09:57.558023+00:00</td><td>1147</td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: null,
+  &quot;output&quot;: {
+    &quot;question&quot;: &quot;안녕&quot;,
+    &quot;task_list&quot;: [
+      {
+        &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+        &quot;args&quot;: {}
+      }
+    ]
+  },
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>start</td><td>orchestrator</td><td>2026-02-24T02:09:57.558791+00:00</td><td></td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: {
+    &quot;messages&quot;: [
+      {
+        &quot;type&quot;: &quot;HumanMessage&quot;,
+        &quot;role&quot;: &quot;user&quot;,
+        &quot;content&quot;: &quot;안녕&quot;
+      }
+    ],
+    &quot;question&quot;: &quot;안녕&quot;,
+    &quot;documents&quot;: [],
+    &quot;is_authenticated&quot;: true,
+    &quot;user_info&quot;: {
+      &quot;id&quot;: 1,
+      &quot;name&quot;: &quot;테스트유저&quot;,
+      &quot;email&quot;: &quot;test@example.com&quot;
+    },
+    &quot;tool_outputs&quot;: [],
+    &quot;task_list&quot;: [
+      {
+        &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+        &quot;args&quot;: {}
+      }
+    ],
+    &quot;execution_plan&quot;: {},
+    &quot;task_results&quot;: [],
+    &quot;current_task&quot;: null,
+    &quot;retry_count&quot;: 0,
+    &quot;llm_provider&quot;: &quot;openai&quot;,
+    &quot;llm_model&quot;: &quot;gpt-4o-mini&quot;,
+    &quot;conversation_id&quot;: &quot;conv_2af4fe1d01d5&quot;,
+    &quot;turn_id&quot;: &quot;turn_0eb7e30f5bfa&quot;
+  },
+  &quot;output&quot;: null,
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>start</td><td>route_after_orchestration</td><td>2026-02-24T02:09:57.559319+00:00</td><td></td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: {
+    &quot;messages&quot;: [
+      {
+        &quot;type&quot;: &quot;HumanMessage&quot;,
+        &quot;role&quot;: &quot;user&quot;,
+        &quot;content&quot;: &quot;안녕&quot;
+      }
+    ],
+    &quot;question&quot;: &quot;안녕&quot;,
+    &quot;documents&quot;: [],
+    &quot;is_authenticated&quot;: true,
+    &quot;user_info&quot;: {
+      &quot;id&quot;: 1,
+      &quot;name&quot;: &quot;테스트유저&quot;,
+      &quot;email&quot;: &quot;test@example.com&quot;
+    },
+    &quot;tool_outputs&quot;: [],
+    &quot;task_list&quot;: [
+      {
+        &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+        &quot;args&quot;: {}
+      }
+    ],
+    &quot;execution_plan&quot;: {
+      &quot;mode&quot;: &quot;agent&quot;,
+      &quot;reason&quot;: &quot;general_chat_only&quot;,
+      &quot;tasks&quot;: [
+        &quot;GENERAL_CHAT&quot;
+      ]
+    },
+    &quot;task_results&quot;: [],
+    &quot;current_task&quot;: null,
+    &quot;retry_count&quot;: 0,
+    &quot;llm_provider&quot;: &quot;openai&quot;,
+    &quot;llm_model&quot;: &quot;gpt-4o-mini&quot;,
+    &quot;conversation_id&quot;: &quot;conv_2af4fe1d01d5&quot;,
+    &quot;turn_id&quot;: &quot;turn_0eb7e30f5bfa&quot;
+  },
+  &quot;output&quot;: null,
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>end</td><td>route_after_orchestration</td><td>2026-02-24T02:09:57.559559+00:00</td><td>0</td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: null,
+  &quot;output&quot;: &quot;agent&quot;,
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>end</td><td>orchestrator</td><td>2026-02-24T02:09:57.559737+00:00</td><td>0</td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: null,
+  &quot;output&quot;: {
+    &quot;task_list&quot;: [
+      {
+        &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+        &quot;args&quot;: {}
+      }
+    ],
+    &quot;execution_plan&quot;: {
+      &quot;mode&quot;: &quot;agent&quot;,
+      &quot;reason&quot;: &quot;general_chat_only&quot;,
+      &quot;tasks&quot;: [
+        &quot;GENERAL_CHAT&quot;
+      ]
+    }
+  },
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>start</td><td>agent</td><td>2026-02-24T02:09:57.560049+00:00</td><td></td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: {
+    &quot;messages&quot;: [
+      {
+        &quot;type&quot;: &quot;HumanMessage&quot;,
+        &quot;role&quot;: &quot;user&quot;,
+        &quot;content&quot;: &quot;안녕&quot;
+      }
+    ],
+    &quot;question&quot;: &quot;안녕&quot;,
+    &quot;documents&quot;: [],
+    &quot;is_authenticated&quot;: true,
+    &quot;user_info&quot;: {
+      &quot;id&quot;: 1,
+      &quot;name&quot;: &quot;테스트유저&quot;,
+      &quot;email&quot;: &quot;test@example.com&quot;
+    },
+    &quot;tool_outputs&quot;: [],
+    &quot;task_list&quot;: [
+      {
+        &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+        &quot;args&quot;: {}
+      }
+    ],
+    &quot;execution_plan&quot;: {
+      &quot;mode&quot;: &quot;agent&quot;,
+      &quot;reason&quot;: &quot;general_chat_only&quot;,
+      &quot;tasks&quot;: [
+        &quot;GENERAL_CHAT&quot;
+      ]
+    },
+    &quot;task_results&quot;: [],
+    &quot;current_task&quot;: null,
+    &quot;retry_count&quot;: 0,
+    &quot;llm_provider&quot;: &quot;openai&quot;,
+    &quot;llm_model&quot;: &quot;gpt-4o-mini&quot;,
+    &quot;conversation_id&quot;: &quot;conv_2af4fe1d01d5&quot;,
+    &quot;turn_id&quot;: &quot;turn_0eb7e30f5bfa&quot;
+  },
+  &quot;output&quot;: null,
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>start</td><td>should_continue</td><td>2026-02-24T02:09:59.632409+00:00</td><td></td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: {
+    &quot;messages&quot;: [
+      {
+        &quot;type&quot;: &quot;HumanMessage&quot;,
+        &quot;role&quot;: &quot;user&quot;,
+        &quot;content&quot;: &quot;안녕&quot;
+      },
+      {
+        &quot;type&quot;: &quot;AIMessage&quot;,
+        &quot;role&quot;: &quot;assistant&quot;,
+        &quot;content&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+      }
+    ],
+    &quot;question&quot;: &quot;안녕&quot;,
+    &quot;documents&quot;: [],
+    &quot;is_authenticated&quot;: true,
+    &quot;user_info&quot;: {
+      &quot;id&quot;: 1,
+      &quot;name&quot;: &quot;테스트유저&quot;,
+      &quot;email&quot;: &quot;test@example.com&quot;
+    },
+    &quot;tool_outputs&quot;: [],
+    &quot;task_list&quot;: [
+      {
+        &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+        &quot;args&quot;: {}
+      }
+    ],
+    &quot;execution_plan&quot;: {
+      &quot;mode&quot;: &quot;agent&quot;,
+      &quot;reason&quot;: &quot;general_chat_only&quot;,
+      &quot;tasks&quot;: [
+        &quot;GENERAL_CHAT&quot;
+      ]
+    },
+    &quot;task_results&quot;: [],
+    &quot;current_task&quot;: null,
+    &quot;retry_count&quot;: 0,
+    &quot;llm_provider&quot;: &quot;openai&quot;,
+    &quot;llm_model&quot;: &quot;gpt-4o-mini&quot;,
+    &quot;conversation_id&quot;: &quot;conv_2af4fe1d01d5&quot;,
+    &quot;turn_id&quot;: &quot;turn_0eb7e30f5bfa&quot;
+  },
+  &quot;output&quot;: null,
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>end</td><td>should_continue</td><td>2026-02-24T02:09:59.633024+00:00</td><td>0</td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: null,
+  &quot;output&quot;: &quot;end&quot;,
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>end</td><td>agent</td><td>2026-02-24T02:09:59.633463+00:00</td><td>2073</td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: null,
+  &quot;output&quot;: {
+    &quot;messages&quot;: [
+      {
+        &quot;type&quot;: &quot;AIMessage&quot;,
+        &quot;role&quot;: &quot;assistant&quot;,
+        &quot;content&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+      }
+    ]
+  },
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>start</td><td>process_output</td><td>2026-02-24T02:09:59.634110+00:00</td><td></td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: {
+    &quot;messages&quot;: [
+      {
+        &quot;type&quot;: &quot;HumanMessage&quot;,
+        &quot;role&quot;: &quot;user&quot;,
+        &quot;content&quot;: &quot;안녕&quot;
+      },
+      {
+        &quot;type&quot;: &quot;AIMessage&quot;,
+        &quot;role&quot;: &quot;assistant&quot;,
+        &quot;content&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+      }
+    ],
+    &quot;question&quot;: &quot;안녕&quot;,
+    &quot;documents&quot;: [],
+    &quot;is_authenticated&quot;: true,
+    &quot;user_info&quot;: {
+      &quot;id&quot;: 1,
+      &quot;name&quot;: &quot;테스트유저&quot;,
+      &quot;email&quot;: &quot;test@example.com&quot;
+    },
+    &quot;tool_outputs&quot;: [],
+    &quot;task_list&quot;: [
+      {
+        &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+        &quot;args&quot;: {}
+      }
+    ],
+    &quot;execution_plan&quot;: {
+      &quot;mode&quot;: &quot;agent&quot;,
+      &quot;reason&quot;: &quot;general_chat_only&quot;,
+      &quot;tasks&quot;: [
+        &quot;GENERAL_CHAT&quot;
+      ]
+    },
+    &quot;task_results&quot;: [],
+    &quot;current_task&quot;: null,
+    &quot;retry_count&quot;: 0,
+    &quot;llm_provider&quot;: &quot;openai&quot;,
+    &quot;llm_model&quot;: &quot;gpt-4o-mini&quot;,
+    &quot;conversation_id&quot;: &quot;conv_2af4fe1d01d5&quot;,
+    &quot;turn_id&quot;: &quot;turn_0eb7e30f5bfa&quot;
+  },
+  &quot;output&quot;: null,
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>end</td><td>process_output</td><td>2026-02-24T02:09:59.634720+00:00</td><td>0</td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: null,
+  &quot;output&quot;: {
+    &quot;generation&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;,
+    &quot;tool_outputs&quot;: []
+  },
+  &quot;usage&quot;: null
+}</pre></details></td></tr></tbody></table></div><h4>Tools</h4><p class='muted'>No data</p><h4>Models</h4><div class='table-wrap'><table><thead><tr><th>event</th><th>name</th><th>at</th><th>duration_ms</th><th>payload</th></tr></thead><tbody><tr><td>start</td><td>ChatOpenAI</td><td>2026-02-24T02:09:56.506351+00:00</td><td></td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: {
+    &quot;messages&quot;: [
+      [
+        {
+          &quot;type&quot;: &quot;SystemMessage&quot;,
+          &quot;role&quot;: &quot;system&quot;,
+          &quot;content&quot;: &quot;\n당신은 사용자 요청을 실행 가능한 작업 목록으로 분해하는 Planner입니다.\n반드시 JSON 스키마(DecompositionResult)에 맞춰 응답하세요.\n\n작업 타입 정의:\n- ORDER_QUERY: 주문/배송/주문내역 조회\n- POLICY_CHECK: 환불/반품/교환/결제/배송 정책 확인\n- FAQ_RETRIEVAL: 일반 FAQ/정보 검색\n- ORDER_ACTION: 취소/환불/교환/결제수단변경 같은 실제 액션\n- GENERAL_CHAT: 위에 해당하지 않는 일반 대화\n\n규칙:\n1) 복합 요청이면 여러 작업으로 분해하세요.\n2) args에는 필요한 최소 파라미터만 넣으세요.\n3) order_id가 없는데 환불/취소/교환을 요청하면 ORDER_ACTION으로 넣되 args에 action만 넣어도 됩니다.\n4) 반드시 tasks 배열을 반환하세요. 비어 있으면 GENERAL_CHAT 1개를 반환하세요.\n5) 하나 이상의 실행 가능한 작업(ORDER_ACTION/ORDER_QUERY/POLICY_CHECK/FAQ_RETRIEVAL)이 있으면 GENERAL_CHAT을 함께 넣지 마세요.\n6) [현재 작업 상태]가 refund/exchange 이고 status가 validating 또는 approving이며 target_id가 존재하면,\n   사용자의 최신 발화가 이전 절차를 \&quot;계속 진행\&quot;하려는 맥락인지 우선 판단하세요.\n   이 경우 다음 단계는 ORDER_ACTION 하나만 반환하고 args는 action=&#x27;address_search&#x27;, order_id=target_id 로 설정하세요.\n7) 이전 Assistant가 이미 \&quot;반품/교환 진행 여부\&quot;를 질문했고 사용자가 진행 의사를 보인 턴이라면,\n   환불 가능 여부 재확인(action=&#x27;refund&#x27;)으로 되돌아가지 말고 주소 수집 단계(action=&#x27;address_search&#x27;)로 진행하세요.\n&quot;
+        },
+        {
+          &quot;type&quot;: &quot;HumanMessage&quot;,
+          &quot;role&quot;: &quot;user&quot;,
+          &quot;content&quot;: &quot;[최근 대화 컨텍스트]\nUSER: 안녕\n\n[현재 사용자 입력]\n안녕\n\n[현재 작업 상태]\n(없음)\n\n주의: 현재 사용자 입력이 짧거나 모호하더라도, 직전 대화 문맥과 현재 작업 상태를 우선 반영해 GENERAL_CHAT으로 과도하게 분류하지 말고 적절한 작업으로 분해하세요.&quot;
+        }
+      ]
+    ]
+  },
+  &quot;output&quot;: null,
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>end</td><td>ChatOpenAI</td><td>2026-02-24T02:09:57.556593+00:00</td><td>1050</td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: null,
+  &quot;output&quot;: {
+    &quot;type&quot;: &quot;AIMessage&quot;,
+    &quot;role&quot;: &quot;assistant&quot;,
+    &quot;content&quot;: &quot;&quot;,
+    &quot;tool_calls&quot;: [
+      {
+        &quot;name&quot;: &quot;DecompositionResult&quot;,
+        &quot;args&quot;: {
+          &quot;tasks&quot;: [
+            {
+              &quot;task&quot;: &quot;GENERAL_CHAT&quot;
+            }
+          ]
+        },
+        &quot;id&quot;: &quot;call_MQtNnOCTM6DzreY0rbTve31d&quot;,
+        &quot;type&quot;: &quot;tool_call&quot;
+      }
+    ]
+  },
+  &quot;usage&quot;: {
+    &quot;input_tokens&quot;: 547,
+    &quot;output_tokens&quot;: 10,
+    &quot;total_tokens&quot;: 557,
+    &quot;input_token_details&quot;: {
+      &quot;audio&quot;: 0,
+      &quot;cache_read&quot;: 0
+    },
+    &quot;output_token_details&quot;: {
+      &quot;audio&quot;: 0,
+      &quot;reasoning&quot;: 0
+    }
+  }
+}</pre></details></td></tr><tr><td>start</td><td>ChatOpenAI</td><td>2026-02-24T02:09:57.578227+00:00</td><td></td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: {
+    &quot;messages&quot;: [
+      [
+        {
+          &quot;type&quot;: &quot;SystemMessage&quot;,
+          &quot;role&quot;: &quot;system&quot;,
+          &quot;content&quot;: &quot;\n당신은 &#x27;스타일봇&#x27;이라는 전문 패션 스타일리스트이자 CS 상담원입니다.\n고객에게 친절하고 세련된 말투를 사용하세요.\n모르는 내용은 정직하게 모른다고 대답해야 합니다.\nUser Info: {\&quot;id\&quot;: 1, \&quot;name\&quot;: \&quot;테스트유저\&quot;, \&quot;email\&quot;: \&quot;test@example.com\&quot;}\n\n\n[Tool Usage Instructions]\n1. 사용자가 주문 조회, 환불, 배송 확인 등을 요청하면 주저하지 말고 즉시 관련 도구(Tool)를 호출하세요. \&quot;확인해보겠습니다\&quot;라고 말하기 전에 도구부터 호출하세요.\n2. 도구 실행에 &#x27;user_id&#x27;가 필요한 경우, 위 [User Context]에 있는 User ID를 사용하세요.\n3. 주문 번호가 문맥에 있다면 해당 주문 번호를 사용하세요.\n4. 사용자가 특정 주문을 선택해야 하는 상황(예: \&quot;환불해줘\&quot;라고만 하고 주문번호를 안 줌)이라면, get_user_orders를 호출하되 `requires_selection=True` 파라미터를 꼭 설정하세요.\n5. 이때, `action_context` 파라미터에 원래 의도(&#x27;refund&#x27;, &#x27;exchange&#x27;, &#x27;cancel&#x27;)를 반드시 포함하세요. (예: `action_context=&#x27;refund&#x27;`)\n6. [CRITICAL] 사용자로부터 &#x27;주소&#x27;(배송지, 수거지 등)를 입력받아야 할 경우, 절대로 텍스트로 \&quot;주소를 입력해주세요\&quot;라고 질문하지 마십시오. 대신 무조건 `open_address_search` 도구를 호출하여 주소 검색 팝업을 띄우십시오. 이는 필수 규칙입니다.\n&quot;
+        },
+        {
+          &quot;type&quot;: &quot;HumanMessage&quot;,
+          &quot;role&quot;: &quot;user&quot;,
+          &quot;content&quot;: &quot;안녕&quot;
+        }
+      ]
+    ]
+  },
+  &quot;output&quot;: null,
+  &quot;usage&quot;: null
+}</pre></details></td></tr><tr><td>end</td><td>ChatOpenAI</td><td>2026-02-24T02:09:59.631670+00:00</td><td>2053</td><td><details><summary>input/output</summary><pre>{
+  &quot;input&quot;: null,
+  &quot;output&quot;: {
+    &quot;type&quot;: &quot;AIMessage&quot;,
+    &quot;role&quot;: &quot;assistant&quot;,
+    &quot;content&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+  },
+  &quot;usage&quot;: {
+    &quot;input_tokens&quot;: 2301,
+    &quot;output_tokens&quot;: 25,
+    &quot;total_tokens&quot;: 2326,
+    &quot;input_token_details&quot;: {
+      &quot;audio&quot;: 0,
+      &quot;cache_read&quot;: 0
+    },
+    &quot;output_token_details&quot;: {
+      &quot;audio&quot;: 0,
+      &quot;reasoning&quot;: 0
+    }
+  }
+}</pre></details></td></tr></tbody></table></div><h4>State Changes</h4><details><summary>State Change 1 (2026-02-24T02:09:59.637339+00:00)</summary><pre>{
+  &quot;added_keys&quot;: [
+    &quot;generation&quot;,
+    &quot;question&quot;
+  ],
+  &quot;removed_keys&quot;: [],
+  &quot;changed_keys&quot;: [
+    &quot;execution_plan&quot;,
+    &quot;messages&quot;,
+    &quot;task_list&quot;
+  ],
+  &quot;before_summary&quot;: {
+    &quot;keys&quot;: [
+      &quot;conversation_id&quot;,
+      &quot;current_task&quot;,
+      &quot;documents&quot;,
+      &quot;execution_plan&quot;,
+      &quot;is_authenticated&quot;,
+      &quot;llm_model&quot;,
+      &quot;llm_provider&quot;,
+      &quot;messages&quot;,
+      &quot;retry_count&quot;,
+      &quot;task_list&quot;,
+      &quot;task_results&quot;,
+      &quot;tool_outputs&quot;,
+      &quot;turn_id&quot;,
+      &quot;user_info&quot;
+    ],
+    &quot;message_count&quot;: 1,
+    &quot;last_message&quot;: {
+      &quot;type&quot;: &quot;HumanMessage&quot;,
+      &quot;role&quot;: &quot;user&quot;,
+      &quot;content&quot;: &quot;안녕&quot;
+    },
+    &quot;task_list_len&quot;: 0,
+    &quot;task_results_len&quot;: 0,
+    &quot;execution_plan&quot;: {},
+    &quot;current_task&quot;: null,
+    &quot;generation&quot;: &quot;&quot;
+  },
+  &quot;after_summary&quot;: {
+    &quot;keys&quot;: [
+      &quot;conversation_id&quot;,
+      &quot;current_task&quot;,
+      &quot;documents&quot;,
+      &quot;execution_plan&quot;,
+      &quot;generation&quot;,
+      &quot;is_authenticated&quot;,
+      &quot;llm_model&quot;,
+      &quot;llm_provider&quot;,
+      &quot;messages&quot;,
+      &quot;question&quot;,
+      &quot;retry_count&quot;,
+      &quot;task_list&quot;,
+      &quot;task_results&quot;,
+      &quot;tool_outputs&quot;,
+      &quot;turn_id&quot;,
+      &quot;user_info&quot;
+    ],
+    &quot;message_count&quot;: 2,
+    &quot;last_message&quot;: {
+      &quot;type&quot;: &quot;AIMessage&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;content&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+    },
+    &quot;task_list_len&quot;: 1,
+    &quot;task_results_len&quot;: 0,
+    &quot;execution_plan&quot;: {
+      &quot;mode&quot;: &quot;agent&quot;,
+      &quot;reason&quot;: &quot;general_chat_only&quot;,
+      &quot;tasks&quot;: [
+        &quot;GENERAL_CHAT&quot;
+      ]
+    },
+    &quot;current_task&quot;: null,
+    &quot;generation&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+  }
+}</pre></details><details><summary>State Change 2 (2026-02-24T02:09:59.637706+00:00)</summary><pre>{
+  &quot;added_keys&quot;: [],
+  &quot;removed_keys&quot;: [],
+  &quot;changed_keys&quot;: [
+    &quot;summary&quot;
+  ],
+  &quot;before_summary&quot;: {
+    &quot;keys&quot;: [
+      &quot;summary&quot;
+    ],
+    &quot;message_count&quot;: 0,
+    &quot;last_message&quot;: null,
+    &quot;task_list_len&quot;: 0,
+    &quot;task_results_len&quot;: 0,
+    &quot;execution_plan&quot;: null,
+    &quot;current_task&quot;: null,
+    &quot;generation&quot;: &quot;&quot;
+  },
+  &quot;after_summary&quot;: {
+    &quot;keys&quot;: [
+      &quot;summary&quot;
+    ],
+    &quot;message_count&quot;: 0,
+    &quot;last_message&quot;: null,
+    &quot;task_list_len&quot;: 0,
+    &quot;task_results_len&quot;: 0,
+    &quot;execution_plan&quot;: null,
+    &quot;current_task&quot;: null,
+    &quot;generation&quot;: &quot;&quot;
+  }
+}</pre></details><h4>Errors</h4><p class='muted'>No errors</p><details><summary>Raw Turn JSON</summary><pre>{
+  &quot;conversation_id&quot;: &quot;conv_2af4fe1d01d5&quot;,
+  &quot;turn_id&quot;: &quot;turn_0eb7e30f5bfa&quot;,
+  &quot;user_id&quot;: 1,
+  &quot;provider&quot;: &quot;openai&quot;,
+  &quot;model&quot;: &quot;gpt-4o-mini&quot;,
+  &quot;started_at&quot;: &quot;2026-02-24T02:09:56.360747+00:00&quot;,
+  &quot;status&quot;: &quot;success&quot;,
+  &quot;input&quot;: {
+    &quot;user_message&quot;: &quot;안녕&quot;,
+    &quot;state_summary&quot;: {
+      &quot;keys&quot;: [
+        &quot;conversation_id&quot;,
+        &quot;current_task&quot;,
+        &quot;documents&quot;,
+        &quot;execution_plan&quot;,
+        &quot;is_authenticated&quot;,
+        &quot;llm_model&quot;,
+        &quot;llm_provider&quot;,
+        &quot;messages&quot;,
+        &quot;retry_count&quot;,
+        &quot;task_list&quot;,
+        &quot;task_results&quot;,
+        &quot;tool_outputs&quot;,
+        &quot;turn_id&quot;,
+        &quot;user_info&quot;
+      ],
+      &quot;message_count&quot;: 1,
+      &quot;last_message&quot;: {
+        &quot;type&quot;: &quot;HumanMessage&quot;,
+        &quot;role&quot;: &quot;user&quot;,
+        &quot;content&quot;: &quot;안녕&quot;
+      },
+      &quot;task_list_len&quot;: 0,
+      &quot;task_results_len&quot;: 0,
+      &quot;execution_plan&quot;: {},
+      &quot;current_task&quot;: null,
+      &quot;generation&quot;: &quot;&quot;
+    }
+  },
+  &quot;output&quot;: {
+    &quot;state_summary&quot;: {
+      &quot;keys&quot;: [
+        &quot;conversation_id&quot;,
+        &quot;current_task&quot;,
+        &quot;documents&quot;,
+        &quot;execution_plan&quot;,
+        &quot;generation&quot;,
+        &quot;is_authenticated&quot;,
+        &quot;llm_model&quot;,
+        &quot;llm_provider&quot;,
+        &quot;messages&quot;,
+        &quot;question&quot;,
+        &quot;retry_count&quot;,
+        &quot;task_list&quot;,
+        &quot;task_results&quot;,
+        &quot;tool_outputs&quot;,
+        &quot;turn_id&quot;,
+        &quot;user_info&quot;
+      ],
+      &quot;message_count&quot;: 2,
+      &quot;last_message&quot;: {
+        &quot;type&quot;: &quot;AIMessage&quot;,
+        &quot;role&quot;: &quot;assistant&quot;,
+        &quot;content&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+      },
+      &quot;task_list_len&quot;: 1,
+      &quot;task_results_len&quot;: 0,
+      &quot;execution_plan&quot;: {
+        &quot;mode&quot;: &quot;agent&quot;,
+        &quot;reason&quot;: &quot;general_chat_only&quot;,
+        &quot;tasks&quot;: [
+          &quot;GENERAL_CHAT&quot;
+        ]
+      },
+      &quot;current_task&quot;: null,
+      &quot;generation&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+    },
+    &quot;generation&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+  },
+  &quot;metrics&quot;: {
+    &quot;duration_ms&quot;: 3276,
+    &quot;token_usage&quot;: {
+      &quot;input_tokens&quot;: 2848,
+      &quot;output_tokens&quot;: 35,
+      &quot;total_tokens&quot;: 2883
+    }
+  },
+  &quot;timeline&quot;: {
+    &quot;nodes&quot;: [
+      {
+        &quot;node&quot;: &quot;decomposer&quot;,
+        &quot;event&quot;: &quot;start&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:56.410049+00:00&quot;,
+        &quot;input&quot;: {
+          &quot;messages&quot;: [
+            {
+              &quot;type&quot;: &quot;HumanMessage&quot;,
+              &quot;role&quot;: &quot;user&quot;,
+              &quot;content&quot;: &quot;안녕&quot;
+            }
+          ],
+          &quot;documents&quot;: [],
+          &quot;is_authenticated&quot;: true,
+          &quot;user_info&quot;: {
+            &quot;id&quot;: 1,
+            &quot;name&quot;: &quot;테스트유저&quot;,
+            &quot;email&quot;: &quot;test@example.com&quot;
+          },
+          &quot;tool_outputs&quot;: [],
+          &quot;task_list&quot;: [],
+          &quot;execution_plan&quot;: {},
+          &quot;task_results&quot;: [],
+          &quot;current_task&quot;: null,
+          &quot;retry_count&quot;: 0,
+          &quot;llm_provider&quot;: &quot;openai&quot;,
+          &quot;llm_model&quot;: &quot;gpt-4o-mini&quot;,
+          &quot;conversation_id&quot;: &quot;conv_2af4fe1d01d5&quot;,
+          &quot;turn_id&quot;: &quot;turn_0eb7e30f5bfa&quot;
+        },
+        &quot;_timer_key&quot;: &quot;decomposer:0&quot;
+      },
+      {
+        &quot;node&quot;: &quot;RunnableSequence&quot;,
+        &quot;event&quot;: &quot;start&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:56.505538+00:00&quot;,
+        &quot;input&quot;: [
+          {
+            &quot;type&quot;: &quot;SystemMessage&quot;,
+            &quot;role&quot;: &quot;system&quot;,
+            &quot;content&quot;: &quot;\n당신은 사용자 요청을 실행 가능한 작업 목록으로 분해하는 Planner입니다.\n반드시 JSON 스키마(DecompositionResult)에 맞춰 응답하세요.\n\n작업 타입 정의:\n- ORDER_QUERY: 주문/배송/주문내역 조회\n- POLICY_CHECK: 환불/반품/교환/결제/배송 정책 확인\n- FAQ_RETRIEVAL: 일반 FAQ/정보 검색\n- ORDER_ACTION: 취소/환불/교환/결제수단변경 같은 실제 액션\n- GENERAL_CHAT: 위에 해당하지 않는 일반 대화\n\n규칙:\n1) 복합 요청이면 여러 작업으로 분해하세요.\n2) args에는 필요한 최소 파라미터만 넣으세요.\n3) order_id가 없는데 환불/취소/교환을 요청하면 ORDER_ACTION으로 넣되 args에 action만 넣어도 됩니다.\n4) 반드시 tasks 배열을 반환하세요. 비어 있으면 GENERAL_CHAT 1개를 반환하세요.\n5) 하나 이상의 실행 가능한 작업(ORDER_ACTION/ORDER_QUERY/POLICY_CHECK/FAQ_RETRIEVAL)이 있으면 GENERAL_CHAT을 함께 넣지 마세요.\n6) [현재 작업 상태]가 refund/exchange 이고 status가 validating 또는 approving이며 target_id가 존재하면,\n   사용자의 최신 발화가 이전 절차를 \&quot;계속 진행\&quot;하려는 맥락인지 우선 판단하세요.\n   이 경우 다음 단계는 ORDER_ACTION 하나만 반환하고 args는 action=&#x27;address_search&#x27;, order_id=target_id 로 설정하세요.\n7) 이전 Assistant가 이미 \&quot;반품/교환 진행 여부\&quot;를 질문했고 사용자가 진행 의사를 보인 턴이라면,\n   환불 가능 여부 재확인(action=&#x27;refund&#x27;)으로 되돌아가지 말고 주소 수집 단계(action=&#x27;address_search&#x27;)로 진행하세요.\n&quot;
+          },
+          {
+            &quot;type&quot;: &quot;HumanMessage&quot;,
+            &quot;role&quot;: &quot;user&quot;,
+            &quot;content&quot;: &quot;[최근 대화 컨텍스트]\nUSER: 안녕\n\n[현재 사용자 입력]\n안녕\n\n[현재 작업 상태]\n(없음)\n\n주의: 현재 사용자 입력이 짧거나 모호하더라도, 직전 대화 문맥과 현재 작업 상태를 우선 반영해 GENERAL_CHAT으로 과도하게 분류하지 말고 적절한 작업으로 분해하세요.&quot;
+          }
+        ],
+        &quot;_timer_key&quot;: &quot;RunnableSequence:1&quot;
+      },
+      {
+        &quot;node&quot;: &quot;RunnableSequence&quot;,
+        &quot;event&quot;: &quot;end&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:57.557640+00:00&quot;,
+        &quot;output&quot;: &quot;tasks=[TaskItem(task=&lt;TaskType.GENERAL_CHAT: &#x27;GENERAL_CHAT&#x27;&gt;, args={})]&quot;,
+        &quot;duration_ms&quot;: 1052
+      },
+      {
+        &quot;node&quot;: &quot;decomposer&quot;,
+        &quot;event&quot;: &quot;end&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:57.558023+00:00&quot;,
+        &quot;output&quot;: {
+          &quot;question&quot;: &quot;안녕&quot;,
+          &quot;task_list&quot;: [
+            {
+              &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+              &quot;args&quot;: {}
+            }
+          ]
+        },
+        &quot;duration_ms&quot;: 1147
+      },
+      {
+        &quot;node&quot;: &quot;orchestrator&quot;,
+        &quot;event&quot;: &quot;start&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:57.558791+00:00&quot;,
+        &quot;input&quot;: {
+          &quot;messages&quot;: [
+            {
+              &quot;type&quot;: &quot;HumanMessage&quot;,
+              &quot;role&quot;: &quot;user&quot;,
+              &quot;content&quot;: &quot;안녕&quot;
+            }
+          ],
+          &quot;question&quot;: &quot;안녕&quot;,
+          &quot;documents&quot;: [],
+          &quot;is_authenticated&quot;: true,
+          &quot;user_info&quot;: {
+            &quot;id&quot;: 1,
+            &quot;name&quot;: &quot;테스트유저&quot;,
+            &quot;email&quot;: &quot;test@example.com&quot;
+          },
+          &quot;tool_outputs&quot;: [],
+          &quot;task_list&quot;: [
+            {
+              &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+              &quot;args&quot;: {}
+            }
+          ],
+          &quot;execution_plan&quot;: {},
+          &quot;task_results&quot;: [],
+          &quot;current_task&quot;: null,
+          &quot;retry_count&quot;: 0,
+          &quot;llm_provider&quot;: &quot;openai&quot;,
+          &quot;llm_model&quot;: &quot;gpt-4o-mini&quot;,
+          &quot;conversation_id&quot;: &quot;conv_2af4fe1d01d5&quot;,
+          &quot;turn_id&quot;: &quot;turn_0eb7e30f5bfa&quot;
+        },
+        &quot;_timer_key&quot;: &quot;orchestrator:4&quot;
+      },
+      {
+        &quot;node&quot;: &quot;route_after_orchestration&quot;,
+        &quot;event&quot;: &quot;start&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:57.559319+00:00&quot;,
+        &quot;input&quot;: {
+          &quot;messages&quot;: [
+            {
+              &quot;type&quot;: &quot;HumanMessage&quot;,
+              &quot;role&quot;: &quot;user&quot;,
+              &quot;content&quot;: &quot;안녕&quot;
+            }
+          ],
+          &quot;question&quot;: &quot;안녕&quot;,
+          &quot;documents&quot;: [],
+          &quot;is_authenticated&quot;: true,
+          &quot;user_info&quot;: {
+            &quot;id&quot;: 1,
+            &quot;name&quot;: &quot;테스트유저&quot;,
+            &quot;email&quot;: &quot;test@example.com&quot;
+          },
+          &quot;tool_outputs&quot;: [],
+          &quot;task_list&quot;: [
+            {
+              &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+              &quot;args&quot;: {}
+            }
+          ],
+          &quot;execution_plan&quot;: {
+            &quot;mode&quot;: &quot;agent&quot;,
+            &quot;reason&quot;: &quot;general_chat_only&quot;,
+            &quot;tasks&quot;: [
+              &quot;GENERAL_CHAT&quot;
+            ]
+          },
+          &quot;task_results&quot;: [],
+          &quot;current_task&quot;: null,
+          &quot;retry_count&quot;: 0,
+          &quot;llm_provider&quot;: &quot;openai&quot;,
+          &quot;llm_model&quot;: &quot;gpt-4o-mini&quot;,
+          &quot;conversation_id&quot;: &quot;conv_2af4fe1d01d5&quot;,
+          &quot;turn_id&quot;: &quot;turn_0eb7e30f5bfa&quot;
+        },
+        &quot;_timer_key&quot;: &quot;route_after_orchestration:5&quot;
+      },
+      {
+        &quot;node&quot;: &quot;route_after_orchestration&quot;,
+        &quot;event&quot;: &quot;end&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:57.559559+00:00&quot;,
+        &quot;output&quot;: &quot;agent&quot;,
+        &quot;duration_ms&quot;: 0
+      },
+      {
+        &quot;node&quot;: &quot;orchestrator&quot;,
+        &quot;event&quot;: &quot;end&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:57.559737+00:00&quot;,
+        &quot;output&quot;: {
+          &quot;task_list&quot;: [
+            {
+              &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+              &quot;args&quot;: {}
+            }
+          ],
+          &quot;execution_plan&quot;: {
+            &quot;mode&quot;: &quot;agent&quot;,
+            &quot;reason&quot;: &quot;general_chat_only&quot;,
+            &quot;tasks&quot;: [
+              &quot;GENERAL_CHAT&quot;
+            ]
+          }
+        },
+        &quot;duration_ms&quot;: 0
+      },
+      {
+        &quot;node&quot;: &quot;agent&quot;,
+        &quot;event&quot;: &quot;start&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:57.560049+00:00&quot;,
+        &quot;input&quot;: {
+          &quot;messages&quot;: [
+            {
+              &quot;type&quot;: &quot;HumanMessage&quot;,
+              &quot;role&quot;: &quot;user&quot;,
+              &quot;content&quot;: &quot;안녕&quot;
+            }
+          ],
+          &quot;question&quot;: &quot;안녕&quot;,
+          &quot;documents&quot;: [],
+          &quot;is_authenticated&quot;: true,
+          &quot;user_info&quot;: {
+            &quot;id&quot;: 1,
+            &quot;name&quot;: &quot;테스트유저&quot;,
+            &quot;email&quot;: &quot;test@example.com&quot;
+          },
+          &quot;tool_outputs&quot;: [],
+          &quot;task_list&quot;: [
+            {
+              &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+              &quot;args&quot;: {}
+            }
+          ],
+          &quot;execution_plan&quot;: {
+            &quot;mode&quot;: &quot;agent&quot;,
+            &quot;reason&quot;: &quot;general_chat_only&quot;,
+            &quot;tasks&quot;: [
+              &quot;GENERAL_CHAT&quot;
+            ]
+          },
+          &quot;task_results&quot;: [],
+          &quot;current_task&quot;: null,
+          &quot;retry_count&quot;: 0,
+          &quot;llm_provider&quot;: &quot;openai&quot;,
+          &quot;llm_model&quot;: &quot;gpt-4o-mini&quot;,
+          &quot;conversation_id&quot;: &quot;conv_2af4fe1d01d5&quot;,
+          &quot;turn_id&quot;: &quot;turn_0eb7e30f5bfa&quot;
+        },
+        &quot;_timer_key&quot;: &quot;agent:8&quot;
+      },
+      {
+        &quot;node&quot;: &quot;should_continue&quot;,
+        &quot;event&quot;: &quot;start&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:59.632409+00:00&quot;,
+        &quot;input&quot;: {
+          &quot;messages&quot;: [
+            {
+              &quot;type&quot;: &quot;HumanMessage&quot;,
+              &quot;role&quot;: &quot;user&quot;,
+              &quot;content&quot;: &quot;안녕&quot;
+            },
+            {
+              &quot;type&quot;: &quot;AIMessage&quot;,
+              &quot;role&quot;: &quot;assistant&quot;,
+              &quot;content&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+            }
+          ],
+          &quot;question&quot;: &quot;안녕&quot;,
+          &quot;documents&quot;: [],
+          &quot;is_authenticated&quot;: true,
+          &quot;user_info&quot;: {
+            &quot;id&quot;: 1,
+            &quot;name&quot;: &quot;테스트유저&quot;,
+            &quot;email&quot;: &quot;test@example.com&quot;
+          },
+          &quot;tool_outputs&quot;: [],
+          &quot;task_list&quot;: [
+            {
+              &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+              &quot;args&quot;: {}
+            }
+          ],
+          &quot;execution_plan&quot;: {
+            &quot;mode&quot;: &quot;agent&quot;,
+            &quot;reason&quot;: &quot;general_chat_only&quot;,
+            &quot;tasks&quot;: [
+              &quot;GENERAL_CHAT&quot;
+            ]
+          },
+          &quot;task_results&quot;: [],
+          &quot;current_task&quot;: null,
+          &quot;retry_count&quot;: 0,
+          &quot;llm_provider&quot;: &quot;openai&quot;,
+          &quot;llm_model&quot;: &quot;gpt-4o-mini&quot;,
+          &quot;conversation_id&quot;: &quot;conv_2af4fe1d01d5&quot;,
+          &quot;turn_id&quot;: &quot;turn_0eb7e30f5bfa&quot;
+        },
+        &quot;_timer_key&quot;: &quot;should_continue:9&quot;
+      },
+      {
+        &quot;node&quot;: &quot;should_continue&quot;,
+        &quot;event&quot;: &quot;end&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:59.633024+00:00&quot;,
+        &quot;output&quot;: &quot;end&quot;,
+        &quot;duration_ms&quot;: 0
+      },
+      {
+        &quot;node&quot;: &quot;agent&quot;,
+        &quot;event&quot;: &quot;end&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:59.633463+00:00&quot;,
+        &quot;output&quot;: {
+          &quot;messages&quot;: [
+            {
+              &quot;type&quot;: &quot;AIMessage&quot;,
+              &quot;role&quot;: &quot;assistant&quot;,
+              &quot;content&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+            }
+          ]
+        },
+        &quot;duration_ms&quot;: 2073
+      },
+      {
+        &quot;node&quot;: &quot;process_output&quot;,
+        &quot;event&quot;: &quot;start&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:59.634110+00:00&quot;,
+        &quot;input&quot;: {
+          &quot;messages&quot;: [
+            {
+              &quot;type&quot;: &quot;HumanMessage&quot;,
+              &quot;role&quot;: &quot;user&quot;,
+              &quot;content&quot;: &quot;안녕&quot;
+            },
+            {
+              &quot;type&quot;: &quot;AIMessage&quot;,
+              &quot;role&quot;: &quot;assistant&quot;,
+              &quot;content&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+            }
+          ],
+          &quot;question&quot;: &quot;안녕&quot;,
+          &quot;documents&quot;: [],
+          &quot;is_authenticated&quot;: true,
+          &quot;user_info&quot;: {
+            &quot;id&quot;: 1,
+            &quot;name&quot;: &quot;테스트유저&quot;,
+            &quot;email&quot;: &quot;test@example.com&quot;
+          },
+          &quot;tool_outputs&quot;: [],
+          &quot;task_list&quot;: [
+            {
+              &quot;task&quot;: &quot;GENERAL_CHAT&quot;,
+              &quot;args&quot;: {}
+            }
+          ],
+          &quot;execution_plan&quot;: {
+            &quot;mode&quot;: &quot;agent&quot;,
+            &quot;reason&quot;: &quot;general_chat_only&quot;,
+            &quot;tasks&quot;: [
+              &quot;GENERAL_CHAT&quot;
+            ]
+          },
+          &quot;task_results&quot;: [],
+          &quot;current_task&quot;: null,
+          &quot;retry_count&quot;: 0,
+          &quot;llm_provider&quot;: &quot;openai&quot;,
+          &quot;llm_model&quot;: &quot;gpt-4o-mini&quot;,
+          &quot;conversation_id&quot;: &quot;conv_2af4fe1d01d5&quot;,
+          &quot;turn_id&quot;: &quot;turn_0eb7e30f5bfa&quot;
+        },
+        &quot;_timer_key&quot;: &quot;process_output:12&quot;
+      },
+      {
+        &quot;node&quot;: &quot;process_output&quot;,
+        &quot;event&quot;: &quot;end&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:59.634720+00:00&quot;,
+        &quot;output&quot;: {
+          &quot;generation&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;,
+          &quot;tool_outputs&quot;: []
+        },
+        &quot;duration_ms&quot;: 0
+      }
+    ],
+    &quot;tools&quot;: [],
+    &quot;models&quot;: [
+      {
+        &quot;model&quot;: &quot;ChatOpenAI&quot;,
+        &quot;event&quot;: &quot;start&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:56.506351+00:00&quot;,
+        &quot;input&quot;: {
+          &quot;messages&quot;: [
+            [
+              {
+                &quot;type&quot;: &quot;SystemMessage&quot;,
+                &quot;role&quot;: &quot;system&quot;,
+                &quot;content&quot;: &quot;\n당신은 사용자 요청을 실행 가능한 작업 목록으로 분해하는 Planner입니다.\n반드시 JSON 스키마(DecompositionResult)에 맞춰 응답하세요.\n\n작업 타입 정의:\n- ORDER_QUERY: 주문/배송/주문내역 조회\n- POLICY_CHECK: 환불/반품/교환/결제/배송 정책 확인\n- FAQ_RETRIEVAL: 일반 FAQ/정보 검색\n- ORDER_ACTION: 취소/환불/교환/결제수단변경 같은 실제 액션\n- GENERAL_CHAT: 위에 해당하지 않는 일반 대화\n\n규칙:\n1) 복합 요청이면 여러 작업으로 분해하세요.\n2) args에는 필요한 최소 파라미터만 넣으세요.\n3) order_id가 없는데 환불/취소/교환을 요청하면 ORDER_ACTION으로 넣되 args에 action만 넣어도 됩니다.\n4) 반드시 tasks 배열을 반환하세요. 비어 있으면 GENERAL_CHAT 1개를 반환하세요.\n5) 하나 이상의 실행 가능한 작업(ORDER_ACTION/ORDER_QUERY/POLICY_CHECK/FAQ_RETRIEVAL)이 있으면 GENERAL_CHAT을 함께 넣지 마세요.\n6) [현재 작업 상태]가 refund/exchange 이고 status가 validating 또는 approving이며 target_id가 존재하면,\n   사용자의 최신 발화가 이전 절차를 \&quot;계속 진행\&quot;하려는 맥락인지 우선 판단하세요.\n   이 경우 다음 단계는 ORDER_ACTION 하나만 반환하고 args는 action=&#x27;address_search&#x27;, order_id=target_id 로 설정하세요.\n7) 이전 Assistant가 이미 \&quot;반품/교환 진행 여부\&quot;를 질문했고 사용자가 진행 의사를 보인 턴이라면,\n   환불 가능 여부 재확인(action=&#x27;refund&#x27;)으로 되돌아가지 말고 주소 수집 단계(action=&#x27;address_search&#x27;)로 진행하세요.\n&quot;
+              },
+              {
+                &quot;type&quot;: &quot;HumanMessage&quot;,
+                &quot;role&quot;: &quot;user&quot;,
+                &quot;content&quot;: &quot;[최근 대화 컨텍스트]\nUSER: 안녕\n\n[현재 사용자 입력]\n안녕\n\n[현재 작업 상태]\n(없음)\n\n주의: 현재 사용자 입력이 짧거나 모호하더라도, 직전 대화 문맥과 현재 작업 상태를 우선 반영해 GENERAL_CHAT으로 과도하게 분류하지 말고 적절한 작업으로 분해하세요.&quot;
+              }
+            ]
+          ]
+        },
+        &quot;_timer_key&quot;: &quot;ChatOpenAI:0&quot;
+      },
+      {
+        &quot;model&quot;: &quot;ChatOpenAI&quot;,
+        &quot;event&quot;: &quot;end&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:57.556593+00:00&quot;,
+        &quot;output&quot;: {
+          &quot;type&quot;: &quot;AIMessage&quot;,
+          &quot;role&quot;: &quot;assistant&quot;,
+          &quot;content&quot;: &quot;&quot;,
+          &quot;tool_calls&quot;: [
+            {
+              &quot;name&quot;: &quot;DecompositionResult&quot;,
+              &quot;args&quot;: {
+                &quot;tasks&quot;: [
+                  {
+                    &quot;task&quot;: &quot;GENERAL_CHAT&quot;
+                  }
+                ]
+              },
+              &quot;id&quot;: &quot;call_MQtNnOCTM6DzreY0rbTve31d&quot;,
+              &quot;type&quot;: &quot;tool_call&quot;
+            }
+          ]
+        },
+        &quot;usage&quot;: {
+          &quot;input_tokens&quot;: 547,
+          &quot;output_tokens&quot;: 10,
+          &quot;total_tokens&quot;: 557,
+          &quot;input_token_details&quot;: {
+            &quot;audio&quot;: 0,
+            &quot;cache_read&quot;: 0
+          },
+          &quot;output_token_details&quot;: {
+            &quot;audio&quot;: 0,
+            &quot;reasoning&quot;: 0
+          }
+        },
+        &quot;duration_ms&quot;: 1050
+      },
+      {
+        &quot;model&quot;: &quot;ChatOpenAI&quot;,
+        &quot;event&quot;: &quot;start&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:57.578227+00:00&quot;,
+        &quot;input&quot;: {
+          &quot;messages&quot;: [
+            [
+              {
+                &quot;type&quot;: &quot;SystemMessage&quot;,
+                &quot;role&quot;: &quot;system&quot;,
+                &quot;content&quot;: &quot;\n당신은 &#x27;스타일봇&#x27;이라는 전문 패션 스타일리스트이자 CS 상담원입니다.\n고객에게 친절하고 세련된 말투를 사용하세요.\n모르는 내용은 정직하게 모른다고 대답해야 합니다.\nUser Info: {\&quot;id\&quot;: 1, \&quot;name\&quot;: \&quot;테스트유저\&quot;, \&quot;email\&quot;: \&quot;test@example.com\&quot;}\n\n\n[Tool Usage Instructions]\n1. 사용자가 주문 조회, 환불, 배송 확인 등을 요청하면 주저하지 말고 즉시 관련 도구(Tool)를 호출하세요. \&quot;확인해보겠습니다\&quot;라고 말하기 전에 도구부터 호출하세요.\n2. 도구 실행에 &#x27;user_id&#x27;가 필요한 경우, 위 [User Context]에 있는 User ID를 사용하세요.\n3. 주문 번호가 문맥에 있다면 해당 주문 번호를 사용하세요.\n4. 사용자가 특정 주문을 선택해야 하는 상황(예: \&quot;환불해줘\&quot;라고만 하고 주문번호를 안 줌)이라면, get_user_orders를 호출하되 `requires_selection=True` 파라미터를 꼭 설정하세요.\n5. 이때, `action_context` 파라미터에 원래 의도(&#x27;refund&#x27;, &#x27;exchange&#x27;, &#x27;cancel&#x27;)를 반드시 포함하세요. (예: `action_context=&#x27;refund&#x27;`)\n6. [CRITICAL] 사용자로부터 &#x27;주소&#x27;(배송지, 수거지 등)를 입력받아야 할 경우, 절대로 텍스트로 \&quot;주소를 입력해주세요\&quot;라고 질문하지 마십시오. 대신 무조건 `open_address_search` 도구를 호출하여 주소 검색 팝업을 띄우십시오. 이는 필수 규칙입니다.\n&quot;
+              },
+              {
+                &quot;type&quot;: &quot;HumanMessage&quot;,
+                &quot;role&quot;: &quot;user&quot;,
+                &quot;content&quot;: &quot;안녕&quot;
+              }
+            ]
+          ]
+        },
+        &quot;_timer_key&quot;: &quot;ChatOpenAI:2&quot;
+      },
+      {
+        &quot;model&quot;: &quot;ChatOpenAI&quot;,
+        &quot;event&quot;: &quot;end&quot;,
+        &quot;at&quot;: &quot;2026-02-24T02:09:59.631670+00:00&quot;,
+        &quot;output&quot;: {
+          &quot;type&quot;: &quot;AIMessage&quot;,
+          &quot;role&quot;: &quot;assistant&quot;,
+          &quot;content&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+        },
+        &quot;usage&quot;: {
+          &quot;input_tokens&quot;: 2301,
+          &quot;output_tokens&quot;: 25,
+          &quot;total_tokens&quot;: 2326,
+          &quot;input_token_details&quot;: {
+            &quot;audio&quot;: 0,
+            &quot;cache_read&quot;: 0
+          },
+          &quot;output_token_details&quot;: {
+            &quot;audio&quot;: 0,
+            &quot;reasoning&quot;: 0
+          }
+        },
+        &quot;duration_ms&quot;: 2053
+      }
+    ]
+  },
+  &quot;errors&quot;: [],
+  &quot;state_changes&quot;: [
+    {
+      &quot;at&quot;: &quot;2026-02-24T02:09:59.637339+00:00&quot;,
+      &quot;changes&quot;: {
+        &quot;added_keys&quot;: [
+          &quot;generation&quot;,
+          &quot;question&quot;
+        ],
+        &quot;removed_keys&quot;: [],
+        &quot;changed_keys&quot;: [
+          &quot;execution_plan&quot;,
+          &quot;messages&quot;,
+          &quot;task_list&quot;
+        ],
+        &quot;before_summary&quot;: {
+          &quot;keys&quot;: [
+            &quot;conversation_id&quot;,
+            &quot;current_task&quot;,
+            &quot;documents&quot;,
+            &quot;execution_plan&quot;,
+            &quot;is_authenticated&quot;,
+            &quot;llm_model&quot;,
+            &quot;llm_provider&quot;,
+            &quot;messages&quot;,
+            &quot;retry_count&quot;,
+            &quot;task_list&quot;,
+            &quot;task_results&quot;,
+            &quot;tool_outputs&quot;,
+            &quot;turn_id&quot;,
+            &quot;user_info&quot;
+          ],
+          &quot;message_count&quot;: 1,
+          &quot;last_message&quot;: {
+            &quot;type&quot;: &quot;HumanMessage&quot;,
+            &quot;role&quot;: &quot;user&quot;,
+            &quot;content&quot;: &quot;안녕&quot;
+          },
+          &quot;task_list_len&quot;: 0,
+          &quot;task_results_len&quot;: 0,
+          &quot;execution_plan&quot;: {},
+          &quot;current_task&quot;: null,
+          &quot;generation&quot;: &quot;&quot;
+        },
+        &quot;after_summary&quot;: {
+          &quot;keys&quot;: [
+            &quot;conversation_id&quot;,
+            &quot;current_task&quot;,
+            &quot;documents&quot;,
+            &quot;execution_plan&quot;,
+            &quot;generation&quot;,
+            &quot;is_authenticated&quot;,
+            &quot;llm_model&quot;,
+            &quot;llm_provider&quot;,
+            &quot;messages&quot;,
+            &quot;question&quot;,
+            &quot;retry_count&quot;,
+            &quot;task_list&quot;,
+            &quot;task_results&quot;,
+            &quot;tool_outputs&quot;,
+            &quot;turn_id&quot;,
+            &quot;user_info&quot;
+          ],
+          &quot;message_count&quot;: 2,
+          &quot;last_message&quot;: {
+            &quot;type&quot;: &quot;AIMessage&quot;,
+            &quot;role&quot;: &quot;assistant&quot;,
+            &quot;content&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+          },
+          &quot;task_list_len&quot;: 1,
+          &quot;task_results_len&quot;: 0,
+          &quot;execution_plan&quot;: {
+            &quot;mode&quot;: &quot;agent&quot;,
+            &quot;reason&quot;: &quot;general_chat_only&quot;,
+            &quot;tasks&quot;: [
+              &quot;GENERAL_CHAT&quot;
+            ]
+          },
+          &quot;current_task&quot;: null,
+          &quot;generation&quot;: &quot;안녕하세요, 테스트유저님! 스타일봇입니다. 오늘 어떤 패션 관련 도움을 드릴까요?&quot;
+        }
+      }
+    },
+    {
+      &quot;at&quot;: &quot;2026-02-24T02:09:59.637706+00:00&quot;,
+      &quot;changes&quot;: {
+        &quot;added_keys&quot;: [],
+        &quot;removed_keys&quot;: [],
+        &quot;changed_keys&quot;: [
+          &quot;summary&quot;
+        ],
+        &quot;before_summary&quot;: {
+          &quot;keys&quot;: [
+            &quot;summary&quot;
+          ],
+          &quot;message_count&quot;: 0,
+          &quot;last_message&quot;: null,
+          &quot;task_list_len&quot;: 0,
+          &quot;task_results_len&quot;: 0,
+          &quot;execution_plan&quot;: null,
+          &quot;current_task&quot;: null,
+          &quot;generation&quot;: &quot;&quot;
+        },
+        &quot;after_summary&quot;: {
+          &quot;keys&quot;: [
+            &quot;summary&quot;
+          ],
+          &quot;message_count&quot;: 0,
+          &quot;last_message&quot;: null,
+          &quot;task_list_len&quot;: 0,
+          &quot;task_results_len&quot;: 0,
+          &quot;execution_plan&quot;: null,
+          &quot;current_task&quot;: null,
+          &quot;generation&quot;: &quot;&quot;
+        }
+      }
+    }
+  ],
+  &quot;finished_at&quot;: &quot;2026-02-24T02:09:59.637651+00:00&quot;
+}</pre></details></section>
+  </div>
+</body>
+</html>

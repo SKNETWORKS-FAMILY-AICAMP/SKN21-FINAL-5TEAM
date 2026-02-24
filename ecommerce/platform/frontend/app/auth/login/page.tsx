@@ -45,6 +45,7 @@ export default function LoginPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    console.log('Login Submit:', { email });
     setError('');
 
     if (!email || !password) {
@@ -59,6 +60,7 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
+      console.log('Login Response:', res.status, res.statusText);
 
       if (!res.ok) {
         const data = await res.json();
@@ -80,8 +82,9 @@ export default function LoginPage() {
       } else {
         router.push('/');
       }
-      
+
     } catch (err) {
+      console.error('Login Error:', err);
       setError('서버와 통신할 수 없습니다.');
     }
   }
