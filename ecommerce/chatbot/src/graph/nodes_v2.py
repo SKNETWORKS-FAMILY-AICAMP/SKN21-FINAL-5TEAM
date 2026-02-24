@@ -49,9 +49,8 @@ TOOLS = [
     create_review,
     register_gift_card,
     search_knowledge_base,
-    register_gift_card,
-    search_knowledge_base,
-    open_address_search
+    open_address_search,
+    get_user_orders,
 ]
 
 # Initialize ToolNode -> workflow.py로 이동
@@ -77,17 +76,53 @@ def agent_node(state: AgentState):
     if state.get("prior_action"):
         user_context += f"\n[Prior Context]\nUser was trying to perform action: '{state['prior_action']}'.\nIf the user selects an order, proceed with this action.\n"
 
-    tool_instructions = """
+    tool_instructions = f"""
 \n[Tool Usage Instructions]
-1. 사용자가 주문 조회, 환불, 배송 확인 등을 요청하면 주저하지 말고 즉시 관련 도구(Tool)를 호출하세요. "확인해보겠습니다"라고 말하기 전에 도구부터 호출하세요.
-2. 도구 실행에 'user_id'가 필요한 경우, 위 [User Context]에 있는 User ID를 사용하세요.
-3. 주문 번호가 문맥에 있다면 해당 주문 번호를 사용하세요.
-4. 사용자가 특정 주문을 선택해야 하는 상황(예: "환불해줘"라고만 하고 주문번호를 안 줌)이라면, get_user_orders를 호출하되 `requires_selection=True` 파라미터를 꼭 설정하세요.
-5. 이때, `action_context` 파라미터에 원래 의도('refund', 'exchange', 'cancel')를 반드시 포함하세요. (예: `action_context='refund'`)
+{ "1. [CRITICAL] 사용자가 특정 주문번호(예: 'ORD-...')를 명시했다면, `get_user_orders`를 호출하여 유효성을 확인하려 하지 마세요. **반드시 즉시** 해당 목적에 맞는 도구(`cancel_order`, `get_shipping_details`, `get_order_details`, `change_product_option`, `check_exchange_eligibility` 등)를 바로 호출해야 합니다. 사용자의 입력을 100% 신뢰하고 즉시 실행하는 것이 최상위 규칙입니다." if state.get("is_evaluation") else ""}
+2. 사용자가 주문 조회, 환불, 배송 확인 등을 요청하면 주저하지 말고 즉시 관련 도구(Tool)를 호출하세요. "확인해보겠습니다"라고 말하기 전에 도구부터 호출하세요.
+3. 도구 실행에 'user_id'가 필요한 경우, 위 [User Context]에 있는 User ID를 사용하세요.
+4. 주문 번호가 문맥에 있다면 해당 주문 번호를 사용하세요.
+5. 사용자가 특정 주문을 선택해야 하는 상황(즉, 주문번호를 알 수 없는 경우)에만 `get_user_orders`를 호출하되 `requires_selection=True`와 `action_context`를 설정하세요.
 6. [CRITICAL] 사용자로부터 '주소'(배송지, 수거지 등)를 입력받아야 할 경우, 절대로 텍스트로 "주소를 입력해주세요"라고 질문하지 마십시오. 대신 무조건 `open_address_search` 도구를 호출하여 주소 검색 팝업을 띄우십시오. 이는 필수 규칙입니다.
     """
+    few_shot_examples = """
+\n[Examples]
+User: "주문번호 ORD-20240209-0004 교환 신청해줘 사유는 사이즈 미스야"
+Assistant: (Call Tool) register_exchange_request(order_id="ORD-20240209-0004", reason="사이즈 미스", user_id=1)
 
-    final_prompt = ECOMMERCE_SYSTEM_PROMPT + user_context + tool_instructions
+User: "ORD-20240209-0003 주문에 있는 상품 100번에 대해 별점 5점 주고 너무 좋아요라고 리뷰 남길래"
+Assistant: (Call Tool) create_review(product_id="100", order_id="ORD-20240209-0003", rating=5, content="너무 좋아요", user_id=1)
+
+User: "반품은 언제까지 가능한가요?"
+Assistant: (Call Tool) search_knowledge_base(query="반품은 언제까지 가능한가요?", category="취소/반품/교환")
+
+[Query]
+ORD-20240209-0001 주문 상세 내역 좀 보여줘
+[Response]
+{"tool_calls": [{"function": {"name": "get_order_details", "arguments": {"order_id": "ORD-20240209-0001", "user_id": 1}}, "type": "function"}]}
+
+[Query]
+내 주문 ORD-20240209-0001 배송 조회해줘
+[Response]
+{"tool_calls": [{"function": {"name": "get_shipping_details", "arguments": {"order_id": "ORD-20240209-0001", "user_id": 1}}, "type": "function"}]}
+
+[Query]
+ORD-20240209-0001 주문 상품 옵션을 ID 200번으로 변경해줘
+[Response]
+{"tool_calls": [{"function": {"name": "change_product_option", "arguments": {"order_id": "ORD-20240209-0001", "user_id": 1, "new_option_id": 200}}, "type": "function"}]}
+
+[Query]
+ORD-20240209-0001 주문 교환 가능한지 확인해줘. 사유는 단순 변심이고 201번 옵션으로 바꾸고 싶어
+[Response]
+{"tool_calls": [{"function": {"name": "check_exchange_eligibility", "arguments": {"order_id": "ORD-20240209-0001", "user_id": 1, "reason": "단순 변심", "new_option_id": 201}}, "type": "function"}]}
+
+[Query]
+배송지 변경하고 싶어
+[Response]
+{"tool_calls": [{"function": {"name": "open_address_search", "arguments": {}}, "type": "function"}]}
+    """
+
+    final_prompt = ECOMMERCE_SYSTEM_PROMPT + user_context + tool_instructions + few_shot_examples
     system_msg = SystemMessage(content=final_prompt)
     
     # 3. LLM 설정 (ChatOpenAI 사용 권장 for bind_tools)
@@ -197,9 +232,17 @@ def smart_validation_node(state: AgentState):
         tool_name = tool_call["name"]
         args = tool_call["args"]
         
-        # 1. 환불/반품/취소/교환 시 order_id 누락 체크
-        if tool_name in ["check_refund_eligibility", "cancel_order", "register_return_request", "register_exchange_request"]:
-            order_id = args.get("order_id")
+        # [Robustness] Parse args if string (defensive coding)
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except Exception:
+                pass # Keep as string if parsing fails, but subsequent .get() might fail
+
+        # 1. 환불/반품/취소/교환/리뷰 시 order_id 누락 체크
+        if tool_name in ["check_refund_eligibility", "cancel_order", "register_return_request", "register_exchange_request", "create_review"]:
+            order_id = args.get("order_id") if isinstance(args, dict) else None
+            
             # order_id가 없거나, "ORD-" 형식이 아니거나, 빈 문자열인 경우
             if not order_id or "ORD-" not in str(order_id):
                 print(f"[Validation] Missing/Invalid order_id for {tool_name}. Redirecting to get_user_orders.")
@@ -215,6 +258,7 @@ def smart_validation_node(state: AgentState):
                 task_type = "general"
                 if tool_name == "cancel_order": task_type = "cancel"
                 elif tool_name == "register_exchange_request": task_type = "exchange"
+                elif tool_name == "create_review": task_type = "review"
                 else: task_type = "refund" # check_refund_eligibility, register_return_request 등
                 
                 # Update TaskContext

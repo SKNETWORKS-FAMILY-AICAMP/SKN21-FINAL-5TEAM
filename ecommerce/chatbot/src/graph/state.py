@@ -39,6 +39,7 @@ class AgentState(TypedDict):
     is_general_chat: bool
     retry_count: int
     requires_selection: Optional[bool]  # 주문 목록 조회 시 선택 UI 표시 여부
+    is_evaluation: Optional[bool]       # 벤치마크 평가 진행 여부
 
 class TaskContext(TypedDict):
     """
