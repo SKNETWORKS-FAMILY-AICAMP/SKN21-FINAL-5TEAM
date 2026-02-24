@@ -74,7 +74,6 @@ def summarize_state(state: Dict[str, Any]) -> Dict[str, Any]:
         "last_message": safe_serialize(last_message) if isinstance(last_message, BaseMessage) else None,
         "task_list_len": len(state.get("task_list", [])) if isinstance(state.get("task_list"), list) else 0,
         "task_results_len": len(state.get("task_results", [])) if isinstance(state.get("task_results"), list) else 0,
-        "execution_plan": safe_serialize(state.get("execution_plan")),
         "current_task": safe_serialize(state.get("current_task")),
         "generation": _truncate_text(str(state.get("generation", ""))),
     }
