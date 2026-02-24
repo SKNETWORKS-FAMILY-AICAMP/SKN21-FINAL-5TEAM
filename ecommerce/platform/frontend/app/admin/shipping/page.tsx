@@ -316,14 +316,18 @@ export default function AdminShippingPage() {
       const saved: ShippingInfo = await response.json();
       setShippingMap((prev) => ({ ...prev, [saved.order_id]: saved }));
 
-      // 신규 등록 시 로컬 주문 상태도 '상품 준비중'으로 업데이트
+      // 신규 등록 시 로컬 주문 상태도 '상품 준비중'으로 업데이트 (취소/환불 상태는 유지)
       if (!editingShippingId) {
-        setOrders((prev) =>
-          prev.map((o) => (o.id === editingOrderId ? { ...o, status: "preparing" } : o))
-        );
+        const currentOrder = orders.find((o) => o.id === editingOrderId);
+        const isFinalStatus = currentOrder?.status === "cancelled" || currentOrder?.status === "refunded";
+        if (!isFinalStatus) {
+          setOrders((prev) =>
+            prev.map((o) => (o.id === editingOrderId ? { ...o, status: "preparing" } : o))
+          );
+        }
       }
 
-      showAlert(editingShippingId ? "배송 정보가 수정되었습니다." : "배송 정보가 등록되었습니다. 주문 상태가 '상품 준비중'으로 변경되었습니다.");
+      showAlert(editingShippingId ? "배송 정보가 수정되었습니다." : "배송 정보가 등록되었습니다.");
       handleCloseModal();
     } catch (err) {
       console.error(err);

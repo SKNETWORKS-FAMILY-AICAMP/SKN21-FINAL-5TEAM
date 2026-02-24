@@ -22,6 +22,7 @@ interface ProductOptionInfo {
 
 interface ProductInfo {
   id: number;
+  product_id: number;  // 실제 상품 ID (이미지 조회용)
   name: string;
   brand: string;
   price: number | string;  // string도 허용
@@ -81,10 +82,10 @@ const API_BASE_URL = 'http://localhost:8000';
  */
 async function trackCartAction(
   userId: number,
-  actionType: 'cart_add' | 'cart_del' | 'cart_update',
-  cartItemId: number,
+  actionType: 'cart_add' | 'cart_del',
   productOptionType: string,
   productOptionId: number,
+  cartItemId?: number,
   quantity?: number
 ): Promise<void> {
   try {
@@ -95,16 +96,15 @@ async function trackCartAction(
       },
       body: JSON.stringify({
         action_type: actionType,
-        cart_item_id: cartItemId,
+        cart_item_id: cartItemId ?? null,
         product_option_type: productOptionType,
         product_option_id: productOptionId,
         quantity,
       }),
     });
-    console.log(`User history tracked: ${actionType} for cart item ${cartItemId}`);
+    console.log(`User history tracked: ${actionType}`);
   } catch (err) {
     console.error('Failed to track cart action:', err);
-    // 히스토리 기록 실패는 무시 (사용자 경험에 영향 없음)
   }
 }
 
@@ -217,6 +217,7 @@ export default function CartPage() {
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const {user, isLoggedIn } = useAuth();
+  const [imageMap, setImageMap] = useState<Record<number, string>>({});
 
   // 장바구니 데이터 로드
   const loadCartData = async () => {
@@ -229,6 +230,24 @@ export default function CartPage() {
       const normalizedData = normalizeCartData(data);
       setCartData(normalizedData);
       setSelectedItems(normalizedData.cart.items.map(item => item.id));
+
+      // productimages 테이블에서 이미지 가져오기
+      const newMap: Record<number, string> = {};
+      await Promise.all(
+        normalizedData.cart.items.map(async (item) => {
+          const productType = item.product.is_used ? 'used' : 'new';
+          try {
+            const imgRes = await fetch(`${API_BASE_URL}/products/images/${productType}/${item.product.product_id}`);
+            if (!imgRes.ok) return;
+            const images = await imgRes.json();
+            const primary = images.find((img: any) => img.is_primary);
+            if (primary || images[0]) {
+              newMap[item.product.product_id] = (primary || images[0]).image_url;
+            }
+          } catch {}
+        })
+      );
+      setImageMap(prev => ({ ...prev, ...newMap }));
     } catch (err) {
       console.error('장바구니 로드 실패:', err);
       if (err instanceof ApiError) {
@@ -298,16 +317,6 @@ export default function CartPage() {
         body: JSON.stringify({ quantity: newQuantity }),
       });
 
-      // User History에 장바구니 수량 변경 기록
-      await trackCartAction(
-        user.id,
-        'cart_update',
-        itemId,
-        item.product_option_type,
-        item.product_option_id,
-        newQuantity
-      );
-
       await loadCartData();
     } catch (err) {
       console.error('수량 업데이트 실패:', err);
@@ -355,7 +364,6 @@ export default function CartPage() {
         await trackCartAction(
           user.id,
           'cart_del',
-          item.id,
           item.product_option_type,
           item.product_option_id
         );
@@ -398,7 +406,6 @@ export default function CartPage() {
         await trackCartAction(
           user.id,
           'cart_del',
-          itemId,
           itemToDelete.product_option_type,
           itemToDelete.product_option_id
         );
@@ -552,7 +559,7 @@ export default function CartPage() {
                   </div>
 
                   <div className={styles.itemImage}>
-                    <img src={item.product.image} alt={item.product.name} />
+                    <img src={imageMap[item.product.product_id] || item.product.image} alt={item.product.name} />
                   </div>
 
                   <div className={styles.itemInfo}>
