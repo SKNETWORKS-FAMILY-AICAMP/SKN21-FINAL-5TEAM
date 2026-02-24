@@ -2,27 +2,36 @@
   padding: 32px;
 }
 
-/* ===== 상품 그리드 ===== */
+/* ============================= */
+/* 상품 그리드 */
+/* ============================= */
+
 .productGrid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 16px;
 }
 
+/* ============================= */
+/* 카드 */
+/* ============================= */
+
 .productCard {
-  position: relative;
+  position: relative;        /* 🔥 overlay 기준 */
   border: 1px solid #eee;
-  padding: 8px;
-  overflow: hidden;
-  background: white;
-}
-
-/* 카드 본문 */
-.cardBody {
+  background: #fff;
   cursor: pointer;
+  overflow: hidden;          /* 🔥 overlay 잘리도록 */
 }
 
+.cardBody {
+  padding: 8px;
+}
+
+/* ============================= */
 /* 이미지 영역 */
+/* ============================= */
+
 .productImage {
   position: relative;
   width: 100%;
@@ -31,7 +40,86 @@
   overflow: hidden;
 }
 
+/* Next/Image wrapper span 강제 제어 */
+.productImage :global(span) {
+  position: absolute !important;
+  inset: 0;
+}
+
+/* 실제 이미지 */
+.productImage :global(img) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ============================= */
+/* Hover Overlay */
+/* ============================= */
+
+.hoverOverlay {
+  position: absolute;
+  inset: 0;                  /* 🔥 카드 전체 덮기 */
+  background: rgba(0, 0, 0, 0.5);
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+
+  opacity: 0;
+  transition: opacity 0.2s ease;
+
+  z-index: 10;               /* 🔥 확실히 위로 */
+  pointer-events: none;
+}
+
+/* hover 트리거 */
+.productCard:hover .hoverOverlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ============================= */
+/* 버튼 */
+/* ============================= */
+
+.hoverButton {
+  width: 140px;
+  height: 40px;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  background: #fff;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.hoverButton:hover {
+  background: #f0f0f0;
+}
+
+.primary {
+  background: #000;
+  color: #fff;
+}
+
+.primary:hover {
+  background: #222;
+}
+
+/* ============================= */
 /* 텍스트 */
+/* ============================= */
+
 .productName {
   margin-top: 8px;
   font-size: 14px;
@@ -42,45 +130,10 @@
   font-weight: 600;
 }
 
-/* ===== hover overlay ===== */
-.hoverOverlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+/* ============================= */
+/* 페이지네이션 */
+/* ============================= */
 
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-}
-
-/* ⭐ 카드 hover 시에만 표시 */
-.productCard:hover .hoverOverlay {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-/* hover 버튼 */
-.hoverButton {
-  width: 140px;
-  padding: 10px 0;
-  background: white;
-  border: none;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.primary {
-  background: black;
-  color: white;
-}
-
-/* ===== 페이지네이션 ===== */
 .pagination {
   display: flex;
   justify-content: center;
@@ -91,18 +144,21 @@
 .pageButton {
   padding: 6px 12px;
   border: 1px solid #ddd;
-  background: white;
+  background: #fff;
   cursor: pointer;
 }
 
 .activePage {
   padding: 6px 12px;
-  background: black;
-  color: white;
-  border: 1px solid black;
+  background: #000;
+  color: #fff;
+  border: 1px solid #000;
 }
 
-/* ===== 탭 ===== */
+/* ============================= */
+/* 탭 */
+/* ============================= */
+
 .tabWrapper {
   display: flex;
   gap: 16px;
