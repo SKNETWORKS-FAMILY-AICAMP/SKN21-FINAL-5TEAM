@@ -1,7 +1,8 @@
 import json
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from enum import Enum
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
 from langchain_core.messages import ToolMessage, AIMessage, SystemMessage, HumanMessage
@@ -9,6 +10,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import ToolNode
 from langsmith import traceable
 from pydantic import BaseModel, Field, SecretStr
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
 
 from ecommerce.chatbot.src.graph.state import AgentState
 from ecommerce.chatbot.src.core.config import settings
@@ -85,6 +88,11 @@ tool_node = ToolNode(TOOLS)
 MAX_HISTORY_TOKENS = 3000
 KEEP_RECENT_TURNS = 3
 SUMMARY_MODEL = "gpt-4o-mini"
+DEFAULT_PROVIDER = "openai"
+SUPPORTED_PROVIDERS = {"openai", "huggingface"}
+
+_HF_MODEL_CACHE: Dict[str, Dict[str, Any]] = {}
+_HF_MODEL_LOCK = threading.Lock()
 
 
 class TaskType(str, Enum):
@@ -288,9 +296,143 @@ def _build_decomposer_context(messages: List, max_items: int = 8) -> str:
     return "\n".join(lines[-max_items:])
 
 
-def _decompose_tasks(user_message: str, messages: List, current_task: Any = None) -> List[Dict[str, Any]]:
-    llm = _make_llm(model=settings.OPENAI_MODEL, temperature=0)
-    structured_llm = llm.with_structured_output(DecompositionResult, method="function_calling")
+def _resolve_provider(provider: Optional[str]) -> str:
+    normalized = (provider or "").strip().lower()
+    if normalized in SUPPORTED_PROVIDERS:
+        return normalized
+    fallback = (settings.LLM_PROVIDER or DEFAULT_PROVIDER).strip().lower()
+    return fallback if fallback in SUPPORTED_PROVIDERS else DEFAULT_PROVIDER
+
+
+def _resolve_llm_config(state: Optional[AgentState], preferred_model: Optional[str] = None) -> tuple[str, str]:
+    provider_from_state = state.get("llm_provider") if isinstance(state, dict) else None
+    provider = _resolve_provider(provider_from_state)
+
+    model_from_state = state.get("llm_model") if isinstance(state, dict) else None
+    model = (preferred_model or model_from_state or "").strip()
+    if model:
+        return provider, model
+
+    if provider == "huggingface":
+        return provider, settings.HF_MODEL_ID
+    return provider, settings.OPENAI_MODEL
+
+
+def _extract_json_object(text: str) -> Dict[str, Any] | None:
+    if not text:
+        return None
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+
+    try:
+        parsed = json.loads(text[start : end + 1])
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        return None
+
+    return None
+
+
+def _load_hf_model(model_id: str) -> Dict[str, Any]:
+    with _HF_MODEL_LOCK:
+        cached = _HF_MODEL_CACHE.get(model_id)
+        if cached:
+            return cached
+
+        if torch.cuda.is_available():
+            device = "cuda"
+            dtype = torch.float16
+        elif torch.backends.mps.is_available():
+            device = "mps"
+            dtype = torch.float16
+        else:
+            device = "cpu"
+            dtype = torch.float32
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        model_obj: Any = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype=dtype,
+            trust_remote_code=True,
+        )
+        model_obj = model_obj.to(device)
+        model_obj.eval()
+
+        loaded = {"tokenizer": tokenizer, "model": model_obj, "device": device}
+        _HF_MODEL_CACHE[model_id] = loaded
+        print(f"[LLM] Loaded Hugging Face model locally: {model_id} on {device}")
+        return loaded
+
+
+def _hf_invoke(messages: List, model_id: str, temperature: float = 0) -> AIMessage:
+    loaded = _load_hf_model(model_id)
+    tokenizer = loaded["tokenizer"]
+    model = loaded["model"]
+    device = loaded["device"]
+
+    chat_messages: List[Dict[str, str]] = []
+    for msg in messages:
+        content = getattr(msg, "content", "")
+        if not isinstance(content, str):
+            continue
+
+        if isinstance(msg, SystemMessage):
+            role = "system"
+        elif isinstance(msg, HumanMessage):
+            role = "user"
+        else:
+            role = "assistant"
+
+        chat_messages.append({"role": role, "content": content})
+
+    if hasattr(tokenizer, "apply_chat_template"):
+        prompt = tokenizer.apply_chat_template(chat_messages, tokenize=False, add_generation_prompt=True)
+    else:
+        prompt = "\n".join(f"{m['role']}: {m['content']}" for m in chat_messages) + "\nassistant:"
+
+    inputs = tokenizer(prompt, return_tensors="pt")
+    input_ids = inputs["input_ids"].to(device)
+    attention_mask = inputs.get("attention_mask")
+    if attention_mask is not None:
+        attention_mask = attention_mask.to(device)
+
+    do_sample = temperature > 0
+    generation_kwargs = {
+        "input_ids": input_ids,
+        "max_new_tokens": 512,
+        "do_sample": do_sample,
+    }
+    if attention_mask is not None:
+        generation_kwargs["attention_mask"] = attention_mask
+    if do_sample:
+        generation_kwargs["temperature"] = max(0.1, temperature)
+        generation_kwargs["top_p"] = 0.9
+
+    with torch.no_grad():
+        output_ids = model.generate(**generation_kwargs)
+
+    generated = output_ids[0][input_ids.shape[-1] :]
+    content = tokenizer.decode(generated, skip_special_tokens=True).strip()
+    return AIMessage(content=content)
+
+
+def _decompose_tasks(
+    user_message: str,
+    messages: List,
+    current_task: Any = None,
+    state: Optional[AgentState] = None,
+) -> List[Dict[str, Any]]:
+    provider, model_name = _resolve_llm_config(state)
 
     conversation_context = _build_decomposer_context(messages)
     task_context = ""
@@ -305,25 +447,53 @@ def _decompose_tasks(user_message: str, messages: List, current_task: Any = None
         "GENERAL_CHAT으로 과도하게 분류하지 말고 적절한 작업으로 분해하세요."
     )
 
-    # 1차 시도
-    parsed = structured_llm.invoke([
-        SystemMessage(content=DECOMPOSER_PROMPT),
-        HumanMessage(content=decomposer_input),
-    ])
+    tasks: List[TaskItem] = []
 
-    tasks = parsed.tasks if isinstance(parsed, DecompositionResult) else []
+    if provider == "openai":
+        llm = _make_openai_llm(model=model_name, temperature=0)
+        structured_llm = llm.with_structured_output(DecompositionResult, method="function_calling")
 
-    # 2차 재시도 (실패/빈 배열 방어)
-    if not tasks:
-        retry_msg = (
-            "이전 응답이 비어 있었습니다. 반드시 tasks 배열에 최소 1개 이상 넣어 반환하세요.\n"
-            f"사용자 요청: {decomposer_input[:4000]}"
-        )
+        # 1차 시도
         parsed = structured_llm.invoke([
             SystemMessage(content=DECOMPOSER_PROMPT),
-            HumanMessage(content=retry_msg),
+            HumanMessage(content=decomposer_input),
         ])
         tasks = parsed.tasks if isinstance(parsed, DecompositionResult) else []
+
+        # 2차 재시도 (실패/빈 배열 방어)
+        if not tasks:
+            retry_msg = (
+                "이전 응답이 비어 있었습니다. 반드시 tasks 배열에 최소 1개 이상 넣어 반환하세요.\n"
+                f"사용자 요청: {decomposer_input[:4000]}"
+            )
+            parsed = structured_llm.invoke([
+                SystemMessage(content=DECOMPOSER_PROMPT),
+                HumanMessage(content=retry_msg),
+            ])
+            tasks = parsed.tasks if isinstance(parsed, DecompositionResult) else []
+    else:
+        hf_prompt = (
+            f"{DECOMPOSER_PROMPT}\n\n"
+            "출력 규칙:\n"
+            "- 반드시 JSON 객체만 출력\n"
+            "- 최상위 키는 tasks\n"
+            "- 예시: {\"tasks\":[{\"task\":\"GENERAL_CHAT\",\"args\":{}}]}\n\n"
+            f"{decomposer_input}"
+        )
+
+        raw = _hf_invoke([HumanMessage(content=hf_prompt)], model_name, temperature=0).content
+        parsed_obj = _extract_json_object(raw if isinstance(raw, str) else "") or {}
+        task_candidates = parsed_obj.get("tasks") if isinstance(parsed_obj, dict) else None
+
+        if isinstance(task_candidates, list):
+            for item in task_candidates:
+                if not isinstance(item, dict):
+                    continue
+                task_name = item.get("task")
+                raw_args = item.get("args")
+                args: Dict[str, Any] = raw_args if isinstance(raw_args, dict) else {}
+                if isinstance(task_name, str) and task_name in TaskType._value2member_map_:
+                    tasks.append(TaskItem(task=TaskType(task_name), args=args))
 
     if not tasks:
         return [{"task": TaskType.GENERAL_CHAT.value, "args": {}}]
@@ -679,7 +849,12 @@ def decomposer_node(state: AgentState):
         }
 
     try:
-        task_list = _decompose_tasks(user_message, messages, current_task if isinstance(current_task, dict) else None)
+        task_list = _decompose_tasks(
+            user_message,
+            messages,
+            current_task if isinstance(current_task, dict) else None,
+            state,
+        )
         return {
             "question": user_message,
             "task_list": task_list,
@@ -862,7 +1037,7 @@ def route_after_workers(state: AgentState) -> Literal["validation", "process_out
     return "process_output"
 
 
-def _make_llm(model: str, temperature: float = 0) -> ChatOpenAI:
+def _make_openai_llm(model: str, temperature: float = 0) -> ChatOpenAI:
     return ChatOpenAI(
         model=model,
         temperature=temperature,
@@ -921,7 +1096,7 @@ def _clear_old_turns(messages: List, keep_recent_turns: int) -> List:
     return cleared_messages + recent_messages
 
 
-def _summarize_messages(messages: List) -> str | None:
+def _summarize_messages(messages: List, provider: str, model_name: str) -> str | None:
     """전체 대화를 다음 턴용으로 요약"""
     if not messages:
         return None
@@ -932,25 +1107,36 @@ def _summarize_messages(messages: List) -> str | None:
     )
 
     try:
-        summary_llm = _make_llm(model=SUMMARY_MODEL, temperature=0)
-        response = summary_llm.invoke([
-            SystemMessage(content=CONTEXT_SUMMARY_SYSTEM_PROMPT),
-            HumanMessage(content=transcript[:12000]),
-        ])
+        if provider == "openai":
+            summary_llm = _make_openai_llm(model=model_name or SUMMARY_MODEL, temperature=0)
+            response = summary_llm.invoke([
+                SystemMessage(content=CONTEXT_SUMMARY_SYSTEM_PROMPT),
+                HumanMessage(content=transcript[:12000]),
+            ])
+            return response.content if isinstance(response.content, str) else None
+
+        response = _hf_invoke(
+            [
+                SystemMessage(content=CONTEXT_SUMMARY_SYSTEM_PROMPT),
+                HumanMessage(content=transcript[:12000]),
+            ],
+            model_name,
+            temperature=0,
+        )
         return response.content if isinstance(response.content, str) else None
     except Exception as e:
         print(f"[Compaction] Summary failed: {e}")
         return None
 
 
-def _compress_messages_for_context(messages: List) -> List:
+def _compress_messages_for_context(messages: List, provider: str, model_name: str) -> List:
     """토큰 초과 시: 전체 요약 + 최근 3턴 제외 cleared"""
     token_count = _estimate_tokens(messages)
     if token_count <= MAX_HISTORY_TOKENS:
         return messages
 
     print(f"[Compaction] token={token_count} > {MAX_HISTORY_TOKENS}, compacting...")
-    summary = _summarize_messages(messages)
+    summary = _summarize_messages(messages, provider, model_name)
     cleared = _clear_old_turns(messages, KEEP_RECENT_TURNS)
 
     if summary:
@@ -963,10 +1149,11 @@ def agent_node(state: AgentState):
     LLM이 대화 히스토리와 도구 목록을 보고 답변하거나 도구를 호출합니다.
     """
     print("---AGENT NODE---")
+    provider, model_name = _resolve_llm_config(state)
     
     # 1. 메시지 준비
     messages = state["messages"]
-    messages = _compress_messages_for_context(messages)
+    messages = _compress_messages_for_context(messages, provider, model_name)
     
     # 2. 시스템 프롬프트 준비
     # 매 턴마다 시스템 프롬프트를 컨텍스트로 주입 (state에 저장하지 않음)
@@ -988,19 +1175,16 @@ def agent_node(state: AgentState):
 
     final_prompt = ECOMMERCE_SYSTEM_PROMPT + user_context + TOOL_USAGE_INSTRUCTIONS
     system_msg = SystemMessage(content=final_prompt)
-    
-    # 3. LLM 설정 (ChatOpenAI 사용 권장 for bind_tools)
-    llm = _make_llm(model=settings.OPENAI_MODEL, temperature=0)
-    
-    # 4. 도구 바인딩
-    llm_with_tools = llm.bind_tools(TOOLS)
-    
-    # 5. 호출
-    # messages 리스트의 첫 번째가 SystemMessage인지 확인하고, 없으면 추가
-    # 주의: invoke 시 messages에는 이미 tool_node가 추가한 ToolMessage들이 포함되어 있음
     current_messages = [system_msg] + messages
     
-    response = llm_with_tools.invoke(current_messages)
+    if provider == "openai":
+        llm = _make_openai_llm(model=model_name, temperature=0)
+        llm_with_tools = llm.bind_tools(TOOLS)
+        response = llm_with_tools.invoke(current_messages)
+    else:
+        # Hugging Face 로컬 모델 경로에서는 우선 일반 답변 생성으로 동작
+        # (함수 호출 기반 Tool Calling은 OpenAI provider에서 사용)
+        response = _hf_invoke(current_messages, model_name, temperature=0)
     
     return {"messages": [response]}
 
@@ -1209,16 +1393,19 @@ def human_approval_node(state: AgentState):
         
         # A. LLM 기반 승인 여부 판단 (LLM-based Confirmation Check)
         try:
-            # 빠른 응답을 위해 3.5-turbo 등 가벼운 모델 사용 권장 (여기서는 기본 설정 따름)
-            approval_llm = _make_llm(model="gpt-4o-mini", temperature=0)
-            
+            provider, model_name = _resolve_llm_config(state)
             prompt = APPROVAL_CHECK_PROMPT_TEMPLATE.format(
                 user_message=content,
                 tool_name=sensitive_calls[0]["name"],
                 tool_args=sensitive_calls[0].get("args"),
             )
-            
-            response = approval_llm.invoke([HumanMessage(content=prompt)])
+
+            if provider == "openai":
+                approval_llm = _make_openai_llm(model=model_name, temperature=0)
+                response = approval_llm.invoke([HumanMessage(content=prompt)])
+            else:
+                response = _hf_invoke([HumanMessage(content=prompt)], model_name, temperature=0)
+
             decision_text = response.content if isinstance(response.content, str) else ""
             decision = decision_text.strip().upper()
             print(f"---APPROVAL LLM DECISION: {decision} ({content})---")

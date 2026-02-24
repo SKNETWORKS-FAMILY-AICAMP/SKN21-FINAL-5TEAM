@@ -43,6 +43,10 @@ class AgentState(TypedDict):
     retry_count: int
     requires_selection: Optional[bool]  # 주문 목록 조회 시 선택 UI 표시 여부
 
+    # 7. 런타임 LLM 설정 (요청별)
+    llm_provider: Optional[str]          # openai | huggingface
+    llm_model: Optional[str]             # gpt-4o-mini | Qwen/Qwen3-0.6B ...
+
 class TaskContext(TypedDict):
     """
     현재 진행 중인 작업의 컨텍스트를 구조화하여 관리합니다.
