@@ -50,21 +50,21 @@ from ecommerce.chatbot.src.tools.address_tools import (
 
 # Define Tool List
 TOOLS = [
-    get_order_details,
-    get_shipping_details,
-    update_payment_method,
-    change_product_option,
-    cancel_order,
-    check_refund_eligibility,
-    check_exchange_eligibility,
-    register_return_request,
-    register_exchange_request,
-    get_reviews,
-    create_review,
-    register_gift_card,
-    search_knowledge_base,
-    open_address_search,
-    save_shipping_address_from_ui,
+        get_order_details,
+        get_shipping_details,
+        update_payment_method,
+        change_product_option,
+        cancel_order,
+        check_refund_eligibility,
+        check_exchange_eligibility,
+        register_return_request,
+        register_exchange_request,
+        get_reviews,
+        create_review,
+        register_gift_card,
+        search_knowledge_base,
+        open_address_search,
+        save_shipping_address_from_ui,
 ]
 
 # Sensitive Tools requiring Human Approval
@@ -611,8 +611,24 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
 
     if task_name == TaskType.ORDER_QUERY.value:
         order_id = args.get("order_id")
+        
+        # [Contextual Tool Selection] order_id가 없으면 이전 컨텍스트에서 가져옴
+        if not order_id and state.get("current_task"):
+            order_id = state["current_task"].get("target_id")
+            
         if order_id:
             result = get_order_details.invoke({"order_id": order_id, "user_id": user_id})
+            return {
+                "task": task_name, 
+                "result": result,
+                "current_task": {
+                    "type": "general",
+                    "status": "completed",
+                    "target_id": order_id,
+                    "reason": None,
+                    "missing_info": None
+                }
+            }
         else:
             result = get_user_orders.invoke(
                 {
@@ -657,6 +673,11 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
         action = action_map.get(action, action)
         
         order_id = args.get("order_id")
+        
+        # [Contextual Tool Selection] order_id가 없으면 이전 컨텍스트에서 가져옴
+        if not order_id and state.get("current_task"):
+            order_id = state["current_task"].get("target_id")
+            
         reason = args.get("reason", "고객 요청")
 
         if action in {"cancel", "refund", "exchange"} and not order_id:
@@ -754,6 +775,7 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
         elif action in {"shipping", "shipping_status", "track_shipping"}:
             tool_name = "get_shipping_details"
             tool_args = {"order_id": order_id, "user_id": user_id}
+            current_task_type = "general"
         elif action in {"payment_update", "update_payment_method"}:
             tool_name = "update_payment_method"
             tool_args = {
@@ -762,9 +784,11 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
                 "payment_method": args.get("payment_method", "카드"),
                 "card_number": args.get("card_number"),
             }
+            current_task_type = "general"
         elif action in {"address_search", "pickup_address"}:
             tool_name = "open_address_search"
             tool_args = {}
+            current_task_type = "general"
         elif action in {"address_selected", "save_address"}:
             tool_name = "save_shipping_address_from_ui"
             tool_args = {
