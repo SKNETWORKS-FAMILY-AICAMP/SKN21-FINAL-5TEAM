@@ -40,7 +40,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
 
   const handleGoogleLogin = () => {
-    window.location.href = `${API_BASE_URL}/auth/google/login`;
+    window.location.href = "http://localhost:8000/users/auth/google/login";
   };
 
   async function handleSubmit(e: React.FormEvent) {
