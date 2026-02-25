@@ -5,7 +5,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="User's query")
     # 이전 대화 상태 (메시지 이력 포함)
     previous_state: Optional[Dict[str, Any]] = Field(None, description="Full conversation state for stateless processing")
-    provider: Optional[str] = Field(None, description="LLM provider (openai|huggingface)")
+    provider: Optional[str] = Field(None, description="LLM provider (openai|huggingface|vllm)")
     model: Optional[str] = Field(None, description="Model name or model id")
     model_config = ConfigDict(extra="ignore")
 

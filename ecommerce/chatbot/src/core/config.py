@@ -14,11 +14,16 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
 
     # OpenAI
-    OPENAI_API_KEY: str
+    OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"  # Default to 4o
 
+    # vLLM (OpenAI-compatible endpoint; e.g., RunPod)
+    VLLM_BASE_URL: str = ""
+    VLLM_API_KEY: str = "EMPTY"
+    VLLM_MODEL: str = "Qwen/Qwen3.5-35B-A3B"
+
     # Runtime LLM routing
-    LLM_PROVIDER: str = "openai"  # openai | huggingface
+    LLM_PROVIDER: str = "openai"  # openai | huggingface | vllm
     HF_MODEL_ID: str = "Qwen/Qwen3-0.6B"
     HF_QUANTIZATION: str = "auto"  # auto | none | bnb-4bit | bnb-8bit | dynamic-int8
 
