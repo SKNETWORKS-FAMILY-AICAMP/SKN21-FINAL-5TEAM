@@ -51,7 +51,7 @@ type AddressSelectionPayload = {
 };
 
 type ChatMsg = TextMessage | OrderListMessage | ConfirmationMessage | AddressSearchMessage;
-type LlmProvider = 'openai' | 'huggingface';
+type LlmProvider = 'openai' | 'huggingface' | 'vllm';
 type ModelOption = { id: string; provider: LlmProvider; label: string };
 
 type DaumPostcodeData = {
@@ -73,14 +73,19 @@ declare global {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.2'] as const;
-const HF_MODELS = ['Qwen/Qwen3-0.6B', 'Qwen/Qwen2.5-1.5B-Instruct'] as const;
+const HF_MODELS = ['Qwen/Qwen3-0.6B'] as const;
+const VLLM_MODELS = ['Qwen/Qwen3.5-35B-A3B'] as const;
 
 const MODEL_OPTIONS: ModelOption[] = [
   ...OPENAI_MODELS.map((id) => ({ id, provider: 'openai' as const, label: id })),
   ...HF_MODELS.map((id) => ({ id, provider: 'huggingface' as const, label: id })),
+  ...VLLM_MODELS.map((id) => ({ id, provider: 'vllm' as const, label: `${id} (RunPod)` })),
 ];
 
 function resolveProviderByModel(modelId: string): LlmProvider {
+  if (VLLM_MODELS.includes(modelId as (typeof VLLM_MODELS)[number])) {
+    return 'vllm';
+  }
   if (HF_MODELS.includes(modelId as (typeof HF_MODELS)[number])) {
     return 'huggingface';
   }
