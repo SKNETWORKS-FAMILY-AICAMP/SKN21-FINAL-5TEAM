@@ -7,7 +7,7 @@ import styles from './register.module.css';
 const PASSWORD_REGEX =
   /^(?=.{8,16}$)(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).*$/;
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 /**
  * 인증 액션을 user history에 기록
@@ -37,7 +37,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // 🔥 signup에서 넘어온 약관 동의 값
+  // signup에서 넘어온 약관 동의 값
   const agreeMarketing =
     searchParams.get('marketing') === 'true';
   const agreeAds =
@@ -78,7 +78,7 @@ export default function RegisterPage() {
     setCheckingEmail(true);
 
     try {
-      const res = await fetch('http://localhost:8000/users/check-email', {
+      const res = await fetch(`${API_BASE_URL}/users/check-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -111,7 +111,7 @@ export default function RegisterPage() {
     setSubmitting(true);
 
     try {
-      const res = await fetch('http://localhost:8000/users/register', {
+      const res = await fetch(`${API_BASE_URL}/users/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

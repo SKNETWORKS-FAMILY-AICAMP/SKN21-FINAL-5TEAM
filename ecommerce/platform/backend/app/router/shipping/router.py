@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from ecommerce.platform.backend.app.database import get_db
 from ecommerce.platform.backend.app.router.shipping import crud, schemas
@@ -66,12 +66,9 @@ def set_default(address_id: int, db: Session = Depends(get_db)):
 # =====================
 # 주문별 배송 정보 조회
 # =====================
-@router.get("/order/{order_id}", response_model=schemas.ShippingInfoResponse)
+@router.get("/order/{order_id}", response_model=Optional[schemas.ShippingInfoResponse])
 def get_shipping_info(order_id: int, db: Session = Depends(get_db)):
-    shipping_info = crud.get_shipping_info_by_order_id(db, order_id)
-    if not shipping_info:
-        raise HTTPException(status_code=404, detail="배송 정보를 찾을 수 없습니다.")
-    return shipping_info
+    return crud.get_shipping_info_by_order_id(db, order_id)
 
 
 # =====================
@@ -98,11 +95,12 @@ def create_shipping_info(
     if existing:
         raise HTTPException(status_code=400, detail="해당 주문에 이미 배송 정보가 존재합니다.")
 
-    # 주문 상태를 '상품 준비중'으로 변경
+    # 주문 상태를 '상품 준비중'으로 변경 (취소/환불 상태는 유지)
     order = db.query(Order).filter(Order.id == data.order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
-    order.status = OrderStatus.PREPARING
+    if order.status not in (OrderStatus.CANCELLED, OrderStatus.REFUNDED):
+        order.status = OrderStatus.PREPARING
 
     shipping_info = crud.create_shipping_info(db, data)
     return shipping_info

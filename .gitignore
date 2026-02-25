@@ -1,7 +1,11 @@
 ecommerce/chatbot/data/raw/fashion-dataset
 ecommerce/chatbot/data/processed
 .venv
+
 .env
+!.env.development
+!.env.production
+
 .agent
 __pycache__/
 *.pyc

@@ -114,9 +114,8 @@ export default function AskPage() {
           {rooms.map((room) => (
             <li
               key={room.id}
-              className={`${styles.roomItem} ${
-                activeId === room.id ? styles.active : ''
-              }`}
+              className={`${styles.roomItem} ${activeId === room.id ? styles.active : ''
+                }`}
               onClick={() => !deleteMode && setActiveId(room.id)}
             >
               {deleteMode && (
