@@ -35,3 +35,6 @@ flashrank               # 리랭킹 (Reranker)
 requests                # HTTP 요청
 numpy
 pandas
+
+# 구글 OAuth2 인증
+authlib # OAuth2 클라이언트 및 환경 변수 로딩
