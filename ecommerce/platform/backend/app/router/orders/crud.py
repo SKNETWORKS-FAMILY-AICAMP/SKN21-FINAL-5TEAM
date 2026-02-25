@@ -421,13 +421,9 @@ def cancel_order(
         if not order:
             return False, "주문을 찾을 수 없습니다"
         
-        # 이미 취소되었거나 환불된 경우
-        if order.status in [schemas.OrderStatus.CANCELLED, schemas.OrderStatus.REFUNDED]:
-            return False, "이미 취소된 주문입니다"
-        
-        # 배송 시작된 경우 취소 불가
-        if order.status in [schemas.OrderStatus.SHIPPED, schemas.OrderStatus.DELIVERED]:
-            return False, "배송이 시작된 주문은 취소할 수 없습니다"
+        # 결제 완료, 상품준비중 상태에서만 주문 취소 가능
+        if order.status not in [schemas.OrderStatus.PAID, schemas.OrderStatus.PREPARING]:
+            return False, "주문 취소는 결제 완료 또는 상품준비중 상태에서만 가능합니다"
         
         # 재고 복구
         for item in order.items:
@@ -471,14 +467,9 @@ def refund_order(
         if not order:
             return False, "주문을 찾을 수 없습니다"
         
-        # 결제 완료된 주문만 환불 가능
-        if order.status not in [
-            schemas.OrderStatus.PAID,
-            schemas.OrderStatus.PREPARING,
-            schemas.OrderStatus.SHIPPED,
-            schemas.OrderStatus.DELIVERED
-        ]:
-            return False, "환불 가능한 상태가 아닙니다"
+        # 배송중, 배송 완료 상태에서만 환불 가능
+        if order.status not in [schemas.OrderStatus.SHIPPED, schemas.OrderStatus.DELIVERED]:
+            return False, "환불은 배송중 또는 배송 완료 상태에서만 가능합니다"
         
         # 재고 복구
         for item in order.items:
@@ -538,6 +529,7 @@ def get_product_info_for_item(db: Session, item: models.OrderItem) -> dict:
         }
     """
     default_info = {
+        "product_id": None,
         "product_name": f"상품 옵션 ID: {item.product_option_id}",
         "product_brand": None,
         "product_size": None,
@@ -556,6 +548,7 @@ def get_product_info_for_item(db: Session, item: models.OrderItem) -> dict:
 
             if option and option.product:
                 return {
+                    "product_id": option.product.id,
                     "product_name": option.product.name,
                     "product_brand": option.product.category.name if option.product.category else None,
                     "product_size": option.size_name,
@@ -577,6 +570,7 @@ def get_product_info_for_item(db: Session, item: models.OrderItem) -> dict:
                     condition_name = option.used_product.condition.condition_name
 
                 return {
+                    "product_id": option.used_product.id,
                     "product_name": option.used_product.name,
                     "product_brand": option.used_product.category.name if option.used_product.category else None,
                     "product_size": option.size_name,
@@ -632,6 +626,7 @@ def enrich_order_with_product_names(db: Session, order: models.Order) -> dict:
             "unit_price": str(item.unit_price),
             "subtotal": str(item.subtotal),
             "created_at": item.created_at.isoformat(),
+            "product_id": product_info["product_id"],
             "product_name": product_info["product_name"],
             "product_brand": product_info["product_brand"],
             "product_size": product_info["product_size"],

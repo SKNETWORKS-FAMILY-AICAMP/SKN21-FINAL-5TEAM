@@ -49,6 +49,12 @@ from ecommerce.platform.backend.app.router.shipping.models import ShippingAddres
 from ecommerce.platform.backend.app.router.users.crud import hash_password
 from ecommerce.platform.backend.app.router.points.models import IssuedVoucher
 
+# Configure logging so we can see INFO and ERROR messages
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -89,7 +95,7 @@ def init_db(db: Session):
             create_used_product_conditions(db)
             
         # 5. 중고 상품 데이터 확인 및 생성
-        if not db.query(UsedProduct).first():
+        # if not db.query(UsedProduct).first():
             logger.info("🛠️ 초기 중고 상품 데이터 생성 중...")
             create_used_products(db)
             
@@ -273,52 +279,110 @@ def create_used_product_conditions(db: Session):
     db.flush()
 
 def create_used_products(db: Session):
-    """중고 상품 및 옵션 생성"""
-    # 판매자(admin)와 카테고리(청바지), 상태(A급) 조회
-    admin_user = db.query(User).filter(User.email == "admin@example.com").first()
-    pants_cat = db.query(Category).filter(Category.name == "청바지").first()
-    condition_a = db.query(UsedProductCondition).filter(UsedProductCondition.condition_name == "A급").first()
+    """상의/하의/신발 기반 중고 상품 30개 생성 (id를 원본 Product.id로 맞춤)"""
 
-    if not admin_user or not pants_cat or not condition_a:
-        logger.warning("중고 상품 생성을 위한 필수 데이터(유저, 카테고리, 상태)가 부족합니다.")
+    logger.info("🔄 중고 상품(30개) 생성 시작")
+
+    db.query(UsedProductOption).delete()
+    db.query(ProductImage).filter(ProductImage.product_type == "used").delete()
+    db.query(UsedProduct).delete()
+    db.flush()
+
+    # 1) 판매자(admin) 조회
+    admin_user = db.query(User).filter(User.email == "admin@example.com").first()
+    if not admin_user:
+        logger.warning("admin 유저 없음")
         return
 
-    used_products = [
-        UsedProduct(
-            category_id=pants_cat.id,
-            seller_id=admin_user.id,
-            name="A급 리바이스 청바지",
-            description="사이즈가 안 맞아서 팝니다. 2번 입었어요.",
-            price=Decimal("45000"),
-            condition_id=condition_a.id,
-            status=UsedProductStatus.APPROVED, # 판매 승인됨
-            tags="청바지,리바이스,중고"
-        ),
-        UsedProduct(
-            category_id=pants_cat.id,
-            seller_id=admin_user.id,
-            name="빈티지 데님 자켓",
-            description="빈티지 감성의 데님 자켓입니다.",
-            price=Decimal("30000"),
-            condition_id=condition_a.id,
-            status=UsedProductStatus.PENDING, # 승인 대기중
-            tags="데님,자켓,빈티지"
-        )
-    ]
-    db.add_all(used_products)
-    db.flush()
+    # 2) 중고 상태(S/A/B) 전체 조회
+    conditions = db.query(UsedProductCondition).all()
+    if not conditions:
+        logger.warning("중고 상태 데이터 없음")
+        return
 
-    for up in used_products:
-        # 중고는 보통 수량이 1개
-        opt = UsedProductOption(
-            used_product_id=up.id, 
-            size_name="M", 
-            color="Blue", 
-            quantity=1, 
-            is_active=True
+    # 3) 카테고리별 id 상위 10개 조회
+    topwear_products = db.query(Product)\
+        .filter(Product.tags.ilike('%Topwear%'))\
+        .order_by(Product.id.asc())\
+        .limit(10)\
+        .all()
+
+    bottomwear_products = db.query(Product)\
+        .filter(Product.tags.ilike('%Bottomwear%'))\
+        .order_by(Product.id.asc())\
+        .limit(10)\
+        .all()
+
+    shoes_products = db.query(Product)\
+        .filter(
+            Product.tags.ilike('%Shoes%') |
+            Product.tags.ilike('%Footwear%')
+        )\
+        .order_by(Product.id.asc())\
+        .limit(10)\
+        .all()
+
+    selected_products = topwear_products + bottomwear_products + shoes_products
+
+    if not selected_products:
+        logger.warning("조건에 맞는 상품 없음")
+        return
+
+    for product in selected_products:
+
+        condition = random.choice(conditions)
+
+        status = UsedProductStatus.APPROVED
+
+        used_price = Decimal(int(product.price * (1 - condition.depreciation_percent / 100)))
+
+        used_product = UsedProduct(
+            id=product.id,
+            category_id=product.category_id,
+            seller_id=admin_user.id,
+            name=f"[중고] {product.name}",
+            description=f"{condition.condition_name} 상품입니다.",
+            price=used_price,
+            condition_id=condition.id,
+            status=status,
+            tags=product.tags
         )
-        db.add(opt)
+
+        db.add(used_product)
+        db.flush()
+
+        # NEW 이미지 복사 -> USED 이미지로 추가
+        new_images = db.query(ProductImage).filter(
+            ProductImage.product_type == "new",
+            ProductImage.product_id == product.id
+        ).all()
+
+        for img in new_images:
+            db.add(ProductImage(
+                product_type="used",
+                product_id=used_product.id,
+                image_url=img.image_url,
+                display_order=img.display_order,
+                is_primary=img.is_primary,
+                created_at=datetime.now()
+            ))
+
+        # 기존 productoptions 그대로 복사
+        original_options = db.query(ProductOption).filter(
+            ProductOption.product_id == product.id
+        ).all()
+
+        for opt in original_options:
+            db.add(UsedProductOption(
+                used_product_id=used_product.id,
+                size_name=opt.size_name,
+                color=opt.color,
+                quantity=opt.quantity,
+                is_active=opt.is_active
+            ))
+
     db.flush()
+    logger.info("✅ 중고 상품(30개) 생성 완료")
 
 def create_shipping_addresses(db: Session):
     """배송지 생성"""
@@ -449,11 +513,14 @@ if __name__ == "__main__":
     db = SessionLocal()
 
     try:
+        logger.info("🚀 DB 초기 데이터 적재 시작...")
         init_db(db)
-        print("✅ 적재 완료")
+        db.commit()
+        logger.info("✅ DB 초기 데이터 적재 완료!")
 
     except Exception as e:
-        print("❌ 에러 발생:", e)
+        logger.error(f"❌ 에러 발생: {e}", exc_info=True)
+        db.rollback()
 
     finally:
         db.close()
