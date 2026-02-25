@@ -74,6 +74,10 @@ export default function AdminShippingPage() {
   const [filter, setFilter] = useState<ShippingFilter>("all");
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
 
+  // 배송 조회 모달 (읽기 전용)
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewOrder, setViewOrder] = useState<Order | null>(null);
+
   // 모달 상태
   const [showModal, setShowModal] = useState(false);
   const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
@@ -91,7 +95,7 @@ export default function AdminShippingPage() {
     resolve: (value: any) => void;
   } | null>(null);
 
-  const API_BASE = "http://localhost:8000";
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
   // ==================== 커스텀 알림 함수 ====================
 
@@ -212,6 +216,18 @@ export default function AdminShippingPage() {
     return styles.statusNone;
   };
 
+  // ==================== 배송 조회 모달 (읽기 전용) ====================
+
+  const handleOpenViewModal = (order: Order) => {
+    setViewOrder(order);
+    setShowViewModal(true);
+  };
+
+  const handleCloseViewModal = () => {
+    setShowViewModal(false);
+    setViewOrder(null);
+  };
+
   // ==================== 모달 열기 ====================
 
   const handleOpenModal = (order: Order) => {
@@ -316,14 +332,18 @@ export default function AdminShippingPage() {
       const saved: ShippingInfo = await response.json();
       setShippingMap((prev) => ({ ...prev, [saved.order_id]: saved }));
 
-      // 신규 등록 시 로컬 주문 상태도 '상품 준비중'으로 업데이트
+      // 신규 등록 시 로컬 주문 상태도 '상품 준비중'으로 업데이트 (취소/환불 상태는 유지)
       if (!editingShippingId) {
-        setOrders((prev) =>
-          prev.map((o) => (o.id === editingOrderId ? { ...o, status: "preparing" } : o))
-        );
+        const currentOrder = orders.find((o) => o.id === editingOrderId);
+        const isFinalStatus = currentOrder?.status === "cancelled" || currentOrder?.status === "refunded";
+        if (!isFinalStatus) {
+          setOrders((prev) =>
+            prev.map((o) => (o.id === editingOrderId ? { ...o, status: "preparing" } : o))
+          );
+        }
       }
 
-      showAlert(editingShippingId ? "배송 정보가 수정되었습니다." : "배송 정보가 등록되었습니다. 주문 상태가 '상품 준비중'으로 변경되었습니다.");
+      showAlert(editingShippingId ? "배송 정보가 수정되었습니다." : "배송 정보가 등록되었습니다.");
       handleCloseModal();
     } catch (err) {
       console.error(err);
@@ -440,12 +460,25 @@ export default function AdminShippingPage() {
                         <td>{info?.courier_company || <span className={styles.noData}>-</span>}</td>
                         <td>{info?.tracking_number || <span className={styles.noData}>-</span>}</td>
                         <td>
-                          <button
-                            className={`${styles.actionBtn} ${!info ? styles.actionBtnPrimary : ""}`}
-                            onClick={() => handleOpenModal(order)}
-                          >
-                            {info ? "수정" : "등록"}
-                          </button>
+                          {(order.status === "cancelled" || order.status === "refunded") ? (
+                            info ? (
+                              <button
+                                className={styles.actionBtn}
+                                onClick={() => handleOpenViewModal(order)}
+                              >
+                                조회
+                              </button>
+                            ) : (
+                              <span className={styles.noData}>-</span>
+                            )
+                          ) : (
+                            <button
+                              className={`${styles.actionBtn} ${!info ? styles.actionBtnPrimary : ""}`}
+                              onClick={() => handleOpenModal(order)}
+                            >
+                              {info ? "수정" : "등록"}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -563,6 +596,73 @@ export default function AdminShippingPage() {
           </div>
         </div>
       )}
+
+      {/* 배송 조회 모달 (읽기 전용) */}
+      {showViewModal && viewOrder && (() => {
+        const info = shippingMap[viewOrder.id];
+        return (
+          <div className={styles.modalOverlay} onClick={handleCloseViewModal}>
+            <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+              <button className={styles.closeBtn} onClick={handleCloseViewModal}>
+                ✕
+              </button>
+
+              <h2 className={styles.modalTitle}>배송 정보 조회</h2>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>주문번호</label>
+                <div className={styles.formInput} style={{ cursor: "default" }}>
+                  {viewOrder.order_number}
+                </div>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>주문상태</label>
+                <div className={styles.formInput} style={{ cursor: "default" }}>
+                  {ORDER_STATUS_MAP[viewOrder.status]}
+                </div>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>택배사</label>
+                <div className={styles.formInput} style={{ cursor: "default" }}>
+                  {info?.courier_company || "-"}
+                </div>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>송장번호</label>
+                <div className={styles.formInput} style={{ cursor: "default" }}>
+                  {info?.tracking_number || "-"}
+                </div>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>배송 시작일</label>
+                <div className={styles.formInput} style={{ cursor: "default" }}>
+                  {info?.shipped_at ? new Date(info.shipped_at).toLocaleDateString("ko-KR") : "-"}
+                </div>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>배송 완료일</label>
+                <div className={styles.formInput} style={{ cursor: "default" }}>
+                  {info?.delivered_at ? new Date(info.delivered_at).toLocaleDateString("ko-KR") : "-"}
+                </div>
+              </div>
+
+              <div className={styles.formActions}>
+                <button
+                  className={`${styles.actionBtn} ${styles.customAlertBtnSecondary}`}
+                  onClick={handleCloseViewModal}
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 커스텀 알림 모달 */}
       {customAlert && (

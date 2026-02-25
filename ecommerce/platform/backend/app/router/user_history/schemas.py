@@ -71,7 +71,7 @@ class UserHistoryResponse(UserHistoryBase):
 class TrackCartActionRequest(BaseModel):
     """장바구니 행동 추적 요청"""
     action_type: Literal["cart_add", "cart_del"]
-    cart_item_id: int
+    cart_item_id: Optional[int] = None
     product_option_type: str
     product_option_id: int
     quantity: Optional[int] = None

@@ -80,6 +80,7 @@ class OrderItemResponse(OrderItemBase):
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
+    product_id: Optional[int] = None          # 상품 ID
     product_name: Optional[str] = None       # 상품명
     product_brand: Optional[str] = None      # 브랜드
     product_size: Optional[str] = None       # 사이즈
