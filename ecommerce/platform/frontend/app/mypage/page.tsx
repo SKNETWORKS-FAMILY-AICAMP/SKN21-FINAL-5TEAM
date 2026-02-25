@@ -258,7 +258,7 @@ export default function MyPage() {
                         return;
                       }
 
-                      // 🔥 포인트 재조회
+                      // 포인트 재조회
                       const balanceRes = await fetch(
                         `${process.env.NEXT_PUBLIC_API_URL}/points/users/${user.id}/balance`
                       );

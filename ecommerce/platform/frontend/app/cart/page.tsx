@@ -187,8 +187,8 @@ function normalizeCartData(data: CartDetailWithSummary): CartDetailWithSummary {
         product: {
           ...item.product,
           price: toNumber(item.product.price),
-          original_price: item.product.original_price 
-            ? toNumber(item.product.original_price) 
+          original_price: item.product.original_price
+            ? toNumber(item.product.original_price)
             : null,
           shipping_fee: toNumber(item.product.shipping_fee),
           stock: toNumber(item.product.stock),
@@ -216,7 +216,7 @@ export default function CartPage() {
   const [allChecked, setAllChecked] = useState(false);
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-  const {user, isLoggedIn } = useAuth();
+  const { user, isLoggedIn } = useAuth();
   const [imageMap, setImageMap] = useState<Record<number, string>>({});
 
   // 장바구니 데이터 로드
@@ -244,7 +244,7 @@ export default function CartPage() {
             if (primary || images[0]) {
               newMap[item.product.product_id] = (primary || images[0]).image_url;
             }
-          } catch {}
+          } catch { }
         })
       );
       setImageMap(prev => ({ ...prev, ...newMap }));
@@ -270,7 +270,7 @@ export default function CartPage() {
     if (cartData?.cart?.items) {
       setAllChecked(
         cartData.cart.items.length > 0 &&
-          selectedItems.length === cartData.cart.items.length
+        selectedItems.length === cartData.cart.items.length
       );
     }
   }, [selectedItems, cartData]);
@@ -296,13 +296,13 @@ export default function CartPage() {
 
   const updateQuantity = async (itemId: number, delta: number) => {
     if (actionLoading) return;
-    
+
     const item = cartData?.cart.items.find(i => i.id === itemId);
     if (!item) return;
 
     const newQuantity = item.quantity + delta;
     const stock = toNumber(item.product.stock);
-    
+
     if (newQuantity < 1 || newQuantity > stock) {
       return;
     }
@@ -606,7 +606,7 @@ export default function CartPage() {
                     <p className={styles.shippingInfo}>{item.product.shipping_text}</p>
                     {toNumber(item.product.stock) <= 3 && (
                       <p className={styles.stockWarning}>
-                        ⚠️ 남은 수량: {toNumber(item.product.stock)}개
+                        남은 수량: {toNumber(item.product.stock)}개
                       </p>
                     )}
                   </div>
