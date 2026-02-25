@@ -4,7 +4,7 @@ import random
 import os
 
 # --- Paths ---
-OUTPUT_PATH = r"C:\Users\Playdata\Documents\SKN21_FINAL_5TEAM\SKN21-FINAL-5TEAM\ecommerce\chatbot\benchmark\datasets\operational_eval_dataset_50.jsonl"
+OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "operational_eval_dataset_50.jsonl")
 
 def generate_fixture(size_kb, status="success"):
     if status != "success":
