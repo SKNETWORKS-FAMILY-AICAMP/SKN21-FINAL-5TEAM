@@ -4,7 +4,7 @@ import random
 import os
 
 # --- Paths ---
-OUTPUT_DIR = r"C:\Users\Playdata\Documents\SKN21_FINAL_5TEAM\SKN21-FINAL-5TEAM\ecommerce\chatbot\benchmark\datasets"
+OUTPUT_DIR = os.path.dirname(__file__)
 OUTPUT_PATH = os.path.join(OUTPUT_DIR, "generation_eval_dataset_50.jsonl")
 
 if not os.path.exists(OUTPUT_DIR):
