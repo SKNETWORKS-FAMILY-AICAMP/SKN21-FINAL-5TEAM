@@ -5,12 +5,12 @@ import random
 import os
 
 # --- Paths ---
-PATH_MUSINSA_FAQ = r"C:\Users\Playdata\Documents\SKN21_FINAL_5TEAM\SKN21-FINAL-5TEAM\ecommerce\chatbot\data\raw\musinsa_faq\musinsa_faq_20260203_162139_final.json"
-PATH_ECOMMERCE_STANDARD = r"C:\Users\Playdata\Documents\SKN21_FINAL_5TEAM\SKN21-FINAL-5TEAM\ecommerce\chatbot\data\raw\ecommerce_standard\ecommerce_standard_preprocessed.json"
+PATH_MUSINSA_FAQ = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/raw/musinsa_faq/musinsa_faq_20260203_162139_final.json"))
+PATH_ECOMMERCE_STANDARD = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/raw/ecommerce_standard/ecommerce_standard_preprocessed.json"))
 # AI Hub paths for context enrichment if needed
-PATH_AIHUB_FASHION = r"C:\Users\Playdata\Downloads\소상공인 고객 주문 질의-응답 텍스트\Validation\라벨링데이터_validation\패션_validation.csv"
+PATH_AIHUB_FASHION = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/raw/AI_Hub/패션_validation.csv"))
 
-OUTPUT_PATH = r"C:\Users\Playdata\Documents\SKN21_FINAL_5TEAM\SKN21-FINAL-5TEAM\ecommerce\chatbot\benchmark\datasets\guardrail_eval_dataset_50.jsonl"
+OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "guardrail_eval_dataset_50.jsonl")
 
 def load_json(path):
     with open(path, 'r', encoding='utf-8') as f: return json.load(f)
