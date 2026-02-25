@@ -337,14 +337,6 @@ export default function MyPage() {
             </div>
             <div className={styles.shortcutValue}>충전하기</div>
           </button>
-
-          <button className={styles.shortcutItem}>
-            <div className={styles.shortcutTitle}>
-              <span>쿠폰</span>
-              <span className={styles.arrow}>›</span>
-            </div>
-            <div className={styles.shortcutValue}>2장</div>
-          </button>
         </section>
 
        {/* ===== Menu List ===== */}
@@ -384,13 +376,6 @@ export default function MyPage() {
               style={{ cursor: "pointer", color: "#e53935" }}
             >
               회원탈퇴
-            </li>
-
-            <li
-              onClick={() => router.push("/mypage/ask")}
-              style={{ cursor: "pointer" }}
-            >
-              1:1 문의 내역
             </li>
           </ul>
         </section>
