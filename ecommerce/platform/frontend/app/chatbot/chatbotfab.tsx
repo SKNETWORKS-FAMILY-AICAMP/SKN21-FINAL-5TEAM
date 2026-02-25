@@ -444,7 +444,7 @@ export default function ChatbotFab() {
     if (!hidden) {
       setMessages((prev) => [...prev, { role: 'user', type: 'text', text }]);
     }
-    
+
     setInput('');
     setIsLoading(true);
     setStatusMessage(null); // 초기화
@@ -497,19 +497,19 @@ export default function ChatbotFab() {
                 accumulatedText += data.content;
                 setStreamingText(accumulatedText);
               } else if (data.type === 'status_update') {
-                  // 백엔드에서 전달되는 실시간 노드/모델 상태 메시지 업데이트
-                  const composedStatus =
-                    typeof data.status === 'string' && data.status.trim().length > 0
-                      ? data.status
-                      : typeof data.node === 'string' && data.node.trim().length > 0
+                // 백엔드에서 전달되는 실시간 노드/모델 상태 메시지 업데이트
+                const composedStatus =
+                  typeof data.status === 'string' && data.status.trim().length > 0
+                    ? data.status
+                    : typeof data.node === 'string' && data.node.trim().length > 0
                       ? `${data.node} 노드를 처리하고 있습니다...`
                       : typeof data.model === 'string' && data.model.trim().length > 0
-                      ? `모델 응답을 생성하고 있습니다... (${data.model})`
-                      : null;
+                        ? `모델 응답을 생성하고 있습니다... (${data.model})`
+                        : null;
 
-                  if (composedStatus) {
-                    setStatusMessage(composedStatus);
-                  }
+                if (composedStatus) {
+                  setStatusMessage(composedStatus);
+                }
               } else if (data.type === 'ui_action') {
                 if (accumulatedText.trim()) {
                   const completedText = accumulatedText;
@@ -535,18 +535,18 @@ export default function ChatbotFab() {
                     },
                   ]);
                 } else if (data.ui_action === 'show_address_search') {
-                    setIsLoading(false);
-                    setStatusMessage(null);
-                    setMessages((prev) => [
-                      ...prev,
-                      {
-                        role: 'bot',
-                        type: 'address_search',
-                        message: data.message || '주소 검색 버튼을 눌러주세요.',
-                      },
-                    ]);
+                  setIsLoading(false);
+                  setStatusMessage(null);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: 'bot',
+                      type: 'address_search',
+                      message: data.message || '주소 검색 버튼을 눌러주세요.',
+                    },
+                  ]);
                 }
-                
+
                 newState = data.state;
                 if (newState) setConversationState(newState);
               } else if (data.type === 'done') {
@@ -600,7 +600,7 @@ export default function ChatbotFab() {
 
     // State만 업데이트 - 그래프 실행 안 함
     const orderIdString = selectedOrderIds.join(', ');
-    
+
     setConversationState((prev) => ({
       ...prev,
       order_id: orderIdString,
@@ -652,12 +652,12 @@ export default function ChatbotFab() {
 
   return (
     <>
-      {/* ✅ 우측 하단 원형 버튼 */}
+      {/* 우측 하단 원형 버튼 */}
       <button type="button" className={styles.fab} onClick={toggle} aria-label="챗봇 열기">
         💬
       </button>
 
-      {/* ✅ 슬라이드 업 패널 */}
+      {/* 슬라이드 업 패널 */}
       <aside
         ref={panelRef}
         className={`${styles.panel} ${open ? styles.open : ''}`}
@@ -726,9 +726,8 @@ export default function ChatbotFab() {
                   <div className={styles.botMsg}>
                     <span className={styles.botIcon}>✦</span>
                     <div
-                      className={`${styles.botText} ${
-                        m.type === 'text' && m.isStreaming ? styles.streaming : ''
-                      } ${m.type === 'text' && m.showDivider ? styles.persistentDivider : ''}`}
+                      className={`${styles.botText} ${m.type === 'text' && m.isStreaming ? styles.streaming : ''
+                        } ${m.type === 'text' && m.showDivider ? styles.persistentDivider : ''}`}
                     >
                       {m.type === 'text' ? <BotTextContent text={text} isStreaming={Boolean(m.isStreaming)} /> : text}
                     </div>
@@ -737,7 +736,7 @@ export default function ChatbotFab() {
               );
             }
           })}
-          
+
           {/* 생성 중 상태 + 스트리밍 프리뷰 */}
           {(isLoading || statusMessage || streamingText) && (
             <div className={`${styles.msgRow} ${styles.botRow}`}>

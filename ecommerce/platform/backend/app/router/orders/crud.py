@@ -421,13 +421,9 @@ def cancel_order(
         if not order:
             return False, "주문을 찾을 수 없습니다"
         
-        # 이미 취소되었거나 환불된 경우
-        if order.status in [schemas.OrderStatus.CANCELLED, schemas.OrderStatus.REFUNDED]:
-            return False, "이미 취소된 주문입니다"
-        
-        # 배송 시작된 경우 취소 불가
-        if order.status in [schemas.OrderStatus.SHIPPED, schemas.OrderStatus.DELIVERED]:
-            return False, "배송이 시작된 주문은 취소할 수 없습니다"
+        # 결제 완료, 상품준비중 상태에서만 주문 취소 가능
+        if order.status not in [schemas.OrderStatus.PAID, schemas.OrderStatus.PREPARING]:
+            return False, "주문 취소는 결제 완료 또는 상품준비중 상태에서만 가능합니다"
         
         # 재고 복구
         for item in order.items:
@@ -471,14 +467,9 @@ def refund_order(
         if not order:
             return False, "주문을 찾을 수 없습니다"
         
-        # 결제 완료된 주문만 환불 가능
-        if order.status not in [
-            schemas.OrderStatus.PAID,
-            schemas.OrderStatus.PREPARING,
-            schemas.OrderStatus.SHIPPED,
-            schemas.OrderStatus.DELIVERED
-        ]:
-            return False, "환불 가능한 상태가 아닙니다"
+        # 배송중, 배송 완료 상태에서만 환불 가능
+        if order.status not in [schemas.OrderStatus.SHIPPED, schemas.OrderStatus.DELIVERED]:
+            return False, "환불은 배송중 또는 배송 완료 상태에서만 가능합니다"
         
         # 재고 복구
         for item in order.items:
