@@ -133,9 +133,9 @@ export default function MyPage() {
   const [pointHistory, setPointHistory] = useState<any[]>([]);
   const [showPointModal, setShowPointModal] = useState(false);
 
-    /* =========================
-    상품권
-    ==========================*/
+  /* =========================
+  상품권
+  ==========================*/
   const [showVoucherModal, setShowVoucherModal] = useState(false);
   const [voucherCode, setVoucherCode] = useState("");
   const [voucherLoading, setVoucherLoading] = useState(false);
@@ -337,17 +337,9 @@ export default function MyPage() {
             </div>
             <div className={styles.shortcutValue}>충전하기</div>
           </button>
-
-          <button className={styles.shortcutItem}>
-            <div className={styles.shortcutTitle}>
-              <span>쿠폰</span>
-              <span className={styles.arrow}>›</span>
-            </div>
-            <div className={styles.shortcutValue}>2장</div>
-          </button>
         </section>
 
-       {/* ===== Menu List ===== */}
+        {/* ===== Menu List ===== */}
         <section className={styles.menuSection}>
           <ul>
             <li
@@ -361,7 +353,7 @@ export default function MyPage() {
               배송지 관리
             </li>
             <li onClick={() => router.push("/used")} style={{ cursor: "pointer" }}>
-             유즈드</li>
+              유즈드</li>
 
             <li onClick={() => setOpenModal("style")} style={{ cursor: "pointer" }}>
               나의 맞춤 정보(체형)
@@ -385,13 +377,6 @@ export default function MyPage() {
             >
               회원탈퇴
             </li>
-
-            <li
-              onClick={() => router.push("/mypage/ask")}
-              style={{ cursor: "pointer" }}
-            >
-              1:1 문의 내역
-            </li>
           </ul>
         </section>
 
@@ -403,269 +388,269 @@ export default function MyPage() {
           </button>
         </section>
 
-{/* =========================
+        {/* =========================
    모달 영역
 ========================= */}
-{openModal && (
-  <div className={styles.dim} onClick={closeModal}>
-    <div
-      className={`${styles.modal} ${styles.scrollModal}`}
-      onClick={(e) => e.stopPropagation()}
-    >
+        {openModal && (
+          <div className={styles.dim} onClick={closeModal}>
+            <div
+              className={`${styles.modal} ${openModal === "style" ? styles.scrollModal : ""}`}
+              onClick={(e) => e.stopPropagation()}
+            >
 
-      {/* ================= 회원정보 변경 ================= */}
-      {openModal === "profile" && (
-        <>
-          <h3>회원정보 변경</h3>
+              {/* ================= 회원정보 변경 ================= */}
+              {openModal === "profile" && (
+                <>
+                  <h3>회원정보 변경</h3>
 
-          <input
-            value={profileForm.name}
-            onChange={(e) =>
-              setProfileForm({ ...profileForm, name: e.target.value })
-            }
-            placeholder="이름"
-          />
+                  <input
+                    value={profileForm.name}
+                    onChange={(e) =>
+                      setProfileForm({ ...profileForm, name: e.target.value })
+                    }
+                    placeholder="이름"
+                  />
 
-          <input
-            value={profileForm.phone}
-            onChange={(e) =>
-              setProfileForm({ ...profileForm, phone: e.target.value })
-            }
-            placeholder="휴대폰번호"
-          />
+                  <input
+                    value={profileForm.phone}
+                    onChange={(e) =>
+                      setProfileForm({ ...profileForm, phone: e.target.value })
+                    }
+                    placeholder="휴대폰번호"
+                  />
 
-          <div className={styles.modalButtons}>
-            <button onClick={closeModal}>취소</button>
-            <button onClick={handleSaveProfile}>저장</button>
-          </div>
-        </>
-      )}
-
-      {/* ================= 비밀번호 변경 ================= */}
-      {openModal === "password" && (
-        <>
-          <h3>비밀번호 변경</h3>
-
-          <input
-            type="password"
-            placeholder="현재 비밀번호"
-            onChange={(e) =>
-              setPasswordForm({
-                ...passwordForm,
-                currentPassword: e.target.value,
-              })
-            }
-          />
-
-          <input
-            type="password"
-            placeholder="새 비밀번호"
-            onChange={(e) =>
-              setPasswordForm({
-                ...passwordForm,
-                newPassword: e.target.value,
-              })
-            }
-          />
-
-          <input
-            type="password"
-            placeholder="비밀번호 확인"
-            onChange={(e) =>
-              setPasswordForm({
-                ...passwordForm,
-                confirmPassword: e.target.value,
-              })
-            }
-          />
-
-          <div className={styles.modalButtons}>
-            <button onClick={closeModal}>취소</button>
-            <button onClick={handleSavePassword}>저장</button>
-          </div>
-        </>
-      )}
-
-      {/* ================= 알림 설정 ================= */}
-      {openModal === "alarm" && (
-        <div className={styles.dim} onClick={closeModal}>
-          <div className={styles.modal} onClick={(e)=>e.stopPropagation()}>
-            <h3>알림 설정</h3>
-
-            <div className={styles.toggleRow}>
-              <span>마케팅 목적 개인정보 수집 동의</span>
-              <label className={styles.switch}>
-                <input
-                  type="checkbox"
-                  checked={alarmForm.agree_marketing}
-                  onChange={(e)=>
-                    setAlarmForm({...alarmForm, agree_marketing:e.target.checked})
-                  }
-                />
-                <span className={styles.slider}></span>
-              </label>
-            </div>
-
-            <div className={styles.toggleRow}>
-              <span>문자 수신</span>
-              <label className={styles.switch}>
-                <input
-                  type="checkbox"
-                  checked={alarmForm.agree_sms}
-                  onChange={(e)=>
-                    setAlarmForm({...alarmForm, agree_sms:e.target.checked})
-                  }
-                />
-                <span className={styles.slider}></span>
-              </label>
-            </div>
-
-            <div className={styles.toggleRow}>
-              <span>이메일 수신</span>
-              <label className={styles.switch}>
-                <input
-                  type="checkbox"
-                  checked={alarmForm.agree_email}
-                  onChange={(e)=>
-                    setAlarmForm({...alarmForm, agree_email:e.target.checked})
-                  }
-                />
-                <span className={styles.slider}></span>
-              </label>
-            </div>
-
-            <div className={styles.modalButtons}>
-              <button onClick={closeModal}>취소</button>
-              <button onClick={handleSaveAlarm}>저장</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================= 회원 탈퇴 ================= */}
-      {openModal === "withdraw" && (
-        <>
-          <h3>회원 탈퇴</h3>
-
-          <select
-            value={withdrawReason}
-            onChange={(e) => setWithdrawReason(e.target.value)}
-          >
-            <option value="">선택해주세요</option>
-            <option>구매할 만한 상품이 없어요.</option>
-            <option>상품 가격이 비싸요.</option>
-            <option>배송이 느려요.</option>
-            <option>교환/환불이 불편해요.</option>
-            <option>혜택이 부족해요.</option>
-            <option>기타</option>
-          </select>
-
-          <div className={styles.modalButtons}>
-            <button onClick={closeModal}>취소</button>
-            <button onClick={handleWithdraw}>탈퇴</button>
-          </div>
-        </>
-      )}
-
-      {/* ================= 나의 맞춤 정보 ================= */}
-      {openModal === "style" && (
-        <>
-          <h3>나의 맞춤 정보</h3>
-
-          <input
-            name="height"
-            placeholder="키 (cm)"
-            value={form.height || ""}
-            onChange={handleChange}
-          />
-
-          <input
-            name="weight"
-            placeholder="몸무게 (kg)"
-            value={form.weight || ""}
-            onChange={handleChange}
-          />
-
-          <button
-            className={styles.toggle}
-            onClick={() => setOpenUpper(!openUpper)}
-          >
-            상의 치수 {openUpper ? "▴" : "▾"}
-          </button>
-
-          {openUpper && (
-            <>
-              <input name="shoulder_width" placeholder="어깨너비" value={form.shoulder_width || ""} onChange={handleChange}/>
-              <input name="chest_width" placeholder="가슴단면" value={form.chest_width || ""} onChange={handleChange}/>
-              <input name="sleeve_length" placeholder="소매길이" value={form.sleeve_length || ""} onChange={handleChange}/>
-              <input name="upper_total_length" placeholder="상체 총장" value={form.upper_total_length || ""} onChange={handleChange}/>
-            </>
-          )}
-
-          <button
-            className={styles.toggle}
-            onClick={() => setOpenLower(!openLower)}
-          >
-            하의 치수 {openLower ? "▴" : "▾"}
-          </button>
-
-          {openLower && (
-            <>
-              <input name="waist_width" placeholder="허리단면" value={form.waist_width || ""} onChange={handleChange}/>
-              <input name="hip_width" placeholder="엉덩이단면" value={form.hip_width || ""} onChange={handleChange}/>
-              <input name="thigh_width" placeholder="허벅지단면" value={form.thigh_width || ""} onChange={handleChange}/>
-              <input name="rise" placeholder="밑위" value={form.rise || ""} onChange={handleChange}/>
-              <input name="hem_width" placeholder="밑단단면" value={form.hem_width || ""} onChange={handleChange}/>
-              <input name="lower_total_length" placeholder="하체 총장" value={form.lower_total_length || ""} onChange={handleChange}/>
-            </>
-          )}
-
-          <div className={styles.modalButtons}>
-            <button onClick={closeModal}>취소</button>
-            <button onClick={handleSaveStyle}>저장</button>
-          </div>
-        </>
-      )}
-
-    </div>
-  </div>
-)}
-
-      {/* ================= 포인트 내역 ================= */}
-      {showPointModal && (
-        <div className={styles.dim} onClick={() => setShowPointModal(false)}>
-          <div
-            className={styles.modal}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3>포인트 내역</h3>
-
-            {pointHistory.length === 0 ? (
-              <p>포인트 내역이 없습니다.</p>
-            ) : (
-              pointHistory.map((item) => (
-                <div key={item.id} style={{ marginBottom: "10px" }}>
-                  <div>
-                    {item.description}
+                  <div className={styles.modalButtons}>
+                    <button onClick={closeModal}>취소</button>
+                    <button onClick={handleSaveProfile}>저장</button>
                   </div>
-                  <div style={{ fontSize: "13px", color: "#666" }}>
-                    {new Date(item.created_at).toLocaleDateString("ko-KR")}
+                </>
+              )}
+
+              {/* ================= 비밀번호 변경 ================= */}
+              {openModal === "password" && (
+                <>
+                  <h3>비밀번호 변경</h3>
+
+                  <input
+                    type="password"
+                    placeholder="현재 비밀번호"
+                    onChange={(e) =>
+                      setPasswordForm({
+                        ...passwordForm,
+                        currentPassword: e.target.value,
+                      })
+                    }
+                  />
+
+                  <input
+                    type="password"
+                    placeholder="새 비밀번호"
+                    onChange={(e) =>
+                      setPasswordForm({
+                        ...passwordForm,
+                        newPassword: e.target.value,
+                      })
+                    }
+                  />
+
+                  <input
+                    type="password"
+                    placeholder="비밀번호 확인"
+                    onChange={(e) =>
+                      setPasswordForm({
+                        ...passwordForm,
+                        confirmPassword: e.target.value,
+                      })
+                    }
+                  />
+
+                  <div className={styles.modalButtons}>
+                    <button onClick={closeModal}>취소</button>
+                    <button onClick={handleSavePassword}>저장</button>
                   </div>
-                  <div style={{ fontWeight: "bold" }}>
-                    {item.amount > 0 ? "+" : ""}
-                    {Number(item.amount).toLocaleString()}원
+                </>
+              )}
+
+              {/* ================= 알림 설정 ================= */}
+              {openModal === "alarm" && (
+                <div className={styles.dim} onClick={closeModal}>
+                  <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+                    <h3>알림 설정</h3>
+
+                    <div className={styles.toggleRow}>
+                      <span>마케팅 목적 개인정보 수집 동의</span>
+                      <label className={styles.switch}>
+                        <input
+                          type="checkbox"
+                          checked={alarmForm.agree_marketing}
+                          onChange={(e) =>
+                            setAlarmForm({ ...alarmForm, agree_marketing: e.target.checked })
+                          }
+                        />
+                        <span className={styles.slider}></span>
+                      </label>
+                    </div>
+
+                    <div className={styles.toggleRow}>
+                      <span>문자 수신</span>
+                      <label className={styles.switch}>
+                        <input
+                          type="checkbox"
+                          checked={alarmForm.agree_sms}
+                          onChange={(e) =>
+                            setAlarmForm({ ...alarmForm, agree_sms: e.target.checked })
+                          }
+                        />
+                        <span className={styles.slider}></span>
+                      </label>
+                    </div>
+
+                    <div className={styles.toggleRow}>
+                      <span>이메일 수신</span>
+                      <label className={styles.switch}>
+                        <input
+                          type="checkbox"
+                          checked={alarmForm.agree_email}
+                          onChange={(e) =>
+                            setAlarmForm({ ...alarmForm, agree_email: e.target.checked })
+                          }
+                        />
+                        <span className={styles.slider}></span>
+                      </label>
+                    </div>
+
+                    <div className={styles.modalButtons}>
+                      <button onClick={closeModal}>취소</button>
+                      <button onClick={handleSaveAlarm}>저장</button>
+                    </div>
                   </div>
-                  <hr />
                 </div>
-              ))
-            )}
+              )}
 
-            <div className={styles.modalButtons}>
-              <button onClick={() => setShowPointModal(false)}>닫기</button>
+              {/* ================= 회원 탈퇴 ================= */}
+              {openModal === "withdraw" && (
+                <>
+                  <h3>회원 탈퇴</h3>
+
+                  <select
+                    value={withdrawReason}
+                    onChange={(e) => setWithdrawReason(e.target.value)}
+                  >
+                    <option value="">선택해주세요</option>
+                    <option>구매할 만한 상품이 없어요.</option>
+                    <option>상품 가격이 비싸요.</option>
+                    <option>배송이 느려요.</option>
+                    <option>교환/환불이 불편해요.</option>
+                    <option>혜택이 부족해요.</option>
+                    <option>기타</option>
+                  </select>
+
+                  <div className={styles.modalButtons}>
+                    <button onClick={closeModal}>취소</button>
+                    <button onClick={handleWithdraw}>탈퇴</button>
+                  </div>
+                </>
+              )}
+
+              {/* ================= 나의 맞춤 정보 ================= */}
+              {openModal === "style" && (
+                <>
+                  <h3>나의 맞춤 정보</h3>
+
+                  <input
+                    name="height"
+                    placeholder="키 (cm)"
+                    value={form.height || ""}
+                    onChange={handleChange}
+                  />
+
+                  <input
+                    name="weight"
+                    placeholder="몸무게 (kg)"
+                    value={form.weight || ""}
+                    onChange={handleChange}
+                  />
+
+                  <button
+                    className={styles.toggle}
+                    onClick={() => setOpenUpper(!openUpper)}
+                  >
+                    상의 치수 {openUpper ? "▴" : "▾"}
+                  </button>
+
+                  {openUpper && (
+                    <>
+                      <input name="shoulder_width" placeholder="어깨너비" value={form.shoulder_width || ""} onChange={handleChange} />
+                      <input name="chest_width" placeholder="가슴단면" value={form.chest_width || ""} onChange={handleChange} />
+                      <input name="sleeve_length" placeholder="소매길이" value={form.sleeve_length || ""} onChange={handleChange} />
+                      <input name="upper_total_length" placeholder="상체 총장" value={form.upper_total_length || ""} onChange={handleChange} />
+                    </>
+                  )}
+
+                  <button
+                    className={styles.toggle}
+                    onClick={() => setOpenLower(!openLower)}
+                  >
+                    하의 치수 {openLower ? "▴" : "▾"}
+                  </button>
+
+                  {openLower && (
+                    <>
+                      <input name="waist_width" placeholder="허리단면" value={form.waist_width || ""} onChange={handleChange} />
+                      <input name="hip_width" placeholder="엉덩이단면" value={form.hip_width || ""} onChange={handleChange} />
+                      <input name="thigh_width" placeholder="허벅지단면" value={form.thigh_width || ""} onChange={handleChange} />
+                      <input name="rise" placeholder="밑위" value={form.rise || ""} onChange={handleChange} />
+                      <input name="hem_width" placeholder="밑단단면" value={form.hem_width || ""} onChange={handleChange} />
+                      <input name="lower_total_length" placeholder="하체 총장" value={form.lower_total_length || ""} onChange={handleChange} />
+                    </>
+                  )}
+
+                  <div className={styles.modalButtons}>
+                    <button onClick={closeModal}>취소</button>
+                    <button onClick={handleSaveStyle}>저장</button>
+                  </div>
+                </>
+              )}
+
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* ================= 포인트 내역 ================= */}
+        {showPointModal && (
+          <div className={styles.dim} onClick={() => setShowPointModal(false)}>
+            <div
+              className={styles.modal}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3>포인트 내역</h3>
+
+              {pointHistory.length === 0 ? (
+                <p>포인트 내역이 없습니다.</p>
+              ) : (
+                pointHistory.map((item) => (
+                  <div key={item.id} style={{ marginBottom: "10px" }}>
+                    <div>
+                      {item.description}
+                    </div>
+                    <div style={{ fontSize: "13px", color: "#666" }}>
+                      {new Date(item.created_at).toLocaleDateString("ko-KR")}
+                    </div>
+                    <div style={{ fontWeight: "bold" }}>
+                      {item.amount > 0 ? "+" : ""}
+                      {Number(item.amount).toLocaleString()}원
+                    </div>
+                    <hr />
+                  </div>
+                ))
+              )}
+
+              <div className={styles.modalButtons}>
+                <button onClick={() => setShowPointModal(false)}>닫기</button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

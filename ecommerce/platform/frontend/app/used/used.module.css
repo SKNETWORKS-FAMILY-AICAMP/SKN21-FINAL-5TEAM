@@ -16,24 +16,41 @@
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 16px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
 .productCard {
-  position: relative;
+  position: relative;        /* overlay 기준 */
+  border: 1px solid #eee;
+  background: #fff;
+  cursor: pointer;
+  overflow: hidden;          /* overlay 잘리도록 */
+  display: flex;
+  flex-direction: column;
+  border-radius: 6px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.productCard:hover {
+  transform: translateY;
+  box-shadow: 0 8px 24px rgba(23, 23, 23, 0.08);
 }
 
 .cardBody {
-  border: 1px solid #eee;
   padding: 8px;
-  background-color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1 1 auto;
 }
 
 .productImage {
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 1;
-  margin-bottom: 8px;
-  background-color: #f2f2f2;
+  height: 240px;
+  background: #f5f5f5;
   overflow: hidden;
 }
 
