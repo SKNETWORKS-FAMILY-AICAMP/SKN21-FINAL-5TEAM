@@ -209,6 +209,7 @@
   border-radius: 8px;
   margin-bottom: 14px;
   outline: none;
+  box-sizing: border-box;
 }
 
 .modal input:focus,
@@ -222,6 +223,7 @@
 .scrollModal {
   max-height: 85vh;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 /* =========================

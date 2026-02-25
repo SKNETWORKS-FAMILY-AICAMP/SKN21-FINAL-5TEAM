@@ -754,12 +754,25 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
             }
             current_task_type = "cancel"
         elif action == "refund":
-            tool_name = "check_refund_eligibility"
-            tool_args = {
-                "order_id": order_id,
-                "user_id": user_id,
-                "reason": reason,
-            }
+            # 이미 환불 가능 여부를 확인한 후 재진입인 경우 → 주소 수집 단계로 진행
+            existing_task = state.get("current_task") or {}
+            already_checked = (
+                existing_task.get("type") == "refund"
+                and existing_task.get("target_id") == order_id
+                and isinstance(existing_task.get("missing_info"), list)
+                and "pickup_address" in existing_task.get("missing_info", [])
+            )
+
+            if already_checked:
+                tool_name = "open_address_search"
+                tool_args = {}
+            else:
+                tool_name = "check_refund_eligibility"
+                tool_args = {
+                    "order_id": order_id,
+                    "user_id": user_id,
+                    "reason": reason,
+                }
             current_task_type = "refund"
         elif action == "exchange":
             target_item = args.get("target_item") or args.get("product_name") or args.get("product_id")
@@ -830,18 +843,49 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
             tool_args = {}
             current_task_type = "general"
         elif action in {"address_selected", "save_address"}:
-            tool_name = "save_shipping_address_from_ui"
-            tool_args = {
-                "user_id": user_id,
-                "road_address": args.get("road_address"),
-                "jibun_address": args.get("jibun_address"),
-                "post_code": args.get("post_code"),
-                "detail_address": args.get("detail_address"),
-                "recipient_name": args.get("recipient_name"),
-                "phone": args.get("phone"),
-                "is_default": bool(args.get("is_default", False)),
-            }
-            current_task_type = "search"
+            # 진행 중인 환불/교환 작업이 있으면 주소를 해당 액션에 연결
+            existing_task = state.get("current_task") or {}
+            existing_type = existing_task.get("type")
+            target_order_id = existing_task.get("target_id")
+
+            pickup_address = args.get("road_address") or args.get("jibun_address") or ""
+            detail = args.get("detail_address")
+            if detail:
+                pickup_address = f"{pickup_address} {detail}"
+
+            if existing_type == "refund" and target_order_id:
+                tool_name = "register_return_request"
+                tool_args = {
+                    "order_id": target_order_id,
+                    "user_id": user_id,
+                    "pickup_address": pickup_address,
+                    "confirmed": True,
+                }
+                current_task_type = "refund"
+            elif existing_type == "exchange" and target_order_id:
+                tool_name = "register_exchange_request"
+                tool_args = {
+                    "order_id": target_order_id,
+                    "user_id": user_id,
+                    "reason": existing_task.get("reason", "고객 요청"),
+                    "pickup_address": pickup_address,
+                    "new_option_id": existing_task.get("new_option_id"),
+                    "confirmed": True,
+                }
+                current_task_type = "exchange"
+            else:
+                tool_name = "save_shipping_address_from_ui"
+                tool_args = {
+                    "user_id": user_id,
+                    "road_address": args.get("road_address"),
+                    "jibun_address": args.get("jibun_address"),
+                    "post_code": args.get("post_code"),
+                    "detail_address": args.get("detail_address"),
+                    "recipient_name": args.get("recipient_name"),
+                    "phone": args.get("phone"),
+                    "is_default": bool(args.get("is_default", False)),
+                }
+                current_task_type = "search"
 
         if not tool_name:
             return {
@@ -863,7 +907,7 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
                 "status": "validating",
                 "target_id": order_id,
                 "reason": reason,
-                "missing_info": None,
+                "missing_info": ["pickup_address"] if current_task_type == "refund" else None,
             },
         }
 
@@ -916,6 +960,10 @@ def decomposer_node(state: AgentState):
         payload = _extract_json_payload(user_message) or {}
         payload_action = _extract_action_from_json_payload(user_message)
         selected_order_id = payload.get("order_id") or payload.get("selected_order_id") or _extract_order_id_from_text(user_message)
+
+        # target_id 폴백: 사용자 메시지에 order_id가 없으면 current_task에서 복구
+        if not selected_order_id:
+            selected_order_id = current_task.get("target_id")
 
         resume_args: Dict[str, Any] = {
             "action": payload_action or task_type,

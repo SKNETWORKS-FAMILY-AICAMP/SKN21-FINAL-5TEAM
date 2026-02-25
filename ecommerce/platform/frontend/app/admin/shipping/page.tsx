@@ -460,7 +460,7 @@ export default function AdminShippingPage() {
                         <td>{info?.courier_company || <span className={styles.noData}>-</span>}</td>
                         <td>{info?.tracking_number || <span className={styles.noData}>-</span>}</td>
                         <td>
-                          {(order.status === "cancelled" || order.status === "refunded") ? (
+                          {(order.status === "cancelled" || order.status === "refunded" || order.status === "delivered") ? (
                             info ? (
                               <button
                                 className={styles.actionBtn}

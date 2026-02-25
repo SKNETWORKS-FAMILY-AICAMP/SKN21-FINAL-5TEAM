@@ -11,9 +11,24 @@ from ecommerce.platform.backend.app.router.users import crud, schemas
 from ecommerce.platform.backend.app.router.users.models import User, UserRole
 from ecommerce.platform.backend.app.core.auth import get_current_user, get_current_user_optional
 
+import os
+from authlib.integrations.starlette_client import OAuth
+from fastapi.responses import RedirectResponse
+
 router = APIRouter(
     # prefix="/users",
     tags=["Users"],
+)
+
+oauth = OAuth()
+oauth.register(
+    name="google",
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={
+        "scope": "openid email profile"
+    }
 )
 
 # =========================
@@ -259,3 +274,57 @@ def withdraw(
     return response
 
 # =========================
+@router.get("/auth/google/login")
+async def google_login(request: Request):
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+@router.get("/auth/google/callback")
+async def google_callback(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    token = await oauth.google.authorize_access_token(request)
+    user_info = token.get("userinfo")
+
+    if not user_info:
+        raise HTTPException(status_code=400, detail="Google 사용자 정보 조회 실패")
+
+    google_id = user_info["sub"]
+    email = user_info["email"]
+    name = user_info.get("name")
+
+    # 1️⃣ google_id 기준 조회
+    user = db.query(User).filter(User.google_id == google_id).first()
+
+    # 2️⃣ 없으면 신규 생성
+    if not user:
+        user = User(
+            email=email,
+            name=name,
+            google_id=google_id,
+            password_hash=None,
+            status=UserStatus.ACTIVE,
+            role=UserRole.USER,
+            agree_marketing=False,
+            agree_sms=False,
+            agree_email=False,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    # 3️⃣ JWT 발급
+    access_token = create_access_token(user.id)
+
+    response = RedirectResponse(url="http://localhost:3000")  # 로그인 후 이동할 프론트 주소
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 7,
+    )
+
+    return response
