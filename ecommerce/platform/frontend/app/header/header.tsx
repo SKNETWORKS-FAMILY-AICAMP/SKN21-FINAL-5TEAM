@@ -185,7 +185,6 @@ export default function Header() {
         </div>
 
         <nav className={styles.right}>
-          <Link href="/search">검색</Link>
           <Link href="/mypage">마이</Link>
           <Link href="/cart">장바구니</Link>
 

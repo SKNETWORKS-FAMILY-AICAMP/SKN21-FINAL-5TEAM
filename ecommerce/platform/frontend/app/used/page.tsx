@@ -194,7 +194,7 @@ export default function UsedPage() {
                 <div className={styles.cardBody}>
                   <div className={styles.productImage}>
                     <Image
-                      src={`/used/${product.id}.jpg`}
+                      src={`/products/${product.id}.jpg`}
                       alt={product.name}
                       fill
                       style={{ objectFit: 'cover' }}
