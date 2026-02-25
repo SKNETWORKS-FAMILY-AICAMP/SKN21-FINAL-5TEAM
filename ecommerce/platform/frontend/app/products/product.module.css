@@ -32,7 +32,7 @@
 }
 
 .productCard:hover {
-  transform: translateY(-6px);
+  /* transform: translateY(-6px); */
   box-shadow: 0 8px 24px rgba(23, 23, 23, 0.08);
 }
 
