@@ -17,11 +17,11 @@
 /* ============================= */
 
 .productCard {
-  position: relative;        /* 🔥 overlay 기준 */
+  position: relative;        /* overlay 기준 */
   border: 1px solid #eee;
   background: #fff;
   cursor: pointer;
-  overflow: hidden;          /* 🔥 overlay 잘리도록 */
+  overflow: hidden;          /* overlay 잘리도록 */
 }
 
 .cardBody {
@@ -63,7 +63,7 @@
 
 .hoverOverlay {
   position: absolute;
-  inset: 0;                  /* 🔥 카드 전체 덮기 */
+  inset: 0;                  /* 카드 전체 덮기 */
   background: rgba(0, 0, 0, 0.5);
 
   display: flex;
@@ -75,7 +75,7 @@
   opacity: 0;
   transition: opacity 0.2s ease;
 
-  z-index: 10;               /* 🔥 확실히 위로 */
+  z-index: 10;               /* 확실히 위로 */
   pointer-events: none;
 }
 

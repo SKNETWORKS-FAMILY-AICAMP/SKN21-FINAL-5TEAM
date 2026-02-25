@@ -37,7 +37,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // 🔥 signup에서 넘어온 약관 동의 값
+  // signup에서 넘어온 약관 동의 값
   const agreeMarketing =
     searchParams.get('marketing') === 'true';
   const agreeAds =

@@ -735,7 +735,7 @@ export default function PaymentPage() {
                   <div className={styles.itemInfo}>
                     <p>
                       <strong>
-                        {item.product.is_used ? "♻️ 중고상품" : "🆕 신상품"} {item.product.brand}
+                        {item.product.is_used ? "중고상품" : "신상품"} {item.product.brand}
                       </strong>
                     </p>
                     <p>{item.product.name}</p>
@@ -845,7 +845,7 @@ export default function PaymentPage() {
             </label>
           </div>
           <p style={{ fontSize: "13px", color: "#666" }}>
-            💳 신용/체크카드로 안전하게 결제됩니다
+            신용/체크카드로 안전하게 결제됩니다
           </p>
         </div>
 

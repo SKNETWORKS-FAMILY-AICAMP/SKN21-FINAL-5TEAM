@@ -234,7 +234,7 @@
 }
 
 .toggle {
-  display: block;          /* 🔥 한 줄 전체 차지 */
+  display: block;          /* 한 줄 전체 차지 */
   width: 100%;
   margin-top: 10px;        /* 위와 간격 */
   margin-bottom: 8px;      /* 아래 입력폼과 간격 */

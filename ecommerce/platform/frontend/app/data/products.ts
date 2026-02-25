@@ -12,11 +12,11 @@ export type Product = {
   usage: string;
   productDisplayName: string;
 
-  // ✅ UI(사장님 트리)와 1:1로 붙일 키 (필수)
+  // UI(사장님 트리)와 1:1로 붙일 키 (필수)
   uiCategory: string;     // 예: '상의'
   uiSubCategory: string;  // 예: '티셔츠'
 
-  // ✅ 임시 가격(나중에 서버에서 교체)
+  // 임시 가격(나중에 서버에서 교체)
   price?: number;
 };
 
@@ -54,7 +54,7 @@ export const PRODUCTS: Product[] = [
     price: 69000,
   },
 
-  // ✅ 예시: 하의-반바지 (이미지 파일이 있는 id로 넣으셔야 함)
+  // 예시: 하의-반바지 (이미지 파일이 있는 id로 넣으셔야 함)
   {
     id: 1550,
     gender: 'Men',
