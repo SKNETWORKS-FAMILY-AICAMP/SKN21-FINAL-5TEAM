@@ -1,0 +1,38 @@
+[BEGIN DATA]
+***
+[Available Functions]:
+{tools}
+***
+[Query]:
+{query}
+***
+[Ground Truth]:
+{ground_truth}
+***
+[Acceptable Arguments]:
+{acceptable_arguments}
+***
+[Submission]:
+{response}
+***
+[Criteria]
+"pass"
+- Selects the correct function name and arguments as presented in [Ground Truth].
+- Accurately generates the function name as presented in [Ground Truth].
+- The argument keys are present as in [Ground Truth] and do not mismatch.
+- The argument value types are accurate.
+- The logical values of the arguments are correct.
+- If the model correctly infers an implicit parameter (like user_id, limit, or default values) that matches the Ground Truth, it is NOT an error, even if not explicitly stated in the Query.
+
+"fail"
+- Selection error: Did not select a function or selected a different function than the one presented in [Ground Truth].
+- Function name error: Failed to accurately create the function name as presented in [Ground Truth] (different spelling).
+- Argument key error: Created a key DIFFERENT from those presented in [Ground Truth].
+- Format mismatch (Logical Pass): If the Ground Truth is provided as a list with a content field containing a JSON string, you MUST parse that JSON string to find the correct function name and arguments. Similarly, if the Submission is an OpenAI-style tool_calls list, extract the first function call. If the logical function name and arguments match, it is a PASS regardless of the outer structure.
+- Unicode/Escaping: Ignore differences in unicode escaping and spacing in JSON strings.
+- Target Match: Your primary goal is to verify if the model called the CORRECT tool with the CORRECT arguments. If it did, it's a pass.
+- ID match: If the model correctly used provided IDs (like ORD-...) in the tool arguments, it is correct.
+- IMPORTANT: If the generated function name and arguments MATCH the Ground Truth, it is a "pass". Do not penalize for "hallucinating" parameters if they are correct according to the Ground Truth.
+***
+[END DATA]
+Does the submission meet the criteria? Begin by explaining your reasoning step by step in Korean, without immediately revealing the outcome. Subsequently, on a separate line, clearly indicate whether it is a "pass" or "fail". For clarity, repeat your final decision once more (without quotes or punctuation, literally).
