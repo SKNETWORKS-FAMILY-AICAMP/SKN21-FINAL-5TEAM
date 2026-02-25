@@ -170,7 +170,7 @@ def track_cart_action(
     db: Session,
     user_id: int,
     action_type: schemas.ActionType,
-    cart_item_id: int,
+    cart_item_id: Optional[int],
     product_option_type: str,
     product_option_id: int,
     metadata: Optional[dict] = None
