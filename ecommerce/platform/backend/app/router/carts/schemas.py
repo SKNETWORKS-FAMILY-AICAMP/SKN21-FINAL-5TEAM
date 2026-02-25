@@ -91,6 +91,7 @@ class ProductOptionInfo(BaseModel):
 class ProductInfo(BaseModel):
     """상품 상세 정보 (Frontend 표시용)"""
     id: int
+    product_id: int  # 실제 상품 ID (이미지 조회용)
     name: str
     brand: str
     price: Decimal
