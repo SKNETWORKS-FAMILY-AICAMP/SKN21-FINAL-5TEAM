@@ -90,7 +90,7 @@ MAX_HISTORY_TOKENS = 3000
 KEEP_RECENT_TURNS = 3
 SUMMARY_MODEL = "gpt-4o-mini"
 DEFAULT_PROVIDER = "openai"
-SUPPORTED_PROVIDERS = {"openai", "huggingface"}
+SUPPORTED_PROVIDERS = {"openai", "huggingface", "vllm"}
 
 _HF_MODEL_CACHE: Dict[str, Dict[str, Any]] = {}
 _HF_MODEL_LOCK = threading.Lock()
@@ -290,6 +290,8 @@ def _resolve_llm_config(state: Optional[AgentState], preferred_model: Optional[s
 
     if provider == "huggingface":
         return provider, settings.HF_MODEL_ID
+    if provider == "vllm":
+        return provider, settings.VLLM_MODEL
     return provider, settings.OPENAI_MODEL
 
 
@@ -478,8 +480,8 @@ def _decompose_tasks(
 
     tasks: List[TaskItem] = []
 
-    if provider == "openai":
-        llm = _make_openai_llm(model=model_name, temperature=0)
+    if provider in {"openai", "vllm"}:
+        llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
         structured_llm = llm.with_structured_output(DecompositionResult, method="function_calling")
 
         # 1차 시도
@@ -639,8 +641,8 @@ def _generate_worker_response(state: AgentState, task_results: List[Dict[str, An
     )
 
     try:
-        if provider == "openai":
-            llm = _make_openai_llm(model=model_name, temperature=0)
+        if provider in {"openai", "vllm"}:
+            llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
             response = llm.invoke([HumanMessage(content=prompt)])
         else:
             response = _hf_invoke([HumanMessage(content=prompt)], model_name, temperature=0)
@@ -1138,11 +1140,35 @@ def route_after_workers(state: AgentState) -> Literal["validation", "process_out
 
 
 def _make_openai_llm(model: str, temperature: float = 0) -> ChatOpenAI:
+    if not settings.OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY is required when provider is 'openai'.")
+
     return ChatOpenAI(
         model=model,
         temperature=temperature,
         api_key=SecretStr(settings.OPENAI_API_KEY),
     )
+
+
+def _make_vllm_llm(model: str, temperature: float = 0) -> ChatOpenAI:
+    base_url = (settings.VLLM_BASE_URL or "").strip()
+    if not base_url:
+        raise ValueError("VLLM_BASE_URL is required when provider is 'vllm'.")
+
+    return ChatOpenAI(
+        model=model,
+        temperature=temperature,
+        api_key=SecretStr(settings.VLLM_API_KEY or "EMPTY"),
+        base_url=base_url,
+    )
+
+
+def _make_chat_llm(provider: str, model: str, temperature: float = 0) -> ChatOpenAI:
+    if provider == "openai":
+        return _make_openai_llm(model=model, temperature=temperature)
+    if provider == "vllm":
+        return _make_vllm_llm(model=model, temperature=temperature)
+    raise ValueError(f"Unsupported chat llm provider for ChatOpenAI path: {provider}")
 
 
 def _estimate_tokens(messages: List) -> int:
@@ -1208,8 +1234,8 @@ def _summarize_messages(messages: List, provider: str, model_name: str) -> str |
     context_summary_system_prompt = get_context_summary_system_prompt(provider=provider, model_name=model_name)
 
     try:
-        if provider == "openai":
-            summary_llm = _make_openai_llm(model=model_name or SUMMARY_MODEL, temperature=0)
+        if provider in {"openai", "vllm"}:
+            summary_llm = _make_chat_llm(provider=provider, model=model_name or SUMMARY_MODEL, temperature=0)
             response = summary_llm.invoke([
                 SystemMessage(content=context_summary_system_prompt),
                 HumanMessage(content=transcript[:12000]),
@@ -1279,13 +1305,13 @@ def agent_node(state: AgentState):
     system_msg = SystemMessage(content=final_prompt)
     current_messages = [system_msg] + messages
     
-    if provider == "openai":
-        llm = _make_openai_llm(model=model_name, temperature=0)
+    if provider in {"openai", "vllm"}:
+        llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
         llm_with_tools = llm.bind_tools(TOOLS)
         response = llm_with_tools.invoke(current_messages)
     else:
         # Hugging Face 로컬 모델 경로에서는 우선 일반 답변 생성으로 동작
-        # (함수 호출 기반 Tool Calling은 OpenAI provider에서 사용)
+        # (함수 호출 기반 Tool Calling은 OpenAI/vLLM provider에서 사용)
         response = _hf_invoke(current_messages, model_name, temperature=0)
     
     return {"messages": [response]}
@@ -1503,8 +1529,8 @@ def human_approval_node(state: AgentState):
                 tool_args=sensitive_calls[0].get("args"),
             )
 
-            if provider == "openai":
-                approval_llm = _make_openai_llm(model=model_name, temperature=0)
+            if provider in {"openai", "vllm"}:
+                approval_llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
                 response = approval_llm.invoke([HumanMessage(content=prompt)])
             else:
                 response = _hf_invoke([HumanMessage(content=prompt)], model_name, temperature=0)
