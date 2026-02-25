@@ -14,6 +14,8 @@ from ecommerce.platform.backend.app.core.auth import get_current_user, get_curre
 import os
 from authlib.integrations.starlette_client import OAuth
 from fastapi.responses import RedirectResponse
+from ecommerce.platform.backend.app.router.user_history.models import UserHistory
+from datetime import datetime
 
 router = APIRouter(
     # prefix="/users",
@@ -88,6 +90,16 @@ def login(
     if not crud.verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 틀렸습니다.")
 
+    # ✅ 로그인 히스토리 기록
+    login_history = UserHistory(
+        user_id=user.id,
+        action_type="login",
+        action_metadata="password"
+    )
+    db.add(login_history)
+
+    user.last_login_at = datetime.utcnow()
+    db.commit()
 
     access_token = create_access_token(user.id)
 
@@ -96,7 +108,7 @@ def login(
         value=access_token,
         httponly=True,
         samesite="lax",
-        max_age=60 * 60 * 24 * 7,  # 7일
+        max_age=60 * 60 * 24 * 7,
     )
 
     return {
@@ -107,11 +119,25 @@ def login(
     }
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # ✅ 로그아웃 기록
+    logout_history = UserHistory(
+        user_id=current_user.id,
+        action_type="logout",
+        action_metadata="manual"
+    )
+    db.add(logout_history)
+    db.commit()
+
     response.delete_cookie(
         key="access_token",
         path="/",
     )
+
     return {"ok": True}
 
 # =========================
@@ -282,7 +308,6 @@ async def google_login(request: Request):
 @router.get("/auth/google/callback")
 async def google_callback(
     request: Request,
-    response: Response,
     db: Session = Depends(get_db),
 ):
     token = await oauth.google.authorize_access_token(request)
@@ -315,10 +340,21 @@ async def google_callback(
         db.commit()
         db.refresh(user)
 
-    # 3️⃣ JWT 발급
+    # 3️⃣ 로그인 히스토리 기록
+    login_history = UserHistory(
+        user_id=user.id,
+        action_type="login",
+        action_metadata="google"
+    )
+    db.add(login_history)
+
+    user.last_login_at = datetime.utcnow()
+    db.commit()
+
+    # 4️⃣ JWT 발급
     access_token = create_access_token(user.id)
 
-    response = RedirectResponse(url="http://localhost:3000")  # 로그인 후 이동할 프론트 주소
+    response = RedirectResponse(url="http://localhost:3000")
     response.set_cookie(
         key="access_token",
         value=access_token,
