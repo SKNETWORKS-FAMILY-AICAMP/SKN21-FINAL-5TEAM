@@ -199,8 +199,8 @@ export default function HomePage() {
       <section className={styles.section}>
         <header className={styles.sectionHeader}>
           <div>
-            <h2>많이 찾는 스포티 스타일</h2>
-            <p>스웨트셔츠</p>
+            <h2>실시간 인기 아이템</h2>
+            <p>판매 상위 상품</p>
           </div>
 
           <button
