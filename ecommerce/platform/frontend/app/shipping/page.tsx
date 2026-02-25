@@ -27,7 +27,7 @@ export default function ShippingPage() {
   });
   const { user, isLoggedIn } = useAuth();
 
-  const API_BASE = 'http://localhost:8000/shipping';
+  const API_BASE = `${process.env.NEXT_PUBLIC_API_URL}/shipping`;
 
   // =====================
   // 배송지 목록 가져오기

@@ -119,6 +119,11 @@ class Order(Base):
         back_populates="order",
         cascade="all, delete-orphan"
     )
+    status_history: Mapped[List["OrderStatusHistory"]] = relationship(
+        "OrderStatusHistory",
+        back_populates="order",
+        cascade="all, delete-orphan"
+    )
 
 # ============================================
 # OrderItem
@@ -170,3 +175,66 @@ class OrderItem(Base):
         back_populates="order_item",
         cascade="all, delete-orphan"
     )
+
+
+# ============================================
+# OrderStatusHistory
+# ============================================
+
+class OrderStatusHistory(Base):
+    """주문 상태 변경 이력"""
+    __tablename__ = "orderstatushistory"
+    __table_args__ = (
+        Index('idx_order_id_osh', 'order_id'),
+        {'comment': '주문 상태 이력'}
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True, comment='주문 상태 이력 고유 ID'
+    )
+    order_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey('orders.id', ondelete='CASCADE'),
+        nullable=False, comment='주문 ID'
+    )
+    status: Mapped[str] = mapped_column(
+        String(50), nullable=False, comment='변경된 상태'
+    )
+    notes: Mapped[Optional[str]] = mapped_column(
+        Text, comment='비고 (상태 변경 사유 등)'
+    )
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), comment='상태 변경 일시'
+    )
+    created_by: Mapped[Optional[int]] = mapped_column(
+        BigInteger, comment='변경자 (관리자 또는 시스템)'
+    )
+
+    # Relationships
+    order: Mapped["Order"] = relationship(back_populates="status_history")
+
+
+# ============================================
+# SQLAlchemy 이벤트 리스너: 주문 상태 변경 자동 기록
+# ============================================
+
+from sqlalchemy import event
+from sqlalchemy.orm import object_session
+from sqlalchemy.orm.attributes import NEVER_SET, NO_VALUE
+
+
+@event.listens_for(Order.status, 'set')
+def on_order_status_change(target, value, oldvalue, initiator):
+    """Order.status가 변경될 때 자동으로 OrderStatusHistory에 이력을 기록한다."""
+    if oldvalue in (NEVER_SET, NO_VALUE):
+        return  # 새 객체 생성 시 무시
+    if oldvalue == value:
+        return  # 같은 상태로의 변경 무시
+    session = object_session(target)
+    if session and target.id:
+        # value가 Enum이면 .value로 문자열 변환
+        status_value = value.value if hasattr(value, 'value') else value
+        session.add(OrderStatusHistory(
+            order_id=target.id,
+            status=status_value,
+            notes=f"{oldvalue.value if hasattr(oldvalue, 'value') else oldvalue} → {status_value}",
+        ))
