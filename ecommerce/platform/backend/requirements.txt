@@ -35,4 +35,4 @@ numpy
 pandas
 
 # 구글 OAuth2 인증
-authlib python-dotenv # OAuth2 클라이언트 및 환경 변수 로딩
+authlib # OAuth2 클라이언트 및 환경 변수 로딩
