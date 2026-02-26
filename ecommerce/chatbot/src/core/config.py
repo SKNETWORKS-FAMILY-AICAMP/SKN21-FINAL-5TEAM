@@ -14,8 +14,19 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
 
     # OpenAI
-    OPENAI_API_KEY: str
+    OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"  # Default to 4o
+
+    # vLLM (OpenAI-compatible endpoint; e.g., RunPod)
+    VLLM_BASE_URL: str = ""
+    VLLM_API_KEY: str = "EMPTY"
+    VLLM_MODEL: str = "Qwen/Qwen3.5-35B-A3B"
+
+    # Runtime LLM routing
+    LLM_PROVIDER: str = "openai"  # openai | huggingface | vllm
+    HF_MODEL_ID: str = "Qwen/Qwen3-0.6B"
+    HF_QUANTIZATION: str = "auto"  # auto | none | bnb-4bit | bnb-8bit | dynamic-int8
+
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIM: int = 1536
 
@@ -23,11 +34,10 @@ class Settings(BaseSettings):
     QDRANT_URL: str
     QDRANT_API_KEY: str
     
-    # LangSmith
-    LANGCHAIN_TRACING_V2: str
-    LANGCHAIN_ENDPOINT: str
-    LANGCHAIN_API_KEY: str
-    LANGCHAIN_PROJECT: str
+    # Langfuse (nodes_v3 observability)
+    LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_PUBLIC_KEY: str = ""
+    LANGFUSE_BASE_URL: str = "https://us.cloud.langfuse.com"
     
     # Backend API
     BACKEND_API_URL: str = "http://localhost:3000"
@@ -41,4 +51,4 @@ class Settings(BaseSettings):
     MAX_RECENT_MESSAGES: int = 5  # 최근 유지할 메시지 개수 (Sliding Window)
     MAX_TOTAL_MESSAGES: int = 10   # 전체 메시지 최대 개수
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

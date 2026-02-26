@@ -6,7 +6,7 @@ import Link from 'next/link';
 import styles from './login.module.css';
 import { useAuth } from '../../authcontext';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 /**
  * 인증 액션을 user history에 기록
@@ -40,11 +40,12 @@ export default function LoginPage() {
   const [error, setError] = useState('');
 
   const handleGoogleLogin = () => {
-    window.location.href = 'http://localhost:8000/auth/google/login';
+    window.location.href = "http://localhost:8000/users/auth/google/login";
   };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    console.log('Login Submit:', { email });
     setError('');
 
     if (!email || !password) {
@@ -53,12 +54,13 @@ export default function LoginPage() {
     }
 
     try {
-      const res = await fetch('http://localhost:8000/users/login', {
+      const res = await fetch(`${API_BASE_URL}/users/login`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
+      console.log('Login Response:', res.status, res.statusText);
 
       if (!res.ok) {
         const data = await res.json();
@@ -80,8 +82,9 @@ export default function LoginPage() {
       } else {
         router.push('/');
       }
-      
+
     } catch (err) {
+      console.error('Login Error:', err);
       setError('서버와 통신할 수 없습니다.');
     }
   }

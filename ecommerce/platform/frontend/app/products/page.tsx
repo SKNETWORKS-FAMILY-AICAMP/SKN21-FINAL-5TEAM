@@ -4,54 +4,22 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import styles from './product.module.css';
-import { PRODUCTS } from '../data/products';
 
 const PRODUCTS_PER_PAGE = 10;
+const PAGE_GROUP_SIZE = 10;
+const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
-// ✅ 백엔드 주소
-const API_BASE = 'http://localhost:8000';
+type Category = {
+  id: number;
+  name: string;
+  parent_id: number | null;
+};
 
-/**
- * 카테고리 → 소분류 매핑
- * (사장님과 이미 확정한 트리구조 그대로)
- */
-const CATEGORY_MAP: Record<string, string[]> = {
-  상의: ['셔츠', '티셔츠', '니트', '스웨터', '후드 / 스웨트셔츠', '자켓', '블레이저'],
-  하의: ['청바지', '슬랙스', '트랙 팬츠', '반바지', '스커트', '레깅스'],
-  원피스: ['드레스', '점프수트'],
-  이너웨어: ['브라', '팬티', '박서', '캐미솔', '보정 속옷'],
-  '라운지웨어 / 나이트웨어': ['파자마', '나이트 드레스', '로브', '라운지 팬츠'],
-  '의류 세트': ['의류 세트', '쿠르타 세트'],
-  Saree: ['사리'],
-  양말: ['부츠 양말'],
-
-  신발: ['캐주얼 슈즈', '포멀 슈즈', '스포츠 슈즈', '플랫 슈즈'],
-  슬리퍼: ['플립플랍'],
-  샌들: ['샌들', '스포츠 샌들'],
-
-  가방: ['백팩', '핸드백', '더플백', '메신저백', '트롤리백'],
-  시계: ['시계'],
-  지갑: ['지갑'],
-  주얼리: ['반지', '목걸이', '팔찌', '귀걸이'],
-  아이웨어: ['선글라스'],
-  벨트: ['벨트'],
-  모자: ['캡', '햇'],
-  '머플러 / 스카프': ['머플러', '스카프', '숄'],
-  '신발 액세서리': ['신발 끈', '신발 액세서리'],
-  기타: ['장갑', '우산', '물병'],
-
-  향수: ['데오드란트', '퍼퓸 / 바디미스트'],
-  메이크업: ['파운데이션', '컨실러', '아이섀도', '마스카라', '립스틱'],
-  '스킨 케어': ['토너', '크림', '선스크린', '마스크팩'],
-  '바디 / 배스': ['바디로션', '바디워시'],
-
-  '스포츠 장비': ['농구공', '축구공'],
-  손목밴드: ['손목밴드'],
-
-  '홈 패브릭': ['쿠션 커버'],
-
-  사은품: ['사은품'],
-  바우처: ['아이패드'],
+type Product = {
+  id: number;
+  name: string;
+  price: number;
+  category_id: number;
 };
 
 type ProductOption = {
@@ -63,126 +31,190 @@ type ProductOption = {
   is_active: boolean;
 };
 
-type MeResponseLoose = {
-  id?: number;
-  user_id?: number;
-  ok?: boolean;
-  [key: string]: unknown;
+type User = {
+  id: number;
+  email: string;
 };
 
 export default function ProductsPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
-  const category = searchParams.get('category') || '';
-  const subCategories = CATEGORY_MAP[category] || [];
+  const categoryIdParam = searchParams.get('category_id');
+  const keyword = searchParams.get('keyword');
 
-  const [activeSub, setActiveSub] = useState<string>('전체');
+  const categoryId = categoryIdParam ? Number(categoryIdParam) : null;
+
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [subCategories, setSubCategories] = useState<Category[]>([]);
+  const [activeSubId, setActiveSubId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  /** 🔑 로그인 상태 */
+  const [categoryTitle, setCategoryTitle] = useState<string>('상품 목록');
+
+  // ===========================
+  // (추가) 로그인 & 유저 정보 (HomePage와 동일)
+  // ===========================
+  const [user, setUser] = useState<User | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
 
-  /** 🔑 (가능하면) 로그인 유저 ID */
-  const [userId, setUserId] = useState<number | null>(null);
-
-  /** 사이즈 모달 상태 */
-  const [sizeModalOpenFor, setSizeModalOpenFor] = useState<number | null>(null);
-  const [optionsLoading, setOptionsLoading] = useState(false);
-  const [options, setOptions] = useState<ProductOption[]>([]);
-
-  /** 상품별 선택된 옵션(사이즈) */
-  const [selectedOptionIdByProduct, setSelectedOptionIdByProduct] = useState<
-    Record<number, number | null>
-  >({});
-  const [selectedSizeLabelByProduct, setSelectedSizeLabelByProduct] = useState<
-    Record<number, string>
-  >({});
-
-  // ✅ 로그인 체크 + userId 확보(가능하면)
   useEffect(() => {
-    const run = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/users/me`, { credentials: 'include' });
-        setIsLoggedIn(res.ok);
+    if (!API_BASE) return;
 
+    fetch(`${API_BASE}/users/me`, {
+      credentials: 'include',
+    })
+      .then(async (res) => {
         if (!res.ok) {
-          setUserId(null);
+          setIsLoggedIn(false);
           return;
         }
-
-        // /users/me가 JSON을 주는 경우에만 id를 읽음 (안주면 fallback 1 사용)
-        try {
-          const data: MeResponseLoose = await res.json();
-          const maybeId =
-            (typeof data.id === 'number' && data.id) ||
-            (typeof data.user_id === 'number' && data.user_id) ||
-            null;
-          setUserId(maybeId);
-        } catch {
-          setUserId(null);
+        const data = await res.json();
+        if (!data.authenticated) {
+          setIsLoggedIn(false);
+          return;
         }
-      } catch {
-        setIsLoggedIn(false);
-        setUserId(null);
-      }
-    };
-
-    run();
+        setUser(data);
+        setIsLoggedIn(true);
+      })
+      .catch(() => setIsLoggedIn(false));
   }, []);
 
-  /** 🔐 비회원 가드 */
-  const requireLoginOr = (fn: () => void) => {
+  const requireLogin = (callback: () => void) => {
     if (isLoggedIn === null) return;
-    if (isLoggedIn === false) {
+    if (!isLoggedIn) {
       router.push('/auth/login');
       return;
     }
-    fn();
+    callback();
   };
 
-  /**
-   * 🔹 카테고리 + 소분류 필터 (원본 그대로)
-   */
-  const filteredProducts = PRODUCTS.filter((p) => {
-    if (!category) return true;
-    if (p.uiCategory !== category) return false;
-    if (activeSub === '전체') return true;
-    return p.uiSubCategory === activeSub;
-  });
+  // ===========================
+  // (추가) 호버 기능용 상태 (HomePage와 동일)
+  // ===========================
+  const [sizeModalOpenFor, setSizeModalOpenFor] = useState<number | null>(null);
+  const [options, setOptions] = useState<ProductOption[]>([]);
+  const [optionsLoading, setOptionsLoading] = useState(false);
 
-  const totalPages = Math.max(Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE), 1);
+  const [selectedOptionIdByProduct, setSelectedOptionIdByProduct] =
+    useState<Record<number, number | null>>({});
 
-  const startIndex = (currentPage - 1) * PRODUCTS_PER_PAGE;
-  const currentProducts = filteredProducts.slice(startIndex, startIndex + PRODUCTS_PER_PAGE);
+  const [selectedSizeLabelByProduct, setSelectedSizeLabelByProduct] =
+    useState<Record<number, string>>({});
 
-  // ✅ 옵션(사이즈) 로드
+  // -----------------------
+  // 카테고리 로드
+  // -----------------------
+  useEffect(() => {
+    const fetchCategories = async () => {
+      const res = await fetch(`${API_BASE}/products/categories?limit=1000`);
+      const data = await res.json();
+      setCategories(data);
+    };
+    fetchCategories();
+  }, []);
+
+  // -----------------------
+  // 선택된 중분류 기준 처리
+  // -----------------------
+  useEffect(() => {
+    if (keyword) {
+      setCategoryTitle(`"${keyword}" 검색 결과`);
+      setSubCategories([]);
+      setActiveSubId(null);
+      return;
+    }
+
+    if (!categoryId || categories.length === 0) return;
+
+    const currentCategory = categories.find(c => c.id === categoryId);
+    if (!currentCategory) return;
+
+    setCategoryTitle(currentCategory.name);
+
+    const children = categories.filter(
+      c => c.parent_id === currentCategory.id
+    );
+
+    setSubCategories(children);
+
+    if (children.length > 0) {
+      setActiveSubId(children[0].id);   // ✅ 소분류1 자동 선택
+    } else {
+      setActiveSubId(null);            // 소분류가 없으면 기존처럼
+    }
+  }, [categoryId, categories, keyword]);
+
+  // -----------------------
+  // 상품 로드
+  // -----------------------
+  useEffect(() => {
+    const fetchProducts = async () => {
+      // API_BASE 없으면 호출 자체를 막음 (env 미설정 방지)
+      if (!API_BASE) return;
+
+      let url = `${API_BASE}/products/new?limit=1000`;
+
+      // 검색이면 카테고리 로직 전부 무시
+      if (keyword) {
+        url += `&keyword=${encodeURIComponent(keyword)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        setProducts(data);
+        setCurrentPage(1);
+        return;
+      }
+
+      // ✅ category_id로 들어왔는데 categories가 아직 로드 전이면
+      //    "전체 상품"을 먼저 불러오지 말고 대기 (이게 핵심)
+      if (categoryId && categories.length === 0) return;
+
+      // ✅ 중분류로 들어오면 첫 소분류로 강제
+      if (categoryId && categories.length > 0) {
+        const children = categories.filter((c) => c.parent_id === categoryId);
+
+        const targetId =
+          children.length > 0 ? (activeSubId ?? children[0].id) : categoryId;
+
+        url += `&category_id=${targetId}`;
+      }
+
+      const res = await fetch(url);
+      const data = await res.json();
+      setProducts(data);
+      setCurrentPage(1);
+    };
+
+    fetchProducts();
+  }, [categoryId, activeSubId, categories, keyword]);
+
+  // ===========================
+  // (추가) 옵션 불러오기 (HomePage와 동일)
+  // ===========================
   const openSizeModal = (productId: number) => {
-    requireLoginOr(async () => {
+    requireLogin(async () => {
       setSizeModalOpenFor(productId);
       setOptions([]);
       setOptionsLoading(true);
 
       try {
-        const res = await fetch(`${API_BASE}/products/new/${productId}/options`, {
-          credentials: 'include',
-        });
+        const res = await fetch(
+          `${API_BASE}/products/new/${productId}/options`,
+          { credentials: 'include' }
+        );
 
-        if (!res.ok) {
-          throw new Error(`options fetch failed: ${res.status}`);
-        }
+        if (!res.ok) throw new Error();
 
         const data: ProductOption[] = await res.json();
 
-        // 활성 + 재고 있는 옵션만
-        const filtered = (data ?? []).filter(
-          (o) => o.is_active !== false && (o.quantity ?? 0) > 0
+        const filtered = data.filter(
+          (o) => o.is_active && o.quantity > 0
         );
 
         setOptions(filtered);
-      } catch (e) {
-        console.error(e);
-        alert('사이즈 정보를 불러오지 못했습니다. (옵션 API / 상품ID 매핑 확인 필요)');
+      } catch {
+        alert('사이즈 정보를 불러오지 못했습니다.');
         setSizeModalOpenFor(null);
       } finally {
         setOptionsLoading(false);
@@ -193,21 +225,22 @@ export default function ProductsPage() {
   const closeSizeModal = () => {
     setSizeModalOpenFor(null);
     setOptions([]);
-    setOptionsLoading(false);
   };
 
-  // ✅ 같은 size_name 중 1개만 노출(메인과 동일 UX)
   const uniqueSizes = useMemo(() => {
     const map = new Map<string, ProductOption>();
-    for (const o of options) {
+    options.forEach((o) => {
       const key = o.size_name ?? 'FREE';
       if (!map.has(key)) map.set(key, o);
-    }
+    });
     return Array.from(map.entries()).map(([size, opt]) => ({ size, opt }));
   }, [options]);
 
   const selectOption = (productId: number, option: ProductOption) => {
-    setSelectedOptionIdByProduct((prev) => ({ ...prev, [productId]: option.id }));
+    setSelectedOptionIdByProduct((prev) => ({
+      ...prev,
+      [productId]: option.id,
+    }));
     setSelectedSizeLabelByProduct((prev) => ({
       ...prev,
       [productId]: option.size_name || '선택됨',
@@ -215,9 +248,11 @@ export default function ProductsPage() {
     closeSizeModal();
   };
 
-  // ✅ 카트 담기 (carts router.py 기준)
+  // ===========================
+  // (추가) 장바구니/결제 (HomePage와 동일)
+  // ===========================
   const addToCart = async (productId: number, goPayment: boolean) => {
-    requireLoginOr(async () => {
+    requireLogin(async () => {
       const optionId = selectedOptionIdByProduct[productId];
 
       if (!optionId) {
@@ -225,25 +260,23 @@ export default function ProductsPage() {
         return;
       }
 
-      // /users/me에서 id를 못 받는 프로젝트도 있어서 임시 fallback
-      const resolvedUserId = userId ?? 1;
-
       try {
-        const res = await fetch(`${API_BASE}/carts/${resolvedUserId}/items`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            product_option_type: 'new',
-            product_option_id: optionId,
-            quantity: 1,
-          }),
-        });
+        const res = await fetch(
+          `${API_BASE}/carts/${user!.id}/items`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              product_option_type: 'new',
+              product_option_id: optionId,
+              quantity: 1,
+            }),
+          }
+        );
 
         if (!res.ok) {
-          const text = await res.text().catch(() => '');
-          console.error('addToCart failed:', res.status, text);
-          alert('장바구니 담기에 실패했습니다. (carts POST 경로/권한/userId 확인 필요)');
+          alert('장바구니 추가 실패');
           return;
         }
 
@@ -252,94 +285,110 @@ export default function ProductsPage() {
         } else {
           alert('장바구니에 담았습니다.');
         }
-      } catch (e) {
-        console.error(e);
-        alert('장바구니 요청 중 오류가 발생했습니다.');
+      } catch {
+        alert('요청 실패');
       }
     });
   };
 
+  // -----------------------
+  // 페이징
+  // -----------------------
+  const totalPages = Math.max(
+    Math.ceil(products.length / PRODUCTS_PER_PAGE),
+    1
+  );
+
+  const currentGroup = Math.floor((currentPage - 1) / PAGE_GROUP_SIZE);
+  const startPage = currentGroup * PAGE_GROUP_SIZE + 1;
+  const endPage = Math.min(startPage + PAGE_GROUP_SIZE - 1, totalPages);
+
+  const currentProducts = useMemo(() => {
+    const start = (currentPage - 1) * PRODUCTS_PER_PAGE;
+    return products.slice(start, start + PRODUCTS_PER_PAGE);
+  }, [products, currentPage]);
+
   return (
     <main className={styles.main}>
-      {/* ===== 페이지 헤더 (원본 그대로) ===== */}
-      <header className={styles.pageHeader}>
-        <h1>{category || '상품 목록'}</h1>
+      <header>
+        <h1>{categoryTitle}</h1>
         <p>최다 판매 순</p>
       </header>
 
-      {/* ===== 소분류 탭 (원본 그대로) ===== */}
-      {subCategories.length > 0 && (
+      {subCategories.length > 0 && !keyword && (
         <div className={styles.tabWrapper}>
-          <button
-            className={activeSub === '전체' ? styles.activeTab : styles.tab}
-            onClick={() => {
-              setActiveSub('전체');
-              setCurrentPage(1);
-            }}
+          {/* <button
+            className={activeSubId === null ? styles.activeTab : styles.tab}
+            onClick={() => setActiveSubId(null)}
           >
             전체
-          </button>
+          </button> */}
 
           {subCategories.map((sub) => (
             <button
-              key={sub}
-              className={activeSub === sub ? styles.activeTab : styles.tab}
-              onClick={() => {
-                setActiveSub(sub);
-                setCurrentPage(1);
-              }}
+              key={sub.id}
+              className={
+                activeSubId === sub.id ? styles.activeTab : styles.tab
+              }
+              onClick={() => setActiveSubId(sub.id)}
             >
-              {sub}
+              {sub.name}
             </button>
           ))}
         </div>
       )}
 
-      {/* ===== 상품 리스트 ===== */}
       <ul className={styles.productGrid}>
         {currentProducts.map((product) => {
           const selectedLabel = selectedSizeLabelByProduct[product.id];
 
           return (
             <li key={product.id} className={styles.productCard}>
-              {/* 카드 본문 (원본 유지: UI만) */}
-              <div className={styles.cardBody}>
+              <div
+                className={styles.cardBody}
+                onClick={() =>
+                  requireLogin(() =>
+                    router.push(`/products/${product.id}`)
+                  )
+                }
+              >
                 <div className={styles.productImage}>
                   <Image
                     src={`/products/${product.id}.jpg`}
-                    alt={product.productDisplayName}
+                    alt={product.name}
                     fill
-                    sizes="(max-width: 768px) 50vw, 20vw"
+                    sizes="(max-width: 1200px) 20vw, 240px"
                     style={{ objectFit: 'cover' }}
                   />
                 </div>
 
-                <p className={styles.productName}>{product.productDisplayName}</p>
-                <p className={styles.productPrice}>
-                  {(product.price ?? 0).toLocaleString()}원
-                </p>
+                <div className={styles.productInfo}>
+                  <p className={styles.productName}>{product.name}</p>
+                  <p className={styles.productPrice}>
+                    가격 {Math.round(product.price ?? 0).toLocaleString()}원
+                  </p>
+                </div>
               </div>
 
-              {/* ===== hover overlay (메인과 동일 로직) ===== */}
               <div className={styles.hoverOverlay}>
                 <button
                   className={styles.hoverButton}
                   onClick={(e) => {
-                    e.preventDefault();
                     e.stopPropagation();
                     openSizeModal(product.id);
                   }}
+                  type="button"
                 >
-                  {selectedLabel ? selectedLabel : '사이즈 선택'}
+                  {selectedLabel || '사이즈 선택'}
                 </button>
 
                 <button
                   className={styles.hoverButton}
                   onClick={(e) => {
-                    e.preventDefault();
                     e.stopPropagation();
                     addToCart(product.id, false);
                   }}
+                  type="button"
                 >
                   장바구니
                 </button>
@@ -347,103 +396,64 @@ export default function ProductsPage() {
                 <button
                   className={`${styles.hoverButton} ${styles.primary}`}
                   onClick={(e) => {
-                    e.preventDefault();
                     e.stopPropagation();
                     addToCart(product.id, true);
                   }}
+                  type="button"
                 >
                   바로 구매
                 </button>
               </div>
 
-              {/* ===== 사이즈 선택 모달 (UI 영향 최소: 인라인 스타일) ===== */}
               {sizeModalOpenFor === product.id && (
                 <div
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeSizeModal();
-                  }}
                   style={{
                     position: 'fixed',
                     inset: 0,
-                    background: 'rgba(0,0,0,0.35)',
-                    zIndex: 9999,
+                    background: 'rgba(0,0,0,0.4)',
                     display: 'flex',
                     justifyContent: 'center',
                     alignItems: 'center',
-                    padding: '16px',
+                    zIndex: 9999,
                   }}
+                  onClick={closeSizeModal}
                 >
                   <div
                     onClick={(e) => e.stopPropagation()}
                     style={{
-                      width: 'min(420px, 100%)',
+                      width: 400,
                       background: '#fff',
-                      borderRadius: '10px',
-                      padding: '16px',
-                      boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
+                      padding: 20,
+                      borderRadius: 10,
                     }}
                   >
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        marginBottom: '12px',
-                      }}
-                    >
-                      <strong style={{ fontSize: '14px' }}>사이즈 선택</strong>
-                      <button
-                        onClick={closeSizeModal}
-                        style={{
-                          border: 'none',
-                          background: 'transparent',
-                          cursor: 'pointer',
-                          fontSize: '16px',
-                          lineHeight: 1,
-                        }}
-                        aria-label="닫기"
-                      >
-                        ✕
-                      </button>
-                    </div>
+                    <h4>사이즈 선택</h4>
 
                     {optionsLoading ? (
-                      <p style={{ fontSize: '13px', margin: 0 }}>불러오는 중…</p>
+                      <p>불러오는 중...</p>
                     ) : uniqueSizes.length === 0 ? (
-                      <p style={{ fontSize: '13px', margin: 0 }}>
-                        선택 가능한 사이즈가 없습니다.
-                      </p>
+                      <p>선택 가능한 사이즈가 없습니다.</p>
                     ) : (
                       <div
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: 'repeat(4, 1fr)',
-                          gap: '8px',
+                          gridTemplateColumns: 'repeat(4,1fr)',
+                          gap: 8,
                         }}
                       >
                         {uniqueSizes.map(({ size, opt }) => (
                           <button
                             key={size}
-                            onClick={() => selectOption(product.id, opt)}
-                            style={{
-                              height: '38px',
-                              border: '1px solid #ddd',
-                              background: '#fff',
-                              borderRadius: '8px',
-                              cursor: 'pointer',
-                              fontSize: '13px',
-                            }}
+                            onClick={() =>
+                              selectOption(product.id, opt)
+                            }
+                            type="button"
                           >
                             {size}
                           </button>
                         ))}
                       </div>
                     )}
-
-                    <p style={{ fontSize: '12px', color: '#666', marginTop: '12px' }}>
-                      * 사이즈 선택 후 장바구니/바로구매가 가능합니다.
-                    </p>
                   </div>
                 </div>
               )}
@@ -452,17 +462,57 @@ export default function ProductsPage() {
         })}
       </ul>
 
-      {/* ===== 페이지네이션 (원본 그대로) ===== */}
       <nav className={styles.pagination}>
-        {Array.from({ length: totalPages }, (_, i) => (
-          <button
-            key={i}
-            className={currentPage === i + 1 ? styles.activePage : styles.pageButton}
-            onClick={() => setCurrentPage(i + 1)}
-          >
-            {i + 1}
-          </button>
-        ))}
+        <button
+          className={styles.pageButton}
+          disabled={startPage === 1}
+          onClick={() => setCurrentPage(startPage - PAGE_GROUP_SIZE)}
+        >
+          «
+        </button>
+
+        <button
+          className={styles.pageButton}
+          disabled={currentPage === 1}
+          onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+        >
+          ‹
+        </button>
+
+        {Array.from({ length: endPage - startPage + 1 }, (_, i) => {
+          const page = startPage + i;
+          return (
+            <button
+              key={page}
+              className={
+                currentPage === page
+                  ? styles.activePage
+                  : styles.pageButton
+              }
+              onClick={() => setCurrentPage(page)}
+            >
+              {page}
+            </button>
+          );
+        })}
+
+        <button
+          className={styles.pageButton}
+          disabled={currentPage === totalPages}
+          onClick={() =>
+            setCurrentPage(prev => Math.min(prev + 1, totalPages))
+          }
+        >
+          ›
+        </button>
+
+        <button
+          className={styles.pageButton}
+          disabled={endPage === totalPages}
+          onClick={() => setCurrentPage(endPage + 1)}
+        >
+          »
+        </button>
       </nav>
     </main>
   );

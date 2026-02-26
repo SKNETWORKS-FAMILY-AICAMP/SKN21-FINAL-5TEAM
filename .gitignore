@@ -1,7 +1,11 @@
 ecommerce/chatbot/data/raw/fashion-dataset
 ecommerce/chatbot/data/processed
 .venv
+
 .env
+!.env.development
+!.env.production
+
 .agent
 __pycache__/
 *.pyc
@@ -13,3 +17,5 @@ node_modules
 npm-debug.log*
 .vercel
 ecommerce\platform\frontend\public\products
+logs/
+results/

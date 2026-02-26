@@ -21,6 +21,7 @@ interface ProductOptionInfo {
 
 interface ProductInfo {
   id: number;
+  product_id: number;  // 실제 상품 ID (이미지 조회용)
   name: string;
   brand: string;
   price: string;
@@ -152,37 +153,22 @@ export default function PaymentPage() {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addFormData, setAddFormData] = useState({
+    recipient_name: '',
+    address1: '',
+    address2: '',
+    post_code: '',
+    phone: '',
+  });
   const [pointBalance, setPointBalance] = useState<PointBalance | null>(null);
   const [pointsToUse, setPointsToUse] = useState<string>("0");
   const [shippingRequest, setShippingRequest] = useState<string>("");
   const { user, isLoggedIn } = useAuth();
+  const [imageMap, setImageMap] = useState<Record<number, string>>({});
 
-  const API_BASE = "http://localhost:8000";
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL;
   const PAYMENT_METHOD = "card"; // 고정: 신용카드만 가능
-
-  // ==================== User History 기록 함수 ====================
-
-  const trackOrderAction = async (orderId: number, actionType: "order_create" | "order_cancel") => {
-    try {
-      if (!user) return;
-
-      await fetch(`${API_BASE}/user-history/users/${user.id}/track/order`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          order_id: orderId,
-          action_type: actionType,
-        }),
-      });
-
-      console.log(`User history tracked: ${actionType} for order ${orderId}`);
-    } catch (err) {
-      console.error("Failed to track order action:", err);
-      // 히스토리 기록 실패는 무시 (사용자 경험에 영향 없음)
-    }
-  };
 
   // 가격 계산 (Cart Summary 기반)
   const subtotal = cartData ? Number(cartData.summary.total_price) : 0;
@@ -196,7 +182,7 @@ export default function PaymentPage() {
   useEffect(() => {
     if (user) {
       loadInitialData();
-    }  
+    }
   }, [user]);
 
   const loadInitialData = async () => {
@@ -231,6 +217,24 @@ export default function PaymentPage() {
 
       const data: CartDetailWithSummary = await response.json();
       setCartData(data);
+
+      // productimages 테이블에서 이미지 가져오기
+      const newMap: Record<number, string> = {};
+      await Promise.all(
+        data.cart.items.map(async (item) => {
+          const productType = item.product.is_used ? 'used' : 'new';
+          try {
+            const imgRes = await fetch(`${API_BASE}/products/images/${productType}/${item.product.product_id}`);
+            if (!imgRes.ok) return;
+            const images = await imgRes.json();
+            const primary = images.find((img: any) => img.is_primary);
+            if (primary || images[0]) {
+              newMap[item.product.product_id] = (primary || images[0]).image_url;
+            }
+          } catch {}
+        })
+      );
+      setImageMap(prev => ({ ...prev, ...newMap }));
 
       console.log("Cart loaded:", data);
     } catch (err) {
@@ -286,7 +290,7 @@ export default function PaymentPage() {
       }
 
       const data: PointBalance = await response.json();
-      
+
       // 잔액이 0이면 null 처리
       if (Number(data.current_balance) === 0) {
         setPointBalance(null);
@@ -303,29 +307,6 @@ export default function PaymentPage() {
   };
 
   // ==================== 주문 생성 (Orders CRUD 기반) ====================
-
-  const updateOrderStatus = async (orderId: number, status: OrderStatus) => {
-    try {
-      // PATCH /orders/{order_id}
-      const response = await fetch(`${API_BASE}/orders/${orderId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ status }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "주문 상태 업데이트에 실패했습니다");
-      }
-
-      console.log("Order status updated:", status);
-    } catch (err) {
-      console.error("Failed to update order status:", err);
-      throw err;
-    }
-  };
 
   const createOrder = async (): Promise<number> => {
     try {
@@ -414,9 +395,6 @@ export default function PaymentPage() {
       const orderId = await createOrder();
       console.log("Order created:", orderId);
 
-      // 1-1. User History에 주문 생성 기록
-      await trackOrderAction(orderId, "order_create");
-
       // 2. 결제 처리 (Payments CRUD의 process_payment)
       const maskedCard = maskCardNumber(cardNumber);
 
@@ -440,8 +418,7 @@ export default function PaymentPage() {
       const payment: PaymentResponse = await paymentResponse.json();
       console.log("Payment processed:", payment);
 
-      // 3. 결제 성공 - 주문 상태를 'paid'로 업데이트
-      await updateOrderStatus(orderId, 'paid');
+      // 3. 결제 성공 - 주문 상태는 process_payment에서 이미 'paid'로 변경됨
 
       // 4. 포인트 사용 (Points CRUD 기반) - 포인트를 사용하는 경우만
       if (pointsValue > 0 && pointBalance) {
@@ -568,7 +545,7 @@ export default function PaymentPage() {
   const handlePointsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/\D/g, "");
     const numValue = Number(value);
-    
+
     // 최대값 제한
     const maxPoints = Math.min(
       pointBalance ? Number(pointBalance.current_balance) : 0,
@@ -584,7 +561,7 @@ export default function PaymentPage() {
 
   const useAllPoints = () => {
     if (!pointBalance) return;
-    
+
     const maxPoints = Math.min(
       Number(pointBalance.current_balance),
       subtotal
@@ -598,6 +575,48 @@ export default function PaymentPage() {
   const handleSelectAddress = (address: ShippingAddress) => {
     setSelectedAddress(address);
     setShowAddressModal(false);
+  };
+
+  // ==================== 배송지 추가 (Shipping CRUD 기반) ====================
+
+  const openAddAddressForm = () => {
+    setAddFormData({ recipient_name: '', address1: '', address2: '', post_code: '', phone: '' });
+    setShowAddForm(true);
+  };
+
+  const saveNewAddress = async () => {
+    if (!addFormData.recipient_name || !addFormData.address1 || !addFormData.phone) {
+      alert("수령인 이름, 기본 주소, 전화번호는 필수입니다.");
+      return;
+    }
+
+    try {
+      if (!user) throw new Error("유저 정보가 없습니다");
+
+      const payload = {
+        recipient_name: addFormData.recipient_name,
+        address1: addFormData.address1,
+        address2: addFormData.address2 || "",
+        post_code: addFormData.post_code || "",
+        phone: addFormData.phone,
+        is_default: addresses.length === 0,
+      };
+
+      const res = await fetch(`${API_BASE}/shipping?user_id=${user.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error('배송지 저장 실패');
+
+      // 배송지 목록 다시 로드
+      await loadAddresses();
+      setShowAddForm(false);
+    } catch (err) {
+      console.error(err);
+      alert("배송지 저장에 실패했습니다.");
+    }
   };
 
   // ==================== 로딩 처리 ====================
@@ -680,7 +699,7 @@ export default function PaymentPage() {
               <div key={item.id} className={styles.cartItem}>
                 <div style={{ width: "80px", height: "80px", marginRight: "12px" }}>
                   <img
-                    src={item.product.image}
+                    src={imageMap[item.product.product_id] || item.product.image}
                     alt={item.product.name}
                     style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "4px" }}
                   />
@@ -689,7 +708,7 @@ export default function PaymentPage() {
                   <div className={styles.itemInfo}>
                     <p>
                       <strong>
-                        {item.product.is_used ? "♻️ 중고상품" : "🆕 신상품"} {item.product.brand}
+                        {item.product.is_used ? "중고상품" : "신상품"} {item.product.brand}
                       </strong>
                     </p>
                     <p>{item.product.name}</p>
@@ -799,7 +818,7 @@ export default function PaymentPage() {
             </label>
           </div>
           <p style={{ fontSize: "13px", color: "#666" }}>
-            💳 신용/체크카드로 안전하게 결제됩니다
+            신용/체크카드로 안전하게 결제됩니다
           </p>
         </div>
 
@@ -845,7 +864,7 @@ export default function PaymentPage() {
       </div>
 
       {/* 배송지 선택 모달 */}
-      {showAddressModal && (
+      {showAddressModal && !showAddForm && (
         <div className={styles.modalOverlay} onClick={() => setShowAddressModal(false)}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <h2>배송지 선택</h2>
@@ -883,7 +902,13 @@ export default function PaymentPage() {
               ))
             )}
 
-            <div className={styles.modalButtons}>
+            <div className={styles.modalButtons} style={{ marginTop: "12px" }}>
+              <button
+                className={styles.saveButton}
+                onClick={openAddAddressForm}
+              >
+                + 배송지 추가
+              </button>
               <button
                 className={styles.cancelButton}
                 onClick={() => setShowAddressModal(false)}
@@ -896,6 +921,51 @@ export default function PaymentPage() {
               >
                 확인
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 배송지 추가 모달 */}
+      {showAddForm && (
+        <div className={styles.modalOverlay} onClick={() => setShowAddForm(false)}>
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <h2>배송지 추가</h2>
+            <div className={styles.newAddressForm}>
+              <input
+                type="text"
+                placeholder="수령인 이름"
+                value={addFormData.recipient_name}
+                onChange={e => setAddFormData({ ...addFormData, recipient_name: e.target.value })}
+              />
+              <input
+                type="text"
+                placeholder="우편번호"
+                value={addFormData.post_code}
+                onChange={e => setAddFormData({ ...addFormData, post_code: e.target.value })}
+              />
+              <input
+                type="text"
+                placeholder="기본 주소"
+                value={addFormData.address1}
+                onChange={e => setAddFormData({ ...addFormData, address1: e.target.value })}
+              />
+              <input
+                type="text"
+                placeholder="상세 주소"
+                value={addFormData.address2}
+                onChange={e => setAddFormData({ ...addFormData, address2: e.target.value })}
+              />
+              <input
+                type="text"
+                placeholder="전화번호"
+                value={addFormData.phone}
+                onChange={e => setAddFormData({ ...addFormData, phone: e.target.value })}
+              />
+            </div>
+            <div className={styles.modalButtons} style={{ marginTop: "12px" }}>
+              <button className={styles.cancelButton} onClick={() => setShowAddForm(false)}>취소</button>
+              <button className={styles.saveButton} onClick={saveNewAddress}>저장</button>
             </div>
           </div>
         </div>
