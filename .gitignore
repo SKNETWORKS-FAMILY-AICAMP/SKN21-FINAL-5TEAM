@@ -18,3 +18,4 @@ npm-debug.log*
 .vercel
 ecommerce\platform\frontend\public\products
 logs/
+results/
