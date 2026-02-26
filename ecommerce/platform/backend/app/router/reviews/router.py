@@ -13,6 +13,7 @@ from ecommerce.platform.backend.app.router.reviews import crud, schemas
 from decimal import Decimal
 from ecommerce.platform.backend.app.router.points import crud as point_crud
 from ecommerce.platform.backend.app.router.user_history import crud as history_crud
+from ecommerce.platform.backend.app.router.products.models import ProductOption, UsedProductOption
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -183,12 +184,33 @@ def create_review(
 
         # 리뷰 작성 히스토리 기록
         try:
+            # 상품명 조회
+            order_item_name = None
+            product_option_type = review.order_item.product_option_type
+            product_option_id = review.order_item.product_option_id
+            if product_option_type == "new":
+                option = db.query(ProductOption).filter(
+                    ProductOption.id == product_option_id
+                ).first()
+                if option and option.product:
+                    order_item_name = option.product.name
+            else:
+                option = db.query(UsedProductOption).filter(
+                    UsedProductOption.id == product_option_id
+                ).first()
+                if option and option.used_product:
+                    order_item_name = option.used_product.name
+
             history_crud.track_review_create(
                 db=db,
                 user_id=user_id,
                 review_id=review.id,
-                product_option_type=review.order_item.product_option_type,
-                product_option_id=review.order_item.product_option_id
+                product_option_type=product_option_type,
+                product_option_id=product_option_id,
+                user_name=review.user.name if review.user else None,
+                order_item_name=order_item_name,
+                contents=review_data.content,
+                timestamp=review.created_at.isoformat() if review.created_at else None
             )
             logger.info(f"Review history tracked for review: {review.id}")
         except Exception as e:

@@ -9,6 +9,10 @@ import logging
 
 from ecommerce.platform.backend.app.database import get_db
 from ecommerce.platform.backend.app.router.payments import crud, schemas
+from ecommerce.platform.backend.app.router.user_history import crud as history_crud, schemas as history_schemas
+from ecommerce.platform.backend.app.router.users.models import User
+from ecommerce.platform.backend.app.router.orders.models import Order, OrderItem
+from ecommerce.platform.backend.app.router.products.models import ProductOption, Product, UsedProductOption, UsedProduct
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -195,6 +199,50 @@ def process_payment(
             card_numbers=card_numbers
         )
         logger.info(f"Payment processed successfully: {payment.id}")
+
+        # 결제 히스토리 기록
+        try:
+            order = db.query(Order).filter(Order.id == order_id).first()
+            user = db.query(User).filter(User.id == order.user_id).first() if order else None
+
+            # 주문 항목 상품명 조회
+            order_item_names = []
+            if order:
+                for item in order.items:
+                    if str(item.product_option_type) == "new":
+                        option = db.query(ProductOption).filter(
+                            ProductOption.id == item.product_option_id
+                        ).first()
+                        if option and option.product:
+                            order_item_names.append(option.product.name)
+                    else:
+                        option = db.query(UsedProductOption).filter(
+                            UsedProductOption.id == item.product_option_id
+                        ).first()
+                        if option and option.used_product:
+                            order_item_names.append(option.used_product.name)
+
+            payment_status_val = (
+                payment.payment_status.value
+                if hasattr(payment.payment_status, "value")
+                else str(payment.payment_status)
+            )
+
+            history_crud.track_order_action(
+                db=db,
+                user_id=order.user_id if order else 0,
+                order_id=order_id,
+                action_type=history_schemas.ActionType.PAYMENT,
+                user_name=user.name if user else None,
+                order_item_name=", ".join(order_item_names) if order_item_names else None,
+                method=payment_method,
+                payment_status=payment_status_val,
+                card_num=card_numbers
+            )
+            logger.info(f"Payment history tracked for order: {order_id}")
+        except Exception as e:
+            logger.error(f"결제 히스토리 기록 실패: {e}")
+
         return payment
     except ValueError as e:
         logger.error(f"Failed to process payment: {e}")
