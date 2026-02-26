@@ -7,7 +7,9 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from ecommerce.chatbot.src.schemas.chat import ChatRequest
 from ecommerce.chatbot.src.graph.workflow import graph_app
-from ecommerce.chatbot.src.infrastructure.conversation_logger import ConversationRunLogger
+from ecommerce.chatbot.src.infrastructure.conversation_logger import (
+    ConversationRunLogger,
+)
 from ecommerce.platform.backend.app.core.auth import get_current_user
 from ecommerce.platform.backend.app.router.users.models import User
 
@@ -36,6 +38,7 @@ NODE_STATUS_MESSAGES = {
     "process_output": "최종 응답을 정리하고 있습니다...",
 }
 
+
 # 메시지 직렬화/역직렬화 (컴프리헨션)
 def serialize_messages(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
     role_map = {HumanMessage: "user", AIMessage: "assistant"}
@@ -44,12 +47,15 @@ def serialize_messages(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
         for m in messages
     ]
 
+
 def deserialize_messages(serialized: List[Dict[str, Any]]) -> List[BaseMessage]:
     msg_map = {"user": HumanMessage, "assistant": AIMessage}
     return [
         msg_map[m["role"]](content=m.get("content", ""))
-        for m in serialized if m["role"] in msg_map
+        for m in serialized
+        if m["role"] in msg_map
     ]
+
 
 def _parse_tool_output(output) -> dict | None:
     """도구 출력을 딕셔너리로 변환"""
@@ -63,21 +69,44 @@ def _parse_tool_output(output) -> dict | None:
             pass
     return None
 
+
 def _build_metadata(final_state: dict) -> dict:
     """최종 상태에서 메타데이터 추출"""
     current_task = final_state.get("current_task") or {}
-    status = current_task.get("status", "idle") if isinstance(current_task, dict) else "idle"
-    
+    status = (
+        current_task.get("status", "idle") if isinstance(current_task, dict) else "idle"
+    )
+
     return {
         "type": "metadata",
         "action_status": status,
-        "action_name": f"{current_task.get('type')}_requested" if status == "completed" else None,
+        "action_name": f"{current_task.get('type')}_requested"
+        if status == "completed"
+        else None,
         "order_id": current_task.get("target_id"),
         "state": {
             **final_state,
-            "messages": serialize_messages(final_state.get("messages", []))
-        }
+            "messages": serialize_messages(final_state.get("messages", [])),
+        },
     }
+
+
+def _extract_ui_actions(final_state: dict) -> List[dict]:
+    """최종 상태에서 UI 액션 목록을 안전하게 추출"""
+    if not isinstance(final_state, dict):
+        return []
+
+    outputs = final_state.get("tool_outputs")
+    if not isinstance(outputs, list):
+        return []
+
+    ui_actions: List[dict] = []
+    for output in outputs:
+        parsed = _parse_tool_output(output)
+        if isinstance(parsed, dict) and parsed.get("ui_action"):
+            ui_actions.append(parsed)
+
+    return ui_actions
 
 
 @router.post("/stream")
@@ -90,9 +119,17 @@ async def chat_streaming_endpoint(
         run_logger = None
         try:
             previous_state = request.previous_state or {}
-            requested_provider = (request.provider or previous_state.get("llm_provider") or "openai").strip().lower()
-            requested_model = (request.model or previous_state.get("llm_model") or "").strip()
-            conversation_id = previous_state.get("conversation_id") or f"conv_{uuid4().hex[:12]}"
+            requested_provider = (
+                (request.provider or previous_state.get("llm_provider") or "openai")
+                .strip()
+                .lower()
+            )
+            requested_model = (
+                request.model or previous_state.get("llm_model") or ""
+            ).strip()
+            conversation_id = (
+                previous_state.get("conversation_id") or f"conv_{uuid4().hex[:12]}"
+            )
             turn_id = f"turn_{uuid4().hex[:12]}"
 
             # 1. 상태 초기화
@@ -115,12 +152,16 @@ async def chat_streaming_endpoint(
                 "conversation_id": conversation_id,
                 "turn_id": turn_id,
             }
-            
+
             # 메시지 복구 및 추가
-            serialized_history = previous_state.get("messages", []) if previous_state else []
+            serialized_history = (
+                previous_state.get("messages", []) if previous_state else []
+            )
             history = deserialize_messages(serialized_history) if previous_state else []
-            
-            current_state["messages"] = history + [HumanMessage(content=request.message)]
+
+            current_state["messages"] = history + [
+                HumanMessage(content=request.message)
+            ]
 
             run_logger = ConversationRunLogger(
                 conversation_id=conversation_id,
@@ -134,12 +175,18 @@ async def chat_streaming_endpoint(
             # 2. 이벤트 스트리밍
             final_state = None
             has_streamed_text = False
+            streamed_ui_actions: set[str] = set()
             last_langgraph_input = None
             async for event in graph_app.astream_events(current_state, version="v2"):
                 event_type = event["event"]
 
                 # A. 토큰 스트리밍
                 if event_type == "on_chat_model_stream":
+                    # 승인용 내부 LLM 등에서 발생한 스트림은 사용자에게 전달하지 않음
+                    tags = event.get("tags", [])
+                    if "approval_llm" in tags or event.get("name") == "approval_llm":
+                        continue
+
                     chunk = event.get("data", {}).get("chunk")
                     content = chunk.content if chunk else None
                     if content:
@@ -151,7 +198,9 @@ async def chat_streaming_endpoint(
                     tool_start_data = event.get("data", {})
                     run_logger.log_tool_start(
                         event.get("name", "unknown_tool"),
-                        tool_start_data.get("input") if tool_start_data.get("input") is not None else tool_start_data,
+                        tool_start_data.get("input")
+                        if tool_start_data.get("input") is not None
+                        else tool_start_data,
                     )
                     status_msg = TOOL_STATUS_MESSAGES.get(event["name"])
                     if status_msg:
@@ -166,7 +215,9 @@ async def chat_streaming_endpoint(
                         node_start_data = event.get("data", {})
                         run_logger.log_node_start(
                             node_name or "unknown_node",
-                            node_start_data.get("input") if node_start_data.get("input") is not None else node_start_data,
+                            node_start_data.get("input")
+                            if node_start_data.get("input") is not None
+                            else node_start_data,
                         )
                     status_msg = NODE_STATUS_MESSAGES.get(node_name)
                     if status_msg:
@@ -178,7 +229,9 @@ async def chat_streaming_endpoint(
                     model_start_data = event.get("data", {})
                     run_logger.log_model_start(
                         model_name,
-                        model_start_data.get("input") if model_start_data.get("input") is not None else model_start_data,
+                        model_start_data.get("input")
+                        if model_start_data.get("input") is not None
+                        else model_start_data,
                     )
                     status_msg = f"모델이 응답을 생성하고 있습니다... ({model_name})"
                     yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg, 'model': model_name}, ensure_ascii=False)}\n\n"
@@ -187,7 +240,9 @@ async def chat_streaming_endpoint(
                     model_end_data = event.get("data", {})
                     run_logger.log_model_end(
                         event.get("name") or "chat_model",
-                        model_end_data.get("output") if model_end_data.get("output") is not None else model_end_data,
+                        model_end_data.get("output")
+                        if model_end_data.get("output") is not None
+                        else model_end_data,
                     )
 
                 # C. 도구 실행 완료 (UI 액션)
@@ -195,16 +250,22 @@ async def chat_streaming_endpoint(
                     tool_end_data = event.get("data", {})
                     run_logger.log_tool_end(
                         event.get("name", "unknown_tool"),
-                        tool_end_data.get("output") if tool_end_data.get("output") is not None else tool_end_data,
+                        tool_end_data.get("output")
+                        if tool_end_data.get("output") is not None
+                        else tool_end_data,
                     )
                     tool_output = _parse_tool_output(event["data"].get("output"))
-                    
+
                     if tool_output and tool_output.get("ui_action"):
+                        ui_action_name = str(tool_output.get("ui_action"))
+                        streamed_ui_actions.add(ui_action_name)
                         ui_data = {
                             "type": "ui_action",
-                            "ui_action": tool_output["ui_action"],
+                            "ui_action": ui_action_name,
                             "ui_data": tool_output.get("ui_data"),
-                            "requires_selection": tool_output.get("requires_selection", False),
+                            "requires_selection": tool_output.get(
+                                "requires_selection", False
+                            ),
                             "message": tool_output.get("message", ""),
                         }
                         yield f"data: {json.dumps(ui_data, ensure_ascii=False)}\n\n"
@@ -212,31 +273,65 @@ async def chat_streaming_endpoint(
                 # D. 최종 상태 캡처
                 elif event_type == "on_chain_end" and event["name"] == "LangGraph":
                     final_state = event["data"].get("output")
-                    if isinstance(last_langgraph_input, dict) and isinstance(final_state, dict):
+                    if isinstance(last_langgraph_input, dict) and isinstance(
+                        final_state, dict
+                    ):
                         run_logger.log_state_change(last_langgraph_input, final_state)
                 elif event_type == "on_chain_end":
                     node_end_data = event.get("data", {})
                     run_logger.log_node_end(
                         event.get("name") or "unknown_node",
-                        node_end_data.get("output") if node_end_data.get("output") is not None else node_end_data,
+                        node_end_data.get("output")
+                        if node_end_data.get("output") is not None
+                        else node_end_data,
                     )
 
             # 3. 메타데이터 전송
             if final_state:
-                final_text = final_state.get("generation") if isinstance(final_state, dict) else None
-                if not has_streamed_text and isinstance(final_text, str) and final_text.strip():
+                final_ui_actions = _extract_ui_actions(final_state)
+                has_ui_action = len(final_ui_actions) > 0
+
+                # 일부 경로(예: fixed_worker 직접 실행)는 on_tool_end 이벤트가 없을 수 있어
+                # 최종 상태의 UI 액션을 보강 전송한다.
+                for item in final_ui_actions:
+                    ui_action_name = str(item.get("ui_action"))
+                    if ui_action_name in streamed_ui_actions:
+                        continue
+                    ui_data = {
+                        "type": "ui_action",
+                        "ui_action": ui_action_name,
+                        "ui_data": item.get("ui_data"),
+                        "requires_selection": item.get("requires_selection", False),
+                        "message": item.get("message", ""),
+                    }
+                    yield f"data: {json.dumps(ui_data, ensure_ascii=False)}\n\n"
+
+                final_text = (
+                    final_state.get("generation")
+                    if isinstance(final_state, dict)
+                    else None
+                )
+                if (
+                    (not has_ui_action)
+                    and (not has_streamed_text)
+                    and isinstance(final_text, str)
+                    and final_text.strip()
+                ):
                     yield f"data: {json.dumps({'type': 'text_chunk', 'content': final_text}, ensure_ascii=False)}\n\n"
                 yield f"data: {json.dumps(_build_metadata(final_state), ensure_ascii=False)}\n\n"
                 log_path = run_logger.finalize(final_state, success=True)
                 yield f"data: {json.dumps({'type': 'audit_log', 'conversation_id': conversation_id, 'turn_id': turn_id, 'log_path': log_path}, ensure_ascii=False)}\n\n"
             else:
-                log_path = run_logger.finalize({"messages": current_state.get("messages", [])}, success=True)
+                log_path = run_logger.finalize(
+                    {"messages": current_state.get("messages", [])}, success=True
+                )
                 yield f"data: {json.dumps({'type': 'audit_log', 'conversation_id': conversation_id, 'turn_id': turn_id, 'log_path': log_path}, ensure_ascii=False)}\n\n"
 
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             try:
                 if run_logger:
