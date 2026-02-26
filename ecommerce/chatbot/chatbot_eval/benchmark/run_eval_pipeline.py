@@ -192,7 +192,7 @@ def generate_markdown_report(results):
     if not results.get("singlecall"):
         md_content += "## 📊 [Benchmark 1] Argument Accuracy (Singlecall)\n- ❌ 평가 실행에 실패했습니다.\n\n"
     elif single_score_file.exists():
-        with open(single_score_file, "r", encoding="utf-8") as f:
+        with open(single_score_file, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
         sc = data.get("singlecall_score", {})
         md_content += f"""## 📊 [Benchmark 1] Argument Accuracy (Singlecall)
@@ -211,7 +211,7 @@ def generate_markdown_report(results):
     if not results.get("dialog"):
         md_content += "## 📊 [Benchmark 2] Slot Filling Rate (Dialog)\n- ❌ 평가 실행에 실패했습니다.\n\n"
     elif dialog_score_file.exists():
-        with open(dialog_score_file, "r", encoding="utf-8") as f:
+        with open(dialog_score_file, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
         ds = data.get("dialog_score", {})
         
