@@ -5,14 +5,17 @@ SQLAlchemy Models - User History Module
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 from enum import Enum as PyEnum
+import json
 
 from sqlalchemy import (
-    BigInteger, String, Text, DateTime, Enum, ForeignKey, Index
+    BigInteger, String, Text, DateTime, Enum, ForeignKey, Index, select
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
+from sqlalchemy import event
 
 from ecommerce.platform.backend.app.database import Base
+from ecommerce.platform.backend.app.router.carts.models import Cart, CartItem
 
 if TYPE_CHECKING:
     from ecommerce.platform.backend.app.router.users.models import User
@@ -131,4 +134,36 @@ class UserHistory(Base):
     order: Mapped[Optional["Order"]] = relationship(
         "Order",
         back_populates="user_history"
+    )
+
+
+@event.listens_for(CartItem, "after_insert")
+def log_cart_item_history(mapper, connection, target):
+    """
+    CartItem이 새로 생성될 때 UserHistory에 CART_ADD 기록을 삽입합니다.
+    """
+    cart_tbl = Cart.__table__
+    user_id = connection.execute(
+        select(cart_tbl.c.user_id).where(cart_tbl.c.id == target.cart_id)
+    ).scalar_one_or_none()
+
+    if not user_id:
+        return
+
+    history_tbl = UserHistory.__table__
+    product_option_type = (
+        target.product_option_type.value
+        if hasattr(target.product_option_type, "value")
+        else target.product_option_type
+    )
+
+    connection.execute(
+        history_tbl.insert().values(
+            user_id=user_id,
+            action_type=ActionType.CART_ADD.value,
+            product_option_type=product_option_type,
+            product_option_id=target.product_option_id,
+            cart_item_id=target.id,
+            action_metadata=json.dumps({"quantity": target.quantity})
+        )
     )
