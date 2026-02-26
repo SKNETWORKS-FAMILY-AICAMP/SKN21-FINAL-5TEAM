@@ -14,7 +14,8 @@ from ecommerce.platform.backend.app.core.auth import get_current_user, get_curre
 import os
 from authlib.integrations.starlette_client import OAuth
 from fastapi.responses import RedirectResponse
-from ecommerce.platform.backend.app.router.user_history.models import UserHistory
+from ecommerce.platform.backend.app.router.user_history import crud as user_history_crud, schemas as user_history_schemas
+import json
 from datetime import datetime
 
 router = APIRouter(
@@ -80,6 +81,7 @@ def register(body: schemas.RegisterRequest, db: Session = Depends(get_db)):
 @router.post("/login", response_model=schemas.LoginResponse)
 def login(
     body: schemas.LoginRequest,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ):
@@ -90,15 +92,18 @@ def login(
     if not crud.verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 틀렸습니다.")
 
-    # ✅ 로그인 히스토리 기록
-    login_history = UserHistory(
-        user_id=user.id,
-        action_type="login",
-        action_metadata="password"
-    )
-    db.add(login_history)
-
     user.last_login_at = datetime.utcnow()
+    user_history_crud.track_auth_action(
+        db=db,
+        user_id=user.id,
+        action_type=user_history_schemas.ActionType.LOGIN,
+        action_metadata=json.dumps({
+            "user": user.name,
+            "timestamp": datetime.utcnow().isoformat()
+        }),
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     db.commit()
 
     access_token = create_access_token(user.id)
@@ -124,14 +129,15 @@ def logout(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # ✅ 로그아웃 기록
-    logout_history = UserHistory(
+    user_history_crud.track_auth_action(
+        db=db,
         user_id=current_user.id,
-        action_type="logout",
-        action_metadata="manual"
+        action_type=user_history_schemas.ActionType.LOGOUT,
+        action_metadata=json.dumps({
+            "user": current_user.name,
+            "timestamp": datetime.utcnow().isoformat()
+        }),
     )
-    db.add(logout_history)
-    db.commit()
 
     response.delete_cookie(
         key="access_token",
@@ -340,13 +346,17 @@ async def google_callback(
         db.commit()
         db.refresh(user)
 
-    # 3️⃣ 로그인 히스토리 기록
-    login_history = UserHistory(
+    user_history_crud.track_auth_action(
+        db=db,
         user_id=user.id,
-        action_type="login",
-        action_metadata="google"
+        action_type=user_history_schemas.ActionType.LOGIN,
+        action_metadata=json.dumps({
+            "user": user.name,
+            "timestamp": datetime.utcnow().isoformat()
+        }),
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
     )
-    db.add(login_history)
 
     user.last_login_at = datetime.utcnow()
     db.commit()

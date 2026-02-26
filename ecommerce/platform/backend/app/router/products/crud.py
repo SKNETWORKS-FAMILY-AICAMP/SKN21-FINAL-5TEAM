@@ -720,6 +720,33 @@ def get_used_product_with_options(
         .first()
     )
 
+
+def sync_used_product_status_by_stock(db: Session, used_product_id: int) -> None:
+    """
+    중고상품 옵션 재고 기준으로 상태를 자동 갱신
+    - 모든 옵션 재고 합이 0이면 `SOLD`
+    - 다시 재고가 생기면 `APPROVED`로 복원
+    """
+    total_quantity = (
+        db.query(
+            func.coalesce(func.sum(models.UsedProductOption.quantity), 0)
+        )
+        .filter(
+            models.UsedProductOption.used_product_id == used_product_id,
+            models.UsedProductOption.is_active == True
+        )
+        .scalar() or 0
+    )
+
+    used_product = get_used_product_by_id(db, used_product_id)
+    if not used_product:
+        return
+
+    if total_quantity <= 0 and used_product.status == models.UsedProductStatus.APPROVED:
+        used_product.status = models.UsedProductStatus.SOLD
+    elif total_quantity > 0 and used_product.status == models.UsedProductStatus.SOLD:
+        used_product.status = models.UsedProductStatus.APPROVED
+
 def create_used_product(
     db: Session,
     used_product_data: schemas.UsedProductCreate
@@ -886,7 +913,9 @@ def update_used_product_option(
     
     for key, value in update_data.items():
         setattr(option, key, value)
-    
+
+    sync_used_product_status_by_stock(db, option.used_product_id)
+
     db.commit()
     db.refresh(option)
     

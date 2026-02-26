@@ -204,6 +204,7 @@ export default function HomePage() {
           </div>
 
           <button
+            className={styles.moreButton}
             onClick={() => requireLogin(() => router.push('/products'))}
           >
             더보기
@@ -235,9 +236,8 @@ export default function HomePage() {
                   </div>
 
                   <div className={styles.productInfo}>
-                    {/* <p>상품명</p> */}
-                    <p>{product.name}</p>
-                    <p>
+                    <p className={styles.productName}>{product.name}</p>
+                    <p className={styles.productPrice}>
                       가격 {Math.round(product.price ?? 0).toLocaleString()}원
                     </p>
                   </div>
