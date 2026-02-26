@@ -1,8 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import styles from './shipping.module.css';
 import { useAuth } from '../authcontext';
+
+declare global {
+  interface Window {
+    daum: any;
+  }
+}
+
 
 interface ShippingAddress {
   id: number;
@@ -49,6 +56,38 @@ export default function ShippingPage() {
       fetchAddresses();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if ((window as any).daum && (window as any).daum.Postcode) return;
+
+    const script = document.createElement('script');
+    script.src = 'https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js';
+    script.async = true;
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
+
+  const openKakaoPostcode = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const daum = (window as any).daum;
+    if (!daum || !daum.Postcode) {
+      console.error('Daum postcode script not loaded');
+      return;
+    }
+    new daum.Postcode({
+      oncomplete: (data: any) => {
+        setFormData(prev => ({
+          ...prev,
+          post_code: data.zonecode || data.postcode || '',
+          address1: data.address || '',
+        }));
+      },
+    }).open();
+  }, []);
 
   // =====================
   // 기본 배송지 상단 정렬
@@ -175,9 +214,18 @@ export default function ShippingPage() {
         {/* 모달 */}
         {isModalOpen && (
           <div className={styles.modalOverlay} onClick={() => setIsModalOpen(false)}>
-            <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
+          <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
               <h2>{editingAddress ? '배송지 수정' : '배송지 추가'}</h2>
-              <div className={styles.newAddressForm}>
+              <button
+                type="button"
+                className={styles.addressSearchButton}
+                onClick={openKakaoPostcode}
+              >
+                주소 검색
+              </button>
+            </div>
+            <div className={styles.newAddressForm}>
                 <input
                   type="text"
                   placeholder="수령인 이름"
@@ -190,12 +238,14 @@ export default function ShippingPage() {
                   value={formData.post_code}
                   onChange={e => setFormData({ ...formData, post_code: e.target.value })}
                 />
-                <input
-                  type="text"
-                  placeholder="기본 주소"
-                  value={formData.address1}
-                  onChange={e => setFormData({ ...formData, address1: e.target.value })}
-                />
+                <div className={styles.addressSearch}>
+                  <input
+                    type="text"
+                    placeholder="기본 주소"
+                    value={formData.address1}
+                    onChange={e => setFormData({ ...formData, address1: e.target.value })}
+                  />
+                </div>
                 <input
                   type="text"
                   placeholder="상세 주소"
