@@ -9,12 +9,13 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 
-from src import utils
+import src.utils as utils
 
-# Load .env from root directory (5 levels up from this file)
-ROOT_DIR = Path(__file__).resolve().parents[5]
-load_dotenv(ROOT_DIR / ".env")
-from src import local_inference
+# Load .env from root directory handled by paths module
+from src.paths import BENCH_ROOT, ENV_PATH
+from dotenv import load_dotenv
+load_dotenv(ENV_PATH)
+import src.local_inference as local_inference
 from src.default_click_type import (
     DefaultBaseUrlPromptOptions,
     DefaultModelPathPromptOptions,
@@ -36,8 +37,7 @@ from src.response_handler import ResponseHandler
 from src.evaluation_handler import EvaluationHandler
 from src.constants import DEFAULT_TEMPERATURE, LOCALHOST_BASE_URL, EXIT_SUCCESS, EXIT_FAILURE
 
-
-REPO_PATH = os.path.dirname(os.path.abspath(__file__))
+REPO_PATH = str(BENCH_ROOT)
 
 
 # program options
@@ -87,13 +87,15 @@ def singlecall_eval_options(f):
     return f
 
 
-def get_file_paths(test_prefix, model_name, tools_type=None, output_dir=None):
+def get_file_paths(test_prefix, model_name, eval_type, tools_type=None, output_dir=None):
     output_path = f'{REPO_PATH}/output/'
     utils.create_directory(output_path)
     
-    # 모델별 디렉토리 생성
-    dir_name = output_dir if output_dir else model_name
-    model_output_path = f'{output_path}/{dir_name}'
+    # 평가 타입별 디렉토리 생성 (singlecall, dialog 등)
+    eval_dir = output_dir if output_dir else eval_type
+    
+    # 모델별 디렉토리 생성 (output/{eval_type}/{model_name})
+    model_output_path = f'{output_path}/{eval_dir}/{model_name}'
     utils.create_directory(model_output_path)
     print(f"output_path: {model_output_path}")
     
@@ -156,7 +158,7 @@ def run_evaluate(
     else: # gpt, mistral, etc.
         model_name = model
 
-    file_paths = get_file_paths(test_prefix, model_name, tools_type=tools_type, output_dir=output_dir)
+    file_paths = get_file_paths(test_prefix, model_name, eval_type, tools_type=tools_type, output_dir=output_dir)
     print(f"[[{model_name} {test_prefix} evaluate start]]")
     process_meta = None
     try:
