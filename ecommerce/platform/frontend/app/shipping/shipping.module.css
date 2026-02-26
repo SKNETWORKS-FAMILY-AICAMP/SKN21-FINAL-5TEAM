@@ -92,6 +92,34 @@
   box-shadow: 0 0 15px rgba(0,0,0,0.2);
 }
 
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.modalHeader h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.addressSearchButton {
+  background-color: #000;
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s ease;
+}
+
+.addressSearchButton:hover {
+  background-color: #111;
+}
+
 /* 모달 입력폼 */
 .newAddressForm input {
   width: 100%;

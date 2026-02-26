@@ -40,6 +40,7 @@
   border-radius: 4px;
   cursor: pointer;
   transition: border-color 0.2s ease, color 0.2s ease;
+  margin-bottom: 10px;
 }
 
 .moreButton:hover {
