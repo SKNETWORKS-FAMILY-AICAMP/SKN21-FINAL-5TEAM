@@ -16,6 +16,8 @@ from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus, Pr
 from ecommerce.platform.backend.app.router.inventories.models import (
     InventoryTransaction, TransactionType, ProductType as InvProductType
 )
+from ecommerce.platform.backend.app.router.user_history.crud import track_order_action, track_refund_request
+from ecommerce.platform.backend.app.router.user_history.schemas import ActionType as HistoryActionType
     
 def get_db():
     """DB 세션 생성 (generator)"""
@@ -272,6 +274,12 @@ def cancel_order(order_id: str, user_id: int, reason: str, confirmed: bool = Tru
         order.shipping_request = f"Cancelled by user: {reason}"
         db.commit()
 
+        # user history 기록
+        try:
+            track_order_action(db, user_id, order.id, HistoryActionType.ORDER_DEL)
+        except Exception:
+            pass  # 히스토리 기록 실패해도 취소 결과에 영향 없음
+
         return {
             "success": True,
             "message": f"주문({order_id})이 성공적으로 취소되었습니다.",
@@ -442,6 +450,12 @@ def register_return_request(
         order.status = OrderStatus.REFUNDED
         order.shipping_request = f"Return Requested. Pickup: {pickup_address}"
         db.commit()
+
+        # user history 기록
+        try:
+            track_refund_request(db, user_id, order.id)
+        except Exception:
+            pass  # 히스토리 기록 실패해도 반품 접수 결과에 영향 없음
 
         return {
             "success": True,
