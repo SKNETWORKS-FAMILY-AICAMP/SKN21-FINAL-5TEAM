@@ -90,7 +90,7 @@ MAX_HISTORY_TOKENS = 3000
 KEEP_RECENT_TURNS = 3
 SUMMARY_MODEL = "gpt-4o-mini"
 DEFAULT_PROVIDER = "openai"
-SUPPORTED_PROVIDERS = {"openai", "huggingface"}
+SUPPORTED_PROVIDERS = {"openai", "huggingface", "vllm"}
 
 _HF_MODEL_CACHE: Dict[str, Dict[str, Any]] = {}
 _HF_MODEL_LOCK = threading.Lock()
@@ -99,7 +99,6 @@ _HF_MODEL_LOCK = threading.Lock()
 class TaskType(str, Enum):
     ORDER_QUERY = "ORDER_QUERY"
     POLICY_CHECK = "POLICY_CHECK"
-    FAQ_RETRIEVAL = "FAQ_RETRIEVAL"
     ORDER_ACTION = "ORDER_ACTION"
     GENERAL_CHAT = "GENERAL_CHAT"
 
@@ -291,6 +290,8 @@ def _resolve_llm_config(state: Optional[AgentState], preferred_model: Optional[s
 
     if provider == "huggingface":
         return provider, settings.HF_MODEL_ID
+    if provider == "vllm":
+        return provider, settings.VLLM_MODEL
     return provider, settings.OPENAI_MODEL
 
 
@@ -325,6 +326,8 @@ def _load_hf_model(model_id: str) -> Dict[str, Any]:
         if cached:
             return cached
 
+        quant_mode = (getattr(settings, "HF_QUANTIZATION", "auto") or "auto").strip().lower()
+
         if torch.cuda.is_available():
             device = "cuda"
             dtype = torch.float16
@@ -336,17 +339,67 @@ def _load_hf_model(model_id: str) -> Dict[str, Any]:
             dtype = torch.float32
 
         tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-        model_obj: Any = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            torch_dtype=dtype,
-            trust_remote_code=True,
-        )
-        model_obj = model_obj.to(device)
+
+        model_obj: Any = None
+        quant_applied = "none"
+
+        # CUDA: bitsandbytes 4bit/8bit 우선 (설치되어 있는 경우)
+        if device == "cuda" and quant_mode in {"auto", "bnb-4bit", "bnb-8bit"}:
+            try:
+                from transformers import BitsAndBytesConfig
+
+                if quant_mode in {"auto", "bnb-4bit"}:
+                    bnb_config = BitsAndBytesConfig(
+                        load_in_4bit=True,
+                        bnb_4bit_compute_dtype=torch.float16,
+                        bnb_4bit_use_double_quant=True,
+                        bnb_4bit_quant_type="nf4",
+                    )
+                    quant_applied = "bnb-4bit"
+                else:
+                    bnb_config = BitsAndBytesConfig(load_in_8bit=True)
+                    quant_applied = "bnb-8bit"
+
+                model_obj = AutoModelForCausalLM.from_pretrained(
+                    model_id,
+                    trust_remote_code=True,
+                    quantization_config=bnb_config,
+                    device_map="auto",
+                )
+            except Exception as e:
+                print(f"[LLM] bitsandbytes quantization disabled ({e}); fallback to {dtype}.")
+                model_obj = None
+
+        if device != "cuda" and quant_mode != "none":
+            print(
+                f"[LLM] Quantization request '{quant_mode}' ignored on {device}. "
+                "Priority policy: CUDA > MPS > CPU (no CPU quantization)."
+            )
+
+        # 그 외: 기본 로드
+        if model_obj is None:
+            model_obj = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                dtype=dtype,
+                trust_remote_code=True,
+                low_cpu_mem_usage=True,
+            )
+            quant_applied = "none"
+
+        # bnb 모델은 이미 device_map으로 배치됨
+        if quant_applied not in {"bnb-4bit", "bnb-8bit"}:
+            model_obj = model_obj.to(device)
+
         model_obj.eval()
 
-        loaded = {"tokenizer": tokenizer, "model": model_obj, "device": device}
+        loaded = {
+            "tokenizer": tokenizer,
+            "model": model_obj,
+            "device": device,
+            "quantization": quant_applied,
+        }
         _HF_MODEL_CACHE[model_id] = loaded
-        print(f"[LLM] Loaded Hugging Face model locally: {model_id} on {device}")
+        print(f"[LLM] Loaded Hugging Face model locally: {model_id} on {device} (quant={quant_applied})")
         return loaded
 
 
@@ -427,8 +480,8 @@ def _decompose_tasks(
 
     tasks: List[TaskItem] = []
 
-    if provider == "openai":
-        llm = _make_openai_llm(model=model_name, temperature=0)
+    if provider in {"openai", "vllm"}:
+        llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
         structured_llm = llm.with_structured_output(DecompositionResult, method="function_calling")
 
         # 1차 시도
@@ -499,9 +552,7 @@ def _task_priority(task_name: str) -> int:
         return 2
     if task_name == TaskType.ORDER_ACTION.value:
         return 3
-    if task_name == TaskType.FAQ_RETRIEVAL.value:
-        return 4
-    return 5
+    return 4
 
 
 def _build_task_summary(task_results: List[Dict[str, Any]]) -> str:
@@ -590,8 +641,8 @@ def _generate_worker_response(state: AgentState, task_results: List[Dict[str, An
     )
 
     try:
-        if provider == "openai":
-            llm = _make_openai_llm(model=model_name, temperature=0)
+        if provider in {"openai", "vllm"}:
+            llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
             response = llm.invoke([HumanMessage(content=prompt)])
         else:
             response = _hf_invoke([HumanMessage(content=prompt)], model_name, temperature=0)
@@ -643,15 +694,6 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
         query = args.get("query") or args.get("policy") or _get_last_user_message(state.get("messages", []))
         category = args.get("category", "취소/반품/교환")
         result = search_knowledge_base.invoke({"query": query, "category": category})
-        return {"task": task_name, "result": result}
-
-    if task_name == TaskType.FAQ_RETRIEVAL.value:
-        query = args.get("query") or _get_last_user_message(state.get("messages", []))
-        category = args.get("category")
-        payload = {"query": query}
-        if category:
-            payload["category"] = category
-        result = search_knowledge_base.invoke(payload)
         return {"task": task_name, "result": result}
 
     if task_name == TaskType.ORDER_ACTION.value:
@@ -714,12 +756,25 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
             }
             current_task_type = "cancel"
         elif action == "refund":
-            tool_name = "check_refund_eligibility"
-            tool_args = {
-                "order_id": order_id,
-                "user_id": user_id,
-                "reason": reason,
-            }
+            # 이미 환불 가능 여부를 확인한 후 재진입인 경우 → 주소 수집 단계로 진행
+            existing_task = state.get("current_task") or {}
+            already_checked = (
+                existing_task.get("type") == "refund"
+                and existing_task.get("target_id") == order_id
+                and isinstance(existing_task.get("missing_info"), list)
+                and "pickup_address" in existing_task.get("missing_info", [])
+            )
+
+            if already_checked:
+                tool_name = "open_address_search"
+                tool_args = {}
+            else:
+                tool_name = "check_refund_eligibility"
+                tool_args = {
+                    "order_id": order_id,
+                    "user_id": user_id,
+                    "reason": reason,
+                }
             current_task_type = "refund"
         elif action == "exchange":
             target_item = args.get("target_item") or args.get("product_name") or args.get("product_id")
@@ -790,18 +845,49 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
             tool_args = {}
             current_task_type = "general"
         elif action in {"address_selected", "save_address"}:
-            tool_name = "save_shipping_address_from_ui"
-            tool_args = {
-                "user_id": user_id,
-                "road_address": args.get("road_address"),
-                "jibun_address": args.get("jibun_address"),
-                "post_code": args.get("post_code"),
-                "detail_address": args.get("detail_address"),
-                "recipient_name": args.get("recipient_name"),
-                "phone": args.get("phone"),
-                "is_default": bool(args.get("is_default", False)),
-            }
-            current_task_type = "search"
+            # 진행 중인 환불/교환 작업이 있으면 주소를 해당 액션에 연결
+            existing_task = state.get("current_task") or {}
+            existing_type = existing_task.get("type")
+            target_order_id = existing_task.get("target_id")
+
+            pickup_address = args.get("road_address") or args.get("jibun_address") or ""
+            detail = args.get("detail_address")
+            if detail:
+                pickup_address = f"{pickup_address} {detail}"
+
+            if existing_type == "refund" and target_order_id:
+                tool_name = "register_return_request"
+                tool_args = {
+                    "order_id": target_order_id,
+                    "user_id": user_id,
+                    "pickup_address": pickup_address,
+                    "confirmed": True,
+                }
+                current_task_type = "refund"
+            elif existing_type == "exchange" and target_order_id:
+                tool_name = "register_exchange_request"
+                tool_args = {
+                    "order_id": target_order_id,
+                    "user_id": user_id,
+                    "reason": existing_task.get("reason", "고객 요청"),
+                    "pickup_address": pickup_address,
+                    "new_option_id": existing_task.get("new_option_id"),
+                    "confirmed": True,
+                }
+                current_task_type = "exchange"
+            else:
+                tool_name = "save_shipping_address_from_ui"
+                tool_args = {
+                    "user_id": user_id,
+                    "road_address": args.get("road_address"),
+                    "jibun_address": args.get("jibun_address"),
+                    "post_code": args.get("post_code"),
+                    "detail_address": args.get("detail_address"),
+                    "recipient_name": args.get("recipient_name"),
+                    "phone": args.get("phone"),
+                    "is_default": bool(args.get("is_default", False)),
+                }
+                current_task_type = "search"
 
         if not tool_name:
             return {
@@ -823,7 +909,7 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
                 "status": "validating",
                 "target_id": order_id,
                 "reason": reason,
-                "missing_info": None,
+                "missing_info": ["pickup_address"] if current_task_type == "refund" else None,
             },
         }
 
@@ -876,6 +962,10 @@ def decomposer_node(state: AgentState):
         payload = _extract_json_payload(user_message) or {}
         payload_action = _extract_action_from_json_payload(user_message)
         selected_order_id = payload.get("order_id") or payload.get("selected_order_id") or _extract_order_id_from_text(user_message)
+
+        # target_id 폴백: 사용자 메시지에 order_id가 없으면 current_task에서 복구
+        if not selected_order_id:
+            selected_order_id = current_task.get("target_id")
 
         resume_args: Dict[str, Any] = {
             "action": payload_action or task_type,
@@ -957,7 +1047,7 @@ def fixed_worker_node(state: AgentState):
     """
     고정 실행 전략:
     - ORDER_QUERY / ORDER_ACTION 등은 순차 실행
-    - Retrieval 계열(POLICY_CHECK/FAQ_RETRIEVAL)은 항상 병렬 실행
+    - Retrieval 계열(POLICY_CHECK)은 항상 병렬 실행
     """
     print("---FIXED WORKER NODE---")
     task_list = state.get("task_list", [])
@@ -971,7 +1061,7 @@ def fixed_worker_node(state: AgentState):
         msg = "처리할 실행 가능한 작업이 없습니다."
         return {"task_results": [], "messages": [AIMessage(content=msg)], "generation": msg}
 
-    retrieval_task_names = {TaskType.POLICY_CHECK.value, TaskType.FAQ_RETRIEVAL.value}
+    retrieval_task_names = {TaskType.POLICY_CHECK.value}
     sequential_tasks = sorted(
         [t for t in executable_tasks if str(t.get("task", "")) not in retrieval_task_names],
         key=lambda t: _task_priority(str(t.get("task", ""))),
@@ -1050,11 +1140,35 @@ def route_after_workers(state: AgentState) -> Literal["validation", "process_out
 
 
 def _make_openai_llm(model: str, temperature: float = 0) -> ChatOpenAI:
+    if not settings.OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY is required when provider is 'openai'.")
+
     return ChatOpenAI(
         model=model,
         temperature=temperature,
         api_key=SecretStr(settings.OPENAI_API_KEY),
     )
+
+
+def _make_vllm_llm(model: str, temperature: float = 0) -> ChatOpenAI:
+    base_url = (settings.VLLM_BASE_URL or "").strip()
+    if not base_url:
+        raise ValueError("VLLM_BASE_URL is required when provider is 'vllm'.")
+
+    return ChatOpenAI(
+        model=model,
+        temperature=temperature,
+        api_key=SecretStr(settings.VLLM_API_KEY or "EMPTY"),
+        base_url=base_url,
+    )
+
+
+def _make_chat_llm(provider: str, model: str, temperature: float = 0) -> ChatOpenAI:
+    if provider == "openai":
+        return _make_openai_llm(model=model, temperature=temperature)
+    if provider == "vllm":
+        return _make_vllm_llm(model=model, temperature=temperature)
+    raise ValueError(f"Unsupported chat llm provider for ChatOpenAI path: {provider}")
 
 
 def _estimate_tokens(messages: List) -> int:
@@ -1120,8 +1234,8 @@ def _summarize_messages(messages: List, provider: str, model_name: str) -> str |
     context_summary_system_prompt = get_context_summary_system_prompt(provider=provider, model_name=model_name)
 
     try:
-        if provider == "openai":
-            summary_llm = _make_openai_llm(model=model_name or SUMMARY_MODEL, temperature=0)
+        if provider in {"openai", "vllm"}:
+            summary_llm = _make_chat_llm(provider=provider, model=model_name or SUMMARY_MODEL, temperature=0)
             response = summary_llm.invoke([
                 SystemMessage(content=context_summary_system_prompt),
                 HumanMessage(content=transcript[:12000]),
@@ -1191,13 +1305,13 @@ def agent_node(state: AgentState):
     system_msg = SystemMessage(content=final_prompt)
     current_messages = [system_msg] + messages
     
-    if provider == "openai":
-        llm = _make_openai_llm(model=model_name, temperature=0)
+    if provider in {"openai", "vllm"}:
+        llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
         llm_with_tools = llm.bind_tools(TOOLS)
         response = llm_with_tools.invoke(current_messages)
     else:
         # Hugging Face 로컬 모델 경로에서는 우선 일반 답변 생성으로 동작
-        # (함수 호출 기반 Tool Calling은 OpenAI provider에서 사용)
+        # (함수 호출 기반 Tool Calling은 OpenAI/vLLM provider에서 사용)
         response = _hf_invoke(current_messages, model_name, temperature=0)
     
     return {"messages": [response]}
@@ -1415,8 +1529,8 @@ def human_approval_node(state: AgentState):
                 tool_args=sensitive_calls[0].get("args"),
             )
 
-            if provider == "openai":
-                approval_llm = _make_openai_llm(model=model_name, temperature=0)
+            if provider in {"openai", "vllm"}:
+                approval_llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
                 response = approval_llm.invoke([HumanMessage(content=prompt)])
             else:
                 response = _hf_invoke([HumanMessage(content=prompt)], model_name, temperature=0)
