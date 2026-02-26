@@ -35,12 +35,12 @@ from ecommerce.chatbot.src.tools.order_tools import (
     check_refund_eligibility,
     check_exchange_eligibility,
     register_return_request,
-    register_exchange_request
+    register_exchange_request,
 )
 from ecommerce.chatbot.src.tools.service_tools import (
     get_reviews,
     create_review,
-    register_gift_card
+    register_gift_card,
 )
 from ecommerce.chatbot.src.tools.retrieval_tools import search_knowledge_base
 from ecommerce.chatbot.src.tools.address_tools import (
@@ -50,29 +50,29 @@ from ecommerce.chatbot.src.tools.address_tools import (
 
 # Define Tool List
 TOOLS = [
-        get_order_details,
-        get_shipping_details,
-        update_payment_method,
-        change_product_option,
-        cancel_order,
-        check_refund_eligibility,
-        check_exchange_eligibility,
-        register_return_request,
-        register_exchange_request,
-        get_reviews,
-        create_review,
-        register_gift_card,
-        search_knowledge_base,
-        open_address_search,
-        save_shipping_address_from_ui,
+    get_order_details,
+    get_shipping_details,
+    update_payment_method,
+    change_product_option,
+    cancel_order,
+    check_refund_eligibility,
+    check_exchange_eligibility,
+    register_return_request,
+    register_exchange_request,
+    get_reviews,
+    create_review,
+    register_gift_card,
+    search_knowledge_base,
+    open_address_search,
+    save_shipping_address_from_ui,
 ]
 
 # Sensitive Tools requiring Human Approval
 SENSITIVE_TOOLS = {
-    "cancel_order", 
-    "register_return_request", 
-    "register_exchange_request", 
-    "update_payment_method"
+    "cancel_order",
+    "register_return_request",
+    "register_exchange_request",
+    "update_payment_method",
 }
 
 ORDER_ID_REQUIRED_TOOLS = {
@@ -106,7 +106,7 @@ class TaskType(str, Enum):
 class TaskItem(BaseModel):
     task: TaskType
     args: Dict[str, Any] = Field(default_factory=dict)
-    
+
     class Config:
         extra = "forbid"
 
@@ -279,7 +279,9 @@ def _resolve_provider(provider: Optional[str]) -> str:
     return fallback if fallback in SUPPORTED_PROVIDERS else DEFAULT_PROVIDER
 
 
-def _resolve_llm_config(state: Optional[AgentState], preferred_model: Optional[str] = None) -> tuple[str, str]:
+def _resolve_llm_config(
+    state: Optional[AgentState], preferred_model: Optional[str] = None
+) -> tuple[str, str]:
     provider_from_state = state.get("llm_provider") if isinstance(state, dict) else None
     provider = _resolve_provider(provider_from_state)
 
@@ -326,7 +328,9 @@ def _load_hf_model(model_id: str) -> Dict[str, Any]:
         if cached:
             return cached
 
-        quant_mode = (getattr(settings, "HF_QUANTIZATION", "auto") or "auto").strip().lower()
+        quant_mode = (
+            (getattr(settings, "HF_QUANTIZATION", "auto") or "auto").strip().lower()
+        )
 
         if torch.cuda.is_available():
             device = "cuda"
@@ -367,7 +371,9 @@ def _load_hf_model(model_id: str) -> Dict[str, Any]:
                     device_map="auto",
                 )
             except Exception as e:
-                print(f"[LLM] bitsandbytes quantization disabled ({e}); fallback to {dtype}.")
+                print(
+                    f"[LLM] bitsandbytes quantization disabled ({e}); fallback to {dtype}."
+                )
                 model_obj = None
 
         if device != "cuda" and quant_mode != "none":
@@ -399,7 +405,9 @@ def _load_hf_model(model_id: str) -> Dict[str, Any]:
             "quantization": quant_applied,
         }
         _HF_MODEL_CACHE[model_id] = loaded
-        print(f"[LLM] Loaded Hugging Face model locally: {model_id} on {device} (quant={quant_applied})")
+        print(
+            f"[LLM] Loaded Hugging Face model locally: {model_id} on {device} (quant={quant_applied})"
+        )
         return loaded
 
 
@@ -425,9 +433,14 @@ def _hf_invoke(messages: List, model_id: str, temperature: float = 0) -> AIMessa
         chat_messages.append({"role": role, "content": content})
 
     if hasattr(tokenizer, "apply_chat_template"):
-        prompt = tokenizer.apply_chat_template(chat_messages, tokenize=False, add_generation_prompt=True)
+        prompt = tokenizer.apply_chat_template(
+            chat_messages, tokenize=False, add_generation_prompt=True
+        )
     else:
-        prompt = "\n".join(f"{m['role']}: {m['content']}" for m in chat_messages) + "\nassistant:"
+        prompt = (
+            "\n".join(f"{m['role']}: {m['content']}" for m in chat_messages)
+            + "\nassistant:"
+        )
 
     inputs = tokenizer(prompt, return_tensors="pt")
     input_ids = inputs["input_ids"].to(device)
@@ -463,7 +476,9 @@ def _decompose_tasks(
 ) -> List[Dict[str, Any]]:
     provider, model_name = _resolve_llm_config(state)
     decomposer_prompt = get_decomposer_prompt(provider=provider, model_name=model_name)
-    hf_decomposer_prompt_template = get_hf_decomposer_prompt_template(provider=provider, model_name=model_name)
+    hf_decomposer_prompt_template = get_hf_decomposer_prompt_template(
+        provider=provider, model_name=model_name
+    )
 
     conversation_context = _build_decomposer_context(messages)
     task_context = ""
@@ -482,13 +497,17 @@ def _decompose_tasks(
 
     if provider in {"openai", "vllm"}:
         llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
-        structured_llm = llm.with_structured_output(DecompositionResult, method="function_calling")
+        structured_llm = llm.with_structured_output(
+            DecompositionResult, method="function_calling"
+        )
 
         # 1차 시도
-        parsed = structured_llm.invoke([
-            SystemMessage(content=decomposer_prompt),
-            HumanMessage(content=decomposer_input),
-        ])
+        parsed = structured_llm.invoke(
+            [
+                SystemMessage(content=decomposer_prompt),
+                HumanMessage(content=decomposer_input),
+            ]
+        )
         tasks = parsed.tasks if isinstance(parsed, DecompositionResult) else []
 
         # 2차 재시도 (실패/빈 배열 방어)
@@ -497,10 +516,12 @@ def _decompose_tasks(
                 "이전 응답이 비어 있었습니다. 반드시 tasks 배열에 최소 1개 이상 넣어 반환하세요.\n"
                 f"사용자 요청: {decomposer_input[:4000]}"
             )
-            parsed = structured_llm.invoke([
-                SystemMessage(content=decomposer_prompt),
-                HumanMessage(content=retry_msg),
-            ])
+            parsed = structured_llm.invoke(
+                [
+                    SystemMessage(content=decomposer_prompt),
+                    HumanMessage(content=retry_msg),
+                ]
+            )
             tasks = parsed.tasks if isinstance(parsed, DecompositionResult) else []
     else:
         hf_prompt = hf_decomposer_prompt_template.format(
@@ -508,9 +529,13 @@ def _decompose_tasks(
             decomposer_input=decomposer_input,
         )
 
-        raw = _hf_invoke([HumanMessage(content=hf_prompt)], model_name, temperature=0).content
+        raw = _hf_invoke(
+            [HumanMessage(content=hf_prompt)], model_name, temperature=0
+        ).content
         parsed_obj = _extract_json_object(raw if isinstance(raw, str) else "") or {}
-        task_candidates = parsed_obj.get("tasks") if isinstance(parsed_obj, dict) else None
+        task_candidates = (
+            parsed_obj.get("tasks") if isinstance(parsed_obj, dict) else None
+        )
 
         if isinstance(task_candidates, list):
             for item in task_candidates:
@@ -519,7 +544,10 @@ def _decompose_tasks(
                 task_name = item.get("task")
                 raw_args = item.get("args")
                 args: Dict[str, Any] = raw_args if isinstance(raw_args, dict) else {}
-                if isinstance(task_name, str) and task_name in TaskType._value2member_map_:
+                if (
+                    isinstance(task_name, str)
+                    and task_name in TaskType._value2member_map_
+                ):
                     tasks.append(TaskItem(task=TaskType(task_name), args=args))
 
     if not tasks:
@@ -572,7 +600,9 @@ def _build_task_summary(task_results: List[Dict[str, Any]]) -> str:
                 lines.append(f"{idx}. [{task_name}] {result['message']}")
                 continue
             if result.get("documents"):
-                lines.append(f"{idx}. [{task_name}] 관련 정보를 찾았습니다. ({len(result['documents'])}건)")
+                lines.append(
+                    f"{idx}. [{task_name}] 관련 정보를 찾았습니다. ({len(result['documents'])}건)"
+                )
                 continue
 
         lines.append(f"{idx}. [{task_name}] 처리 완료")
@@ -605,7 +635,9 @@ def _build_tool_context_summary(task_results: List[Dict[str, Any]]) -> str:
                 lines.append(f"{idx}. [{task_name}] {result['message']}")
                 continue
             if result.get("documents"):
-                lines.append(f"{idx}. [{task_name}] 문서 {len(result['documents'])}건 검색")
+                lines.append(
+                    f"{idx}. [{task_name}] 문서 {len(result['documents'])}건 검색"
+                )
                 continue
 
         lines.append(f"{idx}. [{task_name}] 처리 완료")
@@ -613,7 +645,9 @@ def _build_tool_context_summary(task_results: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _generate_worker_response(state: AgentState, task_results: List[Dict[str, Any]]) -> str:
+def _generate_worker_response(
+    state: AgentState, task_results: List[Dict[str, Any]]
+) -> str:
     """
     Worker에서 수집한 task_results를 기반으로 사용자에게 보여줄 최종 답변을 생성합니다.
     - 검색 문서가 있으면 LLM으로 문서 기반 답변 생성
@@ -626,12 +660,18 @@ def _generate_worker_response(state: AgentState, task_results: List[Dict[str, An
     if not docs:
         return summary
 
-    user_question = state.get("question") or _get_last_user_message(state.get("messages", []))
-    context_text = "\n".join(f"{idx+1}. {doc}" for idx, doc in enumerate(docs[:8]))
+    user_question = state.get("question") or _get_last_user_message(
+        state.get("messages", [])
+    )
+    context_text = "\n".join(f"{idx + 1}. {doc}" for idx, doc in enumerate(docs[:8]))
     tool_context = _build_tool_context_summary(task_results)
     provider, model_name = _resolve_llm_config(state)
-    system_prompt = get_ecommerce_system_prompt(provider=provider, model_name=model_name)
-    worker_response_prompt_template = get_worker_response_prompt_template(provider=provider, model_name=model_name)
+    system_prompt = get_ecommerce_system_prompt(
+        provider=provider, model_name=model_name
+    )
+    worker_response_prompt_template = get_worker_response_prompt_template(
+        provider=provider, model_name=model_name
+    )
 
     prompt = worker_response_prompt_template.format(
         system_prompt=system_prompt,
@@ -645,7 +685,9 @@ def _generate_worker_response(state: AgentState, task_results: List[Dict[str, An
             llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
             response = llm.invoke([HumanMessage(content=prompt)])
         else:
-            response = _hf_invoke([HumanMessage(content=prompt)], model_name, temperature=0)
+            response = _hf_invoke(
+                [HumanMessage(content=prompt)], model_name, temperature=0
+            )
 
         if isinstance(response.content, str) and response.content.strip():
             return response.content.strip()
@@ -662,23 +704,25 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
 
     if task_name == TaskType.ORDER_QUERY.value:
         order_id = args.get("order_id")
-        
+
         # [Contextual Tool Selection] order_id가 없으면 이전 컨텍스트에서 가져옴
         if not order_id and state.get("current_task"):
             order_id = state["current_task"].get("target_id")
-            
+
         if order_id:
-            result = get_order_details.invoke({"order_id": order_id, "user_id": user_id})
+            result = get_order_details.invoke(
+                {"order_id": order_id, "user_id": user_id}
+            )
             return {
-                "task": task_name, 
+                "task": task_name,
                 "result": result,
                 "current_task": {
                     "type": "general",
                     "status": "completed",
                     "target_id": order_id,
                     "reason": None,
-                    "missing_info": None
-                }
+                    "missing_info": None,
+                },
             }
         else:
             result = get_user_orders.invoke(
@@ -691,14 +735,18 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
         return {"task": task_name, "result": result}
 
     if task_name == TaskType.POLICY_CHECK.value:
-        query = args.get("query") or args.get("policy") or _get_last_user_message(state.get("messages", []))
+        query = (
+            args.get("query")
+            or args.get("policy")
+            or _get_last_user_message(state.get("messages", []))
+        )
         category = args.get("category", "취소/반품/교환")
         result = search_knowledge_base.invoke({"query": query, "category": category})
         return {"task": task_name, "result": result}
 
     if task_name == TaskType.ORDER_ACTION.value:
         action = str(args.get("action", "")).lower()
-        
+
         # 한글 액션명을 영어로 정규화
         action_map = {
             "취소": "cancel",
@@ -713,13 +761,13 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
             "수거지": "address_search",
         }
         action = action_map.get(action, action)
-        
+
         order_id = args.get("order_id")
-        
+
         # [Contextual Tool Selection] order_id가 없으면 이전 컨텍스트에서 가져옴
         if not order_id and state.get("current_task"):
             order_id = state["current_task"].get("target_id")
-            
+
         reason = args.get("reason", "고객 요청")
 
         if action in {"cancel", "refund", "exchange"} and not order_id:
@@ -734,7 +782,9 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
                 "task": task_name,
                 "result": result,
                 "current_task": {
-                    "type": action if action in {"cancel", "refund", "exchange"} else "general",
+                    "type": action
+                    if action in {"cancel", "refund", "exchange"}
+                    else "general",
                     "status": "validating",
                     "target_id": None,
                     "reason": reason,
@@ -756,18 +806,21 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
             }
             current_task_type = "cancel"
         elif action == "refund":
-            # 이미 환불 가능 여부를 확인한 후 재진입인 경우 → 주소 수집 단계로 진행
+            # 이미 환불 가능 여부를 확인한 후 재진입인 경우 → 바로 반품 접수 진행
             existing_task = state.get("current_task") or {}
             already_checked = (
                 existing_task.get("type") == "refund"
                 and existing_task.get("target_id") == order_id
-                and isinstance(existing_task.get("missing_info"), list)
-                and "pickup_address" in existing_task.get("missing_info", [])
+                and existing_task.get("status") in ("validating", "approving")
             )
 
             if already_checked:
-                tool_name = "open_address_search"
-                tool_args = {}
+                tool_name = "register_return_request"
+                tool_args = {
+                    "order_id": order_id,
+                    "user_id": user_id,
+                    "confirmed": True,
+                }
             else:
                 tool_name = "check_refund_eligibility"
                 tool_args = {
@@ -777,14 +830,20 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
                 }
             current_task_type = "refund"
         elif action == "exchange":
-            target_item = args.get("target_item") or args.get("product_name") or args.get("product_id")
+            target_item = (
+                args.get("target_item")
+                or args.get("product_name")
+                or args.get("product_id")
+            )
             desired_option_text = (
                 args.get("desired_option")
                 or args.get("desired_color")
                 or args.get("desired_size")
                 or args.get("site_option")
             )
-            has_option_input = (args.get("new_option_id") is not None) or bool(desired_option_text)
+            has_option_input = (args.get("new_option_id") is not None) or bool(
+                desired_option_text
+            )
 
             missing_info: List[str] = []
             if not target_item:
@@ -801,7 +860,7 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
                             "교환 진행을 위해 추가 정보가 필요합니다.\n"
                             "- 교환할 상품(target_item)\n"
                             "- 변경할 옵션(desired_option 또는 new_option_id)\n"
-                            "예: {\"event\":\"exchange_detail\",\"order_id\":\"ORD-...\",\"target_item\":\"셔츠\",\"desired_option\":\"블랙 L\"}"
+                            '예: {"event":"exchange_detail","order_id":"ORD-...","target_item":"셔츠","desired_option":"블랙 L"}'
                         )
                     },
                     "current_task": {
@@ -892,7 +951,9 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
         if not tool_name:
             return {
                 "task": task_name,
-                "result": {"error": f"지원하지 않는 ORDER_ACTION 입니다: {action or 'unknown'}"},
+                "result": {
+                    "error": f"지원하지 않는 ORDER_ACTION 입니다: {action or 'unknown'}"
+                },
             }
 
         return {
@@ -909,11 +970,14 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
                 "status": "validating",
                 "target_id": order_id,
                 "reason": reason,
-                "missing_info": ["pickup_address"] if current_task_type == "refund" else None,
+                "missing_info": None,
             },
         }
 
-    return {"task": TaskType.GENERAL_CHAT.value, "result": {"message": "일반 대화로 처리합니다."}}
+    return {
+        "task": TaskType.GENERAL_CHAT.value,
+        "result": {"message": "일반 대화로 처리합니다."},
+    }
 
 
 def decomposer_node(state: AgentState):
@@ -931,7 +995,10 @@ def decomposer_node(state: AgentState):
 
     # 주소 UI 선택 이벤트는 LLM 분해 없이 deterministic 처리
     incoming_payload = _extract_json_payload(user_message)
-    if isinstance(incoming_payload, dict) and incoming_payload.get("event") == "address_selected":
+    if (
+        isinstance(incoming_payload, dict)
+        and incoming_payload.get("event") == "address_selected"
+    ):
         return {
             "question": user_message,
             "task_list": [
@@ -947,7 +1014,9 @@ def decomposer_node(state: AgentState):
     # decomposition을 다시 하지 않고 바로 ORDER_ACTION으로 복구합니다.
     current_task = state.get("current_task") or {}
     task_type = current_task.get("type") if isinstance(current_task, dict) else None
-    missing_info = current_task.get("missing_info") if isinstance(current_task, dict) else None
+    missing_info = (
+        current_task.get("missing_info") if isinstance(current_task, dict) else None
+    )
     status = current_task.get("status") if isinstance(current_task, dict) else None
 
     should_resume_order_action = (
@@ -961,7 +1030,11 @@ def decomposer_node(state: AgentState):
     if should_resume_order_action:
         payload = _extract_json_payload(user_message) or {}
         payload_action = _extract_action_from_json_payload(user_message)
-        selected_order_id = payload.get("order_id") or payload.get("selected_order_id") or _extract_order_id_from_text(user_message)
+        selected_order_id = (
+            payload.get("order_id")
+            or payload.get("selected_order_id")
+            or _extract_order_id_from_text(user_message)
+        )
 
         # target_id 폴백: 사용자 메시지에 order_id가 없으면 current_task에서 복구
         if not selected_order_id:
@@ -1037,7 +1110,8 @@ def route_after_decomposer(state: AgentState) -> Literal["fixed_worker", "agent"
         return "agent"
 
     executable_tasks = [
-        task for task in task_list
+        task
+        for task in task_list
         if str(task.get("task", "")) != TaskType.GENERAL_CHAT.value
     ]
     return "fixed_worker" if executable_tasks else "agent"
@@ -1053,22 +1127,30 @@ def fixed_worker_node(state: AgentState):
     task_list = state.get("task_list", [])
 
     executable_tasks = [
-        task for task in task_list
+        task
+        for task in task_list
         if str(task.get("task", "")) != TaskType.GENERAL_CHAT.value
     ]
 
     if not executable_tasks:
         msg = "처리할 실행 가능한 작업이 없습니다."
-        return {"task_results": [], "messages": [AIMessage(content=msg)], "generation": msg}
+        return {
+            "task_results": [],
+            "messages": [AIMessage(content=msg)],
+            "generation": msg,
+        }
 
     retrieval_task_names = {TaskType.POLICY_CHECK.value}
     sequential_tasks = sorted(
-        [t for t in executable_tasks if str(t.get("task", "")) not in retrieval_task_names],
+        [
+            t
+            for t in executable_tasks
+            if str(t.get("task", "")) not in retrieval_task_names
+        ],
         key=lambda t: _task_priority(str(t.get("task", ""))),
     )
     retrieval_tasks = [
-        t for t in executable_tasks
-        if str(t.get("task", "")) in retrieval_task_names
+        t for t in executable_tasks if str(t.get("task", "")) in retrieval_task_names
     ]
 
     task_results: List[Dict[str, Any]] = []
@@ -1090,7 +1172,10 @@ def fixed_worker_node(state: AgentState):
     if retrieval_tasks:
         max_workers = min(4, max(1, len(retrieval_tasks)))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_map = {executor.submit(_execute_single_task, task, state): task for task in retrieval_tasks}
+            future_map = {
+                executor.submit(_execute_single_task, task, state): task
+                for task in retrieval_tasks
+            }
             for future in as_completed(future_map):
                 try:
                     executed = future.result()
@@ -1216,7 +1301,9 @@ def _clear_old_turns(messages: List, keep_recent_turns: int) -> List:
             elif isinstance(msg, AIMessage):
                 cleared_messages.append(AIMessage(content="[cleared]"))
             elif isinstance(msg, ToolMessage):
-                cleared_messages.append(ToolMessage(content="[cleared]", tool_call_id=msg.tool_call_id))
+                cleared_messages.append(
+                    ToolMessage(content="[cleared]", tool_call_id=msg.tool_call_id)
+                )
 
     recent_messages = [msg for turn in recent_turns for msg in turn]
     return cleared_messages + recent_messages
@@ -1228,18 +1315,23 @@ def _summarize_messages(messages: List, provider: str, model_name: str) -> str |
         return None
 
     transcript = "\n".join(
-        f"{type(m).__name__}: {str(getattr(m, 'content', ''))[:300]}"
-        for m in messages
+        f"{type(m).__name__}: {str(getattr(m, 'content', ''))[:300]}" for m in messages
     )
-    context_summary_system_prompt = get_context_summary_system_prompt(provider=provider, model_name=model_name)
+    context_summary_system_prompt = get_context_summary_system_prompt(
+        provider=provider, model_name=model_name
+    )
 
     try:
         if provider in {"openai", "vllm"}:
-            summary_llm = _make_chat_llm(provider=provider, model=model_name or SUMMARY_MODEL, temperature=0)
-            response = summary_llm.invoke([
-                SystemMessage(content=context_summary_system_prompt),
-                HumanMessage(content=transcript[:12000]),
-            ])
+            summary_llm = _make_chat_llm(
+                provider=provider, model=model_name or SUMMARY_MODEL, temperature=0
+            )
+            response = summary_llm.invoke(
+                [
+                    SystemMessage(content=context_summary_system_prompt),
+                    HumanMessage(content=transcript[:12000]),
+                ]
+            )
             return response.content if isinstance(response.content, str) else None
 
         response = _hf_invoke(
@@ -1256,7 +1348,9 @@ def _summarize_messages(messages: List, provider: str, model_name: str) -> str |
         return None
 
 
-def _compress_messages_for_context(messages: List, provider: str, model_name: str) -> List:
+def _compress_messages_for_context(
+    messages: List, provider: str, model_name: str
+) -> List:
     """토큰 초과 시: 전체 요약 + 최근 3턴 제외 cleared"""
     token_count = _estimate_tokens(messages)
     if token_count <= MAX_HISTORY_TOKENS:
@@ -1270,25 +1364,32 @@ def _compress_messages_for_context(messages: List, provider: str, model_name: st
         return [HumanMessage(content=f"[conversation_summary]\n{summary}")] + cleared
     return cleared
 
+
 def agent_node(state: AgentState):
     """
     LLM이 대화 히스토리와 도구 목록을 보고 답변하거나 도구를 호출합니다.
     """
     print("---AGENT NODE---")
     provider, model_name = _resolve_llm_config(state)
-    system_prompt = get_ecommerce_system_prompt(provider=provider, model_name=model_name)
-    tool_usage_instructions = get_tool_usage_instructions(provider=provider, model_name=model_name)
-    
+    system_prompt = get_ecommerce_system_prompt(
+        provider=provider, model_name=model_name
+    )
+    tool_usage_instructions = get_tool_usage_instructions(
+        provider=provider, model_name=model_name
+    )
+
     # 1. 메시지 준비
     messages = state["messages"]
     messages = _compress_messages_for_context(messages, provider, model_name)
-    
+
     # 2. 시스템 프롬프트 준비
     # 매 턴마다 시스템 프롬프트를 컨텍스트로 주입 (state에 저장하지 않음)
     user_context = ""
     if state.get("user_info"):
-            user_context += f"User Info: {json.dumps(state['user_info'], ensure_ascii=False)}\n"
-    
+        user_context += (
+            f"User Info: {json.dumps(state['user_info'], ensure_ascii=False)}\n"
+        )
+
     # [Context Injection] Prior Action (이전 의도 주입)
     prior_action = state.get("prior_action")
     if not prior_action:
@@ -1304,7 +1405,7 @@ def agent_node(state: AgentState):
     final_prompt = system_prompt + user_context + tool_usage_instructions
     system_msg = SystemMessage(content=final_prompt)
     current_messages = [system_msg] + messages
-    
+
     if provider in {"openai", "vllm"}:
         llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
         llm_with_tools = llm.bind_tools(TOOLS)
@@ -1313,7 +1414,7 @@ def agent_node(state: AgentState):
         # Hugging Face 로컬 모델 경로에서는 우선 일반 답변 생성으로 동작
         # (함수 호출 기반 Tool Calling은 OpenAI/vLLM provider에서 사용)
         response = _hf_invoke(current_messages, model_name, temperature=0)
-    
+
     return {"messages": [response]}
 
 
@@ -1323,31 +1424,33 @@ def should_continue(state: AgentState) -> Literal["tools", "end"]:
     """
     messages = state["messages"]
     last_message = messages[-1]
-    
+
     # ToolCall이 있는 경우
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         print(f"---DECISION: CALL TOOL ({len(last_message.tool_calls)})---")
         return "tools"
-    
+
     # 일반 답변인 경우
     print("---DECISION: END---")
     return "end"
 
 
-def route_after_validation(state: AgentState) -> Literal["tools", "human_approval", "end"]:
+def route_after_validation(
+    state: AgentState,
+) -> Literal["tools", "human_approval", "end"]:
     """
     [Smart Validation] 이후의 경로를 결정합니다.
     Smart Validation에 의해 Tool Call이 변경되었을 수 있으므로 다시 검사합니다.
     """
     messages = state["messages"]
     last_message = messages[-1]
-    
+
     if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
         return "end"
-        
+
     # 1. TaskContext 확인
     current_task = state.get("current_task")
-    
+
     # 이미 승인된 상태라면 바로 도구 실행
     if current_task and current_task.get("status") == "executing":
         return "tools"
@@ -1356,7 +1459,7 @@ def route_after_validation(state: AgentState) -> Literal["tools", "human_approva
     for tool_call in last_message.tool_calls:
         if tool_call["name"] in SENSITIVE_TOOLS:
             return "human_approval"
-            
+
     return "tools"
 
 
@@ -1369,14 +1472,13 @@ def smart_validation_node(state: AgentState):
     print("---SMART VALIDATION NODE---")
     messages = state["messages"]
     last_message = messages[-1]
-    
+
     if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
-        return {} # 변경 없음
-        
-    
+        return {}  # 변경 없음
+
     new_tool_calls = []
     has_changes = False
-    
+
     # Init TaskContext if needed
     current_task = state.get("current_task")
     if not current_task:
@@ -1385,30 +1487,36 @@ def smart_validation_node(state: AgentState):
             "status": "idle",
             "target_id": None,
             "reason": None,
-            "missing_info": []
+            "missing_info": [],
         }
-    
+
     # Extract user_id from user_info (default to 1 if missing)
     user_info = state.get("user_info", {})
     user_id = user_info.get("id", 1)
-    
+
     for tool_call in last_message.tool_calls:
         tool_name = tool_call["name"]
         args = tool_call["args"]
-        
+
         # 1. 환불/반품/취소/교환 시 order_id 누락 체크
         if tool_name in ORDER_ID_REQUIRED_TOOLS:
             order_id = args.get("order_id")
             # order_id가 없거나, "ORD-" 형식이 아니거나, 빈 문자열인 경우
             if not order_id or "ORD-" not in str(order_id):
-                print(f"[Validation] Missing/Invalid order_id for {tool_name}. Redirecting to get_user_orders.")
+                print(
+                    f"[Validation] Missing/Invalid order_id for {tool_name}. Redirecting to get_user_orders."
+                )
                 # 대체 도구 호출 생성: get_user_orders(requires_selection=True)
-                new_tool_calls.append({
-                    "id": tool_call["id"], # Keep ID to maintain message consistency if possible, or new ID
-                    "name": "get_user_orders",
-                    "args": {"requires_selection": True, "user_id": user_id},
-                    "type": "tool_call" # Standard key
-                })
+                new_tool_calls.append(
+                    {
+                        "id": tool_call[
+                            "id"
+                        ],  # Keep ID to maintain message consistency if possible, or new ID
+                        "name": "get_user_orders",
+                        "args": {"requires_selection": True, "user_id": user_id},
+                        "type": "tool_call",  # Standard key
+                    }
+                )
                 # 원래 의도 저장 (e.g., 'refund')
                 # tool_name을 간단한 action name으로 매핑
                 task_type = "general"
@@ -1417,8 +1525,10 @@ def smart_validation_node(state: AgentState):
                 elif tool_name == "register_exchange_request":
                     task_type = "exchange"
                 else:
-                    task_type = "refund"  # check_refund_eligibility, register_return_request 등
-                
+                    task_type = (
+                        "refund"  # check_refund_eligibility, register_return_request 등
+                    )
+
                 # Update TaskContext
                 current_task["type"] = task_type
                 current_task["status"] = "validating"
@@ -1426,23 +1536,29 @@ def smart_validation_node(state: AgentState):
 
                 has_changes = True
                 continue
-        
+
         # 2. get_user_orders 호출 시 action_context 캡처 및 보정
         if tool_name == "get_user_orders":
             action_context = args.get("action_context")
-            
+
             # [Fallback] LLM이 action_context를 누락한 경우, 사용자 메시지에서 추론
             if not action_context and hasattr(last_message, "content"):
-                content = last_message.content if isinstance(last_message.content, str) else ""
+                content = (
+                    last_message.content
+                    if isinstance(last_message.content, str)
+                    else ""
+                )
                 if "환불" in content or "반품" in content:
                     action_context = "refund"
                 elif "취소" in content:
                     action_context = "cancel"
                 elif "교환" in content:
                     action_context = "exchange"
-                
+
                 if action_context:
-                    print(f"[Validation] Inferred missing action_context: {action_context}")
+                    print(
+                        f"[Validation] Inferred missing action_context: {action_context}"
+                    )
                     # 도구 호출 인자에도 주입해주면 좋음 (UI 메시지 생성을 위해)
                     args["action_context"] = action_context
                     has_changes = True
@@ -1451,32 +1567,28 @@ def smart_validation_node(state: AgentState):
                 print(f"[Validation] Capturing action_context: {action_context}")
                 current_task["type"] = action_context
                 current_task["status"] = "validating"
-                has_changes = True # Flag to update state
-
+                has_changes = True  # Flag to update state
 
         # 기본: 변경 없이 유지 (args가 수정되었을 수 있음)
-        new_tool_calls.append({
-            "id": tool_call["id"],
-            "name": tool_name,
-            "args": args,
-            "type": tool_call.get("type", "tool_call")
-        })
-    
+        new_tool_calls.append(
+            {
+                "id": tool_call["id"],
+                "name": tool_name,
+                "args": args,
+                "type": tool_call.get("type", "tool_call"),
+            }
+        )
+
     if has_changes:
         # 메시지 갱신 (ID 유지를 위해 속성 변경 후 반환)
         # LangGraph에서는 동일 ID의 메시지를 반환하면 덮어쓰기(Upsert)가 됨
         updated_message = AIMessage(
-            content=last_message.content,
-            tool_calls=new_tool_calls,
-            id=last_message.id 
+            content=last_message.content, tool_calls=new_tool_calls, id=last_message.id
         )
         # TaskContext도 state에 저장하여 UI 및 다음 턴 Agent가 알 수 있게 함
-        return {
-            "messages": [updated_message],
-            "current_task": current_task
-        }
-    
-    return {} # 변경 없음
+        return {"messages": [updated_message], "current_task": current_task}
+
+    return {}  # 변경 없음
 
 
 def human_approval_node(state: AgentState):
@@ -1487,42 +1599,43 @@ def human_approval_node(state: AgentState):
     print("---HUMAN APPROVAL NODE---")
     messages = state["messages"]
     last_message = messages[-1]
-    
+
     # 이미 승인된 상태라면 통과
     current_task = state.get("current_task")
     if current_task and current_task.get("status") == "executing":
         print("---APPROVAL: ALREADY APPROVED---")
         return {}
-        
+
     # 민감한 도구가 포함되어 있는지 확인
     sensitive_calls = [
-        tc for tc in last_message.tool_calls 
-        if tc["name"] in SENSITIVE_TOOLS
+        tc for tc in last_message.tool_calls if tc["name"] in SENSITIVE_TOOLS
     ]
-    
+
     if not sensitive_calls:
         return {}
-        
+
     # [Infinite Loop Prevention & Context Awareness]
-    # 1. 사용자가 이미 승인("응", "진행해")했거나, 
+    # 1. 사용자가 이미 승인("응", "진행해")했거나,
     #    필요한 정보("경기도 ...")를 입력해서 의도를 보인 경우 통과
-    
+
     # 마지막 사용자 메시지 찾기 (역순 탐색)
     last_user_msg = None
-    for msg in reversed(messages[:-1]): # 현재 ToolMessage 제외하고 뒤에서부터
+    for msg in reversed(messages[:-1]):  # 현재 ToolMessage 제외하고 뒤에서부터
         if isinstance(msg, HumanMessage):
             last_user_msg = msg
             break
-            
+
     if last_user_msg and hasattr(last_user_msg, "content"):
         raw_content = last_user_msg.content
         content = raw_content.strip() if isinstance(raw_content, str) else ""
         print(f"---APPROVAL CHECK: Last User Msg='{content}'---")
-        
+
         # A. LLM 기반 승인 여부 판단 (LLM-based Confirmation Check)
         try:
             provider, model_name = _resolve_llm_config(state)
-            approval_check_prompt_template = get_approval_check_prompt_template(provider=provider, model_name=model_name)
+            approval_check_prompt_template = get_approval_check_prompt_template(
+                provider=provider, model_name=model_name
+            )
             prompt = approval_check_prompt_template.format(
                 user_message=content,
                 tool_name=sensitive_calls[0]["name"],
@@ -1530,39 +1643,64 @@ def human_approval_node(state: AgentState):
             )
 
             if provider in {"openai", "vllm"}:
-                approval_llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
-                response = approval_llm.invoke([HumanMessage(content=prompt)])
+                approval_llm = _make_chat_llm(
+                    provider=provider, model=model_name, temperature=0
+                )
+                response = approval_llm.with_config(
+                    {"run_name": "approval_llm"}
+                ).invoke([HumanMessage(content=prompt)])
             else:
-                response = _hf_invoke([HumanMessage(content=prompt)], model_name, temperature=0)
+                # _hf_invoke doesn't support with_config directly since it's a synchronous custom function,
+                # but we can try to wrap it or just rely on tags if we use RunnableLambda,
+                # For now, let's keep _hf_invoke as is; it doesn't stream via astream_events for chat_model_stream natively unless wrapped as an LCEL Runnable.
+                response = _hf_invoke(
+                    [HumanMessage(content=prompt)], model_name, temperature=0
+                )
 
-            decision_text = response.content if isinstance(response.content, str) else ""
+            decision_text = (
+                response.content if isinstance(response.content, str) else ""
+            )
             decision = decision_text.strip().upper()
             print(f"---APPROVAL LLM DECISION: {decision} ({content})---")
-            
+
             if "YES" in decision:
                 if current_task:
                     current_task["status"] = "executing"
                 return {"current_task": current_task}
-                
+
         except Exception as e:
             print(f"---APPROVAL LLM ERROR: {e}---")
             # Fallback to keyword matching if LLM fails
-            positive_keywords = ["응", "네", "예", "맞아", "진행", "해줘", "yes", "ok", "confirm", "좋아", "수락"]
+            positive_keywords = [
+                "응",
+                "네",
+                "예",
+                "맞아",
+                "진행",
+                "해줘",
+                "yes",
+                "ok",
+                "confirm",
+                "좋아",
+                "수락",
+            ]
             if any(keyword in content.lower() for keyword in positive_keywords):
                 print("---APPROVAL: Detected positive keyword (Fallback)---")
                 if current_task:
                     current_task["status"] = "executing"
                 return {"current_task": current_task}
-            
+
         # B. 인자 매칭 (Implicit Confirmation via Slot Filling)
-        # 툴 호출 인자값(예: 주소)이 사용자 메시지에 포함되어 있다면, 
+        # 툴 호출 인자값(예: 주소)이 사용자 메시지에 포함되어 있다면,
         # 사용자가 해당 정보를 제공하며 진행을 의도한 것으로 간주
         try:
             tool_args = sensitive_calls[0].get("args", {})
             for _, value in tool_args.items():
                 if isinstance(value, str) and len(value) > 1 and value in content:
                     # 예: arg="경기도", content="경기도로 보내줘" -> 매칭
-                    print(f"---APPROVAL: Detected argument match ('{value}') in user message---")
+                    print(
+                        f"---APPROVAL: Detected argument match ('{value}') in user message---"
+                    )
                     if current_task:
                         current_task["status"] = "executing"
                     return {"current_task": current_task}
@@ -1571,33 +1709,35 @@ def human_approval_node(state: AgentState):
 
     # 2. state에 pending_approval 상태가 있을 때 (이전 턴에서 시스템이 물어본 경우)
     if current_task and current_task.get("status") == "approving":
-            # 위 로직에서 걸러지지 않았더라도, pending 상태에서 다시 왔다면 승인으로 간주
-         current_task["status"] = "executing"
-         return {"current_task": current_task}
-    
+        # 위 로직에서 걸러지지 않았더라도, pending 상태에서 다시 왔다면 승인으로 간주
+        current_task["status"] = "executing"
+        return {"current_task": current_task}
+
     # 2. 첫 진입 (action_status가 'idle'이거나 없거나) -> 승인 요청 UI 띄움
     is_approving = current_task and current_task.get("status") == "approving"
-    
+
     if not is_approving:
         tool_name = sensitive_calls[0]["name"]
-        
+
         print(f"---APPROVAL REQUEST: {tool_name}---")
-        
+
         # Init TaskContext if missing
         if not current_task:
             current_task = {"type": "general", "status": "idle", "target_id": None}
-            
+
         current_task["status"] = "approving"
-        
+
         return {
             "current_task": current_task,
             "messages": [
                 # Tool 실행을 중단하고, 시스템(AI)이 질문하는 형태로 반환
                 # ToolMessage를 쓰지 않고 AIMessage를 써서 대화를 이어감
-                AIMessage(content="해당 작업을 진행하시겠습니까? 확인해 주시면 절차를 진행하겠습니다.")
-            ]
+                AIMessage(
+                    content="해당 작업을 진행하시겠습니까? 확인해 주시면 절차를 진행하겠습니다."
+                )
+            ],
         }
-    
+
     # "pending_approval" 상태에서 다시 여기로 왔다면 승인된 것으로 간주하고 통과
     if current_task:
         current_task["status"] = "executing"
@@ -1613,10 +1753,10 @@ def route_after_approval(state: AgentState) -> Literal["tools", "process_output"
     current_task = state.get("current_task")
     status = current_task.get("status") if current_task else "idle"
     print(f"---ROUTE AFTER APPROVAL: {status}---")
-    
+
     if status == "executing":
         return "tools"
-    
+
     return "process_output"
 
 
@@ -1628,19 +1768,21 @@ def process_output_node(state: AgentState):
     print("---PROCESS OUTPUT---")
     messages = state["messages"]
     last_message = messages[-1]
-    
+
     result = {
-        "generation": last_message.content if hasattr(last_message, "content") else str(last_message),
-        "tool_outputs": [] # 하위 호환성 (선택사항)
+        "generation": last_message.content
+        if hasattr(last_message, "content")
+        else str(last_message),
+        "tool_outputs": [],  # 하위 호환성 (선택사항)
     }
-    
+
     # UI Action 추출 1: task_results에서 (Worker 직접 실행)
     task_results = state.get("task_results", [])
     for task_result in task_results:
         result_data = task_result.get("result")
         if isinstance(result_data, dict) and result_data.get("ui_action"):
             result["tool_outputs"].append(result_data)
-    
+
     # UI Action 추출 2: ToolMessage에서 (Tool Node 실행)
     for msg in reversed(messages):
         if isinstance(msg, ToolMessage):
@@ -1655,13 +1797,13 @@ def process_output_node(state: AgentState):
                         result["tool_outputs"].append(data)
             except Exception:
                 pass
-            
+
     # Approval Status 확인
     if state.get("action_status") == "pending_approval":
         # 승인 대기 상태인 경우 명시적 플래그 전달 가능
         # (이미 tool_outputs에 show_confirmation이 들어갔을 것임)
         pass
-            
+
     return result
 
 
@@ -1674,7 +1816,7 @@ def route_after_tools(state: AgentState) -> Literal["agent", "process_output"]:
     print("---ROUTE AFTER TOOLS---")
     messages = state["messages"]
     last_message = messages[-1]
-    
+
     if isinstance(last_message, ToolMessage):
         try:
             content = last_message.content
@@ -1688,7 +1830,7 @@ def route_after_tools(state: AgentState) -> Literal["agent", "process_output"]:
                     return "process_output"
         except Exception:
             pass
-            
+
     # 기본: Agent로 돌아가서 결과 해석
     print("---DECISION: BACK TO AGENT---")
     return "agent"

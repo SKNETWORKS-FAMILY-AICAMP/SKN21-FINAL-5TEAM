@@ -71,6 +71,7 @@ declare global {
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const ORDER_LIST_BASE_MESSAGE = '최근 30일간의 주문 목록입니다.';
 
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.2'] as const;
 const HF_MODELS = ['Qwen/Qwen3-0.6B'] as const;
@@ -90,6 +91,23 @@ function resolveProviderByModel(modelId: string): LlmProvider {
     return 'huggingface';
   }
   return 'openai';
+}
+
+function buildOrderListMessage(rawMessage: string | undefined, requiresSelection: boolean | undefined): string {
+  const cleaned = (rawMessage || '').trim();
+  const dynamicGuide = cleaned
+    .replace(/^최근\s*\d+일\s*(?:이내|간(?:의)?)?\s*주문\s*(?:목록|내역)입니다\.?\s*/u, '')
+    .trim();
+
+  if (dynamicGuide) {
+    return `${ORDER_LIST_BASE_MESSAGE} ${dynamicGuide}`;
+  }
+
+  if (requiresSelection) {
+    return `${ORDER_LIST_BASE_MESSAGE} 진행하실 주문을 선택해주세요.`;
+  }
+
+  return ORDER_LIST_BASE_MESSAGE;
 }
 
 const MIN_W = 340;
@@ -534,7 +552,7 @@ export default function ChatbotFab() {
                     {
                       role: 'bot',
                       type: 'order_list',
-                      message: '최근 30일간의 주문 목록입니다.',
+                      message: buildOrderListMessage(data.message, data.requires_selection),
                       orders: data.ui_data,
                       requiresSelection: data.requires_selection,
                     },
