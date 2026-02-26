@@ -69,7 +69,7 @@ PRODUCT_TYPE_MAP = {
     "립스틱": "Lipstick",
     "파운데이션": "Foundation",
     "선크림": "Sunscreen",
-    "자켓": "Jacket",
+    "자켓": "Jacket", "재킷": "Jacket",
     "바지": "Pants",
     "잠옷": "Nightdress",
 }
