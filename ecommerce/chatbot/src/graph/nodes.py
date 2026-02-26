@@ -2,7 +2,6 @@ import re
 import json
 from typing import List, Optional, Dict, Any
 from langchain_core.messages import AIMessage, SystemMessage, HumanMessage, BaseMessage
-from langsmith import traceable
 from qdrant_client import models
 from ecommerce.chatbot.src.graph.state import AgentState
 from ecommerce.chatbot.src.schemas.nlu import NLUResult, IntentType, ActionType
@@ -123,7 +122,6 @@ def optimize_chat_history(messages: List[Any]) -> List[Any]:
     print(f"--- CHAT HISTORY OPTIMIZED: {len(messages)} → {len(optimized_messages)} messages ---")
     return optimized_messages
 
-@traceable(run_type="retriever", name="Retrieve Documents")
 def retrieve(state: AgentState):
     """
     Retrieve documents from Qdrant.
@@ -252,7 +250,6 @@ def retrieve(state: AgentState):
         "is_relevant": len(all_documents) > 0
     }
 
-@traceable(run_type="llm", name="Generate Answer")
 def generate(state: AgentState):
     """
     지식 리트리벌 결과 또는 액션 실행 결과를 바탕으로 최종 답변을 생성합니다.
@@ -295,7 +292,6 @@ def generate(state: AgentState):
         "messages": [AIMessage(content=final_answer)]
     }
 
-@traceable(run_type="chain", name="Handle No Info")
 def no_info_node(state: AgentState):
     """
     검색 결과가 없을 때 실행되는 노드
@@ -307,7 +303,6 @@ def no_info_node(state: AgentState):
         "messages": [AIMessage(content=msg)]
     }
 
-@traceable(run_type="chain", name="LLM NLU Fallback")
 def call_llm_for_nlu(user_message: str) -> dict:
     """
     키워드 매칭 실패 시 LLM을 사용하여 문맥 기반으로 의도(조회/실행)를 파악합니다.
@@ -342,7 +337,6 @@ def call_llm_for_nlu(user_message: str) -> dict:
     
     return res
 
-@traceable(run_type="chain", name="Check Action Eligibility")
 def check_eligibility_node(state: AgentState):
     """
     액션 수행 전 주문 상태 등을 확인하여 수행 가능 여부를 판단합니다.
@@ -449,7 +443,6 @@ def check_eligibility_node(state: AgentState):
         
     return {"action_status": "approved"}
 
-@traceable(run_type="chain", name="Human Approval")
 def human_approval_node(state: AgentState):
     """
     사용자에게 액션 실행 여부를 묻는 메시지를 생성합니다.
@@ -587,7 +580,6 @@ def execute_action_node(state: AgentState):
     }
 
 
-@traceable(run_type="chain", name="Query Rewriting")
 def rewrite_query(original_query: str, history: List[Any]) -> str:
     """
     이전 대화 기록을 바탕으로 현재 질문을 재작성합니다.
@@ -624,7 +616,6 @@ def rewrite_query(original_query: str, history: List[Any]) -> str:
         print(f"Error in query rewriting: {e}")
         return original_query
 
-@traceable(run_type="chain", name="Update State")
 def update_state_node(state: AgentState) -> dict:
     """
     [하이브리드 NLU] 질문을 분석하여 '조회'인지 '실행'인지 결정합니다.
@@ -722,7 +713,6 @@ def update_state_node(state: AgentState) -> dict:
     return updates
 
 
-@traceable(run_type="chain", name="Handle Casual Chat")
 def casual_chat_node(state: AgentState):
     """
     일반 대화/인사말에 친근하게 응답하는 노드

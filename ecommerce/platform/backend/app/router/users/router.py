@@ -8,37 +8,44 @@ from ecommerce.platform.backend.app.core.auth import create_access_token
 from ecommerce.platform.backend.app.database import get_db
 from ecommerce.platform.backend.app.router.users.models import UserStatus
 from ecommerce.platform.backend.app.router.users import crud, schemas
-from ecommerce.platform.backend.app.router.users.models import User
-from ecommerce.platform.backend.app.core.auth import get_current_user
+from ecommerce.platform.backend.app.router.users.models import User, UserRole
+from ecommerce.platform.backend.app.core.auth import get_current_user, get_current_user_optional
+
+import os
+from authlib.integrations.starlette_client import OAuth
+from fastapi.responses import RedirectResponse
+from ecommerce.platform.backend.app.router.user_history import crud as user_history_crud, schemas as user_history_schemas
+import json
+from datetime import datetime
 
 router = APIRouter(
     # prefix="/users",
     tags=["Users"],
 )
 
+oauth = OAuth()
+oauth.register(
+    name="google",
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={
+        "scope": "openid email profile"
+    }
+)
+
 # =========================
-# auth helper (세션 기반)
+# Admin - 전체 유저 조회
 # =========================
 
-# def get_current_user(
-#     request: Request,
-#     db: Session = Depends(get_db),
-# ):
-#     user_id = request.session.get("user_id")
-#     if not user_id:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="로그인이 필요합니다.",
-#         )
-
-#     user = crud.get_user_by_id(db, user_id)
-#     if not user:
-#         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
-
-#     if user.status != UserStatus.ACTIVE:
-#         raise HTTPException(status_code=403, detail="비활성화된 계정입니다.")
-
-#     return user
+@router.get("/all", response_model=list[schemas.UserListItem])
+def list_all_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="관리자만 접근할 수 있습니다.")
+    return crud.get_all_users(db)
 
 
 # =========================
@@ -74,6 +81,7 @@ def register(body: schemas.RegisterRequest, db: Session = Depends(get_db)):
 @router.post("/login", response_model=schemas.LoginResponse)
 def login(
     body: schemas.LoginRequest,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ):
@@ -84,6 +92,19 @@ def login(
     if not crud.verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 틀렸습니다.")
 
+    user.last_login_at = datetime.utcnow()
+    user_history_crud.track_auth_action(
+        db=db,
+        user_id=user.id,
+        action_type=user_history_schemas.ActionType.LOGIN,
+        action_metadata=json.dumps({
+            "user": user.name,
+            "timestamp": datetime.utcnow().isoformat()
+        }, ensure_ascii=False),
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    db.commit()
 
     access_token = create_access_token(user.id)
 
@@ -92,7 +113,7 @@ def login(
         value=access_token,
         httponly=True,
         samesite="lax",
-        max_age=60 * 60 * 24 * 7,  # 7일
+        max_age=60 * 60 * 24 * 7,
     )
 
     return {
@@ -103,11 +124,26 @@ def login(
     }
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    user_history_crud.track_auth_action(
+        db=db,
+        user_id=current_user.id,
+        action_type=user_history_schemas.ActionType.LOGOUT,
+        action_metadata=json.dumps({
+            "user": current_user.name,
+            "timestamp": datetime.utcnow().isoformat()
+        }, ensure_ascii=False),
+    )
+
     response.delete_cookie(
         key="access_token",
         path="/",
     )
+
     return {"ok": True}
 
 # =========================
@@ -123,19 +159,22 @@ def add_to_cart(
 # Profile (me)
 # =========================
 
-@router.get("/me", response_model=schemas.MeResponse)
-def me(current_user: User = Depends(get_current_user)):
-    return schemas.MeResponse(
-        id=current_user.id,
-        email=current_user.email,
-        name=current_user.name,
-        phone=current_user.phone,
-        agree_marketing=current_user.agree_marketing,
-        agree_sms=current_user.agree_sms,
-        agree_email=current_user.agree_email,
-        created_at=current_user.created_at,
-        updated_at=current_user.updated_at,
-    )
+@router.get("/me")
+def me(current_user: User | None = Depends(get_current_user_optional)):
+    if current_user is None:
+        return {"authenticated": False}
+    return {
+        "authenticated": True,
+        "id": current_user.id,
+        "email": current_user.email,
+        "name": current_user.name,
+        "phone": current_user.phone,
+        "agree_marketing": current_user.agree_marketing,
+        "agree_sms": current_user.agree_sms,
+        "agree_email": current_user.agree_email,
+        "created_at": current_user.created_at,
+        "updated_at": current_user.updated_at,
+    }
 
 @router.patch("/me", response_model=schemas.UserProfileUpdateResponse)
 def update_my_profile(
@@ -267,3 +306,71 @@ def withdraw(
     return response
 
 # =========================
+@router.get("/auth/google/login")
+async def google_login(request: Request):
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+@router.get("/auth/google/callback")
+async def google_callback(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    token = await oauth.google.authorize_access_token(request)
+    user_info = token.get("userinfo")
+
+    if not user_info:
+        raise HTTPException(status_code=400, detail="Google 사용자 정보 조회 실패")
+
+    google_id = user_info["sub"]
+    email = user_info["email"]
+    name = user_info.get("name")
+
+    # 1️⃣ google_id 기준 조회
+    user = db.query(User).filter(User.google_id == google_id).first()
+
+    # 2️⃣ 없으면 신규 생성
+    if not user:
+        user = User(
+            email=email,
+            name=name,
+            google_id=google_id,
+            password_hash=None,
+            status=UserStatus.ACTIVE,
+            role=UserRole.USER,
+            agree_marketing=False,
+            agree_sms=False,
+            agree_email=False,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    user_history_crud.track_auth_action(
+        db=db,
+        user_id=user.id,
+        action_type=user_history_schemas.ActionType.LOGIN,
+        action_metadata=json.dumps({
+            "user": user.name,
+            "timestamp": datetime.utcnow().isoformat()
+        }, ensure_ascii=False),
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+
+    user.last_login_at = datetime.utcnow()
+    db.commit()
+
+    # 4️⃣ JWT 발급
+    access_token = create_access_token(user.id)
+
+    response = RedirectResponse(url="http://localhost:3000")
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 7,
+    )
+
+    return response

@@ -6,8 +6,49 @@ from qdrant_client.http import models
 from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
 from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.chatbot.src.core.config import settings
-import glob
 import os
+
+
+def ensure_faq_collection(client):
+    collection_name = settings.COLLECTION_FAQ
+
+    try:
+        if client.collection_exists(collection_name):
+            return
+    except Exception:
+        # Fallback for older client/server compatibility
+        try:
+            client.get_collection(collection_name=collection_name)
+            return
+        except Exception:
+            pass
+
+    print(f"Collection '{collection_name}' not found. Creating...")
+    client.create_collection(
+        collection_name=collection_name,
+        vectors_config=models.VectorParams(
+            size=settings.EMBEDDING_DIM,
+            distance=models.Distance.COSINE,
+        ),
+        sparse_vectors_config={
+            "text-sparse": models.SparseVectorParams(
+                index=models.SparseIndexParams(on_disk=False)
+            )
+        },
+    )
+
+    client.create_payload_index(
+        collection_name=collection_name,
+        field_name="main_category",
+        field_schema="keyword",
+    )
+    client.create_payload_index(
+        collection_name=collection_name,
+        field_name="sub_category",
+        field_schema="keyword",
+    )
+
+    print(f"Collection '{collection_name}' created.")
 
 def ingest_faq():
     print("--- Starting Musinsa FAQ Ingestion ---")
@@ -31,6 +72,7 @@ def ingest_faq():
     sparse_model = SparseTextEmbedding(model_name="Qdrant/bm25")
 
     client = get_qdrant_client()
+    ensure_faq_collection(client)
     openai = get_openai_client()
     
     batch_size = 50 

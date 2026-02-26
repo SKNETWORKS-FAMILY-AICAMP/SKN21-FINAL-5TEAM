@@ -7,14 +7,8 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_
 from ecommerce.platform.backend.app.router.carts import models, schemas
 
-# Product 모듈의 모델 및 enum 사용
 from ecommerce.platform.backend.app.router.products.models import (
-    ProductOption, 
-    Product,
-    UsedProductOption, 
-    UsedProduct,
-    UsedProductCondition,
-    ProductType  # ProductType enum 추가
+    ProductOption, Product, UsedProductOption, UsedProduct, UsedProductCondition, ProductType
 )
 
 # ============================================
@@ -197,6 +191,7 @@ def get_new_product_info(db: Session, option_id: int) -> Optional[Dict]:
         
         return {
             'id': option.id,
+            'product_id': product.id,  # 실제 상품 ID (이미지 조회용)
             'name': product.name,
             'brand': '브랜드',  # Product 모델에 brand 필드 없음
             'price': product.price,  # Product의 price
@@ -251,6 +246,7 @@ def get_used_product_info(db: Session, option_id: int) -> Optional[Dict]:
         
         return {
             'id': option.id,
+            'product_id': product.id,  # 실제 상품 ID (이미지 조회용)
             'name': product.name,
             'brand': '중고',  # UsedProduct 모델에 brand 필드 없음
             'price': product.price,  # UsedProduct의 price
@@ -335,6 +331,7 @@ def enrich_cart_items_with_product_info(
         # Pydantic 스키마로 변환
         product_info = schemas.ProductInfo(
             id=product_info_dict['id'],
+            product_id=product_info_dict['product_id'],
             name=product_info_dict['name'],
             brand=product_info_dict['brand'],
             price=product_info_dict['price'],
