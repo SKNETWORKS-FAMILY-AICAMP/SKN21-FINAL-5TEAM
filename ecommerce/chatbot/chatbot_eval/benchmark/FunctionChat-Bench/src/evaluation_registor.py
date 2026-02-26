@@ -247,7 +247,11 @@ class DialogEvaluationRegistor(AbstractEvaluationRegistor):
                 tot_pass_cnt += pass_cnt
                 case_tot_cnt = pass_cnt + len(self.eval_dic[type_of_output].get(FAIL_STR, []))
                 print(f"  {type_of_output} : {pass_cnt}/{case_tot_cnt}")
-        print(f"  total : {tot_pass_cnt}/{self.max_size}")
+        actual_total = sum(
+            len(self.eval_dic[t].get(PASS_STR, [])) + len(self.eval_dic[t].get(FAIL_STR, []))
+            for t in self.types_of_output if t in self.eval_dic
+        )
+        print(f"  total : {tot_pass_cnt}/{actual_total}")
         #
         print("\n* pass rate")
         for type_of_output in self.types_of_output:
@@ -255,7 +259,7 @@ class DialogEvaluationRegistor(AbstractEvaluationRegistor):
                 pass_cnt = len(self.eval_dic[type_of_output].get(PASS_STR, []))
                 case_tot_cnt = pass_cnt + len(self.eval_dic[type_of_output].get(FAIL_STR, []))
                 print(f"  {type_of_output} : {pass_cnt/case_tot_cnt:.2f}")
-        print(f" avg(micro) : {tot_pass_cnt/self.max_size}")
+        print(f" avg(micro) : {tot_pass_cnt/actual_total if actual_total > 0 else 0}")
 
     def get_score(self):
         if len(self.eval_dic) == 0:
@@ -271,8 +275,11 @@ class DialogEvaluationRegistor(AbstractEvaluationRegistor):
                 score_dict[f'{type_of_output} pass cnt'] = pass_cnt
                 score_dict[f'{type_of_output} pass rate'] = pass_cnt/case_tot_cnt
         score_dict['total_pass_cnt'] = tot_pass_cnt
-        score_dict['total_cnt'] = self.max_size
-        score_dict['avg(micro)'] = tot_pass_cnt/self.max_size
+        actual_total = sum(case_tot_cnt for t in self.types_of_output if t in self.eval_dic
+                          for case_tot_cnt in [len(self.eval_dic[t].get(PASS_STR, [])) + len(self.eval_dic[t].get(FAIL_STR, []))])
+        score_dict['total_cnt'] = actual_total
+        score_dict['total_pass_rate'] = tot_pass_cnt / actual_total if actual_total > 0 else 0
+        score_dict['avg(micro)'] = tot_pass_cnt / actual_total if actual_total > 0 else 0
         return score_dict    
 
 
