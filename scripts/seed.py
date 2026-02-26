@@ -2,22 +2,63 @@
 Database Seeding Script
 서버 시작 시 초기 데이터를 DB에 적재하는 스크립트입니다.
 """
+import os
+import sys
+
+# -------------------------------------------------
+# 프로젝트 루트를 PYTHONPATH에 추가 (직접 실행용)
+# -------------------------------------------------
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
+sys.path.append(PROJECT_ROOT)
+
+# -------------------------------------------------
+# 표준 라이브러리
+# -------------------------------------------------
 import logging
 import random
+import csv
+from pathlib import Path
 from datetime import datetime, timedelta
 from decimal import Decimal
 from sqlalchemy.orm import Session
-from ecommerce.platform.backend.app.router.users.models import User, UserStatus
+
+import ecommerce.platform.backend.app.router.users.models
+import ecommerce.platform.backend.app.router.products.models
+import ecommerce.platform.backend.app.router.orders.models
+import ecommerce.platform.backend.app.router.shipping.models
+import ecommerce.platform.backend.app.router.points.models
+import ecommerce.platform.backend.app.router.carts.models
+import ecommerce.platform.backend.app.router.reviews.models
+import ecommerce.platform.backend.app.router.payments.models
+import ecommerce.platform.backend.app.router.inventories.models
+import ecommerce.platform.backend.app.router.user_history.models
+
+# -------------------------------------------------
+# 실제 사용할 클래스 import
+# -------------------------------------------------
+from ecommerce.platform.backend.app.router.users.models import User, UserStatus, UserRole
 from ecommerce.platform.backend.app.router.products.models import (
     Category, Product, ProductOption, ProductType,
-    UsedProduct, UsedProductOption, UsedProductCondition, UsedProductStatus
+    UsedProduct, UsedProductOption, UsedProductCondition, UsedProductStatus,
+    ProductImage
 )
 from ecommerce.platform.backend.app.router.orders.models import Order, OrderItem
 from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
 from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
 from ecommerce.platform.backend.app.router.users.crud import hash_password
+from ecommerce.platform.backend.app.router.points.models import IssuedVoucher
+
+# Configure logging so we can see INFO and ERROR messages
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 logger = logging.getLogger(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
 
 def init_db(db: Session):
     """
@@ -39,6 +80,14 @@ def init_db(db: Session):
         if not db.query(Product).first():
             logger.info("🛠️ 초기 상품 데이터 생성 중...")
             create_products(db)
+                    
+        # 상품 옵션 데이터 확인 및 생성
+        if not db.query(ProductOption).first():
+            create_product_options(db)
+
+        # 상품 이미지 데이터 확인 및 생성
+        if not db.query(ProductImage).first():
+            create_product_images(db)
         
         # 4. 중고 상품 상태 데이터 확인 및 생성
         if not db.query(UsedProductCondition).first():
@@ -46,7 +95,7 @@ def init_db(db: Session):
             create_used_product_conditions(db)
             
         # 5. 중고 상품 데이터 확인 및 생성
-        if not db.query(UsedProduct).first():
+        # if not db.query(UsedProduct).first():
             logger.info("🛠️ 초기 중고 상품 데이터 생성 중...")
             create_used_products(db)
             
@@ -60,6 +109,11 @@ def init_db(db: Session):
             logger.info("🛠️ 초기 주문 데이터 생성 중...")
             create_orders(db)
 
+        # 🔥 8. 테스트 상품권 생성 (항상 체크)
+        if not db.query(IssuedVoucher).first():
+            logger.info("🛠️ 초기 상품권 생성 중...")
+            create_test_vouchers(db)
+
         db.commit()
         logger.info("✅ 초기 데이터 적재 완료")
         
@@ -67,6 +121,41 @@ def init_db(db: Session):
         db.rollback()
         logger.error(f"❌ 초기 데이터 적재 실패: {e}")
         raise e
+
+def create_test_vouchers(db: Session):
+    """테스트용 상품권 생성"""
+
+    existing = db.query(IssuedVoucher).filter(
+        IssuedVoucher.voucher_code.in_(["11111111", "22222222"])
+    ).first()
+
+    if existing:
+        return
+
+    # 🔥 test 사용자 조회
+    test_user = db.query(User).filter(User.email == "test@example.com").first()
+
+    if not test_user:
+        return
+
+    vouchers = [
+        IssuedVoucher(
+            user_id=test_user.id,
+            voucher_code="11111111",
+            amount=10000,
+            is_used=False
+        ),
+        IssuedVoucher(
+            user_id=test_user.id,
+            voucher_code="22222222",
+            amount=10000,
+            is_used=False
+        ),
+    ]
+
+    db.add_all(vouchers)
+    db.flush()
+
 
 def create_users(db: Session):
     """테스트 사용자 생성"""
@@ -96,64 +185,87 @@ def create_users(db: Session):
     db.add_all(users)
     db.flush() 
 
+# ============================================
+# categoty
+# ============================================
 def create_categories(db: Session):
-    """카테고리 생성"""
-    categories = {
-        "상의": ["티셔츠", "셔츠/블라우스", "니트/스웨터", "후드/맨투맨"],
-        "하의": ["청바지", "슬랙스", "스커트", "트레이닝 바지"],
-        "아우터": ["코트", "자켓", "패딩", "가디건"],
-        "신발": ["스니커즈", "구두", "부츠", "샌들"]
-    }
-    
-    for main_name, sub_names in categories.items():
-        main_cat = Category(name=main_name, parent_id=None, display_order=1)
-        db.add(main_cat)
-        db.flush() 
-        
-        for idx, sub_name in enumerate(sub_names):
-            sub_cat = Category(name=sub_name, parent_id=main_cat.id, display_order=idx+1)
-            db.add(sub_cat)
+    file_path = DATA_DIR / "categories.csv"
+
+    with open(file_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            db.add(Category(
+                id=int(row["id"]),
+                name=row["name"],
+                parent_id=int(row["parent_id"]) if row["parent_id"] else None,
+                display_order=int(row["display_order"]),
+                is_active = str(row["is_active"]).strip().lower() in ("1", "true", "t", "yes", "y"),
+                created_at=datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S") if row["created_at"] else None,
+                updated_at=datetime.strptime(row["updated_at"], "%Y-%m-%d %H:%M:%S") if row["updated_at"] else None,
+            ))
     db.flush()
 
+# ============================================
+# product
+# ============================================
 def create_products(db: Session):
-    """상품 및 옵션 생성"""
-    # 상의 - 티셔츠 카테고리 조회
-    tshirt_cat = db.query(Category).filter(Category.name == "티셔츠").first()
-    
-    if not tshirt_cat:
-        return
+    file_path = DATA_DIR / "products.csv"
 
-    products = [
-        Product(
-            category_id=tshirt_cat.id,
-            name="베이직 코튼 티셔츠",
-            description="편안한 착용감의 기본 티셔츠입니다.",
-            price=Decimal("15000"),
-            is_active=True,
-            tags="티셔츠,기본템,데일리"
-        ),
-        Product(
-            category_id=tshirt_cat.id,
-            name="오버핏 로고 티셔츠",
-            description="트렌디한 오버핏 실루엣의 티셔츠입니다.",
-            price=Decimal("25000"),
-            is_active=True,
-            tags="오버핏,로고,스트릿"
-        )
-    ]
-    
-    db.add_all(products)
+    with open(file_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            db.add(Product(
+                id=int(row["id"]),
+                category_id=int(row["category_id"]),
+                name=row["name"],
+                description=row["description"],
+                price=Decimal(row["price"]),
+                is_active = str(row["is_active"]).strip().lower() in ("1", "true", "t", "yes", "y"),
+                tags=row["tags"],
+                created_at=datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S") if row["created_at"] else None,
+                updated_at=datetime.strptime(row["updated_at"], "%Y-%m-%d %H:%M:%S") if row["updated_at"] else None,
+            ))
     db.flush()
     
-    # 옵션 추가
-    for product in products:
-        options = [
-            ProductOption(product_id=product.id, size_name="M", color="White", quantity=100, is_active=True),
-            ProductOption(product_id=product.id, size_name="L", color="White", quantity=100, is_active=True),
-            ProductOption(product_id=product.id, size_name="M", color="Black", quantity=50, is_active=True),
-            ProductOption(product_id=product.id, size_name="L", color="Black", quantity=50, is_active=True),
-        ]
-        db.add_all(options)
+# ============================================
+# product option   
+# ============================================
+def create_product_options(db: Session):
+    file_path = DATA_DIR / "productoptions.csv"
+
+    with open(file_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            db.add(ProductOption(
+                id=int(row["id"]),
+                product_id=int(row["product_id"]),
+                size_name=row["size_name"],
+                color=row["color"],
+                quantity=int(row["quantity"]),
+                is_active = str(row["is_active"]).strip().lower() in ("1", "true", "t", "yes", "y"),
+                created_at=datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S") if row["created_at"] else None,
+                updated_at=datetime.strptime(row["updated_at"], "%Y-%m-%d %H:%M:%S") if row["updated_at"] else None,
+            ))
+    db.flush()
+
+# ============================================
+# product image
+# ============================================
+def create_product_images(db: Session):
+    file_path = DATA_DIR / "productimages.csv"
+
+    with open(file_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            db.add(ProductImage(
+                id=int(row["id"]),
+                product_type=row["product_type"],
+                product_id=int(row["product_id"]),
+                image_url=row["image_url"],
+                display_order=int(row["display_order"]),
+                is_primary = str(row["is_primary"]).strip().lower() in ("1", "true", "t", "yes", "y"),
+                created_at=datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S") if row["created_at"] else None,
+            ))
     db.flush()
 
 def create_used_product_conditions(db: Session):
@@ -167,52 +279,110 @@ def create_used_product_conditions(db: Session):
     db.flush()
 
 def create_used_products(db: Session):
-    """중고 상품 및 옵션 생성"""
-    # 판매자(admin)와 카테고리(청바지), 상태(A급) 조회
-    admin_user = db.query(User).filter(User.email == "admin@example.com").first()
-    pants_cat = db.query(Category).filter(Category.name == "청바지").first()
-    condition_a = db.query(UsedProductCondition).filter(UsedProductCondition.condition_name == "A급").first()
+    """상의/하의/신발 기반 중고 상품 30개 생성 (id를 원본 Product.id로 맞춤)"""
 
-    if not admin_user or not pants_cat or not condition_a:
-        logger.warning("중고 상품 생성을 위한 필수 데이터(유저, 카테고리, 상태)가 부족합니다.")
+    logger.info("🔄 중고 상품(30개) 생성 시작")
+
+    db.query(UsedProductOption).delete()
+    db.query(ProductImage).filter(ProductImage.product_type == "used").delete()
+    db.query(UsedProduct).delete()
+    db.flush()
+
+    # 1) 판매자(admin) 조회
+    admin_user = db.query(User).filter(User.email == "admin@example.com").first()
+    if not admin_user:
+        logger.warning("admin 유저 없음")
         return
 
-    used_products = [
-        UsedProduct(
-            category_id=pants_cat.id,
-            seller_id=admin_user.id,
-            name="A급 리바이스 청바지",
-            description="사이즈가 안 맞아서 팝니다. 2번 입었어요.",
-            price=Decimal("45000"),
-            condition_id=condition_a.id,
-            status=UsedProductStatus.APPROVED, # 판매 승인됨
-            tags="청바지,리바이스,중고"
-        ),
-        UsedProduct(
-            category_id=pants_cat.id,
-            seller_id=admin_user.id,
-            name="빈티지 데님 자켓",
-            description="빈티지 감성의 데님 자켓입니다.",
-            price=Decimal("30000"),
-            condition_id=condition_a.id,
-            status=UsedProductStatus.PENDING, # 승인 대기중
-            tags="데님,자켓,빈티지"
-        )
-    ]
-    db.add_all(used_products)
-    db.flush()
+    # 2) 중고 상태(S/A/B) 전체 조회
+    conditions = db.query(UsedProductCondition).all()
+    if not conditions:
+        logger.warning("중고 상태 데이터 없음")
+        return
 
-    for up in used_products:
-        # 중고는 보통 수량이 1개
-        opt = UsedProductOption(
-            used_product_id=up.id, 
-            size_name="M", 
-            color="Blue", 
-            quantity=1, 
-            is_active=True
+    # 3) 카테고리별 id 상위 10개 조회
+    topwear_products = db.query(Product)\
+        .filter(Product.tags.ilike('%Topwear%'))\
+        .order_by(Product.id.asc())\
+        .limit(10)\
+        .all()
+
+    bottomwear_products = db.query(Product)\
+        .filter(Product.tags.ilike('%Bottomwear%'))\
+        .order_by(Product.id.asc())\
+        .limit(10)\
+        .all()
+
+    shoes_products = db.query(Product)\
+        .filter(
+            Product.tags.ilike('%Shoes%') |
+            Product.tags.ilike('%Footwear%')
+        )\
+        .order_by(Product.id.asc())\
+        .limit(10)\
+        .all()
+
+    selected_products = topwear_products + bottomwear_products + shoes_products
+
+    if not selected_products:
+        logger.warning("조건에 맞는 상품 없음")
+        return
+
+    for product in selected_products:
+
+        condition = random.choice(conditions)
+
+        status = UsedProductStatus.APPROVED
+
+        used_price = Decimal(int(product.price * (1 - condition.depreciation_percent / 100)))
+
+        used_product = UsedProduct(
+            id=product.id,
+            category_id=product.category_id,
+            seller_id=admin_user.id,
+            name=f"[중고] {product.name}",
+            description=f"{condition.condition_name} 상품입니다.",
+            price=used_price,
+            condition_id=condition.id,
+            status=status,
+            tags=product.tags
         )
-        db.add(opt)
+
+        db.add(used_product)
+        db.flush()
+
+        # NEW 이미지 복사 -> USED 이미지로 추가
+        new_images = db.query(ProductImage).filter(
+            ProductImage.product_type == "new",
+            ProductImage.product_id == product.id
+        ).all()
+
+        for img in new_images:
+            db.add(ProductImage(
+                product_type="used",
+                product_id=used_product.id,
+                image_url=img.image_url,
+                display_order=img.display_order,
+                is_primary=img.is_primary,
+                created_at=datetime.now()
+            ))
+
+        # 기존 productoptions 그대로 복사
+        original_options = db.query(ProductOption).filter(
+            ProductOption.product_id == product.id
+        ).all()
+
+        for opt in original_options:
+            db.add(UsedProductOption(
+                used_product_id=used_product.id,
+                size_name=opt.size_name,
+                color=opt.color,
+                quantity=opt.quantity,
+                is_active=opt.is_active
+            ))
+
     db.flush()
+    logger.info("✅ 중고 상품(30개) 생성 완료")
 
 def create_shipping_addresses(db: Session):
     """배송지 생성"""
@@ -336,3 +506,21 @@ def create_orders(db: Session):
         db.add(item3)
 
     db.flush()
+
+if __name__ == "__main__":
+    from ecommerce.platform.backend.app.database import SessionLocal
+
+    db = SessionLocal()
+
+    try:
+        logger.info("🚀 DB 초기 데이터 적재 시작...")
+        init_db(db)
+        db.commit()
+        logger.info("✅ DB 초기 데이터 적재 완료!")
+
+    except Exception as e:
+        logger.error(f"❌ 에러 발생: {e}", exc_info=True)
+        db.rollback()
+
+    finally:
+        db.close()

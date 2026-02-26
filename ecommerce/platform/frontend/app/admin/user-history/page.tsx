@@ -21,10 +21,10 @@ type ActionType =
   | 'login'
   | 'logout'
   | 'cart_add'
-  | 'cart_remove'
-  | 'order_create'
-  | 'order_cancel'
-  | 'refund_request'
+  | 'cart_del'
+  | 'payment'
+  | 'order_del'
+  | 'order_re'
   | 'review_create';
 
 interface UserHistory {
@@ -42,7 +42,7 @@ interface UserHistory {
   created_at: string;
 }
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // ============================================
 // Main Component
@@ -96,7 +96,7 @@ export default function AdminUserHistoryPage() {
 
   const loadUsers = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/users/`, {
+      const response = await fetch(`${API_BASE_URL}/users/all`, {
         credentials: 'include',
       });
 
@@ -178,10 +178,10 @@ export default function AdminUserHistoryPage() {
       login: '로그인',
       logout: '로그아웃',
       cart_add: '장바구니 추가',
-      cart_remove: '장바구니 삭제',
-      order_create: '결제 완료',
-      order_cancel: '주문 취소',
-      refund_request: '환불 요청',
+      cart_del: '장바구니 삭제',
+      payment: '결제',
+      order_del: '주문 취소',
+      order_re: '환불 요청',
       review_create: '리뷰 작성',
     };
     return labels[actionType] || actionType;
@@ -240,7 +240,7 @@ export default function AdminUserHistoryPage() {
               )}
             </h2>
             <div className={styles.filterButtons}>
-              {(['all', 'login', 'logout', 'cart_add', 'cart_remove', 'order_create', 'order_cancel', 'refund_request', 'review_create'] as ActionType[]).map(actionType => (
+              {(['all', 'login', 'logout', 'cart_add', 'cart_del', 'payment', 'order_del', 'order_re', 'review_create'] as ActionType[]).map(actionType => (
                 <button
                   key={actionType}
                   className={`${styles.filterButton} ${selectedActionType === actionType ? styles.filterButtonActive : ''}`}
@@ -348,19 +348,22 @@ export default function AdminUserHistoryPage() {
                     </button>
 
                     <div className={styles.pageNumbers}>
-                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                        const pageNum = Math.max(1, Math.min(currentPage - 2 + i, totalPages - 4 + i));
-                        if (pageNum > totalPages) return null;
-                        return (
-                          <button
-                            key={pageNum}
-                            className={`${styles.pageNumber} ${currentPage === pageNum ? styles.pageNumberActive : ''}`}
-                            onClick={() => setCurrentPage(pageNum)}
-                          >
-                            {pageNum}
-                          </button>
-                        );
-                      })}
+                      {(() => {
+                        const pageCount = Math.min(5, totalPages);
+                        const start = Math.max(1, Math.min(currentPage - Math.floor(pageCount / 2), totalPages - pageCount + 1));
+                        return Array.from({ length: pageCount }, (_, i) => {
+                          const pageNum = start + i;
+                          return (
+                            <button
+                              key={pageNum}
+                              className={`${styles.pageNumber} ${currentPage === pageNum ? styles.pageNumberActive : ''}`}
+                              onClick={() => setCurrentPage(pageNum)}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        });
+                      })()}
                     </div>
 
                     <button

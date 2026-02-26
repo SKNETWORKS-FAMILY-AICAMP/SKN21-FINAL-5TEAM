@@ -1,6 +1,5 @@
-from typing import Annotated, TypedDict, List, Dict, Any, Union, Optional, Literal
+from typing import Annotated, TypedDict, List, Dict, Any, Optional, Literal
 from langgraph.graph.message import add_messages
-from langchain_core.messages import BaseMessage
 
 # OrderInfo as a Dict for slot information (from remote version)
 OrderInfo = Dict[str, Any]
@@ -29,6 +28,8 @@ class AgentState(TypedDict):
     
     # 4. 액션 제어 및 도구 실행 결과
     tool_outputs: List[Dict[str, Any]]
+    task_list: List[Dict[str, Any]]          # Decomposer가 추출한 작업 목록
+    task_results: List[Dict[str, Any]]       # Worker 실행 결과 누적
     
     # 5. [Refactored State] Structured Task Context
     # 모든 기존 액션 상태(action_name, action_status, prior_action, order_id 등)는 여기에 통합됨
@@ -39,6 +40,15 @@ class AgentState(TypedDict):
     is_general_chat: bool
     retry_count: int
     requires_selection: Optional[bool]  # 주문 목록 조회 시 선택 UI 표시 여부
+    is_evaluation: Optional[bool]       # 벤치마크 평가 진행 여부
+
+    # 7. 런타임 LLM 설정 (요청별)
+    llm_provider: Optional[str]          # openai | huggingface | vllm
+    llm_model: Optional[str]             # gpt-4o-mini | Qwen/Qwen3-0.6B ...
+
+    # 8. 대화/로깅 메타데이터
+    conversation_id: Optional[str]       # 프론트와 왕복되는 대화 ID
+    turn_id: Optional[str]               # 요청 단위 턴 ID
 
 class TaskContext(TypedDict):
     """

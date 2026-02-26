@@ -8,14 +8,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from ecommerce.platform.backend.app.database import SessionLocal
-# Updated imports
-from ecommerce.platform.backend.app.router.reviews.models import Review
-from ecommerce.platform.backend.app.router.orders.models import Order, OrderItem
-from ecommerce.platform.backend.app.router.products.models import Product, ProductOption
-
-# Import other models to ensure SQLAlchemy registry is fully populated
-from ecommerce.platform.backend.app.router.users.models import User
-from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
+from ecommerce.platform.backend.app.models import (
+    Review, Order, OrderItem, Product, ProductOption, User, ShippingAddress
+)
 from ecommerce.chatbot.src.tools.base import BaseAPITool
 
 # Helper to get DB session

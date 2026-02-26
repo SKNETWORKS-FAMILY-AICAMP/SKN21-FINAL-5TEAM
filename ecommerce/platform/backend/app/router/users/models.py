@@ -99,6 +99,12 @@ class User(Base):
         Enum(UserRole, values_callable=lambda x: [e.value for e in x]),
         default=UserRole.USER, comment='사용자 권한 (user/admin)'
     )
+    google_id: Mapped[Optional[str]] = mapped_column(
+    String(255),
+    unique=True,
+    nullable=True,
+    comment="구글 OAuth 고유 ID"
+    )
 
     # Relationships
     body_measurement: Mapped[Optional["UserBodyMeasurement"]] = relationship(
@@ -146,7 +152,6 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan"
     )
-
 
 class UserBodyMeasurement(Base):
     """사용자 신체 치수"""

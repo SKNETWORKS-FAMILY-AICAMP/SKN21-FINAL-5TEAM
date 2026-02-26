@@ -10,6 +10,69 @@ from sqlalchemy import and_, or_, func
 
 from ecommerce.platform.backend.app.router.products import models, schemas
 
+# mapping.py
+
+COLOR_MAP = {
+    "검정": "Black", "검은": "Black", "블랙": "Black",
+    "흰색": "White", "흰": "White", "화이트": "White",
+    "빨강": "Red", "빨간": "Red", "레드": "Red",
+    "파랑": "Blue", "파란": "Blue", "블루": "Blue",
+    "초록": "Green", "초록색": "Green", "그린": "Green",
+    "노랑": "Yellow", "노란": "Yellow", "옐로우": "Yellow",
+    "핑크": "Pink",
+    "보라": "Purple", "퍼플": "Purple",
+    "회색": "Grey", "그레이": "Grey",
+    "갈색": "Brown", "브라운": "Brown",
+    "네이비": "Navy",
+    "베이지": "Beige",
+    "크림": "Cream",
+    "와인": "Maroon", "버건디": "Maroon",
+    "주황": "Orange", "오렌지": "Orange",
+    "골드": "Gold",
+    "실버": "Silver",
+    "멀티": "Multi", "여러색": "Multi",
+    "아이보리": "Ivory",
+    "차콜": "Charcoal",
+}
+
+SEASON_MAP = {
+    "봄": "Spring",
+    "여름": "Summer",
+    "가을": "Fall",
+    "겨울": "Winter",
+}
+
+GENDER_MAP = {
+    "남성": "Men", "남자": "Men",
+    "여성": "Women", "여자": "Women",
+    "남아": "Boys",
+    "여아": "Girls",
+    "공용": "Unisex",
+}
+
+PRODUCT_TYPE_MAP = {
+    "샌들": "Sandals",
+    "구두": "Heels",
+    "플랫": "Flats",
+    "운동화": "Shoes",
+    "티셔츠": "T-shirt",
+    "반팔": "T-shirt",
+    "청바지": "Jeans",
+    "레깅스": "Leggings",
+    "원피스": "Dress",
+    "가방": "Bag",
+    "핸드백": "Handbag",
+    "목걸이": "Necklace",
+    "팔찌": "Bracelet",
+    "반지": "Ring",
+    "시계": "Watch",
+    "립스틱": "Lipstick",
+    "파운데이션": "Foundation",
+    "선크림": "Sunscreen",
+    "자켓": "Jacket", "재킷": "Jacket",
+    "바지": "Pants",
+    "잠옷": "Nightdress",
+}
 
 # ============================================
 # Category CRUD
@@ -170,22 +233,12 @@ def get_product_by_id(
     product_id: int,
     include_deleted: bool = False
 ) -> Optional[models.Product]:
-    """
-    신상품 ID로 조회
-    
-    Args:
-        db: 데이터베이스 세션
-        product_id: 신상품 ID
-        include_deleted: 삭제된 상품 포함 여부
-    
-    Returns:
-        Product 객체 또는 None
-    """
+
     query = db.query(models.Product).filter(models.Product.id == product_id)
-    
+
     if not include_deleted:
         query = query.filter(models.Product.deleted_at.is_(None))
-    
+
     return query.first()
 
 
@@ -199,69 +252,93 @@ def get_products(
     skip: int = 0,
     limit: int = 100
 ) -> List[models.Product]:
-    """
-    신상품 목록 조회
-    
-    Args:
-        db: 데이터베이스 세션
-        category_id: 카테고리 ID
-        is_active: 활성화 여부
-        keyword: 검색 키워드
-        min_price: 최소 가격
-        max_price: 최대 가격
-        skip: 건너뛸 레코드 수
-        limit: 최대 조회 레코드 수
-    
-    Returns:
-        Product 객체 리스트
-    """
-    query = db.query(models.Product).filter(models.Product.deleted_at.is_(None))
-    
+
+    # ---------------------------
+    # 기본 Query (JOIN 포함)
+    # ---------------------------
+    query = (
+        db.query(models.Product)
+        .join(
+            models.ProductOption,
+            models.ProductOption.product_id == models.Product.id,
+            isouter=True
+        )
+        .join(
+            models.Category,
+            models.Category.id == models.Product.category_id,
+            isouter=True
+        )
+        .filter(models.Product.deleted_at.is_(None))
+    )
+
+    # ---------------------------
+    # 기본 필터
+    # ---------------------------
     if category_id is not None:
         query = query.filter(models.Product.category_id == category_id)
-    
+
     if is_active is not None:
         query = query.filter(models.Product.is_active == is_active)
-    
+
+    # ---------------------------
+    # 🔎 검색 (AND 유지)
+    # ---------------------------
     if keyword:
-        search_pattern = f"%{keyword}%"
-        query = query.filter(
-            or_(
-                models.Product.name.ilike(search_pattern),
-                models.Product.description.ilike(search_pattern),
-                models.Product.tags.ilike(search_pattern)
+        words = keyword.strip().split()
+        # ---------------------------
+        # 🔁 한글 → 영어 변환
+        # ---------------------------
+        normalized_words = []
+
+        for word in words:
+            if word in COLOR_MAP:
+                normalized_words.append(COLOR_MAP[word])
+            elif word in SEASON_MAP:
+                normalized_words.append(SEASON_MAP[word])
+            elif word in GENDER_MAP:
+                normalized_words.append(GENDER_MAP[word])
+            elif word in PRODUCT_TYPE_MAP:
+                normalized_words.append(PRODUCT_TYPE_MAP[word])
+            else:
+                normalized_words.append(word)
+
+        words = normalized_words
+        
+        for word in words:
+            search = f"%{word.lower()}%"
+
+            query = query.filter(
+                or_(
+                    func.lower(models.Product.name).like(search),
+                    func.lower(func.coalesce(models.Product.description, "")).like(search),
+                    func.lower(func.coalesce(models.Product.tags, "")).like(search),
+                    func.lower(func.coalesce(models.ProductOption.color, "")).like(search),
+                    func.lower(func.coalesce(models.Category.name, "")).like(search),
+                )
             )
-        )
-    
+
+    # ---------------------------
+    # 가격 필터
+    # ---------------------------
     if min_price is not None:
         query = query.filter(models.Product.price >= min_price)
-    
+
     if max_price is not None:
         query = query.filter(models.Product.price <= max_price)
-    
-    return (
-        query
-        .order_by(models.Product.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+
+    # ---------------------------
+    # 중복 제거 + 정렬
+    # ---------------------------
+    query = query.distinct().order_by(models.Product.id.desc())
+
+    return query.offset(skip).limit(limit).all()
 
 
 def get_product_with_options(
     db: Session,
     product_id: int
 ) -> Optional[models.Product]:
-    """
-    옵션 포함 신상품 조회
-    
-    Args:
-        db: 데이터베이스 세션
-        product_id: 신상품 ID
-    
-    Returns:
-        옵션이 포함된 Product 객체 또는 None
-    """
+
     return (
         db.query(models.Product)
         .filter(
@@ -277,16 +354,7 @@ def create_product(
     db: Session,
     product_data: schemas.ProductCreate
 ) -> models.Product:
-    """
-    신상품 생성
-    
-    Args:
-        db: 데이터베이스 세션
-        product_data: 신상품 생성 데이터
-    
-    Returns:
-        생성된 Product 객체
-    """
+
     product = models.Product(**product_data.model_dump())
     db.add(product)
     db.commit()
@@ -299,59 +367,38 @@ def update_product(
     product_id: int,
     product_update: schemas.ProductUpdate
 ) -> Optional[models.Product]:
-    """
-    신상품 수정
-    
-    Args:
-        db: 데이터베이스 세션
-        product_id: 신상품 ID
-        product_update: 수정할 신상품 정보
-    
-    Returns:
-        수정된 Product 객체 또는 None
-    """
+
     product = get_product_by_id(db, product_id)
-    
+
     if not product:
         return None
-    
+
     update_data = product_update.model_dump(exclude_unset=True)
-    
+
     for key, value in update_data.items():
         setattr(product, key, value)
-    
+
     db.commit()
     db.refresh(product)
-    
+
     return product
 
 
 def delete_product(db: Session, product_id: int, soft_delete: bool = True) -> bool:
-    """
-    신상품 삭제
-    
-    Args:
-        db: 데이터베이스 세션
-        product_id: 신상품 ID
-        soft_delete: 소프트 삭제 여부
-    
-    Returns:
-        삭제 성공 여부
-    """
+
     product = get_product_by_id(db, product_id)
-    
+
     if not product:
         return False
-    
+
     if soft_delete:
         product.deleted_at = datetime.utcnow()
         db.commit()
     else:
         db.delete(product)
         db.commit()
-    
-    return True
 
+    return True
 
 # ============================================
 # ProductOption CRUD
@@ -599,7 +646,11 @@ def get_used_products(
     Returns:
         UsedProduct 객체 리스트
     """
-    query = db.query(models.UsedProduct).filter(models.UsedProduct.deleted_at.is_(None))
+    query = (
+        db.query(models.UsedProduct)
+        .options(joinedload(models.UsedProduct.condition))  # ✅ condition JOIN 추가
+        .filter(models.UsedProduct.deleted_at.is_(None))
+    )
     
     if category_id is not None:
         query = query.filter(models.UsedProduct.category_id == category_id)
@@ -610,8 +661,13 @@ def get_used_products(
     if condition_id is not None:
         query = query.filter(models.UsedProduct.condition_id == condition_id)
     
+    # ✅ 기본값: 승인된 상품만 노출
     if status is not None:
         query = query.filter(models.UsedProduct.status == status)
+    else:
+        query = query.filter(
+            models.UsedProduct.status == models.UsedProductStatus.APPROVED
+        )
     
     if keyword:
         search_pattern = f"%{keyword}%"
@@ -637,7 +693,6 @@ def get_used_products(
         .all()
     )
 
-
 def get_used_product_with_options(
     db: Session,
     used_product_id: int
@@ -658,10 +713,39 @@ def get_used_product_with_options(
             models.UsedProduct.id == used_product_id,
             models.UsedProduct.deleted_at.is_(None)
         )
-        .options(joinedload(models.UsedProduct.options))
+        .options(
+            joinedload(models.UsedProduct.options),
+            joinedload(models.UsedProduct.condition)  # ✅ condition JOIN 추가
+        )
         .first()
     )
 
+
+def sync_used_product_status_by_stock(db: Session, used_product_id: int) -> None:
+    """
+    중고상품 옵션 재고 기준으로 상태를 자동 갱신
+    - 모든 옵션 재고 합이 0이면 `SOLD`
+    - 다시 재고가 생기면 `APPROVED`로 복원
+    """
+    total_quantity = (
+        db.query(
+            func.coalesce(func.sum(models.UsedProductOption.quantity), 0)
+        )
+        .filter(
+            models.UsedProductOption.used_product_id == used_product_id,
+            models.UsedProductOption.is_active == True
+        )
+        .scalar() or 0
+    )
+
+    used_product = get_used_product_by_id(db, used_product_id)
+    if not used_product:
+        return
+
+    if total_quantity <= 0 and used_product.status == models.UsedProductStatus.APPROVED:
+        used_product.status = models.UsedProductStatus.SOLD
+    elif total_quantity > 0 and used_product.status == models.UsedProductStatus.SOLD:
+        used_product.status = models.UsedProductStatus.APPROVED
 
 def create_used_product(
     db: Session,
@@ -829,7 +913,9 @@ def update_used_product_option(
     
     for key, value in update_data.items():
         setattr(option, key, value)
-    
+
+    sync_used_product_status_by_stock(db, option.used_product_id)
+
     db.commit()
     db.refresh(option)
     

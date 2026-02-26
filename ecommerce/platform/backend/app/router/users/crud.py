@@ -24,6 +24,10 @@ def verify_password(plain: str, hashed: str) -> bool:
 # user queries
 # =========================
 
+def get_all_users(db: Session) -> list[User]:
+    return db.query(User).filter(User.deleted_at.is_(None)).all()
+
+
 def get_user_by_id(db: Session, user_id: int) -> User | None:
     return (
         db.query(User)

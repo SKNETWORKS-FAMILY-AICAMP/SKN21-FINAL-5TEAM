@@ -1,11 +1,16 @@
 """
 Cart Router - 장바구니 API 엔드포인트
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List
 from ecommerce.platform.backend.app.database import get_db
 from ecommerce.platform.backend.app.router.carts import crud, schemas
+from ecommerce.platform.backend.app.router.user_history import crud as history_crud, schemas as history_schemas
+from ecommerce.platform.backend.app.router.users.models import User
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(
@@ -189,14 +194,43 @@ def remove_cart_item(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="장바구니 항목을 찾을 수 없습니다"
         )
-    
+
+    # 삭제 전 상품 정보 조회 (히스토리 기록용)
+    cart_item = crud.get_cart_item_by_id(db, item_id)
+    if not cart_item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="장바구니 항목을 찾을 수 없습니다"
+        )
+
+    product_info = crud.get_product_info(db, cart_item.product_option_type, cart_item.product_option_id)
+    cart_item_name = product_info['name'] if product_info else None
+    product_option_type = cart_item.product_option_type
+    product_option_id = cart_item.product_option_id
+
     # 삭제
     if not crud.delete_cart_item(db, item_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="장바구니 항목을 찾을 수 없습니다"
         )
-    
+
+    # 히스토리 기록
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        history_crud.track_cart_action(
+            db=db,
+            user_id=user_id,
+            action_type=history_schemas.ActionType.CART_DEL,
+            cart_item_id=item_id,
+            product_option_type=product_option_type,
+            product_option_id=product_option_id,
+            user_name=user.name if user else None,
+            cart_item_name=cart_item_name
+        )
+    except Exception as e:
+        logger.error(f"장바구니 삭제 히스토리 기록 실패: {e}")
+
     return None
 
 
@@ -216,10 +250,40 @@ def remove_cart_items(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"항목 {item_id}에 대한 권한이 없습니다"
             )
-    
+
+    # 삭제 전 각 항목 정보 조회 (히스토리 기록용)
+    items_info = []
+    for item_id in request.item_ids:
+        cart_item = crud.get_cart_item_by_id(db, item_id)
+        if cart_item:
+            product_info = crud.get_product_info(db, cart_item.product_option_type, cart_item.product_option_id)
+            items_info.append({
+                "item_id": item_id,
+                "product_option_type": cart_item.product_option_type,
+                "product_option_id": cart_item.product_option_id,
+                "cart_item_name": product_info['name'] if product_info else None
+            })
+
     # 일괄 삭제
     deleted_count = crud.delete_cart_items(db, request.item_ids)
-    
+
+    # 히스토리 기록
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        for info in items_info:
+            history_crud.track_cart_action(
+                db=db,
+                user_id=user_id,
+                action_type=history_schemas.ActionType.CART_DEL,
+                cart_item_id=info["item_id"],
+                product_option_type=info["product_option_type"],
+                product_option_id=info["product_option_id"],
+                user_name=user.name if user else None,
+                cart_item_name=info["cart_item_name"]
+            )
+    except Exception as e:
+        logger.error(f"장바구니 일괄 삭제 히스토리 기록 실패: {e}")
+
     return {
         "message": f"{deleted_count}개 항목이 삭제되었습니다",
         "deleted_count": deleted_count

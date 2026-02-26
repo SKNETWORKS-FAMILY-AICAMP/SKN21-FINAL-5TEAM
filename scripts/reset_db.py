@@ -13,16 +13,11 @@ sys.path.append(str(BASE_DIR))
 
 from ecommerce.platform.backend.app.database import engine, Base
 
-# 모든 모델을 import해야 Base.metadata에 등록되어 삭제/생성이 가능합니다.
-import ecommerce.platform.backend.app.router.users.models
-import ecommerce.platform.backend.app.router.products.models
-import ecommerce.platform.backend.app.router.carts.models
-import ecommerce.platform.backend.app.router.orders.models
-import ecommerce.platform.backend.app.router.shipping.models
-import ecommerce.platform.backend.app.router.payments.models
-import ecommerce.platform.backend.app.router.points.models
-import ecommerce.platform.backend.app.router.reviews.models
-import ecommerce.platform.backend.app.router.inventories.models
+# 중앙 집중식 모델 import (모든 모델을 자동으로 로드)
+from ecommerce.platform.backend.app import init_models
+
+# 모든 모델 로드
+init_models()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

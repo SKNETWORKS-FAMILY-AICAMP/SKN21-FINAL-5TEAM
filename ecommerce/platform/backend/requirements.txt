@@ -1,17 +1,40 @@
+
 # 웹 프레임워크
 fastapi                 # FastAPI: REST API 서버 및 웹 요청 처리
-uvicorn                 # ASGI 서버: FastAPI 실행용, 빠른 비동기 처리 지원
+uvicorn[standard]       # ASGI 서버: FastAPI 실행용, 빠른 비동기 처리 지원
+python-multipart        # Form-data 처리용
+email-validator         # 이메일 유효성 검사 (Pydantic[email])
 
 # 데이터베이스
 sqlalchemy              # ORM: 파이썬 객체로 DB 조작 가능
 pymysql                 # MySQL/MariaDB 드라이버: SQLAlchemy가 DB에 연결할 때 사용
+qdrant-client           # 벡터 데이터베이스 클라이언트
 
-#key 설정
+# 환경 변수 및 설정
 python-dotenv
+pydantic-settings       # Pydantic BaseSettings 지원
 
-# FastAPI 내부 의존성 (보통 pip가 자동 설치)
-# starlette             # FastAPI 내부 사용 (웹 라우팅/미들웨어)
-# annotated-doc         # FastAPI 내부 문서 생성용
+# 인증 및 보안
+passlib[bcrypt]         # 비밀번호 해싱
+python-jose[cryptography] # JWT 토큰 생성 및 검증
 
-# 추가 라이브러리
-python-jose  # JWT 토큰 생성 및 검증
+# AI 및 LangChain
+langchain               # LangChain 핵심
+langchain-core          # LangChain 코어
+langchain-openai        # OpenAI 연동
+langsmith               # LangSmith 트레이싱
+langgraph               # LangGraph 워크플로우
+accelerate              # HF device_map / 메모리 최적화 로딩 지원
+bitsandbytes; platform_system != "Darwin"  # CUDA 4bit/8bit 양자화 (macOS 제외)
+
+# 임베딩 & 리랭킹
+fastembed               # 텍스트 임베딩
+flashrank               # 리랭킹 (Reranker)
+
+# 기타 유틸리티
+requests                # HTTP 요청
+numpy
+pandas
+
+# 구글 OAuth2 인증
+authlib # OAuth2 클라이언트 및 환경 변수 로딩

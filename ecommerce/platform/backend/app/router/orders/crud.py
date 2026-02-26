@@ -11,6 +11,7 @@ from sqlalchemy import and_, desc
 from ecommerce.platform.backend.app.router.orders import models, schemas
 from ecommerce.platform.backend.app.router.carts.models import Cart, CartItem
 from ecommerce.platform.backend.app.router.products.models import ProductOption, UsedProductOption
+from ecommerce.platform.backend.app.router.inventories.models import InventoryTransaction, TransactionType, ProductType as InvProductType
 
 
 # ============================================
@@ -216,7 +217,14 @@ def create_order_from_cart(
         )
         db.add(order)
         db.flush()  # ID 생성
-        
+
+        # 주문 생성 히스토리 기록
+        db.add(models.OrderStatusHistory(
+            order_id=order.id,
+            status=schemas.OrderStatus.PENDING.value,
+            notes="주문 생성",
+        ))
+
         # 5. 주문 항목 생성 및 재고 차감
         for item_data in order_items_data:
             order_item = models.OrderItem(
@@ -232,7 +240,18 @@ def create_order_from_cart(
             # 재고 차감
             option = item_data['option']
             option.quantity -= item_data['quantity']
-        
+
+            # 재고 거래 내역 기록
+            inv_type = InvProductType.NEW if item_data['product_option_type'] == schemas.ProductType.NEW else InvProductType.USED
+            db.add(InventoryTransaction(
+                product_option_type=inv_type,
+                product_option_id=item_data['product_option_id'],
+                quantity_change=-item_data['quantity'],
+                transaction_type=TransactionType.SALE,
+                reference_id=order.id,
+                notes=f"주문 생성 (주문번호: {order.order_number})",
+            ))
+
         # 6. 장바구니 항목 삭제
         for cart_item in cart_items:
             db.delete(cart_item)
@@ -340,7 +359,14 @@ def create_order_direct(
         )
         db.add(order)
         db.flush()
-        
+
+        # 주문 생성 히스토리 기록
+        db.add(models.OrderStatusHistory(
+            order_id=order.id,
+            status=schemas.OrderStatus.PENDING.value,
+            notes="주문 생성",
+        ))
+
         # 주문 항목 생성 및 재고 차감
         for item_data in order_items_data:
             order_item = models.OrderItem(
@@ -355,12 +381,23 @@ def create_order_direct(
             
             option = item_data['option']
             option.quantity -= item_data['quantity']
-        
+
+            # 재고 거래 내역 기록
+            inv_type = InvProductType.NEW if item_data['product_option_type'] == schemas.ProductType.NEW else InvProductType.USED
+            db.add(InventoryTransaction(
+                product_option_type=inv_type,
+                product_option_id=item_data['product_option_id'],
+                quantity_change=-item_data['quantity'],
+                transaction_type=TransactionType.SALE,
+                reference_id=order.id,
+                notes=f"주문 생성 (주문번호: {order.order_number})",
+            ))
+
         db.commit()
         db.refresh(order)
-        
+
         return order, None
-        
+
     except Exception as e:
         db.rollback()
         return None, f"주문 생성 중 오류 발생: {str(e)}"
@@ -421,13 +458,9 @@ def cancel_order(
         if not order:
             return False, "주문을 찾을 수 없습니다"
         
-        # 이미 취소되었거나 환불된 경우
-        if order.status in [schemas.OrderStatus.CANCELLED, schemas.OrderStatus.REFUNDED]:
-            return False, "이미 취소된 주문입니다"
-        
-        # 배송 시작된 경우 취소 불가
-        if order.status in [schemas.OrderStatus.SHIPPED, schemas.OrderStatus.DELIVERED]:
-            return False, "배송이 시작된 주문은 취소할 수 없습니다"
+        # 결제 완료, 상품준비중 상태에서만 주문 취소 가능
+        if order.status not in [schemas.OrderStatus.PAID, schemas.OrderStatus.PREPARING]:
+            return False, "주문 취소는 결제 완료 또는 상품준비중 상태에서만 가능합니다"
         
         # 재고 복구
         for item in order.items:
@@ -442,7 +475,18 @@ def cancel_order(
             
             if option:
                 option.quantity += item.quantity
-        
+
+                # 재고 거래 내역 기록
+                inv_type = InvProductType.NEW if item.product_option_type == schemas.ProductType.NEW else InvProductType.USED
+                db.add(InventoryTransaction(
+                    product_option_type=inv_type,
+                    product_option_id=item.product_option_id,
+                    quantity_change=item.quantity,
+                    transaction_type=TransactionType.RETURN,
+                    reference_id=order.id,
+                    notes=f"주문 취소 (주문번호: {order.order_number})",
+                ))
+
         # 주문 상태 변경
         order.status = schemas.OrderStatus.CANCELLED
         if reason:
@@ -471,14 +515,9 @@ def refund_order(
         if not order:
             return False, "주문을 찾을 수 없습니다"
         
-        # 결제 완료된 주문만 환불 가능
-        if order.status not in [
-            schemas.OrderStatus.PAID,
-            schemas.OrderStatus.PREPARING,
-            schemas.OrderStatus.SHIPPED,
-            schemas.OrderStatus.DELIVERED
-        ]:
-            return False, "환불 가능한 상태가 아닙니다"
+        # 배송중, 배송 완료 상태에서만 환불 가능
+        if order.status not in [schemas.OrderStatus.SHIPPED, schemas.OrderStatus.DELIVERED]:
+            return False, "환불은 배송중 또는 배송 완료 상태에서만 가능합니다"
         
         # 재고 복구
         for item in order.items:
@@ -493,7 +532,18 @@ def refund_order(
             
             if option:
                 option.quantity += item.quantity
-        
+
+                # 재고 거래 내역 기록
+                inv_type = InvProductType.NEW if item.product_option_type == schemas.ProductType.NEW else InvProductType.USED
+                db.add(InventoryTransaction(
+                    product_option_type=inv_type,
+                    product_option_id=item.product_option_id,
+                    quantity_change=item.quantity,
+                    transaction_type=TransactionType.RETURN,
+                    reference_id=order.id,
+                    notes=f"주문 환불 (주문번호: {order.order_number})",
+                ))
+
         # 주문 상태 변경
         order.status = schemas.OrderStatus.REFUNDED
         current_request = order.shipping_request or ""
@@ -538,6 +588,7 @@ def get_product_info_for_item(db: Session, item: models.OrderItem) -> dict:
         }
     """
     default_info = {
+        "product_id": None,
         "product_name": f"상품 옵션 ID: {item.product_option_id}",
         "product_brand": None,
         "product_size": None,
@@ -556,6 +607,7 @@ def get_product_info_for_item(db: Session, item: models.OrderItem) -> dict:
 
             if option and option.product:
                 return {
+                    "product_id": option.product.id,
                     "product_name": option.product.name,
                     "product_brand": option.product.category.name if option.product.category else None,
                     "product_size": option.size_name,
@@ -577,6 +629,7 @@ def get_product_info_for_item(db: Session, item: models.OrderItem) -> dict:
                     condition_name = option.used_product.condition.condition_name
 
                 return {
+                    "product_id": option.used_product.id,
                     "product_name": option.used_product.name,
                     "product_brand": option.used_product.category.name if option.used_product.category else None,
                     "product_size": option.size_name,
@@ -632,6 +685,7 @@ def enrich_order_with_product_names(db: Session, order: models.Order) -> dict:
             "unit_price": str(item.unit_price),
             "subtotal": str(item.subtotal),
             "created_at": item.created_at.isoformat(),
+            "product_id": product_info["product_id"],
             "product_name": product_info["product_name"],
             "product_brand": product_info["product_brand"],
             "product_size": product_info["product_size"],
