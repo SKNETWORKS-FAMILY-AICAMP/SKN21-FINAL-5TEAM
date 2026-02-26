@@ -100,7 +100,7 @@ def login(
         action_metadata=json.dumps({
             "user": user.name,
             "timestamp": datetime.utcnow().isoformat()
-        }),
+        }, ensure_ascii=False),
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
@@ -136,7 +136,7 @@ def logout(
         action_metadata=json.dumps({
             "user": current_user.name,
             "timestamp": datetime.utcnow().isoformat()
-        }),
+        }, ensure_ascii=False),
     )
 
     response.delete_cookie(
@@ -353,7 +353,7 @@ async def google_callback(
         action_metadata=json.dumps({
             "user": user.name,
             "timestamp": datetime.utcnow().isoformat()
-        }),
+        }, ensure_ascii=False),
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
