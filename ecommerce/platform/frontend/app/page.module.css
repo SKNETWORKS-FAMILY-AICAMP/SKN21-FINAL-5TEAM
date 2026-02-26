@@ -15,25 +15,36 @@
   justify-content: space-between;
   align-items: flex-end;
   margin-bottom: 16px;
+  gap: 12px;
 }
 
 .sectionTitle {
-  font-size: 18px;
+  font-size: 26px;
   font-weight: 600;
+  margin: 0;
 }
 
 .sectionSubTitle {
-  font-size: 14px;
-  color: #666;
+  font-size: 16px;
+  color: #444;
+  margin: 4px 0 0;
 }
 
 .moreButton {
-  font-size: 13px;
-  color: #666;
-  text-decoration: underline;
-  background: none;
-  border: none;
+  border: 1px solid #aaa;
+  background: transparent;
+  color: #111;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 18px;
+  border-radius: 4px;
   cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.moreButton:hover {
+  border-color: #111;
+  color: #111;
 }
 
 /* ===== 상품 그리드 ===== */
@@ -84,10 +95,14 @@
 /* 상품 정보 */
 .productInfo {
   padding-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 72px;
 }
 
 .productName {
-  margin-top: 8px;
+  margin: 0;
   font-size: 14px;
   line-height: 18px;
   height: 36px;          /* 정확히 두 줄 높이 */
@@ -99,11 +114,11 @@
 }
 
 .productPrice {
-  margin-top: 6px;
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
   line-height: 18px;
-  height: 18px;      /* single line */
+  margin-top: auto;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
