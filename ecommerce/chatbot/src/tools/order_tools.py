@@ -10,9 +10,14 @@ from datetime import datetime, timedelta
 from ecommerce.platform.backend.app.database import SessionLocal
 from ecommerce.platform.backend.app.models import (
     Order, OrderItem, User, ShippingInfo, ShippingAddress,
-    Product, ProductOption
+    Product, ProductOption, UsedProductOption
 )
-from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
+from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus, ProductType
+from ecommerce.platform.backend.app.router.inventories.models import (
+    InventoryTransaction, TransactionType, ProductType as InvProductType
+)
+from ecommerce.platform.backend.app.router.user_history.crud import track_order_action, track_refund_request
+from ecommerce.platform.backend.app.router.user_history.schemas import ActionType as HistoryActionType
     
 def get_db():
     """DB 세션 생성 (generator)"""
@@ -103,11 +108,11 @@ def _get_order_actions(order: Order) -> dict:
         "exchange_type": None  # pre_shipment / post_shipment
     }
     
-    # 1. 취소 가능 여부 (배송 전)
-    if order.status in [OrderStatus.PENDING, OrderStatus.PAID]:
+    # 1. 취소 가능 여부 (결제 완료, 상품 준비중)
+    if order.status in [OrderStatus.PAID, OrderStatus.PREPARING]:
         actions["can_cancel"] = True
     else:
-        actions["cancel_reason"] = f"현재 상태({order.status.value})에서는 취소가 불가능합니다. (배송 시작됨)"
+        actions["cancel_reason"] = f"현재 상태({order.status.value})에서는 취소가 불가능합니다. (결제 완료 또는 상품준비중 상태에서만 가능)"
     
     # 2. 반품 가능 여부 (배송 후)
     if order.status in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
@@ -126,7 +131,7 @@ def _get_order_actions(order: Order) -> dict:
     
     # 3. 교환 가능 여부 (배송 전/후)
     if order.status not in [OrderStatus.CANCELLED, OrderStatus.REFUNDED]:
-        if order.status in [OrderStatus.PENDING, OrderStatus.PAID]:
+        if order.status in [OrderStatus.PAID, OrderStatus.PREPARING]:
             actions["can_exchange"] = True
             actions["exchange_type"] = "pre_shipment"
         elif order.status in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
@@ -231,19 +236,50 @@ def cancel_order(order_id: str, user_id: int, reason: str, confirmed: bool = Tru
     try:
         if not confirmed:
             return {"success": False, "message": "주문 취소가 중단되었습니다."}
-            
+
         order, error = _get_order_with_auth(db, order_id, user_id)
         if error:
             return error
         assert order is not None  # Type narrowing
             
-        if order.status not in [OrderStatus.PENDING, OrderStatus.PAID]:
-            return {"error": "배송이 시작되어 취소할 수 없습니다."}
+        if order.status not in [OrderStatus.PAID, OrderStatus.PREPARING]:
+            return {"error": "주문 취소는 결제 완료 또는 상품준비중 상태에서만 가능합니다."}
             
+        # 재고 복구
+        for item in order.items:
+            if item.product_option_type == ProductType.NEW:
+                option = db.query(ProductOption).filter(
+                    ProductOption.id == item.product_option_id
+                ).first()
+            else:
+                option = db.query(UsedProductOption).filter(
+                    UsedProductOption.id == item.product_option_id
+                ).first()
+
+            if option:
+                option.quantity += item.quantity
+
+                # 재고 거래 내역 기록
+                inv_type = InvProductType.NEW if item.product_option_type == ProductType.NEW else InvProductType.USED
+                db.add(InventoryTransaction(
+                    product_option_type=inv_type,
+                    product_option_id=item.product_option_id,
+                    quantity_change=item.quantity,
+                    transaction_type=TransactionType.RETURN,
+                    reference_id=order.id,
+                    notes=f"챗봇 주문 취소 (주문번호: {order.order_number})",
+                ))
+
         order.status = OrderStatus.CANCELLED
         order.shipping_request = f"Cancelled by user: {reason}"
         db.commit()
-        
+
+        # user history 기록
+        try:
+            track_order_action(db, user_id, order.id, HistoryActionType.ORDER_DEL)
+        except Exception:
+            pass  # 히스토리 기록 실패해도 취소 결과에 영향 없음
+
         return {
             "success": True,
             "message": f"주문({order_id})이 성공적으로 취소되었습니다.",
@@ -264,17 +300,18 @@ def check_refund_eligibility(
     is_seller_fault: bool = False
 ) -> dict:
     """
-    환불(취소 또는 반품) 가능 여부를 확인하고 예상 환불 금액을 계산합니다.
-    주문 상태(배송 전/후)에 따라 자동으로 '취소' 또는 '반품' 가능 여부를 판단합니다.
-    
+    환불(반품) 가능 여부를 확인하고 예상 환불 금액을 계산합니다.
+    환불은 배송중(shipped) 또는 배송완료(delivered) 상태에서만 가능합니다.
+    결제완료(paid)/상품준비중(preparing) 상태에서는 환불이 불가능하며, 주문 취소(cancel_order)를 안내합니다.
+
     Args:
         order_id: 주문번호 (예: ORD-20240209-0001)
         user_id: 요청자 사용자 ID
-        reason: 환불/취소 사유 (기본값: 단순 변심)
+        reason: 환불 사유 (기본값: 단순 변심)
         is_seller_fault: 판매자 귀책 여부 (상품 불량 등일 경우 True)
-        
+
     Returns:
-        환불 가능 여부(eligible), 유형(type: cancellation/return), 환불 예정 금액, 안내 메시지 등
+        환불 가능 여부(eligible), 환불 예정 금액, 안내 메시지 등
     """
     db = SessionLocal()
     try:
@@ -285,23 +322,22 @@ def check_refund_eligibility(
         
         status = order.status
         
-        # 배송 전 -> 취소 로직
-        if status in [OrderStatus.PENDING, OrderStatus.PAID]:
+        # 배송 전 (결제 완료, 상품 준비중) -> 환불 불가, 주문 취소 안내
+        if status in [OrderStatus.PAID, OrderStatus.PREPARING]:
             return {
-                "eligible": True,
-                "type": "cancellation",
+                "eligible": False,
                 "order_id": order_id,
                 "current_status": status.value,
-                "refund_amount": float(order.total_amount),
+                "cancel_available": True,
                 "message": (
-                    f"취소 가능 여부 확인 완료\n"
-                    f"주문 금액 {float(order.total_amount):,.0f}원이 전액 환불됩니다.\n"
-                    f"정말 취소하시겠습니까?"
+                    f"현재 주문 상태({status.label})에서는 환불이 불가능합니다.\n"
+                    f"배송 전 상태이므로 주문 취소(cancel_order)를 이용해주세요.\n"
+                    f"주문 취소 시 주문 금액 {float(order.total_amount):,.0f}원이 전액 환불됩니다."
                 )
             }
-        
-        # 배송 후 -> 반품 로직
-        elif status in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
+
+        # 배송 후 -> 환불(반품) 로직
+        if status in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
             # 배송완료일 기준 7일 이내 검증
             if status == OrderStatus.DELIVERED and order.shipping_info:
                 is_valid, error_msg = _check_return_period(order.shipping_info.delivered_at)
@@ -340,8 +376,8 @@ def check_refund_eligibility(
                 )
             }
         
-        else:
-            return {"error": f"현재 주문 상태({status.value})에서는 환불/취소 처리가 불가능합니다."}
+        # 그 외 상태 (PENDING, CANCELLED, REFUNDED 등)
+        return {"eligible": False, "error": f"현재 주문 상태({status.value})에서는 환불 처리가 불가능합니다."}
     
     except Exception as e:
         return {"error": f"환불 가능 여부 확인 실패: {str(e)}"}
@@ -372,21 +408,55 @@ def register_return_request(
     try:
         if not confirmed:
             return {"success": False, "message": "반품 접수가 취소되었습니다."}
-        
+
+        # 캐시 무효화 (이전 세션에서 detached된 객체 방지)
+        _order_cache.pop(f"{user_id}:{order_id}", None)
+
         order, error = _get_order_with_auth(db, order_id, user_id)
         if error:
             return error
         assert order is not None  # Type narrowing
-            
+
         if order.status not in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
             return {"error": "배송이 완료되지 않아 반품을 접수할 수 없습니다."}
-        
-        # 반품 접수 상태로 변경 (REFUNDED로 바로 가는 것이 아니라, 반품 요청 상태로 둬야 하지만 
+
+        # 재고 복구
+        for item in order.items:
+            if item.product_option_type == ProductType.NEW:
+                option = db.query(ProductOption).filter(
+                    ProductOption.id == item.product_option_id
+                ).first()
+            else:
+                option = db.query(UsedProductOption).filter(
+                    UsedProductOption.id == item.product_option_id
+                ).first()
+
+            if option:
+                option.quantity += item.quantity
+
+                # 재고 거래 내역 기록
+                inv_type = InvProductType.NEW if item.product_option_type == ProductType.NEW else InvProductType.USED
+                db.add(InventoryTransaction(
+                    product_option_type=inv_type,
+                    product_option_id=item.product_option_id,
+                    quantity_change=item.quantity,
+                    transaction_type=TransactionType.RETURN,
+                    reference_id=order.id,
+                    notes=f"챗봇 반품 환불 (주문번호: {order.order_number})",
+                ))
+
+        # 반품 접수 상태로 변경 (REFUNDED로 바로 가는 것이 아니라, 반품 요청 상태로 둬야 하지만
         # 현재 모델에는 RETURN_REQUESTED 상태가 없으므로 REFUNDED로 처리하되 메모를 남김)
         order.status = OrderStatus.REFUNDED
         order.shipping_request = f"Return Requested. Pickup: {pickup_address}"
         db.commit()
-        
+
+        # user history 기록
+        try:
+            track_refund_request(db, user_id, order.id)
+        except Exception:
+            pass  # 히스토리 기록 실패해도 반품 접수 결과에 영향 없음
+
         return {
             "success": True,
             "message": f"반품 접수가 완료되었습니다. 택배기사님이 {pickup_address}로 방문할 예정입니다.",
@@ -431,7 +501,7 @@ def check_exchange_eligibility(
             return {"error": "취소/환불된 주문은 교환할 수 없습니다."}
             
         # 1. 배송 전 -> 단순 옵션 변경
-        if order.status in [OrderStatus.PENDING, OrderStatus.PAID]:
+        if order.status in [OrderStatus.PAID, OrderStatus.PREPARING]:
             return {
                 "eligible": True,
                 "type": "pre_shipment",
@@ -495,8 +565,8 @@ def change_product_option(order_id: str, user_id: int, new_option_id: int) -> di
             return error
         assert order is not None  # Type narrowing
             
-        if order.status not in [OrderStatus.PENDING, OrderStatus.PAID]:
-            return {"error": "배송이 시작되어 옵션을 변경할 수 없습니다. 교환 신청을 이용해주세요."}
+        if order.status not in [OrderStatus.PAID, OrderStatus.PREPARING]:
+            return {"error": "결제 완료 또는 상품준비중 상태에서만 옵션 변경이 가능합니다. 교환 신청을 이용해주세요."}
             
         # 실제로는 여기서 재고 확인 및 OrderItem 업데이트 로직이 들어가야 함
         # 현재는 Mock 처리
@@ -542,12 +612,12 @@ def register_exchange_request(
     try:
         if not confirmed:
             return {"success": False, "message": "교환 접수가 취소되었습니다."}
-            
+
         order, error = _get_order_with_auth(db, order_id, user_id)
         if error:
             return error
         assert order is not None  # Type narrowing
-            
+
         if order.status not in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
              return {"error": "배송 전입니다. 옵션 변경 기능을 이용해주세요."}
              
@@ -559,7 +629,7 @@ def register_exchange_request(
             f"Pickup: {pickup_address}, New Option: {new_option_id}"
         )
         db.commit()
-        
+
         return {
             "success": True,
             "message": "교환 접수가 완료되었습니다. 수거 및 재배송이 진행됩니다.",
