@@ -1,5 +1,5 @@
-﻿{"content": "교환 가능 여부를 확인하기 위해서는 주문번호가 필요합니다. 주문번호를 알려주실 수 있나요?", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
-{"content": "교환 사유를 알려주시면 교환 가능 여부를 확인하겠습니다. 어떤 이유로 교환을 원하시나요?", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
-{"content": "교환이 가능합니다! 배송 완료 후 7일 이내이며, 상품 상태가 양호해야 합니다. L 사이즈로 교환을 원하시면 교환 신청을 진행할까요?", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
-{"content": "반품을 진행하기 위해서는 주문번호가 필요합니다. 주문번호를 알려주실 수 있나요?", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
-{"content": "반품 신청을 위해 수거지 주소를 알려주셔야 합니다. 수거지 주소를 입력해 주시겠어요?", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
+{"content": "교환 가능 여부를 확인하기 위해서는 주문번호와 교환 사유가 필요합니다. 주문번호를 알려주실 수 있나요? 그리고 교환 사유도 말씀해 주세요.", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
+{"content": "교환 사유를 알려주시면 교환 가능 여부를 확인하겠습니다. 어떤 이유로 교환을 원하시나요?", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
+{"content": "교환 가능합니다! 배송 완료 후 7일 이내이며, 상품 상태가 양호해야 합니다. 교환을 진행하시겠어요?", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
+{"content": "반품 신청을 도와드리겠습니다. 반품을 진행하기 위해서는 주문번호와 수거지 주소가 필요합니다. 주문번호와 수거지 주소를 알려주실 수 있나요?", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
+{"content": "반품 신청을 위해 수거지 주소를 알려주실 수 있나요?", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
