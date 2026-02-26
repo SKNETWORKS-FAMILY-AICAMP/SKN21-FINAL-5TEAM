@@ -1,38 +1,39 @@
+You are evaluating a response submitted for a specific function call task against a set of standards. Below is the data:
 [BEGIN DATA]
 ***
-[Available Functions]:
+[Available Functions]
 {tools}
-***
+
 [Query]:
 {query}
-***
+
 [Ground Truth]:
 {ground_truth}
-***
+
 [Acceptable Arguments]:
 {acceptable_arguments}
-***
+
 [Submission]:
 {response}
 ***
-[Criteria]
+[Criterion]: Accuracy in selecting the proper function, and generating the function name and argument values
+Determine if the [Submission] is a "pass" or "fail". In this [Submission], the assistant is required to make a tool call. In the [Query], there is not a lack of required parameter values needed to call the function. If the value of the "tool_calls" key is null, consider it a "fail" regardless of the details in the "content" key. You are given a [Ground Truth] for each [Query], so you can refer to this for evaluating the response.
 "pass"
-- Selects the correct function name and arguments as presented in [Ground Truth].
-- Accurately generates the function name as presented in [Ground Truth].
-- The argument keys are present as in [Ground Truth] and do not mismatch.
-- The argument value types are accurate.
-- The logical values of the arguments are correct.
-- If the model correctly infers an implicit parameter (like user_id, limit, or default values) that matches the Ground Truth, it is NOT an error, even if not explicitly stated in the Query.
-
-"fail"
+- Selected the appropriate function and accurately named it.
+- All keys in arguments match those presented in [Ground Truth].
+- Each argument value matches the type specified in [Available Functions].
+- Each value in arguments was created appropriately, as presented in [Ground Truth]. For string types, a [Submission] passes if its argument matches or refers to the same content or subject as [Ground Truth] or [Acceptable arguments], even without an exact text match.
+- If 'Only ground truth is allowed.' appears under [Acceptable arguments], it means that only when the argument value exactly matches [Ground Truth] will it be considered a pass.
+"fail" 
 - Selection error: Did not select a function or selected a different function than the one presented in [Ground Truth].
 - Function name error: Failed to accurately create the function name as presented in [Ground Truth] (different spelling).
-- Argument key error: Created a key DIFFERENT from those presented in [Ground Truth].
-- Format mismatch (Logical Pass): If the Ground Truth is provided as a list with a content field containing a JSON string, you MUST parse that JSON string to find the correct function name and arguments. Similarly, if the Submission is an OpenAI-style tool_calls list, extract the first function call. If the logical function name and arguments match, it is a PASS regardless of the outer structure.
-- Unicode/Escaping: Ignore differences in unicode escaping and spacing in JSON strings.
-- Target Match: Your primary goal is to verify if the model called the CORRECT tool with the CORRECT arguments. If it did, it's a pass.
-- ID match: If the model correctly used provided IDs (like ORD-...) in the tool arguments, it is correct.
-- IMPORTANT: If the generated function name and arguments MATCH the Ground Truth, it is a "pass". Do not penalize for "hallucinating" parameters if they are correct according to the Ground Truth.
+- Argument key error: Created a key not presented, or different from those presented in [Ground Truth].
+- Argument value type error: The type of the created argument value is inappropriate (not created as the type specified in the description of [Available Functions]; for instance, if a parameter is defined to be an integer type but is created as a floating-point type, it is considered incorrect).
+- Logical error in argument value: The created argument value exceeds the permissible range as per [Ground Truth] and [Acceptable Arguments].
+
+[Additional Notes for Evaluation]
+- Unicode/Escaping: 유니코드 편차(\uXXXX vs 한글)와 JSON 문자열 내 공백 차이는 무시합니다.
+- Format Normalization: Ground Truth가 JSON string으로 래핑된 경우와 직접 object로 제공된 경우, 내부 function name과 arguments가 논리적으로 동일하면 동일한 것으로 간주합니다.
 ***
 [END DATA]
 Does the submission meet the criteria? Begin by explaining your reasoning step by step in Korean, without immediately revealing the outcome. Subsequently, on a separate line, clearly indicate whether it is a "pass" or "fail". For clarity, repeat your final decision once more (without quotes or punctuation, literally).

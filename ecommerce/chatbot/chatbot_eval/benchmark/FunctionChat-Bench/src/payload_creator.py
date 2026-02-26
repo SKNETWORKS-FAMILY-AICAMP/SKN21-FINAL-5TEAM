@@ -3,7 +3,7 @@ import json
 from functools import wraps
 from typing import Any, Callable
 from tqdm import tqdm
-from src import utils
+import src.utils as utils
 from src.formatter import (
     CommonRequestFormatter,
     DialogRequestFormatter,

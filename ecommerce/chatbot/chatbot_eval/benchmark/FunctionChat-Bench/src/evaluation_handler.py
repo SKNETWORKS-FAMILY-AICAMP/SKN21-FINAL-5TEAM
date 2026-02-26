@@ -6,8 +6,8 @@ from tqdm import tqdm
 from typing import Optional, Union
 import concurrent.futures
 
-from src import utils
-from src import openai_utils
+import src.utils as utils
+import src.openai_utils as openai_utils
 from src.api_executor import (
     OpenaiModelAzureAPI,
     OpenaiModelAPI
@@ -37,8 +37,8 @@ EVAlUATION_REGISTOR_OBJ = {
     DIALOG: DialogEvaluationRegistor,
 }
 
-CUR_PATH = os.path.dirname(os.path.abspath(__file__))
-REPO_PATH = os.path.dirname(CUR_PATH)
+from src.paths import BENCH_ROOT, ENV_PATH
+REPO_PATH = str(BENCH_ROOT)
 
 
 class EvaluationHandler:
@@ -66,10 +66,8 @@ class EvaluationHandler:
         cfg = json.loads(open(f'{REPO_PATH}/openai.cfg', 'r').read())
         
         # Load environment variables
-        from pathlib import Path
         from dotenv import load_dotenv
-        ROOT_DIR = Path(__file__).resolve().parents[6]
-        load_dotenv(ROOT_DIR / ".env")
+        load_dotenv(ENV_PATH)
         
         self.temperature = float(cfg.get('temperature'))
         self.executor = self.load_api_executor(cfg)
@@ -245,13 +243,21 @@ class EvaluationHandler:
             ground_truth_func = ground_truth
             
         g_func_name = ground_truth_func.get('name')
-        g_func_args = ground_truth_func.get('arguments')
+        g_func_args = ground_truth_func.get('arguments', {})
 
         predict_tools = out.get('tool_calls', [])
-        if predict_tools:
+        
+        if g_func_name == "no_tool_call":
+            if not predict_tools:
+                is_pass = "pass"
+                is_pass_bool = True
+            else:
+                p_func_name = predict_tools[0].get('function', {}).get('name')
+                diff_case_msg += f"Function name mismatch: g({g_func_name}) | p({p_func_name})\n"
+        elif predict_tools:
             predicted_func = predict_tools[0].get('function', {})
             p_func_name = predicted_func.get('name')
-            p_func_args = predicted_func.get('arguments')
+            p_func_args = predicted_func.get('arguments', {})
 
             if g_func_name == p_func_name:
                 if self.compare_arguments(g_func_args, p_func_args, acceptable_arguments):
@@ -261,6 +267,8 @@ class EvaluationHandler:
                     diff_case_msg += f"Function arguments mismatch: g({g_func_args}) | p({p_func_args})\n"
             else:
                 diff_case_msg += f"Function name mismatch: g({g_func_name}) | p({p_func_name})\n"
+        else:
+            diff_case_msg += f"Model did not call any tool, expected {g_func_name}\n"
 
         msg = f"exact-eval\n{diff_case_msg}\n\n{is_pass}\n{is_pass}\n"
 
@@ -398,7 +406,8 @@ class EvaluationHandler:
             os.remove(self.batch_output_file)
         print(f"[[model evaluation file : {eval_log_file_path}]]")
 
-        self._save_evaluation_result(model_name,llm_judge_name, model_path, eval_subtype)
+        self._save_evaluation_result(model_name, llm_judge_name, model_path, eval_subtype,
+                                      output_dir=os.path.dirname(eval_file_path))
         
 
     def _create_batch_file(self, batch_file, outputs):
@@ -463,10 +472,15 @@ class EvaluationHandler:
                     outputs[idx] = result
         return outputs
 
-    def _save_evaluation_result(self, model_name, llm_judge_name, model_path, eval_subtype):
-        eval_score_path = f"{REPO_PATH}/output/{model_name}/FunctionChat-{model_name}.eval_score.json"
-        if not os.path.isdir(f"{REPO_PATH}/output/{model_name}"):
-            os.makedirs(f"{REPO_PATH}/output/{model_name}")
+    def _save_evaluation_result(self, model_name, llm_judge_name, model_path, eval_subtype, output_dir=None):
+        if output_dir:
+            base_output_path = output_dir
+        else:
+            base_output_path = f"{REPO_PATH}/output/{model_name}"
+            
+        eval_score_path = f"{base_output_path}/FunctionChat-{model_name}.eval_score.json"
+        if not os.path.isdir(base_output_path):
+            os.makedirs(base_output_path)
         singlecall_score = {}
         dialog_score = {}
         calldecision_score = {}
@@ -514,6 +528,8 @@ class EvaluationHandler:
             f.write(json.dumps(total_score, ensure_ascii=False, indent=4))
         print(f"[[evaluation scores saved to: {eval_score_path}]]")
 
+        print(f"[[evaluation scores saved to: {eval_score_path}]]")
+
     def _set_batch_file_names(self, model_name=None):
         """
         배치 관련 파일 이름을 설정합니다.
@@ -558,7 +574,8 @@ class EvaluationHandler:
         eval_output_length = self.eval_reg.get_eval_output_length()
         if eval_output_length == len(input_set):
            self.eval_reg.display()
-           self._save_evaluation_result(model_name, llm_judge_name, model_path, eval_subtype)
+           self._save_evaluation_result(model_name, llm_judge_name, model_path, eval_subtype,
+                                         output_dir=os.path.dirname(eval_file_path))
            return
         # start evaluation
         start_time = time.time()

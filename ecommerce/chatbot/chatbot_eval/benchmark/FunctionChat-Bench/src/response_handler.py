@@ -4,7 +4,7 @@ import concurrent
 from tqdm import tqdm
 import threading
 
-from src import utils
+import src.utils as utils
 from src.api_executor import APIExecutorFactory
 
 
