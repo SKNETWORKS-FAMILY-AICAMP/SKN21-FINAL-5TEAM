@@ -1,6 +1,7 @@
 """
 Order Router - 주문 API 엔드포인트
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -8,6 +9,10 @@ from decimal import Decimal
 
 from ecommerce.platform.backend.app.database import get_db
 from ecommerce.platform.backend.app.router.orders import crud, schemas
+from ecommerce.platform.backend.app.router.user_history import crud as history_crud, schemas as history_schemas
+from ecommerce.platform.backend.app.router.users.models import User
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(
@@ -269,13 +274,35 @@ def cancel_order(
         )
     
     success, error = crud.cancel_order(db, order_id, reason)
-    
+
     if not success:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error or "주문 취소 실패"
         )
-    
+
+    # 취소 히스토리 기록
+    try:
+        order = crud.get_order_detail(db, order_id)
+        user = db.query(User).filter(User.id == user_id).first()
+
+        order_item_names = []
+        if order:
+            for item in order.items:
+                product_info = crud.get_product_info_for_item(db, item)
+                order_item_names.append(product_info["product_name"])
+
+        history_crud.track_order_action(
+            db=db,
+            user_id=user_id,
+            order_id=order_id,
+            action_type=history_schemas.ActionType.ORDER_DEL,
+            user_name=user.name if user else None,
+            order_item_name=", ".join(order_item_names) if order_item_names else None
+        )
+    except Exception as e:
+        logger.error(f"주문 취소 히스토리 기록 실패: {e}")
+
     return {
         "message": "주문이 취소되었습니다",
         "order_id": order_id,
@@ -303,13 +330,35 @@ def refund_order(
         )
     
     success, error = crud.refund_order(db, order_id, reason)
-    
+
     if not success:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error or "환불 처리 실패"
         )
-    
+
+    # 환불 히스토리 기록
+    try:
+        order = crud.get_order_detail(db, order_id)
+        user = db.query(User).filter(User.id == user_id).first()
+
+        order_item_names = []
+        if order:
+            for item in order.items:
+                product_info = crud.get_product_info_for_item(db, item)
+                order_item_names.append(product_info["product_name"])
+
+        history_crud.track_order_action(
+            db=db,
+            user_id=user_id,
+            order_id=order_id,
+            action_type=history_schemas.ActionType.ORDER_RE,
+            user_name=user.name if user else None,
+            order_item_name=", ".join(order_item_names) if order_item_names else None
+        )
+    except Exception as e:
+        logger.error(f"주문 환불 히스토리 기록 실패: {e}")
+
     return {
         "message": "환불이 요청되었습니다",
         "order_id": order_id,

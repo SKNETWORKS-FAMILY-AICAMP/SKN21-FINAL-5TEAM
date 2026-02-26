@@ -170,30 +170,6 @@ export default function PaymentPage() {
   const API_BASE = process.env.NEXT_PUBLIC_API_URL;
   const PAYMENT_METHOD = "card"; // 고정: 신용카드만 가능
 
-  // ==================== User History 기록 함수 ====================
-
-  const trackOrderAction = async (orderId: number, actionType: "payment" | "order_del") => {
-    try {
-      if (!user) return;
-
-      await fetch(`${API_BASE}/user-history/users/${user.id}/track/order`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          order_id: orderId,
-          action_type: actionType,
-        }),
-      });
-
-      console.log(`User history tracked: ${actionType} for order ${orderId}`);
-    } catch (err) {
-      console.error("Failed to track order action:", err);
-      // 히스토리 기록 실패는 무시 (사용자 경험에 영향 없음)
-    }
-  };
-
   // 가격 계산 (Cart Summary 기반)
   const subtotal = cartData ? Number(cartData.summary.total_price) : 0;
   const shippingFee = cartData ? Number(cartData.summary.total_shipping_fee) : 0;
@@ -206,7 +182,7 @@ export default function PaymentPage() {
   useEffect(() => {
     if (user) {
       loadInitialData();
-    }  
+    }
   }, [user]);
 
   const loadInitialData = async () => {
@@ -314,7 +290,7 @@ export default function PaymentPage() {
       }
 
       const data: PointBalance = await response.json();
-      
+
       // 잔액이 0이면 null 처리
       if (Number(data.current_balance) === 0) {
         setPointBalance(null);
@@ -418,9 +394,6 @@ export default function PaymentPage() {
       // 1. 주문 생성 (pending 상태로)
       const orderId = await createOrder();
       console.log("Order created:", orderId);
-
-      // 1-1. User History에 결제 기록
-      await trackOrderAction(orderId, "payment");
 
       // 2. 결제 처리 (Payments CRUD의 process_payment)
       const maskedCard = maskCardNumber(cardNumber);
@@ -572,7 +545,7 @@ export default function PaymentPage() {
   const handlePointsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/\D/g, "");
     const numValue = Number(value);
-    
+
     // 최대값 제한
     const maxPoints = Math.min(
       pointBalance ? Number(pointBalance.current_balance) : 0,
@@ -588,7 +561,7 @@ export default function PaymentPage() {
 
   const useAllPoints = () => {
     if (!pointBalance) return;
-    
+
     const maxPoints = Math.min(
       Number(pointBalance.current_balance),
       subtotal

@@ -114,6 +114,7 @@ export default function OrdersPage() {
   const [showShippingModal, setShowShippingModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewOrderItemId, setReviewOrderItemId] = useState<number | null>(null);
+  const [reviewOrderItems, setReviewOrderItems] = useState<OrderItem[]>([]);
   const [reviewContent, setReviewContent] = useState("");
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
@@ -419,13 +420,21 @@ export default function OrdersPage() {
   };
 
   // ==================== 리뷰 작성/수정 =======================
-  const handleOpenReviewModal = (orderItemId: number) => {
+  const handleOpenReviewModal = (order: Order) => {
     if (!user) {
       showAlert("로그인이 필요합니다");
       return;
     }
-    setReviewOrderItemId(orderItemId);
+    setReviewOrderItems(order.items);
+    setReviewOrderItemId(null);
+    setReviewContent("");
+    setReviewRating(0);
+    setEditingReviewId(null);
+    setShowReviewModal(true);
+  };
 
+  const handleSelectReviewItem = (orderItemId: number) => {
+    setReviewOrderItemId(orderItemId);
     const existingReview = reviewMap[orderItemId];
     if (existingReview) {
       setReviewContent(existingReview.content || "");
@@ -436,12 +445,11 @@ export default function OrdersPage() {
       setReviewRating(0);
       setEditingReviewId(null);
     }
-
-    setShowReviewModal(true);
   };
 
   const handleCloseReviewModal = () => {
     setShowReviewModal(false);
+    setReviewOrderItems([]);
     setReviewOrderItemId(null);
     setReviewContent("");
     setReviewRating(0);
@@ -717,9 +725,9 @@ export default function OrdersPage() {
                 {order.status === "delivered" && (
                   <button
                     className={styles.reviewBtn}
-                    onClick={() => handleOpenReviewModal(order.items[0].id)}
+                    onClick={() => handleOpenReviewModal(order)}
                   >
-                    {reviewMap[order.items[0]?.id] ? "리뷰 수정" : "리뷰 작성"}
+                    리뷰 작성
                   </button>
                 )}
               </div>
@@ -924,65 +932,164 @@ export default function OrdersPage() {
               ✕
             </button>
 
-            <h2>{editingReviewId ? "리뷰 수정" : "리뷰 작성"}</h2>
-
-            {/* 별점 선택 */}
-            <div style={{ margin: "20px 0" }}>
-              <strong>평점</strong>
-              <div
-                className={styles.starRating}
-                onMouseLeave={() => setHoverRating(0)}
-              >
-                {[1, 2, 3, 4, 5].map((star) => {
-                  const activeRating = hoverRating || reviewRating;
-                  return (
-                    <span
-                      key={star}
-                      className={`${styles.star} ${star <= activeRating ? styles.starActive : ""}`}
-                      onClick={() => setReviewRating(star === reviewRating ? 0 : star)}
-                      onMouseEnter={() => setHoverRating(star)}
+            {reviewOrderItemId === null ? (
+              /* 아이템 선택 단계 */
+              <>
+                <h2>리뷰 작성할 상품 선택</h2>
+                <div style={{ marginTop: "15px" }}>
+                  {reviewOrderItems.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => handleSelectReviewItem(item.id)}
+                      style={{
+                        padding: "12px",
+                        border: "1px solid #eee",
+                        borderRadius: "6px",
+                        marginBottom: "10px",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        transition: "background-color 0.2s",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f5f5f5")}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "white")}
                     >
-                      ★
-                    </span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: "500" }}>
+                          {item.product_option_type === "new" ? "[신상품]" : "[중고]"}{" "}
+                          {item.product_name || `상품 옵션 ID: ${item.product_option_id}`}
+                        </div>
+                        {(item.product_size || item.product_color || item.product_condition) && (
+                          <div style={{ fontSize: "13px", color: "#666", marginTop: "4px" }}>
+                            {item.product_size && `사이즈: ${item.product_size}`}
+                            {item.product_size && item.product_color && " · "}
+                            {item.product_color && `색상: ${item.product_color}`}
+                            {item.product_condition && ` · 상태: ${item.product_condition}`}
+                          </div>
+                        )}
+                        <div style={{ fontSize: "13px", color: "#555", marginTop: "4px" }}>
+                          {Number(item.unit_price).toLocaleString()}원 x {item.quantity}개
+                        </div>
+                      </div>
+                      <div style={{ marginLeft: "12px", flexShrink: 0 }}>
+                        {reviewMap[item.id] ? (
+                          <span style={{ color: "#4caf50", fontSize: "13px", fontWeight: "500" }}>
+                            작성완료 ★{reviewMap[item.id].rating}
+                          </span>
+                        ) : (
+                          <span style={{ color: "#999", fontSize: "13px" }}>미작성</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              /* 리뷰 작성/수정 단계 */
+              <>
+                <div style={{ display: "flex", alignItems: "center", marginBottom: "10px" }}>
+                  <button
+                    onClick={() => {
+                      setReviewOrderItemId(null);
+                      setReviewContent("");
+                      setReviewRating(0);
+                      setEditingReviewId(null);
+                    }}
+                    style={{
+                      border: "none",
+                      background: "none",
+                      cursor: "pointer",
+                      fontSize: "18px",
+                      padding: "0 8px 0 0",
+                    }}
+                  >
+                    ←
+                  </button>
+                  <h2 style={{ margin: 0 }}>{editingReviewId ? "리뷰 수정" : "리뷰 작성"}</h2>
+                </div>
+
+                {/* 선택한 상품 정보 */}
+                {(() => {
+                  const selectedItem = reviewOrderItems.find(item => item.id === reviewOrderItemId);
+                  if (!selectedItem) return null;
+                  return (
+                    <div style={{ padding: "10px", backgroundColor: "#f9f9f9", borderRadius: "6px", marginBottom: "15px" }}>
+                      <div style={{ fontWeight: "500" }}>
+                        {selectedItem.product_option_type === "new" ? "[신상품]" : "[중고]"}{" "}
+                        {selectedItem.product_name || `상품 옵션 ID: ${selectedItem.product_option_id}`}
+                      </div>
+                      {(selectedItem.product_size || selectedItem.product_color || selectedItem.product_condition) && (
+                        <div style={{ fontSize: "13px", color: "#666", marginTop: "4px" }}>
+                          {selectedItem.product_size && `사이즈: ${selectedItem.product_size}`}
+                          {selectedItem.product_size && selectedItem.product_color && " · "}
+                          {selectedItem.product_color && `색상: ${selectedItem.product_color}`}
+                          {selectedItem.product_condition && ` · 상태: ${selectedItem.product_condition}`}
+                        </div>
+                      )}
+                    </div>
                   );
-                })}
-                <span style={{ marginLeft: "8px", fontSize: "14px", color: "#666" }}>
-                  {`${reviewRating}점`}
-                </span>
-              </div>
-            </div>
+                })()}
 
-            {/* 리뷰 내용 */}
-            <div style={{ marginBottom: "20px" }}>
-              <strong>리뷰 내용</strong>
-              <textarea
-                className={styles.reviewTextarea}
-                value={reviewContent}
-                onChange={(e) => setReviewContent(e.target.value)}
-                placeholder="상품에 대한 솔직한 리뷰를 작성해주세요."
-                style={{ marginTop: "8px" }}
-              />
-            </div>
+                {/* 별점 선택 */}
+                <div style={{ margin: "20px 0" }}>
+                  <strong>평점</strong>
+                  <div
+                    className={styles.starRating}
+                    onMouseLeave={() => setHoverRating(0)}
+                  >
+                    {[1, 2, 3, 4, 5].map((star) => {
+                      const activeRating = hoverRating || reviewRating;
+                      return (
+                        <span
+                          key={star}
+                          className={`${styles.star} ${star <= activeRating ? styles.starActive : ""}`}
+                          onClick={() => setReviewRating(star === reviewRating ? 0 : star)}
+                          onMouseEnter={() => setHoverRating(star)}
+                        >
+                          ★
+                        </span>
+                      );
+                    })}
+                    <span style={{ marginLeft: "8px", fontSize: "14px", color: "#666" }}>
+                      {`${reviewRating}점`}
+                    </span>
+                  </div>
+                </div>
 
-            {/* 제출 버튼 */}
-            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-              <button
-                className={styles.detailBtn}
-                onClick={handleCloseReviewModal}
-                style={{ backgroundColor: "#999" }}
-              >
-                취소
-              </button>
-              <button
-                className={styles.submitReviewBtn}
-                onClick={handleSubmitReview}
-                disabled={reviewSubmitting}
-              >
-                {reviewSubmitting
-                  ? (editingReviewId ? "수정 중..." : "등록 중...")
-                  : (editingReviewId ? "리뷰 수정" : "리뷰 등록")}
-              </button>
-            </div>
+                {/* 리뷰 내용 */}
+                <div style={{ marginBottom: "20px" }}>
+                  <strong>리뷰 내용</strong>
+                  <textarea
+                    className={styles.reviewTextarea}
+                    value={reviewContent}
+                    onChange={(e) => setReviewContent(e.target.value)}
+                    placeholder="상품에 대한 솔직한 리뷰를 작성해주세요."
+                    style={{ marginTop: "8px" }}
+                  />
+                </div>
+
+                {/* 제출 버튼 */}
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                  <button
+                    className={styles.detailBtn}
+                    onClick={handleCloseReviewModal}
+                    style={{ backgroundColor: "#999" }}
+                  >
+                    취소
+                  </button>
+                  <button
+                    className={styles.submitReviewBtn}
+                    onClick={handleSubmitReview}
+                    disabled={reviewSubmitting}
+                  >
+                    {reviewSubmitting
+                      ? (editingReviewId ? "수정 중..." : "등록 중...")
+                      : (editingReviewId ? "리뷰 수정" : "리뷰 등록")}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
