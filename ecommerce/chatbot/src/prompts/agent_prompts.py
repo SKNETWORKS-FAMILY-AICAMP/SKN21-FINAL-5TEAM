@@ -6,7 +6,9 @@
 """
 
 
-def _resolve_prompt_profile(provider: str | None = None, model_name: str | None = None) -> str:
+def _resolve_prompt_profile(
+    provider: str | None = None, model_name: str | None = None
+) -> str:
     provider_norm = (provider or "").strip().lower()
     model_norm = (model_name or "").strip().lower()
 
@@ -30,8 +32,7 @@ OPENAI_4O_MINI_TOOL_USAGE_INSTRUCTIONS = """
 3. 문맥에 주문번호가 있으면 해당 `order_id`를 우선 사용하세요.
 4. 주문 선택이 필요한 상황이면 `get_user_orders(requires_selection=True)`를 호출하세요.
 5. 이때 `action_context`에 원의도(`refund`/`exchange`/`cancel`)를 반드시 채우세요.
-6. [CRITICAL] 주소 입력이 필요하면 텍스트 질문 대신 `open_address_search`를 호출하세요.
-7. 여러 도구가 필요하면 순서 의존성(조회 → 검증 → 실행)을 지키세요.
+6. 여러 도구가 필요하면 순서 의존성(조회 → 검증 → 실행)을 지키세요.
 """
 
 QWEN3_06B_TOOL_USAGE_INSTRUCTIONS = """
@@ -39,8 +40,7 @@ QWEN3_06B_TOOL_USAGE_INSTRUCTIONS = """
 1) 주문/환불/배송 요청이면 즉시 Tool 호출.
 2) `user_id` 누락 금지. [User Context] 값 사용.
 3) 주문번호 없으면 `get_user_orders(requires_selection=True, action_context=...)` 호출.
-4) 주소는 질문하지 말고 반드시 `open_address_search` 호출.
-5) 확신 없을 때 추측 금지. 필요한 슬롯을 Tool/UI로 수집.
+4) 확신 없을 때 추측 금지. 필요한 슬롯을 Tool/UI로 수집.
 
 예시:
 -  
@@ -52,9 +52,7 @@ OPENAI_4O_MINI_CONTEXT_SUMMARY_SYSTEM_PROMPT = (
     "반드시 (1)고객의 목표 (2)진행 상태 (3)누락 슬롯(order_id/옵션/주소 등)을 포함하세요."
 )
 
-QWEN3_06B_CONTEXT_SUMMARY_SYSTEM_PROMPT = (
-    "대화를 3~5문장으로 압축 요약하라. 출력에는 반드시: 사용자 목표, 현재 단계, 누락 정보, 다음 액션을 포함하라."
-)
+QWEN3_06B_CONTEXT_SUMMARY_SYSTEM_PROMPT = "대화를 3~5문장으로 압축 요약하라. 출력에는 반드시: 사용자 목표, 현재 단계, 누락 정보, 다음 액션을 포함하라."
 
 
 OPENAI_4O_MINI_APPROVAL_CHECK_PROMPT_TEMPLATE = """User Message: '{user_message}'
@@ -92,11 +90,10 @@ OPENAI_4O_MINI_DECOMPOSER_PROMPT = """
 3) order_id가 없는데 환불/취소/교환을 요청하면 ORDER_ACTION으로 넣되 args에 action만 넣어도 됩니다.
 4) 반드시 tasks 배열을 반환하세요. 비어 있으면 GENERAL_CHAT 1개를 반환하세요.
 5) 하나 이상의 실행 가능한 작업(ORDER_ACTION/ORDER_QUERY/POLICY_CHECK)이 있으면 GENERAL_CHAT을 함께 넣지 마세요.
-6) [현재 작업 상태]가 refund/exchange 이고 status가 validating 또는 approving이며 target_id가 존재하면,
-   사용자의 최신 발화가 이전 절차를 "계속 진행"하려는 맥락인지 우선 판단하세요.
-   이 경우 다음 단계는 ORDER_ACTION 하나만 반환하고 args는 action='address_search', order_id=target_id 로 설정하세요.
-7) 이전 Assistant가 이미 "반품/교환 진행 여부"를 질문했고 사용자가 진행 의사를 보인 턴이라면,
-   환불 가능 여부 재확인(action='refund')으로 되돌아가지 말고 주소 수집 단계(action='address_search')로 진행하세요.
+6) [현재 작업 상태]가 refund 이고 status가 validating 또는 approving이며 target_id가 존재하면,
+   사용자의 최신 발화가 이전 절차를 "계속 진행"하려는 맥락일 때 다음 단계는 ORDER_ACTION 하나만 반환하고 args는 action='refund', order_id=target_id 로 설정하세요.
+7) [현재 작업 상태]가 exchange 이고 status가 validating 또는 approving이며 target_id가 존재하면,
+   사용자가 계속 진행 의사를 보일 때 ORDER_ACTION(action='exchange_request', order_id=target_id)로 진행하세요.
 """
 
 QWEN3_06B_DECOMPOSER_PROMPT = """
@@ -112,9 +109,11 @@ QWEN3_06B_DECOMPOSER_PROMPT = """
 강제 규칙:
 1) 실행 가능한 task가 하나라도 있으면 GENERAL_CHAT을 넣지 마라.
 2) 환불/취소/교환인데 order_id가 없으면 ORDER_ACTION + args.action만 넣어라.
-3) 현재 상태가 refund/exchange + validating/approving + target_id 존재면,
-   사용자가 계속 의사를 보일 때 ORDER_ACTION(action='address_search', order_id=target_id)로 진행하라.
-4) JSON 외 텍스트 금지.
+3) 현재 상태가 refund + validating/approving + target_id 존재면,
+   사용자가 계속 의사를 보일 때 ORDER_ACTION(action='refund', order_id=target_id)로 진행하라.
+4) 현재 상태가 exchange + validating/approving + target_id 존재면,
+   사용자가 계속 의사를 보일 때 ORDER_ACTION(action='exchange_request', order_id=target_id)로 진행하라.
+5) JSON 외 텍스트 금지.
 
 **예시**
 - user_message: "내 주문 취소하고 싶어"
@@ -187,34 +186,70 @@ JSON만 출력하라.
 """
 
 
-def get_tool_usage_instructions(provider: str | None = None, model_name: str | None = None) -> str:
+def get_tool_usage_instructions(
+    provider: str | None = None, model_name: str | None = None
+) -> str:
     profile = _resolve_prompt_profile(provider, model_name)
-    return QWEN3_06B_TOOL_USAGE_INSTRUCTIONS if profile == "qwen3-0.6b" else OPENAI_4O_MINI_TOOL_USAGE_INSTRUCTIONS
+    return (
+        QWEN3_06B_TOOL_USAGE_INSTRUCTIONS
+        if profile == "qwen3-0.6b"
+        else OPENAI_4O_MINI_TOOL_USAGE_INSTRUCTIONS
+    )
 
 
-def get_context_summary_system_prompt(provider: str | None = None, model_name: str | None = None) -> str:
+def get_context_summary_system_prompt(
+    provider: str | None = None, model_name: str | None = None
+) -> str:
     profile = _resolve_prompt_profile(provider, model_name)
-    return QWEN3_06B_CONTEXT_SUMMARY_SYSTEM_PROMPT if profile == "qwen3-0.6b" else OPENAI_4O_MINI_CONTEXT_SUMMARY_SYSTEM_PROMPT
+    return (
+        QWEN3_06B_CONTEXT_SUMMARY_SYSTEM_PROMPT
+        if profile == "qwen3-0.6b"
+        else OPENAI_4O_MINI_CONTEXT_SUMMARY_SYSTEM_PROMPT
+    )
 
 
-def get_approval_check_prompt_template(provider: str | None = None, model_name: str | None = None) -> str:
+def get_approval_check_prompt_template(
+    provider: str | None = None, model_name: str | None = None
+) -> str:
     profile = _resolve_prompt_profile(provider, model_name)
-    return QWEN3_06B_APPROVAL_CHECK_PROMPT_TEMPLATE if profile == "qwen3-0.6b" else OPENAI_4O_MINI_APPROVAL_CHECK_PROMPT_TEMPLATE
+    return (
+        QWEN3_06B_APPROVAL_CHECK_PROMPT_TEMPLATE
+        if profile == "qwen3-0.6b"
+        else OPENAI_4O_MINI_APPROVAL_CHECK_PROMPT_TEMPLATE
+    )
 
 
-def get_decomposer_prompt(provider: str | None = None, model_name: str | None = None) -> str:
+def get_decomposer_prompt(
+    provider: str | None = None, model_name: str | None = None
+) -> str:
     profile = _resolve_prompt_profile(provider, model_name)
-    return QWEN3_06B_DECOMPOSER_PROMPT if profile == "qwen3-0.6b" else OPENAI_4O_MINI_DECOMPOSER_PROMPT
+    return (
+        QWEN3_06B_DECOMPOSER_PROMPT
+        if profile == "qwen3-0.6b"
+        else OPENAI_4O_MINI_DECOMPOSER_PROMPT
+    )
 
 
-def get_worker_response_prompt_template(provider: str | None = None, model_name: str | None = None) -> str:
+def get_worker_response_prompt_template(
+    provider: str | None = None, model_name: str | None = None
+) -> str:
     profile = _resolve_prompt_profile(provider, model_name)
-    return QWEN3_06B_WORKER_RESPONSE_PROMPT_TEMPLATE if profile == "qwen3-0.6b" else OPENAI_4O_MINI_WORKER_RESPONSE_PROMPT_TEMPLATE
+    return (
+        QWEN3_06B_WORKER_RESPONSE_PROMPT_TEMPLATE
+        if profile == "qwen3-0.6b"
+        else OPENAI_4O_MINI_WORKER_RESPONSE_PROMPT_TEMPLATE
+    )
 
 
-def get_hf_decomposer_prompt_template(provider: str | None = None, model_name: str | None = None) -> str:
+def get_hf_decomposer_prompt_template(
+    provider: str | None = None, model_name: str | None = None
+) -> str:
     profile = _resolve_prompt_profile(provider, model_name)
-    return QWEN3_06B_HF_DECOMPOSER_PROMPT_TEMPLATE if profile == "qwen3-0.6b" else OPENAI_4O_MINI_HF_DECOMPOSER_PROMPT_TEMPLATE
+    return (
+        QWEN3_06B_HF_DECOMPOSER_PROMPT_TEMPLATE
+        if profile == "qwen3-0.6b"
+        else OPENAI_4O_MINI_HF_DECOMPOSER_PROMPT_TEMPLATE
+    )
 
 
 # 하위 호환 alias (기본: OpenAI 4o-mini)
