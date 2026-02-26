@@ -173,7 +173,9 @@ def track_cart_action(
     cart_item_id: Optional[int],
     product_option_type: str,
     product_option_id: int,
-    metadata: Optional[dict] = None
+    metadata: Optional[dict] = None,
+    user_name: Optional[str] = None,
+    cart_item_name: Optional[str] = None
 ) -> models.UserHistory:
     """
     장바구니 행동 기록
@@ -186,11 +188,41 @@ def track_cart_action(
         product_option_type: 상품 옵션 유형
         product_option_id: 상품 옵션 ID
         metadata: 추가 메타데이터
+        user_name: 사용자 이름
+        cart_item_name: 장바구니 상품명
 
     Returns:
         생성된 UserHistory 객체
     """
-    metadata_str = json.dumps(metadata) if metadata else None
+    # user_name이 None이면 DB에서 조회
+    if user_name is None:
+        from ecommerce.platform.backend.app.router.users.models import User
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            user_name = user.name
+
+    # cart_item_name이 None이면 DB에서 조회
+    if cart_item_name is None:
+        from ecommerce.platform.backend.app.router.products.models import (
+            ProductOption, Product, UsedProductOption, UsedProduct
+        )
+        opt_type = product_option_type.value if hasattr(product_option_type, "value") else product_option_type
+        if opt_type == "new":
+            cart_item_name = db.query(Product.name).join(
+                ProductOption, ProductOption.product_id == Product.id
+            ).filter(ProductOption.id == product_option_id).scalar()
+        else:
+            cart_item_name = db.query(UsedProduct.name).join(
+                UsedProductOption, UsedProductOption.used_product_id == UsedProduct.id
+            ).filter(UsedProductOption.id == product_option_id).scalar()
+
+    action_data = metadata.copy() if metadata else {}
+    if user_name is not None:
+        action_data["userName"] = user_name
+    if cart_item_name is not None:
+        action_data["cartItemName"] = cart_item_name
+    action_data["timestamp"] = datetime.now().isoformat()
+    metadata_str = json.dumps(action_data, ensure_ascii=False)
 
     history_data = schemas.UserHistoryCreate(
         action_type=action_type,
@@ -211,7 +243,12 @@ def track_order_action(
     db: Session,
     user_id: int,
     order_id: int,
-    action_type: schemas.ActionType
+    action_type: schemas.ActionType,
+    user_name: Optional[str] = None,
+    order_item_name: Optional[str] = None,
+    method: Optional[str] = None,
+    payment_status: Optional[str] = None,
+    card_num: Optional[str] = None
 ) -> models.UserHistory:
     """
     주문 행동 기록
@@ -221,17 +258,36 @@ def track_order_action(
         user_id: 사용자 ID
         order_id: 주문 ID
         action_type: 행동 유형
+        user_name: 사용자 이름
+        order_item_name: 주문 상품명 (복수 시 쉼표 구분)
+        method: 결제 수단
+        payment_status: 결제 상태
+        card_num: 카드번호 (마스킹)
 
     Returns:
         생성된 UserHistory 객체
     """
+    action_data: dict = {}
+    if user_name is not None:
+        action_data["userName"] = user_name
+    if order_item_name is not None:
+        action_data["orderItemName"] = order_item_name
+    if method is not None:
+        action_data["method"] = method
+    if payment_status is not None:
+        action_data["status"] = payment_status
+    if card_num is not None:
+        action_data["cardNum"] = card_num
+    action_data["timestamp"] = datetime.now().isoformat()
+    metadata_str = json.dumps(action_data, ensure_ascii=False) if action_data else None
+
     history_data = schemas.UserHistoryCreate(
         action_type=action_type,
         product_option_type=None,
         product_option_id=None,
         order_id=order_id,
         cart_item_id=None,
-        action_metadata=None,
+        action_metadata=metadata_str,
         search_keyword=None,
         ip_address=None,
         user_agent=None
@@ -312,7 +368,11 @@ def track_review_create(
     user_id: int,
     review_id: int,
     product_option_type: str,
-    product_option_id: int
+    product_option_id: int,
+    user_name: Optional[str] = None,
+    order_item_name: Optional[str] = None,
+    contents: Optional[str] = None,
+    timestamp: Optional[str] = None
 ) -> models.UserHistory:
     """
     리뷰 작성 기록
@@ -323,11 +383,24 @@ def track_review_create(
         review_id: 리뷰 ID
         product_option_type: 상품 옵션 유형
         product_option_id: 상품 옵션 ID
+        user_name: 사용자 이름
+        order_item_name: 주문 상품명
+        contents: 리뷰 내용
+        timestamp: 리뷰 작성 시각 (ISO 형식)
 
     Returns:
         생성된 UserHistory 객체
     """
-    metadata_str = json.dumps({"review_id": review_id})
+    action_data: dict = {"review_id": review_id}
+    if user_name is not None:
+        action_data["userName"] = user_name
+    if order_item_name is not None:
+        action_data["orderItemName"] = order_item_name
+    if contents is not None:
+        action_data["contents"] = contents
+    if timestamp is not None:
+        action_data["timestamp"] = timestamp
+    metadata_str = json.dumps(action_data, ensure_ascii=False)
 
     history_data = schemas.UserHistoryCreate(
         action_type=schemas.ActionType.REVIEW_CREATE,

@@ -325,7 +325,22 @@ def cancel_order(
 
         # user history 기록
         try:
-            track_order_action(db, user_id, order.id, HistoryActionType.ORDER_DEL)
+            user = db.query(User).filter(User.id == user_id).first()
+            order_item_names = []
+            for item in order.items:
+                if item.product_option_type == ProductType.NEW:
+                    option = db.query(ProductOption).filter(ProductOption.id == item.product_option_id).first()
+                    if option and option.product:
+                        order_item_names.append(option.product.name)
+                else:
+                    option = db.query(UsedProductOption).filter(UsedProductOption.id == item.product_option_id).first()
+                    if option and option.used_product:
+                        order_item_names.append(option.used_product.name)
+            track_order_action(
+                db, user_id, order.id, HistoryActionType.ORDER_DEL,
+                user_name=user.name if user else None,
+                order_item_name=", ".join(order_item_names) if order_item_names else None
+            )
         except Exception:
             pass  # 히스토리 기록 실패해도 취소 결과에 영향 없음
 
@@ -534,7 +549,22 @@ def register_return_request(
 
         # user history 기록
         try:
-            track_refund_request(db, user_id, order.id)
+            user = db.query(User).filter(User.id == user_id).first()
+            order_item_names = []
+            for item in order.items:
+                if item.product_option_type == ProductType.NEW:
+                    option = db.query(ProductOption).filter(ProductOption.id == item.product_option_id).first()
+                    if option and option.product:
+                        order_item_names.append(option.product.name)
+                else:
+                    option = db.query(UsedProductOption).filter(UsedProductOption.id == item.product_option_id).first()
+                    if option and option.used_product:
+                        order_item_names.append(option.used_product.name)
+            track_order_action(
+                db, user_id, order.id, HistoryActionType.ORDER_RE,
+                user_name=user.name if user else None,
+                order_item_name=", ".join(order_item_names) if order_item_names else None
+            )
         except Exception:
             pass  # 히스토리 기록 실패해도 반품 접수 결과에 영향 없음
 
