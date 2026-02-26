@@ -71,9 +71,15 @@ def summarize_state(state: Dict[str, Any]) -> Dict[str, Any]:
     summary: Dict[str, Any] = {
         "keys": sorted(list(state.keys())) if isinstance(state, dict) else [],
         "message_count": len(messages) if isinstance(messages, list) else 0,
-        "last_message": safe_serialize(last_message) if isinstance(last_message, BaseMessage) else None,
-        "task_list_len": len(state.get("task_list", [])) if isinstance(state.get("task_list"), list) else 0,
-        "task_results_len": len(state.get("task_results", [])) if isinstance(state.get("task_results"), list) else 0,
+        "last_message": safe_serialize(last_message)
+        if isinstance(last_message, BaseMessage)
+        else None,
+        "task_list_len": len(state.get("task_list", []))
+        if isinstance(state.get("task_list"), list)
+        else 0,
+        "task_results_len": len(state.get("task_results", []))
+        if isinstance(state.get("task_results"), list)
+        else 0,
         "current_task": safe_serialize(state.get("current_task")),
         "generation": _truncate_text(str(state.get("generation", ""))),
     }
@@ -113,6 +119,19 @@ def summarize_state_changes(before: Any, after: Any) -> Dict[str, Any]:
 
 
 def _extract_usage_from_model_output(output: Any) -> Dict[str, Any]:
+    # astream_events can sometimes wrap the chunk in a dict {"chunk": AIMessageChunk} or directly output a dict
+    if isinstance(output, dict):
+        if "usage_metadata" in output and isinstance(output["usage_metadata"], dict):
+            return output["usage_metadata"]
+
+        chunk = output.get("chunk")
+        if chunk is not None:
+            output = chunk
+
+        message = output.get("message")
+        if message is not None:
+            output = message
+
     if isinstance(output, AIMessage):
         usage_metadata = getattr(output, "usage_metadata", None)
         response_metadata = getattr(output, "response_metadata", None)
@@ -203,11 +222,17 @@ class ConversationRunLogger:
         }
 
         for item in reversed(self.payload["timeline"]["nodes"]):
-            if item.get("node") == node_name and item.get("event") == "start" and item.get("_timer_key"):
+            if (
+                item.get("node") == node_name
+                and item.get("event") == "start"
+                and item.get("_timer_key")
+            ):
                 key = item.get("_timer_key")
                 started = self._node_starts.pop(key, None)
                 if started is not None:
-                    end_item["duration_ms"] = int((time.perf_counter() - started) * 1000)
+                    end_item["duration_ms"] = int(
+                        (time.perf_counter() - started) * 1000
+                    )
                 break
 
         self.payload["timeline"]["nodes"].append(end_item)
@@ -238,11 +263,17 @@ class ConversationRunLogger:
         }
 
         for item in reversed(self.payload["timeline"]["models"]):
-            if item.get("model") == model_name and item.get("event") == "start" and item.get("_timer_key"):
+            if (
+                item.get("model") == model_name
+                and item.get("event") == "start"
+                and item.get("_timer_key")
+            ):
                 key = item.get("_timer_key")
                 started = self._model_starts.pop(key, None)
                 if started is not None:
-                    end_item["duration_ms"] = int((time.perf_counter() - started) * 1000)
+                    end_item["duration_ms"] = int(
+                        (time.perf_counter() - started) * 1000
+                    )
                 break
 
         self._accumulate_usage(usage)
@@ -271,11 +302,17 @@ class ConversationRunLogger:
         }
 
         for item in reversed(self.payload["timeline"]["tools"]):
-            if item.get("tool") == tool_name and item.get("event") == "start" and item.get("_timer_key"):
+            if (
+                item.get("tool") == tool_name
+                and item.get("event") == "start"
+                and item.get("_timer_key")
+            ):
                 key = item.get("_timer_key")
                 started = self._tool_starts.pop(key, None)
                 if started is not None:
-                    end_item["duration_ms"] = int((time.perf_counter() - started) * 1000)
+                    end_item["duration_ms"] = int(
+                        (time.perf_counter() - started) * 1000
+                    )
                 break
 
         self.payload["timeline"]["tools"].append(end_item)
@@ -297,13 +334,20 @@ class ConversationRunLogger:
             }
         )
 
-    def finalize(self, final_state: Optional[Dict[str, Any]], success: bool, error_message: Optional[str] = None) -> str:
+    def finalize(
+        self,
+        final_state: Optional[Dict[str, Any]],
+        success: bool,
+        error_message: Optional[str] = None,
+    ) -> str:
         self.payload["status"] = "success" if success else "error"
         if error_message:
             self.log_error("finalize", error_message)
 
         self.payload["finished_at"] = _now_iso()
-        self.payload["metrics"]["duration_ms"] = int((time.perf_counter() - self._run_start) * 1000)
+        self.payload["metrics"]["duration_ms"] = int(
+            (time.perf_counter() - self._run_start) * 1000
+        )
 
         if isinstance(final_state, dict):
             self.payload["output"] = {
@@ -312,7 +356,9 @@ class ConversationRunLogger:
             }
             input_state = self.payload.get("input", {}).get("state_summary")
             if isinstance(input_state, dict):
-                self.log_state_change({"summary": input_state}, {"summary": summarize_state(final_state)})
+                self.log_state_change(
+                    {"summary": input_state}, {"summary": summarize_state(final_state)}
+                )
 
         log_path = self._write_jsonl()
         return log_path
@@ -321,7 +367,9 @@ class ConversationRunLogger:
         metrics = self.payload["metrics"]["token_usage"]
 
         input_tokens = int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
-        output_tokens = int(usage.get("output_tokens") or usage.get("completion_tokens") or 0)
+        output_tokens = int(
+            usage.get("output_tokens") or usage.get("completion_tokens") or 0
+        )
         total_tokens = int(usage.get("total_tokens") or (input_tokens + output_tokens))
 
         metrics["input_tokens"] += input_tokens
