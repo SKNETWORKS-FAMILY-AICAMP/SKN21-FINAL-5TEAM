@@ -11,6 +11,7 @@ from sqlalchemy import and_, desc
 from ecommerce.platform.backend.app.router.orders import models, schemas
 from ecommerce.platform.backend.app.router.carts.models import Cart, CartItem
 from ecommerce.platform.backend.app.router.products.models import ProductOption, UsedProductOption
+from ecommerce.platform.backend.app.router.inventories.models import InventoryTransaction, TransactionType, ProductType as InvProductType
 
 
 # ============================================
@@ -216,7 +217,14 @@ def create_order_from_cart(
         )
         db.add(order)
         db.flush()  # ID 생성
-        
+
+        # 주문 생성 히스토리 기록
+        db.add(models.OrderStatusHistory(
+            order_id=order.id,
+            status=schemas.OrderStatus.PENDING.value,
+            notes="주문 생성",
+        ))
+
         # 5. 주문 항목 생성 및 재고 차감
         for item_data in order_items_data:
             order_item = models.OrderItem(
@@ -232,7 +240,18 @@ def create_order_from_cart(
             # 재고 차감
             option = item_data['option']
             option.quantity -= item_data['quantity']
-        
+
+            # 재고 거래 내역 기록
+            inv_type = InvProductType.NEW if item_data['product_option_type'] == schemas.ProductType.NEW else InvProductType.USED
+            db.add(InventoryTransaction(
+                product_option_type=inv_type,
+                product_option_id=item_data['product_option_id'],
+                quantity_change=-item_data['quantity'],
+                transaction_type=TransactionType.SALE,
+                reference_id=order.id,
+                notes=f"주문 생성 (주문번호: {order.order_number})",
+            ))
+
         # 6. 장바구니 항목 삭제
         for cart_item in cart_items:
             db.delete(cart_item)
@@ -340,7 +359,14 @@ def create_order_direct(
         )
         db.add(order)
         db.flush()
-        
+
+        # 주문 생성 히스토리 기록
+        db.add(models.OrderStatusHistory(
+            order_id=order.id,
+            status=schemas.OrderStatus.PENDING.value,
+            notes="주문 생성",
+        ))
+
         # 주문 항목 생성 및 재고 차감
         for item_data in order_items_data:
             order_item = models.OrderItem(
@@ -355,12 +381,23 @@ def create_order_direct(
             
             option = item_data['option']
             option.quantity -= item_data['quantity']
-        
+
+            # 재고 거래 내역 기록
+            inv_type = InvProductType.NEW if item_data['product_option_type'] == schemas.ProductType.NEW else InvProductType.USED
+            db.add(InventoryTransaction(
+                product_option_type=inv_type,
+                product_option_id=item_data['product_option_id'],
+                quantity_change=-item_data['quantity'],
+                transaction_type=TransactionType.SALE,
+                reference_id=order.id,
+                notes=f"주문 생성 (주문번호: {order.order_number})",
+            ))
+
         db.commit()
         db.refresh(order)
-        
+
         return order, None
-        
+
     except Exception as e:
         db.rollback()
         return None, f"주문 생성 중 오류 발생: {str(e)}"
@@ -438,7 +475,18 @@ def cancel_order(
             
             if option:
                 option.quantity += item.quantity
-        
+
+                # 재고 거래 내역 기록
+                inv_type = InvProductType.NEW if item.product_option_type == schemas.ProductType.NEW else InvProductType.USED
+                db.add(InventoryTransaction(
+                    product_option_type=inv_type,
+                    product_option_id=item.product_option_id,
+                    quantity_change=item.quantity,
+                    transaction_type=TransactionType.RETURN,
+                    reference_id=order.id,
+                    notes=f"주문 취소 (주문번호: {order.order_number})",
+                ))
+
         # 주문 상태 변경
         order.status = schemas.OrderStatus.CANCELLED
         if reason:
@@ -484,7 +532,18 @@ def refund_order(
             
             if option:
                 option.quantity += item.quantity
-        
+
+                # 재고 거래 내역 기록
+                inv_type = InvProductType.NEW if item.product_option_type == schemas.ProductType.NEW else InvProductType.USED
+                db.add(InventoryTransaction(
+                    product_option_type=inv_type,
+                    product_option_id=item.product_option_id,
+                    quantity_change=item.quantity,
+                    transaction_type=TransactionType.RETURN,
+                    reference_id=order.id,
+                    notes=f"주문 환불 (주문번호: {order.order_number})",
+                ))
+
         # 주문 상태 변경
         order.status = schemas.OrderStatus.REFUNDED
         current_request = order.shipping_request or ""

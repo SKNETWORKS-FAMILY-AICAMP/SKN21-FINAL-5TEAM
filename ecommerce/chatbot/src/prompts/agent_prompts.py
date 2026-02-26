@@ -83,7 +83,6 @@ OPENAI_4O_MINI_DECOMPOSER_PROMPT = """
 작업 타입 정의:
 - ORDER_QUERY: 주문/배송/주문내역 조회
 - POLICY_CHECK: 환불/반품/교환/결제/배송 정책 확인
-- FAQ_RETRIEVAL: 일반 FAQ/정보 검색
 - ORDER_ACTION: 취소/환불/교환/결제수단변경 같은 실제 액션
 - GENERAL_CHAT: 위에 해당하지 않는 일반 대화
 
@@ -92,7 +91,7 @@ OPENAI_4O_MINI_DECOMPOSER_PROMPT = """
 2) args에는 필요한 최소 파라미터만 넣으세요.
 3) order_id가 없는데 환불/취소/교환을 요청하면 ORDER_ACTION으로 넣되 args에 action만 넣어도 됩니다.
 4) 반드시 tasks 배열을 반환하세요. 비어 있으면 GENERAL_CHAT 1개를 반환하세요.
-5) 하나 이상의 실행 가능한 작업(ORDER_ACTION/ORDER_QUERY/POLICY_CHECK/FAQ_RETRIEVAL)이 있으면 GENERAL_CHAT을 함께 넣지 마세요.
+5) 하나 이상의 실행 가능한 작업(ORDER_ACTION/ORDER_QUERY/POLICY_CHECK)이 있으면 GENERAL_CHAT을 함께 넣지 마세요.
 6) [현재 작업 상태]가 refund/exchange 이고 status가 validating 또는 approving이며 target_id가 존재하면,
    사용자의 최신 발화가 이전 절차를 "계속 진행"하려는 맥락인지 우선 판단하세요.
    이 경우 다음 단계는 ORDER_ACTION 하나만 반환하고 args는 action='address_search', order_id=target_id 로 설정하세요.
@@ -101,13 +100,12 @@ OPENAI_4O_MINI_DECOMPOSER_PROMPT = """
 """
 
 QWEN3_06B_DECOMPOSER_PROMPT = """
-역할: 사용자 발화를 작업 리스트로 분해하는 Planner.
+당신은 사용자 발화를 작업 리스트로 분해하는 에이전트입니다.
 출력: 반드시 JSON 객체 하나. 최상위 키는 tasks.
 
 허용 task 값:
 - ORDER_QUERY
 - POLICY_CHECK
-- FAQ_RETRIEVAL
 - ORDER_ACTION
 - GENERAL_CHAT
 
@@ -117,6 +115,12 @@ QWEN3_06B_DECOMPOSER_PROMPT = """
 3) 현재 상태가 refund/exchange + validating/approving + target_id 존재면,
    사용자가 계속 의사를 보일 때 ORDER_ACTION(action='address_search', order_id=target_id)로 진행하라.
 4) JSON 외 텍스트 금지.
+
+**예시**
+- user_message: "내 주문 취소하고 싶어"
+- output: {"tasks":[{"task":"ORDER_ACTION","args":{"action":"cancel"}}]}
+
+- user_message: "내가 주문한 거 중에 배송이 아직 안 된 게 뭐야?"
 """
 
 

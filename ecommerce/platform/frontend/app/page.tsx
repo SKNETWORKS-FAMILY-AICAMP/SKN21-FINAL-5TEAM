@@ -199,7 +199,7 @@ export default function HomePage() {
       <section className={styles.section}>
         <header className={styles.sectionHeader}>
           <div>
-            <h2>실시간 인기 아이템</h2>
+            <h1>실시간 인기 아이템</h1>
             <p>판매 상위 상품</p>
           </div>
 
@@ -235,7 +235,7 @@ export default function HomePage() {
                   </div>
 
                   <div className={styles.productInfo}>
-                    <p>상품명</p>
+                    {/* <p>상품명</p> */}
                     <p>{product.name}</p>
                     <p>
                       가격 {Math.round(product.price ?? 0).toLocaleString()}원

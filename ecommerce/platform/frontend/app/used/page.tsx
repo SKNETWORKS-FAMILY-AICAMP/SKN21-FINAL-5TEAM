@@ -181,7 +181,7 @@ export default function UsedPage() {
     <main className={styles.main}>
       <section className={styles.section}>
         <header className={styles.sectionHeader}>
-          <h2>중고 상품</h2>
+          <h1>중고 상품</h1>
         </header>
 
         <ul className={styles.productGrid}>

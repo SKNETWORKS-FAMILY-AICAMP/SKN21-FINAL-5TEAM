@@ -144,10 +144,9 @@ class CommonPayloadCreator(AbstractPayloadCreator):
             arguments['tool_choice'] = 'auto'
             api_request_list.append(CommonRequestFormatter(**arguments).to_dict())
         # 3. write requests jsonl file
-        fi = open(kwargs['request_file_path'], 'w')
-        for api_request in api_request_list:
-            fi.write(f"{json.dumps(api_request, ensure_ascii=False)}\n")
-        fi.close()
+        with open(kwargs['request_file_path'], 'w', encoding='utf-8') as fi:
+            for api_request in api_request_list:
+                fi.write(f"{json.dumps(api_request, ensure_ascii=False)}\n")
         return api_request_list
 
 
@@ -183,10 +182,9 @@ class DialogPayloadCreator(AbstractPayloadCreator):
                 arguments['tool_choice'] = 'auto'
                 api_request_list.append(DialogRequestFormatter(**arguments).to_dict())
         # 3. write requests jsonl file
-        fi = open(kwargs['request_file_path'], 'w')
-        for api_request in api_request_list:
-            fi.write(f"{json.dumps(api_request, ensure_ascii=False)}\n")
-        fi.close()
+        with open(kwargs['request_file_path'], 'w', encoding='utf-8') as fi:
+            for api_request in api_request_list:
+                fi.write(f"{json.dumps(api_request, ensure_ascii=False)}\n")
         return api_request_list
 
 
@@ -233,10 +231,9 @@ class SingleCallPayloadCreator(AbstractPayloadCreator):
                     }
                     api_request_list.append(SingleCallRequestFormatter(**arguments).to_dict())
         # 3. write requests jsonl file
-        fi = open(kwargs['request_file_path'], 'w')
-        for api_request in api_request_list:
-            fi.write(f"{json.dumps(api_request, ensure_ascii=False)}\n")
-        fi.close()
+        with open(kwargs['request_file_path'], 'w', encoding='utf-8') as fi:
+            for api_request in api_request_list:
+                fi.write(f"{json.dumps(api_request, ensure_ascii=False)}\n")
         print(f"[[model request file : {kwargs['request_file_path']}]]")
         return api_request_list
 

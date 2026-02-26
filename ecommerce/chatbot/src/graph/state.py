@@ -43,7 +43,7 @@ class AgentState(TypedDict):
     is_evaluation: Optional[bool]       # 벤치마크 평가 진행 여부
 
     # 7. 런타임 LLM 설정 (요청별)
-    llm_provider: Optional[str]          # openai | huggingface
+    llm_provider: Optional[str]          # openai | huggingface | vllm
     llm_model: Optional[str]             # gpt-4o-mini | Qwen/Qwen3-0.6B ...
 
     # 8. 대화/로깅 메타데이터
