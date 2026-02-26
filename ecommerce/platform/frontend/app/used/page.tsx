@@ -207,8 +207,8 @@ export default function UsedPage() {
                   </div>
 
                   <div className={styles.productInfo}>
-                    <p>{product.name}</p>
-                    <p>
+                    <p className={styles.productName}>{product.name}</p>
+                    <p className={styles.productPrice}>
                       가격 {Math.round(product.price ?? 0).toLocaleString()}원
                     </p>
                   </div>

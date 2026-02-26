@@ -244,6 +244,7 @@ def track_auth_action(
     db: Session,
     user_id: int,
     action_type: schemas.ActionType,
+    action_metadata: Optional[str] = None,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None
 ) -> models.UserHistory:
@@ -266,7 +267,7 @@ def track_auth_action(
         product_option_id=None,
         order_id=None,
         cart_item_id=None,
-        action_metadata=None,
+        action_metadata=action_metadata,
         search_keyword=None,
         ip_address=ip_address,
         user_agent=user_agent
