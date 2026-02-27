@@ -1,7 +1,7 @@
 """Agent/Workflow 전용 프롬프트 모음.
 
 모델별 전용 프롬프트 프로파일:
-- openai-4o-mini
+- openai-5-mini
 - qwen3-0.6b
 """
 
@@ -15,15 +15,15 @@ def _resolve_prompt_profile(
     # 모델명 우선
     if model_norm in {"qwen/qwen3-0.6b", "qwen3-0.6b"}:
         return "qwen3-0.6b"
-    if model_norm == "gpt-4o-mini":
-        return "openai-4o-mini"
+    if model_norm == "gpt-5-mini":
+        return "openai-5-mini"
 
     # 느슨한 매칭
     if "qwen3" in model_norm or "qwen" in model_norm:
         return "qwen3-0.6b"
     if provider_norm == "huggingface":
         return "qwen3-0.6b"
-    return "openai-4o-mini"
+    return "openai-5-mini"
 
 
 OPENAI_4O_MINI_TOOL_USAGE_INSTRUCTIONS = """
@@ -252,7 +252,7 @@ def get_hf_decomposer_prompt_template(
     )
 
 
-# 하위 호환 alias (기본: OpenAI 4o-mini)
+# 하위 호환 alias (기본: OpenAI 5-mini)
 TOOL_USAGE_INSTRUCTIONS = OPENAI_4O_MINI_TOOL_USAGE_INSTRUCTIONS
 CONTEXT_SUMMARY_SYSTEM_PROMPT = OPENAI_4O_MINI_CONTEXT_SUMMARY_SYSTEM_PROMPT
 APPROVAL_CHECK_PROMPT_TEMPLATE = OPENAI_4O_MINI_APPROVAL_CHECK_PROMPT_TEMPLATE
