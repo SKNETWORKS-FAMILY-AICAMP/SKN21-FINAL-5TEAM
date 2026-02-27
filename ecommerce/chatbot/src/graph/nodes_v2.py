@@ -88,7 +88,7 @@ tool_node = ToolNode(TOOLS)
 # Context Compaction Settings
 MAX_HISTORY_TOKENS = 3000
 KEEP_RECENT_TURNS = 3
-SUMMARY_MODEL = "gpt-4o-mini"
+SUMMARY_MODEL = "gpt-5-mini"
 DEFAULT_PROVIDER = "openai"
 SUPPORTED_PROVIDERS = {"openai", "huggingface", "vllm"}
 
