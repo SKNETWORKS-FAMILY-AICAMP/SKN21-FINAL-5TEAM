@@ -5,21 +5,33 @@ from ecommerce.platform.backend.app.database import engine, Base, create_db_sche
 from sqlalchemy import inspect, text
 from ecommerce.platform.backend.app.router.carts.router import router as carts_router
 from ecommerce.platform.backend.app.router.users.router import router as users_router
-from ecommerce.platform.backend.app.router.shipping.router import router as shipping_router
+from ecommerce.platform.backend.app.router.shipping.router import (
+    router as shipping_router,
+)
 from ecommerce.platform.backend.app.router.orders.router import router as orders_router
-from ecommerce.platform.backend.app.router.payments.router import router as payments_router
-from ecommerce.platform.backend.app.router.inventories.router import router as inventories_router
+from ecommerce.platform.backend.app.router.payments.router import (
+    router as payments_router,
+)
+from ecommerce.platform.backend.app.router.inventories.router import (
+    router as inventories_router,
+)
 from ecommerce.platform.backend.app.router.points.router import router as points_router
-from ecommerce.platform.backend.app.router.reviews.router import router as reviews_router
-from ecommerce.platform.backend.app.router.products.router import router as products_router
-from ecommerce.platform.backend.app.router.user_history.router import router as user_history_router
+from ecommerce.platform.backend.app.router.reviews.router import (
+    router as reviews_router,
+)
+from ecommerce.platform.backend.app.router.products.router import (
+    router as products_router,
+)
+from ecommerce.platform.backend.app.router.user_history.router import (
+    router as user_history_router,
+)
 
 # Import models to register them with Base.metadata
 import ecommerce.platform.backend.app.router.users.models
 import ecommerce.platform.backend.app.router.user_history.models
 import logging
 from ecommerce.chatbot.src.api.v1.endpoints.chat import router as chatbot_router
-from starlette.middleware.sessions import SessionMiddleware # 미드웨워 추가
+from starlette.middleware.sessions import SessionMiddleware  # 미드웨워 추가
 
 
 # ============================================
@@ -43,7 +55,9 @@ def auto_add_missing_columns():
                 continue
 
             # 실제 DB의 컬럼 목록
-            existing_columns = {col['name'] for col in inspector.get_columns(table_name)}
+            existing_columns = {
+                col["name"] for col in inspector.get_columns(table_name)
+            }
 
             # 모델에 정의된 컬럼 목록
             model_columns = {col.name: col for col in table.columns}
@@ -64,7 +78,7 @@ def auto_add_missing_columns():
                     # 기본값 처리
                     default_clause = ""
                     if col.default is not None:
-                        if hasattr(col.default, 'arg'):
+                        if hasattr(col.default, "arg"):
                             # scalar default
                             default_value = col.default.arg
                             if isinstance(default_value, str):
@@ -119,16 +133,26 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    # 4. 챗봇 리트리버 모델 미리 로드 (Pre-loading)
+    try:
+        from ecommerce.chatbot.src.tools.retrieval_tools import ensure_retrieval_models
+
+        ensure_retrieval_models()
+        logging.info("챗봇 리트리버 모델 로딩 완료")
+    except Exception as e:
+        logging.error(f"챗봇 모델 로딩 실패: {e}")
+
     yield
     # 서버 종료 시
     logging.info("서버 종료")
+
 
 # ============================================
 # FastAPI 앱 생성
 # ============================================
 app = FastAPI(
     title="E-commerce Platform",
-    lifespan=lifespan  # Lifespan 이벤트 적용
+    lifespan=lifespan,  # Lifespan 이벤트 적용
 )
 
 # ============================================
@@ -156,12 +180,14 @@ app.add_middleware(
     https_only=False,  # 로컬 개발이므로 False
 )
 
+
 # ============================================
 # 헬스체크
 # ============================================
 @app.get("/", tags=["Health"])
 async def health_check():
     return {"status": "ok", "message": "서버가 정상적으로 실행 중입니다!"}
+
 
 # ============================================
 # 라우터 등록
@@ -185,4 +211,10 @@ app.include_router(chatbot_router, prefix="/api/v1/chat", tags=["Chatbot"])
 # ============================================
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("ecommerce.platform.backend.app.main:app", host="0.0.0.0", port=8000, reload=True)
+
+    uvicorn.run(
+        "ecommerce.platform.backend.app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+    )
