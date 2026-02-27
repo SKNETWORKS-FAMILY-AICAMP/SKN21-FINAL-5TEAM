@@ -73,7 +73,7 @@ declare global {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 const ORDER_LIST_BASE_MESSAGE = '최근 30일간의 주문 목록입니다.';
 
-const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.2'] as const;
+const OPENAI_MODELS = ['gpt-5-mini', 'gpt-5-mini', 'gpt-5.2'] as const;
 const HF_MODELS = ['Qwen/Qwen3-0.6B'] as const;
 const VLLM_MODELS = ['Qwen/Qwen3.5-35B-A3B'] as const;
 
