@@ -3,12 +3,7 @@ from ecommerce.chatbot.src.graph.state import AgentState
 from ecommerce.chatbot.src.graph.nodes_v2 import (
     guardrail_node,
     route_after_guardrail,
-    decomposer_node,
-    route_after_decomposer,
-    query_transform_node,
-    route_after_query_transform,
-    fixed_worker_node,
-    route_after_workers,
+    preprocess_node,
     agent_node,
     tool_node,
     should_continue,
@@ -23,21 +18,22 @@ from ecommerce.chatbot.src.graph.nodes_v2 import (
 
 def create_graph():
     """
-    고정 실행 전략 워크플로우
+    Agent 중심 워크플로우 (v2)
+
     구조:
-    START -> Guardrail -> (Process Output | Decomposer)
-          -> Decomposer -> (Agent | Query Transform)
-          -> Query Transform -> (Fixed Worker)
-          -> (Fixed Worker | Agent)
-          -> Validation -> Approval -> Tools -> (Agent | Output) -> End
+    START -> Guardrail -> (Process Output | Preprocess)
+          -> Preprocess -> Agent
+          -> Agent -> (Validation | Process Output)
+          -> Validation -> (Tools | Approval | Process Output)
+          -> Approval -> (Tools | Process Output)
+          -> Tools -> (Agent | Process Output)
+          -> Process Output -> End
     """
     workflow = StateGraph(AgentState)
 
     # 1. 노드 등록
     workflow.add_node("guardrail", guardrail_node)
-    workflow.add_node("decomposer", decomposer_node)
-    workflow.add_node("query_transform", query_transform_node)
-    workflow.add_node("fixed_worker", fixed_worker_node)
+    workflow.add_node("preprocess", preprocess_node)
     workflow.add_node("agent", agent_node)
     workflow.add_node("validation", smart_validation_node)
     workflow.add_node("approval", human_approval_node)
@@ -47,71 +43,44 @@ def create_graph():
     # 2. 엣지 연결
     workflow.add_edge(START, "guardrail")
 
-    # [Guardrail -> Decomposer / Process Output]
+    # [Guardrail -> Preprocess / Process Output]
     workflow.add_conditional_edges(
         "guardrail",
         route_after_guardrail,
         {
-            "decomposer": "decomposer",
+            "preprocess": "preprocess",
             "process_output": "process_output",
         },
     )
 
-    # [Decomposer -> Query Transform / Agent]
-    workflow.add_conditional_edges(
-        "decomposer",
-        route_after_decomposer,
-        {
-            "query_transform": "query_transform",
-            "agent": "agent",
-        },
-    )
+    # [Preprocess -> Agent] (항상)
+    workflow.add_edge("preprocess", "agent")
 
-    # [Query Transform -> Fixed Worker]
-    workflow.add_conditional_edges(
-        "query_transform", route_after_query_transform, {"fixed_worker": "fixed_worker"}
-    )
-
-    # [Fixed Worker -> Validation or Process Output]
-    workflow.add_conditional_edges(
-        "fixed_worker",
-        route_after_workers,
-        {
-            "validation": "validation",
-            "process_output": "process_output",
-        },
-    )
-
-    # [Agent -> Decision: Tools or End]
-    # 도구 호출이 없으면 바로 종료(Process Output), 있으면 검증(Validation)으로 이동
+    # [Agent -> Validation or Process Output]
     workflow.add_conditional_edges(
         "agent",
         should_continue,
         {
-            "tools": "validation",  # 도구 호출 시 바로 실행하지 않고 검증 단계를 거침
+            "tools": "validation",
             "end": "process_output",
         },
     )
 
-    # [Validation -> Decision: Approval or Tools]
-    # 검증 후, 민감한 도구(Sensitive)는 승인(Approval)으로, 안전한 도구는 실행(Tools)으로,
-    # 검증 결과 도구 호출이 취소되었으면 종료(End)로 갈 수도 있음
+    # [Validation -> Tools / Approval / Process Output]
     workflow.add_conditional_edges(
         "validation",
         route_after_validation,
         {"tools": "tools", "human_approval": "approval", "end": "process_output"},
     )
 
-    # [Approval -> Decision: Tools or End]
-    # 승인되면 Tools, 아니면 Process Output (UI 표시 후 종료)
+    # [Approval -> Tools / Process Output]
     workflow.add_conditional_edges(
         "approval",
         route_after_approval,
         {"tools": "tools", "process_output": "process_output"},
     )
 
-    # [Tools -> Decision: Agent or Process Output]
-    # UI Action이 있는 경우 Agent를 거치지 않고 바로 종료 (텍스트 생성 방지)
+    # [Tools -> Agent / Process Output]
     workflow.add_conditional_edges(
         "tools",
         route_after_tools,
