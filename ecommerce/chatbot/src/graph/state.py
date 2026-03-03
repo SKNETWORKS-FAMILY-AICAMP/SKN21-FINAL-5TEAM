@@ -37,6 +37,8 @@ class AgentState(TypedDict):
     current_task: Optional["TaskContext"]
 
     # 6. 제어 플래그
+    is_safe: Optional[bool]
+    safe_message: Optional[str]
     is_relevant: bool
     is_general_chat: bool
     retry_count: int
