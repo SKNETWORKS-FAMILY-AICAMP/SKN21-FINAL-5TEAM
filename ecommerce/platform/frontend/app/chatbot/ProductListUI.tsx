@@ -163,7 +163,6 @@ export default function ProductListUI({ products, message }: ProductListUIProps)
             <div key={product.id} className={styles.productCard}>
               <div 
                 className={styles.productImageWrap} 
-                onClick={() => router.push(`/products/${product.id}`)}
               >
                  <Image
                     src={imgUrl}
@@ -181,7 +180,6 @@ export default function ProductListUI({ products, message }: ProductListUIProps)
                 <div>
                   <h4 
                     className={styles.productName}
-                    onClick={() => router.push(`/products/${product.id}`)}
                   >
                     {product.name}
                   </h4>
