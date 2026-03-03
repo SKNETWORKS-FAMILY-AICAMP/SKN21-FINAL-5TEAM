@@ -444,7 +444,14 @@ export default function ChatbotFab() {
     document.addEventListener('mouseup', onMouseUp);
   };
 
-  const toggle = () => setOpen((v) => !v);
+  const toggle = () => {
+    if (open) {
+      if (document.activeElement && panelRef.current?.contains(document.activeElement)) {
+        (document.activeElement as HTMLElement).blur();
+      }
+    }
+    setOpen((v) => !v);
+  };
 
   const sendMessage = async (textOverride?: string, hidden: boolean = false) => {
     const text = typeof textOverride === 'string' ? textOverride : input.trim();
