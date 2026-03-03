@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 
-from .models import User, UserBodyMeasurement, UserStatus
+from .models import User, UserBodyMeasurement, UserStatus, UserGender
 
 pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
 
@@ -63,6 +63,7 @@ def create_user(
     agree_marketing_info: bool = False,
     agree_ad_sms: bool = False,
     agree_ad_email: bool = False,
+    gender: UserGender | None = None,
 ) -> User:
     user = User(
         email=email,
@@ -72,6 +73,7 @@ def create_user(
         agree_marketing=agree_marketing_info,
         agree_sms=agree_ad_sms,
         agree_email=agree_ad_email,
+        gender=gender,
     )
     db.add(user)
     db.commit()
