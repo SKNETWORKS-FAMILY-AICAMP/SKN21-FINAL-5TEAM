@@ -35,6 +35,7 @@ class AgentState(TypedDict):
     # 5. [Refactored State] Structured Task Context
     # 모든 기존 액션 상태(action_name, action_status, prior_action, order_id 등)는 여기에 통합됨
     current_task: Optional["TaskContext"]
+    last_completed_task: Optional["TaskContext"]
 
     # 6. 제어 플래그
     is_safe: Optional[bool]
