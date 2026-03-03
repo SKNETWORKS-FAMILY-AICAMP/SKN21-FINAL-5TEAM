@@ -11,6 +11,15 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMe
 
 
 MAX_TEXT_LEN = 2000
+MAX_LIST_PREVIEW_ITEMS = 5
+MAX_MESSAGE_PREVIEW_ITEMS = 3
+
+COMPACT_LIST_KEYS = {
+    "documents",
+    "task_list",
+    "task_results",
+    "tool_outputs",
+}
 
 
 def _now_iso() -> str:
@@ -21,6 +30,27 @@ def _truncate_text(text: str, max_len: int = MAX_TEXT_LEN) -> str:
     if len(text) <= max_len:
         return text
     return text[:max_len] + "...(truncated)"
+
+
+def _to_list_preview(items: List[Any], limit: int = MAX_LIST_PREVIEW_ITEMS) -> Dict[str, Any]:
+    preview_items = [safe_serialize(item) for item in items[:limit]]
+    return {
+        "_kind": "list_preview",
+        "count": len(items),
+        "truncated": len(items) > limit,
+        "items": preview_items,
+    }
+
+
+def _to_messages_preview(messages: List[Any]) -> Dict[str, Any]:
+    tail = messages[-MAX_MESSAGE_PREVIEW_ITEMS:]
+    return {
+        "_kind": "messages_preview",
+        "count": len(messages),
+        "truncated": len(messages) > MAX_MESSAGE_PREVIEW_ITEMS,
+        "items": [safe_serialize(msg) for msg in tail],
+        "last": safe_serialize(messages[-1]) if messages else None,
+    }
 
 
 def _serialize_message(msg: BaseMessage) -> Dict[str, Any]:
@@ -40,7 +70,7 @@ def _serialize_message(msg: BaseMessage) -> Dict[str, Any]:
     }
 
     if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
-        payload["tool_calls"] = msg.tool_calls
+        payload["tool_calls"] = safe_serialize(msg.tool_calls)
 
     if isinstance(msg, ToolMessage):
         payload["tool_call_id"] = msg.tool_call_id
@@ -58,9 +88,21 @@ def safe_serialize(data: Any) -> Any:
     if isinstance(data, BaseMessage):
         return _serialize_message(data)
     if isinstance(data, list):
+        if len(data) > MAX_LIST_PREVIEW_ITEMS:
+            return _to_list_preview(data)
         return [safe_serialize(item) for item in data]
     if isinstance(data, dict):
-        return {str(k): safe_serialize(v) for k, v in data.items()}
+        serialized: Dict[str, Any] = {}
+        for k, v in data.items():
+            key = str(k)
+            if key == "messages" and isinstance(v, list):
+                serialized[key] = _to_messages_preview(v)
+                continue
+            if key in COMPACT_LIST_KEYS and isinstance(v, list):
+                serialized[key] = _to_list_preview(v)
+                continue
+            serialized[key] = safe_serialize(v)
+        return serialized
     return _truncate_text(str(data))
 
 

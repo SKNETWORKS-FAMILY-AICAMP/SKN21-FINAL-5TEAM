@@ -25,6 +25,43 @@ def _safe(value: Any) -> str:
     return html.escape(str(value))
 
 
+def _payload_summary(item: Dict[str, Any]) -> str:
+    parts: List[str] = []
+    input_payload = item.get("input")
+    output_payload = item.get("output")
+    usage_payload = item.get("usage")
+
+    if isinstance(input_payload, dict):
+        msg = input_payload.get("messages")
+        if isinstance(msg, dict) and msg.get("_kind") == "messages_preview":
+            parts.append(f"messages={msg.get('count', 0)}")
+        elif isinstance(msg, list):
+            parts.append(f"messages={len(msg)}")
+
+        question = input_payload.get("question")
+        if isinstance(question, str) and question.strip():
+            parts.append(f"q={_safe(question[:40])}")
+
+    if isinstance(output_payload, dict):
+        generation = output_payload.get("generation")
+        if isinstance(generation, str) and generation.strip():
+            parts.append(f"gen={_safe(generation[:40])}")
+
+    if isinstance(usage_payload, dict):
+        total_tokens = usage_payload.get("total_tokens")
+        if total_tokens:
+            parts.append(f"tokens={_safe(total_tokens)}")
+
+    if not parts:
+        if item.get("event") == "start":
+            return "start event"
+        if item.get("event") == "end":
+            return "end event"
+        return "payload available"
+
+    return " | ".join(parts)
+
+
 def _load_jsonl(path: Path) -> Tuple[List[Dict[str, Any]], List[str]]:
     rows: List[Dict[str, Any]] = []
     errors: List[str] = []
@@ -55,13 +92,23 @@ def _timeline_table(title: str, items: List[Dict[str, Any]], key_name: str) -> s
 
     trs: List[str] = []
     for item in items:
+        payload_detail = (
+            "<details>"
+            "<summary>view payload</summary>"
+            "<div class='payload-grid'>"
+            f"<div><b>input</b><pre>{_safe(item.get('input'))}</pre></div>"
+            f"<div><b>output</b><pre>{_safe(item.get('output'))}</pre></div>"
+            f"<div><b>usage</b><pre>{_safe(item.get('usage'))}</pre></div>"
+            "</div>"
+            "</details>"
+        )
         trs.append(
             "<tr>"
             f"<td>{_safe(item.get('event'))}</td>"
             f"<td>{_safe(item.get(key_name))}</td>"
             f"<td>{_safe(item.get('at'))}</td>"
             f"<td>{_safe(item.get('duration_ms'))}</td>"
-            f"<td><details><summary>input/output</summary><pre>{_safe({'input': item.get('input'), 'output': item.get('output'), 'usage': item.get('usage')})}</pre></details></td>"
+            f"<td><div class='payload-summary'>{_payload_summary(item)}</div>{payload_detail}</td>"
             "</tr>"
         )
 
@@ -190,11 +237,13 @@ def _build_html(input_file: Path, turns: List[Dict[str, Any]], parse_errors: Lis
     table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
     th, td {{ border: 1px solid #e5e7eb; padding: 8px; vertical-align: top; }}
     th {{ background: #f9fafb; text-align: left; }}
-    pre {{ white-space: pre-wrap; word-break: break-word; background: #111827; color: #e5e7eb; padding: 10px; border-radius: 8px; }}
+    pre {{ white-space: pre-wrap; word-break: break-word; background: #111827; color: #e5e7eb; padding: 10px; border-radius: 8px; max-height: 240px; overflow: auto; }}
     details {{ margin: 8px 0; }}
     .muted {{ color: #6b7280; }}
     .warn {{ background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 12px; margin: 12px 0; }}
     .error-item {{ background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px; margin: 6px 0; }}
+    .payload-summary {{ font-size: 12px; color: #334155; margin-bottom: 6px; }}
+    .payload-grid {{ display: grid; gap: 8px; margin-top: 8px; }}
   </style>
 </head>
 <body>
