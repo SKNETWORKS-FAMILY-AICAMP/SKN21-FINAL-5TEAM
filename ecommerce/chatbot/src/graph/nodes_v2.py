@@ -512,7 +512,7 @@ def _decompose_tasks(
         )
 
         # 1차 시도
-        parsed = structured_llm.invoke(
+        parsed = structured_llm.with_config({"run_name": "decomposer_llm"}).invoke(
             [
                 SystemMessage(content=decomposer_prompt),
                 HumanMessage(content=decomposer_input),
@@ -526,7 +526,7 @@ def _decompose_tasks(
                 "이전 응답이 비어 있었습니다. 반드시 tasks 배열에 최소 1개 이상 넣어 반환하세요.\n"
                 f"사용자 요청: {decomposer_input[:4000]}"
             )
-            parsed = structured_llm.invoke(
+            parsed = structured_llm.with_config({"run_name": "decomposer_llm"}).invoke(
                 [
                     SystemMessage(content=decomposer_prompt),
                     HumanMessage(content=retry_msg),
@@ -820,10 +820,21 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
         return {"task": task_name, "result": result}
 
     if task_name == TaskType.PRODUCT_SEARCH.value:
-        return {
-            "task": task_name,
-            "result": {"message": "일반 상품 검색 기능은 외부 모듈을 사용해야 합니다."},
-        }
+        from ecommerce.chatbot.src.tools.product_tools import search_products_vector
+
+        # Try to use explicitly extracted query, fallback to full user message
+        user_msg = (
+            state.get("messages", [])[-1].content if state.get("messages") else ""
+        )
+        query = args.get("query", user_msg)
+
+        result = search_products_vector.invoke(
+            {
+                "query": query,
+                "limit": 5,
+            }
+        )
+        return {"task": task_name, "result": result}
 
     if task_name == TaskType.ORDER_ACTION.value:
         action = str(args.get("action", "")).lower()
@@ -1083,7 +1094,7 @@ def guardrail_node(state: AgentState):
     try:
         if provider in {"openai", "vllm"}:
             llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
-            response = llm.invoke(
+            response = llm.with_config({"run_name": "guardrail_llm"}).invoke(
                 [
                     SystemMessage(content=guardrail_prompt),
                     HumanMessage(content=user_message),
@@ -1159,7 +1170,7 @@ def query_transform_node(state: AgentState):
                     llm = _make_chat_llm(
                         provider=provider, model=model_name, temperature=0
                     )
-                    response = llm.invoke(
+                    response = llm.with_config({"run_name": "transform_llm"}).invoke(
                         [
                             SystemMessage(content=query_transform_prompt),
                             HumanMessage(content=prompt_input),
@@ -1552,7 +1563,7 @@ def _summarize_messages(messages: List, provider: str, model_name: str) -> str |
             summary_llm = _make_chat_llm(
                 provider=provider, model=model_name or SUMMARY_MODEL, temperature=0
             )
-            response = summary_llm.invoke(
+            response = summary_llm.with_config({"run_name": "summary_llm"}).invoke(
                 [
                     SystemMessage(content=context_summary_system_prompt),
                     HumanMessage(content=transcript[:12000]),
