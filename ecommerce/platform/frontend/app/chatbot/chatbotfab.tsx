@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import styles from './chatbotfab.module.css';
 import OrderListUI from './OrderListUI';
 import ProductListUI, { UiProduct } from './ProductListUI';
+import ReviewFormUI from './ReviewFormUI';
 import { useAuth } from '../authcontext';
 
 type TextMessage = { role: 'user' | 'bot'; type: 'text'; text: string; isStreaming?: boolean; showDivider?: boolean };
@@ -23,6 +24,7 @@ type OrderListMessage = {
     can_exchange?: boolean;
   }>;
   requiresSelection?: boolean;
+  prior_action?: string | null;
 };
 
 
@@ -58,7 +60,28 @@ type ProductListMessage = {
   ui_data: UiProduct[];
 };
 
-type ChatMsg = TextMessage | OrderListMessage | ConfirmationMessage | AddressSearchMessage | ProductListMessage;
+type ReviewFormMessage = {
+  role: 'bot';
+  type: 'review_form';
+  message: string;
+  ui_data: {
+    order_id: string;
+    product_id: string;
+    product_name: string;
+  };
+};
+
+type ReviewSubmissionPayload = {
+  event: 'review_submitted';
+  action: 'create_review';
+  rating: number;
+  content: string;
+  order_id: string;
+  product_id: string;
+  source: 'review_form_ui';
+};
+
+type ChatMsg = TextMessage | OrderListMessage | ConfirmationMessage | AddressSearchMessage | ProductListMessage | ReviewFormMessage;
 type LlmProvider = 'openai' | 'huggingface' | 'vllm';
 type ModelOption = { id: string; provider: LlmProvider; label: string };
 
@@ -570,6 +593,7 @@ export default function ChatbotFab() {
                       message: buildOrderListMessage(data.message, data.requires_selection),
                       orders: data.ui_data,
                       requiresSelection: data.requires_selection,
+                      prior_action: data.prior_action,
                     },
                   ]);
                 } else if (data.ui_action === 'show_address_search') {
@@ -593,6 +617,18 @@ export default function ChatbotFab() {
                       type: 'product_list',
                       message: data.message,
                       ui_data: data.ui_data,
+                    },
+                  ]);
+                } else if (data.ui_action === 'show_review_form') {
+                  setIsLoading(false);
+                  setStatusMessage(null);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: 'bot',
+                      type: 'review_form',
+                      message: data.message || '리뷰를 작성해주세요.',
+                      ui_data: data.ui_data, // Contains order_id, product_id, product_name
                     },
                   ]);
                 }
@@ -645,7 +681,7 @@ export default function ChatbotFab() {
     return null;
   };
 
-  const handleOrderSelect = (selectedOrderIds: string[]) => {
+  const handleOrderSelect = (selectedOrderIds: string[], priorAction?: string | null) => {
     if (selectedOrderIds.length === 0) return;
 
     // State만 업데이트 - 그래프 실행 안 함
@@ -657,7 +693,7 @@ export default function ChatbotFab() {
     }));
 
     // 선택 이벤트를 구조화된 JSON으로 전송 (백엔드 deterministic 파싱)
-    const inferredAction = getInferredAction();
+    const inferredAction = priorAction || getInferredAction();
 
     const selectionPayload = {
       event: 'order_selected',
@@ -688,6 +724,29 @@ export default function ChatbotFab() {
     ]);
 
     // 사용자 채팅에는 숨기고 구조화된 이벤트 JSON만 백엔드로 전달
+    sendMessage(JSON.stringify(finalPayload), true);
+  };
+
+  const handleReviewSubmit = (payload: { rating: number; content: string; order_id: string; product_id: string }) => {
+    const finalPayload: ReviewSubmissionPayload = {
+      event: 'review_submitted',
+      action: 'create_review',
+      rating: payload.rating,
+      content: payload.content,
+      order_id: payload.order_id,
+      product_id: payload.product_id,
+      source: 'review_form_ui',
+    };
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: 'bot',
+        type: 'text',
+        text: `리뷰 내용을 전달했습니다.\n- 별점: ${payload.rating}점\n- 내용: ${payload.content}`,
+      },
+    ]);
+
     sendMessage(JSON.stringify(finalPayload), true);
   };
 
@@ -739,7 +798,7 @@ export default function ChatbotFab() {
                       <OrderListUI
                         message={m.message}
                         orders={m.orders}
-                        onSelect={handleOrderSelect}
+                        onSelect={(ids) => handleOrderSelect(ids, m.prior_action)}
                         requiresSelection={m.requiresSelection}
                       />
                     </div>
@@ -768,6 +827,22 @@ export default function ChatbotFab() {
                     <span className={styles.botIcon}>✦</span>
                     <div className={styles.botText}>
                       <ProductListUI products={m.ui_data} message={m.message} />
+                    </div>
+                  </div>
+                </div>
+              );
+            } else if (m.type === 'review_form') {
+              return (
+                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
+                  <div className={styles.botMsg}>
+                    <span className={styles.botIcon}>✦</span>
+                    <div className={styles.botText}>
+                      <ReviewFormUI
+                        orderId={m.ui_data?.order_id || ''}
+                        productId={m.ui_data?.product_id || ''}
+                        productName={m.ui_data?.product_name || '상품'}
+                        onSubmit={handleReviewSubmit}
+                      />
                     </div>
                   </div>
                 </div>
