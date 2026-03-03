@@ -1,15 +1,13 @@
 import os
 import pandas as pd
-import random
-from typing import List, Dict, Optional
+from typing import Optional
 from langchain_core.tools import tool
-from ecommerce.chatbot.src.core.config import settings
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
 
 # Path to the sampled dataset
 DATA_PATH = os.path.join(
-    os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    ),
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "data",
     "processed",
     "fashion-1000-balanced",
@@ -53,7 +51,8 @@ def recommend_clothes(
         return {"error": "상품 데이터를 로드할 수 없습니다."}
 
     # 1. Base filter
-    filtered = df.copy()
+    # 무조건 의류(선택지 중 Apparel 등)만 추천되도록 강력한 필터 적용
+    filtered = df[df["masterCategory"] == "Apparel"].copy()
 
     # 성별 필터링
     if gender:
@@ -87,6 +86,34 @@ def recommend_clothes(
 
         pref_lower = preference.lower()
 
+        # 한국어 키워드 기본 매핑 (카테고리 강제)
+        if (
+            "상의" in preference
+            or "반팔" in preference
+            or "셔츠" in preference
+            or "티셔츠" in preference
+        ):
+            filtered = filtered[
+                filtered["subCategory"].str.contains("Topwear", case=False, na=False)
+            ]
+        elif (
+            "하의" in preference
+            or "바지" in preference
+            or "팬츠" in preference
+            or "청바지" in preference
+        ):
+            filtered = filtered[
+                filtered["subCategory"].str.contains("Bottomwear", case=False, na=False)
+            ]
+        elif "원피스" in preference or "드레스" in preference:
+            filtered = filtered[
+                filtered["subCategory"].str.contains("Dress", case=False, na=False)
+            ]
+        elif "치마" in preference or "스커트" in preference:
+            filtered = filtered[
+                filtered["articleType"].str.contains("Skirt", case=False, na=False)
+            ]
+
         # 키워드가 너무 길면 분절해서 찾거나 OR 조건 등을 쓸 수 있지만 단순하게 contains
         mask = (
             filtered["productDisplayName"].str.contains(
@@ -115,6 +142,7 @@ def recommend_clothes(
             {
                 "id": int(row["id"]),
                 "name": str(row["productDisplayName"]),
+                "price": 30000,  # Mock price because price isn't in styles.csv metadata
                 "category": f"{row['masterCategory']} > {row['subCategory']} > {row['articleType']}",
                 "color": str(row["baseColour"]),
                 "season": str(row["season"]),
@@ -124,13 +152,10 @@ def recommend_clothes(
 
     return {
         "success": True,
-        "message": f"총 {len(results)}개의 상품을 추천합니다.",
-        "recommendations": results,
+        "message": f"조건에 맞는 옷 {len(results)}개를 추천해드릴게요!",
+        "ui_action": "show_product_list",
+        "ui_data": results,
     }
-
-
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
 
 
 @tool
