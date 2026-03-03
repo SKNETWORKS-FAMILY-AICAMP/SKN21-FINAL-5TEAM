@@ -3,9 +3,12 @@
 (Real DB Version)
 """
 
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+import json
 
 from ecommerce.platform.backend.app.database import SessionLocal
 from ecommerce.platform.backend.app.models import (
@@ -96,16 +99,20 @@ def get_reviews(product_id: str = None, limit: int = 10) -> dict:
 
 @tool
 def create_review(
-    product_id: str, rating: int, content: str, order_id: str, user_id: int = 1
+    order_id: str,
+    product_id: str = "",
+    rating: int = 0,
+    content: str = "",
+    user_id: int = 1,
 ) -> dict:
     """
     리뷰를 작성합니다.
 
     Args:
-        product_id: 상품 ID
+        order_id: 주문번호 (구매 내역 확인용)
+        product_id: 상품 ID (선택사항, 없으면 주문의 첫 번째 상품 선택)
         rating: 평점 (1-5)
         content: 리뷰 내용
-        order_id: 주문번호 (구매 내역 확인용)
         user_id: 사용자 ID (기본값 1)
 
     Returns:
@@ -116,11 +123,6 @@ def create_review(
 
     db = SessionLocal()
     try:
-        # 2. Find Order Item to attach review to
-        # We need to find an OrderItem in this order that matches the product_id
-        # This is tricky because product_id might be generic, but OrderItem links to ProductOption.
-        # We need to join ProductOption to check product_id.
-
         order = db.query(Order).filter(Order.order_number == order_id).first()
         if not order:
             return {"error": "유효하지 않은 주문 번호입니다."}
@@ -131,18 +133,53 @@ def create_review(
 
         target_item = None
         for item in order.items:
-            # Check if this item's option belongs to the product
             option = (
                 db.query(ProductOption)
                 .filter(ProductOption.id == item.product_option_id)
                 .first()
             )
-            if option and str(option.product_id) == str(product_id):
+            if product_id and option and str(option.product_id) == str(product_id):
                 target_item = item
                 break
 
+        # Fallback: if no specific product requested or not found, use the first item
+        if not target_item and order.items:
+            target_item = order.items[0]
+
         if not target_item:
             return {"error": "해당 주문에서 구매한 상품이 아닙니다."}
+
+        # Get the actual product name for the UI / review
+        product_name = "주문하신 상품"
+        option = (
+            db.query(ProductOption)
+            .filter(ProductOption.id == target_item.product_option_id)
+            .first()
+        )
+        if option:
+            product = db.query(Product).filter(Product.id == option.product_id).first()
+            if product:
+                product_name = product.name
+                actual_product_id = str(product.id)
+            else:
+                actual_product_id = str(option.product_id)
+        else:
+            actual_product_id = product_id
+
+        # UI Fallback Interception
+        if rating == 0 or content == "UI_REQUEST":
+            return json.dumps(
+                {
+                    "ui_action": "show_review_form",
+                    "message": "리뷰 세부 정보를 입력해주세요.",
+                    "ui_data": {
+                        "order_id": order_id,
+                        "product_id": actual_product_id,
+                        "product_name": product_name,
+                    },
+                },
+                ensure_ascii=False,
+            )
 
         # 3. Create Review
         new_review = Review(
@@ -168,10 +205,6 @@ def create_review(
         db.close()
 
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
-
-
 @tool
 def generate_review_draft(
     product_name: str, satisfaction: str, keywords: list[str] = None
@@ -191,9 +224,9 @@ def generate_review_draft(
 - 포함 키워드/특징: {kw_str}
 
 작성 규칙:
-1. '짧은 버전' (1-2문장)
-2. '감성적인 버전' (생생한 느낌과 기분을 담아서)
-3. '상세한 버전' (구체적인 이유와 추천 여부 포함)
+1. '짧은 버전' (1문장)
+2. '감성적인 버전' (생생한 느낌과 기분을 담아서 1-2문장)
+3. '무뚝뚝한 버전' (정확한 리뷰와 딱딱한 어체를 사용 1-2문장)
 
 반드시 아래 JSON 형식으로만 답변해주세요. (Markdown 블록 없이 순수 JSON)
 {{
