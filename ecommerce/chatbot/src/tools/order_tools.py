@@ -5,16 +5,12 @@
 
 from langchain_core.tools import tool
 from sqlalchemy.orm import Session, joinedload
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from ecommerce.platform.backend.app.database import SessionLocal
 from ecommerce.platform.backend.app.models import (
     Order,
-    OrderItem,
     User,
-    ShippingInfo,
-    ShippingAddress,
-    Product,
     ProductOption,
     UsedProductOption,
 )
@@ -29,7 +25,6 @@ from ecommerce.platform.backend.app.router.inventories.models import (
 )
 from ecommerce.platform.backend.app.router.user_history.crud import (
     track_order_action,
-    track_refund_request,
 )
 from ecommerce.platform.backend.app.router.user_history.schemas import (
     ActionType as HistoryActionType,
@@ -240,8 +235,6 @@ def _check_return_period(delivered_at: datetime | None) -> tuple[bool, str | Non
     if not delivered_at:
         return False, "배송완료 정보가 없습니다. 배송 완료 후 환불/교환이 가능합니다."
 
-    from datetime import timedelta
-
     days_since_delivery = (datetime.now() - delivered_at).days
 
     if days_since_delivery > 7:
@@ -329,17 +322,30 @@ def cancel_order(
             order_item_names = []
             for item in order.items:
                 if item.product_option_type == ProductType.NEW:
-                    option = db.query(ProductOption).filter(ProductOption.id == item.product_option_id).first()
+                    option = (
+                        db.query(ProductOption)
+                        .filter(ProductOption.id == item.product_option_id)
+                        .first()
+                    )
                     if option and option.product:
                         order_item_names.append(option.product.name)
                 else:
-                    option = db.query(UsedProductOption).filter(UsedProductOption.id == item.product_option_id).first()
+                    option = (
+                        db.query(UsedProductOption)
+                        .filter(UsedProductOption.id == item.product_option_id)
+                        .first()
+                    )
                     if option and option.used_product:
                         order_item_names.append(option.used_product.name)
             track_order_action(
-                db, user_id, order.id, HistoryActionType.ORDER_DEL,
+                db,
+                user_id,
+                order.id,
+                HistoryActionType.ORDER_DEL,
                 user_name=user.name if user else None,
-                order_item_name=", ".join(order_item_names) if order_item_names else None
+                order_item_name=", ".join(order_item_names)
+                if order_item_names
+                else None,
             )
         except Exception:
             pass  # 히스토리 기록 실패해도 취소 결과에 영향 없음
@@ -553,17 +559,30 @@ def register_return_request(
             order_item_names = []
             for item in order.items:
                 if item.product_option_type == ProductType.NEW:
-                    option = db.query(ProductOption).filter(ProductOption.id == item.product_option_id).first()
+                    option = (
+                        db.query(ProductOption)
+                        .filter(ProductOption.id == item.product_option_id)
+                        .first()
+                    )
                     if option and option.product:
                         order_item_names.append(option.product.name)
                 else:
-                    option = db.query(UsedProductOption).filter(UsedProductOption.id == item.product_option_id).first()
+                    option = (
+                        db.query(UsedProductOption)
+                        .filter(UsedProductOption.id == item.product_option_id)
+                        .first()
+                    )
                     if option and option.used_product:
                         order_item_names.append(option.used_product.name)
             track_order_action(
-                db, user_id, order.id, HistoryActionType.ORDER_RE,
+                db,
+                user_id,
+                order.id,
+                HistoryActionType.ORDER_RE,
                 user_name=user.name if user else None,
-                order_item_name=", ".join(order_item_names) if order_item_names else None
+                order_item_name=", ".join(order_item_names)
+                if order_item_names
+                else None,
             )
         except Exception:
             pass  # 히스토리 기록 실패해도 반품 접수 결과에 영향 없음
@@ -855,6 +874,16 @@ def get_user_orders(
             # 가능한 액션 판단
             order_actions = _get_order_actions(order)
 
+            # 필터링 로직 추가
+            if action_context == "refund" and not order_actions.get("can_return"):
+                continue
+            if action_context == "cancel" and not order_actions.get("can_cancel"):
+                continue
+            if action_context == "exchange" and not order_actions.get("can_exchange"):
+                continue
+            if action_context == "review" and order.status != OrderStatus.DELIVERED:
+                continue
+
             # Get main product name
             product_name = "상품 정보 없음"
             if order.items:
@@ -882,12 +911,34 @@ def get_user_orders(
 
         # Context-aware message
         base_msg = f"최근 {days}일 이내 주문 내역입니다."
+        if not ui_data:
+            if action_context == "refund":
+                msg_suffix = " (환불 가능한 주문이 없습니다.)"
+            elif action_context == "exchange":
+                msg_suffix = " (교환 가능한 주문이 없습니다.)"
+            elif action_context == "cancel":
+                msg_suffix = " (취소 가능한 주문이 없습니다.)"
+            elif action_context == "review":
+                msg_suffix = " (리뷰 작성이 가능한 배송완료 주문이 없습니다.)"
+            else:
+                msg_suffix = " (주문 내역이 없습니다.)"
+            return {
+                "ui_action": "show_order_list",
+                "message": base_msg + msg_suffix,
+                "total_orders": 0,
+                "ui_data": [],
+                "requires_selection": False,
+                "prior_action": action_context,
+            }
+
         if action_context == "refund":
             msg_suffix = " 환불하실 주문을 선택해주세요."
         elif action_context == "exchange":
             msg_suffix = " 교환하실 주문을 선택해주세요."
         elif action_context == "cancel":
             msg_suffix = " 취소하실 주문을 선택해주세요."
+        elif action_context == "review":
+            msg_suffix = " 리뷰를 작성하실 주문을 선택해주세요."
         else:
             msg_suffix = " 원하시는 주문을 선택해주세요."
 

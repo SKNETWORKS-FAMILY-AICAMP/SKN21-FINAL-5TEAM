@@ -5,8 +5,9 @@ import json
 from uuid import uuid4
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
-from ecommerce.chatbot.src.schemas.chat import ChatRequest
+from ecommerce.chatbot.src.schemas.chat import ChatRequest, ReviewDraftRequest
 from ecommerce.chatbot.src.graph.workflow import graph_app
+from ecommerce.chatbot.src.tools.service_tools import generate_review_draft
 from ecommerce.chatbot.src.infrastructure.conversation_logger import (
     ConversationRunLogger,
 )
@@ -75,10 +76,18 @@ def _build_metadata(final_state: dict | None) -> dict:
     raw_current_task = state_data.get("current_task")
     current_task = raw_current_task if isinstance(raw_current_task, dict) else None
     fallback_task = state_data.get("last_completed_task")
-    task_context = current_task or (fallback_task if isinstance(fallback_task, dict) else None)
-    status = task_context.get("status", "idle") if isinstance(task_context, dict) else "idle"
+    task_context = current_task or (
+        fallback_task if isinstance(fallback_task, dict) else None
+    )
+    status = (
+        task_context.get("status", "idle") if isinstance(task_context, dict) else "idle"
+    )
 
-    action_name = f"{task_context.get('type')}_requested" if isinstance(task_context, dict) and status == "completed" else None
+    action_name = (
+        f"{task_context.get('type')}_requested"
+        if isinstance(task_context, dict) and status == "completed"
+        else None
+    )
     order_id = task_context.get("target_id") if isinstance(task_context, dict) else None
     return {
         "type": "metadata",
@@ -354,3 +363,34 @@ async def chat_streaming_endpoint(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )
+
+
+@router.post("/review-draft")
+async def generate_review_draft_endpoint(
+    request: ReviewDraftRequest, current_user: User = Depends(get_current_user)
+):
+    """
+    Generate review drafts based on satisfaction and product name.
+    """
+    try:
+        # generate_review_draft is a langchain component (StructuredTool)
+        result = generate_review_draft.invoke(
+            {
+                "product_name": request.product_name,
+                "satisfaction": request.satisfaction,
+                "keywords": request.keywords or [],
+            }
+        )
+        if isinstance(result, str):
+            try:
+                result = json.loads(result)
+            except Exception:
+                pass
+
+        # If result is already a dict from the tool, it contains 'success' and 'drafts'
+        if isinstance(result, dict) and "drafts" in result:
+            return result
+
+        return {"success": True, "drafts": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}

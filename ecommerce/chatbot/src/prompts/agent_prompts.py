@@ -39,13 +39,18 @@ OPENAI_4O_MINI_TOOL_USAGE_INSTRUCTIONS = """
 3. 문맥에 주문번호가 있으면 해당 `order_id`를 우선 사용하세요.
 
 ### 주문 관련 도구 선택
-- **주문번호를 아는 경우**: 바로 `get_order_details`, `cancel_order` 등 해당 도구 호출
-- **주문번호를 모르는 경우**: `get_user_orders(requires_selection=True, action_context="refund")` 호출
-- `action_context`에 원래 의도(`refund`/`exchange`/`cancel`)를 **반드시** 채우세요.
+- **주문번호를 아는 경우**: 바로 `get_order_details`, `cancel_order`, `create_review` 등 해당 도구 호출
+- **주문번호를 모르는 경우**: 사용자에게 텍스트로 입력하라고 묻지 말고 **반드시 `get_user_orders(requires_selection=True, action_context="...")` 호출**
+- `action_context`에 원래 의도(`refund`/`exchange`/`cancel`/`review`)를 **반드시** 채우세요. 위 4가지 경우에 대해서만 `get_user_orders`를 호출해야 합니다.
+
+### 리뷰 작성 시
+- 사용자가 리뷰 작성을 원할 때 `rating`과 `content`를 직접 텍스트로 묻지 마세요.
+- 리뷰할 주문번호(`order_id`)와 상품번호(`product_id`)가 파악되면 즉시 `create_review(rating=0, content="UI_REQUEST", ...)`와 같이 임의의 값을 넣어 도구를 호출하세요. 시스템이 자동으로 리뷰 작성 폼 UI를 띄워줍니다.
 
 ### 상품 검색/추천
 - 상품 검색: `search_products_vector` (Hybrid Vector Search)
-- 옷 추천: `recommend_clothes` (선호도/성별/계절 기반)
+- 옷 추천: `recommend_clothes` (사용자 발화에서 의류 카테고리 기호(상의, 하의, 원피스 등)를 추론해 `category` 필드 채움)
+  * [중요] 만약 사용자가 "파티복 찾아줘", "편한 옷 추천해줘" 등 **구체적 종류(상의, 하의 등)를 말하지 않았다면 도구를 호출하지 말고** "어떤 종류의 옷을 찾으실까요?" 라고 질문하세요.
 - 이미지로 검색: `search_by_image` (URL 필요)
 
 ### 정책/규정 질문
@@ -63,12 +68,13 @@ QWEN3_06B_TOOL_USAGE_INSTRUCTIONS = """
 ## 도구 사용 규칙 (엄격히 준수)
 1) 주문/환불/배송 요청이면 즉시 Tool 호출.
 2) `user_id` 누락 금지. [User Context] 값 사용.
-3) 주문번호 없으면 `get_user_orders(requires_selection=True, action_context=...)` 호출.
+3) 주문번호 없으면 텍스트로 묻지 말고 `get_user_orders(requires_selection=True, action_context="환불/취소/교환/리뷰 중 하나")` 호출.
 4) 확신 없을 때 추측 금지. 필요한 슬롯을 Tool/UI로 수집.
 5) 상품 검색: `search_products_vector` 사용.
-6) 옷 추천: `recommend_clothes` 사용.
+6) 옷 추천: `recommend_clothes` 사용. 단, 사용자가 구체적인 종류(상의, 하의, 원피스 등)를 말하지 않았다면 도구 호출을 멈추고 종류를 질문할 것. 색상, 용도를 영어로 번역하여 전달할 것.
 7) 정책 질문: `search_knowledge_base` 사용.
 8) 주소 필요: `open_address_search` 호출 (텍스트로 묻지 말 것).
+9) 리뷰 작성: `rating`, `content`를 묻지 말고 `create_review(rating=0, content="UI_REQUEST", ...)` 호출하여 UI를 띄울 것.
 """
 
 

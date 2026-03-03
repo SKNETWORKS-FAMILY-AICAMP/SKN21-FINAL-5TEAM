@@ -4,6 +4,8 @@ from typing import Optional
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from ecommerce.platform.backend.app.database import SessionLocal
+from ecommerce.platform.backend.app.models import User
 
 # Path to the sampled dataset
 DATA_PATH = os.path.join(
@@ -31,108 +33,97 @@ def _get_dataframe() -> pd.DataFrame:
 
 @tool
 def recommend_clothes(
-    preference: str,
-    gender: Optional[str] = None,
+    category: str,
+    color: Optional[str] = None,
+    usage: Optional[str] = None,
     season: Optional[str] = None,
     limit: int = 3,
+    user_id: int = 1,
 ) -> dict:
     """
-    사용자의 선호도, 성별, 계절 등을 바탕으로 옷을 추천합니다.
+    사용자의 요청(카테고리, 색상, 용도 등)에 맞는 옷을 추천합니다.
     챗봇이 의류나 패션 아이템을 추천할 때 사용합니다.
+    [중요] 사용자가 어떤 카테고리(상의, 하의, 아우터, 속옷, 신발 등)를 찾는지 불명확한 경우 (예: "파티복 추천해줘")
+    이 도구를 호출하지 말고 사용자에게 어떤 옷의 종류를 찾는지 먼저 질문하세요.
 
     Args:
-        preference: 서치할 키워드 또는 선호 스타일 (ex. '캐주얼', '정장', '파란색 티셔츠' 등)
-        gender: 성별 필터 ('Men', 'Women', 'Boys', 'Girls', 'Unisex') (선택사항)
-        season: 계절 필터 ('Summer', 'Winter', 'Fall', 'Spring') (선택사항)
+        category: 의류 종류 (필수, 예: "Topwear", "Bottomwear", "Dress", "Skirt", "Innerwear" 등. 사용자의 발화를 기반으로 영어 분류명으로 추론하세요)
+        color: 색상 (선택사항, 예: "Black", "Red", "Blue" 등 영어 색상명)
+        usage: 용도 (선택사항, 예: "Casual", "Formal", "Sports", "Party" 등 영어 용도명)
+        season: 계절 (선택사항, 예: "Summer", "Winter", "Fall", "Spring")
         limit: 추천할 상품 최대 개수 (기본값 3)
+        user_id: 사용자 ID (기본값 1, DB에서 성별 조회용)
     """
+    db = SessionLocal()
+    gender = None
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            gender = getattr(user, "gender", None)
+    except Exception as e:
+        print(f"Error fetching user gender: {e}")
+    finally:
+        db.close()
+
     df = _get_dataframe()
     if df.empty:
         return {"error": "상품 데이터를 로드할 수 없습니다."}
 
     # 1. Base filter
-    # 무조건 의류(선택지 중 Apparel 등)만 추천되도록 강력한 필터 적용
     filtered = df[df["masterCategory"] == "Apparel"].copy()
 
-    # 성별 필터링
+    # 성별 필터링 (DB에서 가져온 성별 사용)
     if gender:
-        # Men, Women 필터에 좀 더 다채롭게 매핑하기
         g_map = {
             "남성": "Men",
             "남자": "Men",
+            "M": "Men",
             "여성": "Women",
             "여자": "Women",
+            "F": "Women",
             "공용": "Unisex",
         }
         target_gender = g_map.get(gender, gender)
-        # 대소문자 무시 검색
         filtered = filtered[
             filtered["gender"].str.contains(target_gender, case=False, na=False)
         ]
 
+    # 2. Category matching
+    if category:
+        mask = filtered["subCategory"].str.contains(
+            category, case=False, na=False
+        ) | filtered["articleType"].str.contains(category, case=False, na=False)
+        filtered = filtered[mask]
+
+    # 3. Category fallback guard
+    if len(filtered) == 0:
+        return {
+            "message": f"'{category}' 종류에 해당하는 옷을 찾지 못했습니다. 다른 종류의 옷을 추천해드릴까요?"
+        }
+
     # 계절 필터링
     if season:
-        s_map = {"봄": "Spring", "여름": "Summer", "가을": "Fall", "겨울": "Winter"}
-        target_season = s_map.get(season, season)
         filtered = filtered[
-            filtered["season"].str.contains(target_season, case=False, na=False)
+            filtered["season"].str.contains(season, case=False, na=False)
         ]
 
-    # 2. Keyword matching on display name or usage
-    if preference:
-        # "파란색" -> "Blue", "원피스" -> "Dress" 와 같이 기본적인 키워드 맵핑 (선택사항)이지만,
-        # 여기서는 문자열 단순 매칭으로 진행
-        # 보다 정확도를 높이려면 LLM 쿼리 시 영어 키워드로 변환해달라고 프롬프트 단에서 요청할 수 있음
+    # 컬러 필터링
+    if color:
+        filtered = filtered[
+            filtered["baseColour"].str.contains(color, case=False, na=False)
+        ]
 
-        pref_lower = preference.lower()
+    # 용도 필터링
+    if usage:
+        filtered = filtered[filtered["usage"].str.contains(usage, case=False, na=False)]
 
-        # 한국어 키워드 기본 매핑 (카테고리 강제)
-        if (
-            "상의" in preference
-            or "반팔" in preference
-            or "셔츠" in preference
-            or "티셔츠" in preference
-        ):
-            filtered = filtered[
-                filtered["subCategory"].str.contains("Topwear", case=False, na=False)
-            ]
-        elif (
-            "하의" in preference
-            or "바지" in preference
-            or "팬츠" in preference
-            or "청바지" in preference
-        ):
-            filtered = filtered[
-                filtered["subCategory"].str.contains("Bottomwear", case=False, na=False)
-            ]
-        elif "원피스" in preference or "드레스" in preference:
-            filtered = filtered[
-                filtered["subCategory"].str.contains("Dress", case=False, na=False)
-            ]
-        elif "치마" in preference or "스커트" in preference:
-            filtered = filtered[
-                filtered["articleType"].str.contains("Skirt", case=False, na=False)
-            ]
-
-        # 키워드가 너무 길면 분절해서 찾거나 OR 조건 등을 쓸 수 있지만 단순하게 contains
-        mask = (
-            filtered["productDisplayName"].str.contains(
-                pref_lower, case=False, na=False
-            )
-            | filtered["usage"].str.contains(pref_lower, case=False, na=False)
-            | filtered["baseColour"].str.contains(pref_lower, case=False, na=False)
-            | filtered["articleType"].str.contains(pref_lower, case=False, na=False)
-        )
-        keyword_filtered = filtered[mask]
-
-        # 만약 키워드로 필터링 했을 때 결과가 하나도 없다면 필터 무시 (최소한의 추천을 위해)
-        if not keyword_filtered.empty:
-            filtered = keyword_filtered
-
-    # 3. Random Sampling
+    # 필터링 후 아무 상품도 남아있지 않은 경우
     if len(filtered) == 0:
-        return {"message": "조건에 맞는 상품을 찾지 못했습니다."}
+        return {
+            "message": "제시하신 조건(색상, 계절, 용도 등)에 완벽히 일치하는 옷을 찾지 못했습니다. 조건을 조금 바꿔서 다시 검색해보시는 건 어떨까요?"
+        }
 
+    # 4. Random Sampling
     sample_size = min(len(filtered), limit)
     sampled = filtered.sample(n=sample_size)
 
