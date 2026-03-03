@@ -758,18 +758,69 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
         result = search_knowledge_base.invoke({"query": query, "category": category})
         return {"task": task_name, "result": result}
 
-    if task_name in {
-        TaskType.PRODUCT_SEARCH.value,
-        TaskType.CLOTHES_RECOMMEND.value,
-        TaskType.IMAGE_SEARCH.value,
-        TaskType.USED_ITEM_REGISTER.value,
-        TaskType.REVIEW_AUTO_GEN.value,
-    }:
+    if task_name == TaskType.CLOTHES_RECOMMEND.value:
+        from ecommerce.chatbot.src.tools.recommendation_tools import recommend_clothes
+
+        result = recommend_clothes.invoke(
+            {
+                "preference": args.get("preference", ""),
+                "gender": args.get("gender"),
+                "season": args.get("season"),
+                "limit": args.get("limit", 3),
+            }
+        )
+        return {"task": task_name, "result": result}
+
+    if task_name == TaskType.IMAGE_SEARCH.value:
+        from ecommerce.chatbot.src.tools.recommendation_tools import search_by_image
+
+        result = search_by_image.invoke({"image_url": args.get("image_url", "")})
+        return {"task": task_name, "result": result}
+
+    if task_name == TaskType.USED_ITEM_REGISTER.value:
+        from ecommerce.chatbot.src.tools.used_tools import (
+            register_used_sale,
+            request_pickup,
+        )
+
+        # 간단한 라우팅 (pickup_date가 있으면 수거, 아니면 등록)
+        if "pickup_date" in args:
+            result = request_pickup.invoke(
+                {
+                    "sale_id": args.get("sale_id", ""),
+                    "pickup_date": args.get("pickup_date", ""),
+                    "pickup_address": args.get("pickup_address", ""),
+                    "user_id": user_id,
+                }
+            )
+        else:
+            result = register_used_sale.invoke(
+                {
+                    "category": args.get("category", "의류"),
+                    "item_name": args.get("item_name", "미등록 상품"),
+                    "condition": args.get("condition", "상"),
+                    "expected_price": args.get("expected_price"),
+                    "user_id": user_id,
+                }
+            )
+        return {"task": task_name, "result": result}
+
+    if task_name == TaskType.REVIEW_AUTO_GEN.value:
+        from ecommerce.chatbot.src.tools.service_tools import generate_review_draft
+
+        result = generate_review_draft.invoke(
+            {
+                "product_name": args.get("product_name", "구매한 상품"),
+                "satisfaction": args.get("satisfaction", "만족"),
+                "keywords": args.get("keywords", []),
+            }
+        )
+        return {"task": task_name, "result": result}
+
+    if task_name == TaskType.PRODUCT_SEARCH.value:
         return {
             "task": task_name,
-            "result": {
-                "message": f"{task_name} 기능은 현재 준비 중이거나 추가 도구가 필요합니다."
-            },
+            "result": {"message": "일반 상품 검색 기능은 외부 모듈을 사용해야 합니다."},
         }
 
     if task_name == TaskType.ORDER_ACTION.value:
