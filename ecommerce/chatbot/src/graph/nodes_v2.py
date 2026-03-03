@@ -22,6 +22,8 @@ from ecommerce.chatbot.src.prompts.agent_prompts import (
     get_decomposer_prompt,
     get_worker_response_prompt_template,
     get_hf_decomposer_prompt_template,
+    get_guardrail_prompt,
+    get_query_transform_prompt,
 )
 
 # Import Tools
@@ -97,7 +99,13 @@ _HF_MODEL_LOCK = threading.Lock()
 
 
 class TaskType(str, Enum):
+    PRODUCT_SEARCH = "PRODUCT_SEARCH"
+    CLOTHES_RECOMMEND = "CLOTHES_RECOMMEND"
+    IMAGE_SEARCH = "IMAGE_SEARCH"
+    USED_ITEM_REGISTER = "USED_ITEM_REGISTER"
+    REVIEW_AUTO_GEN = "REVIEW_AUTO_GEN"
     ORDER_QUERY = "ORDER_QUERY"
+    RAG_SEARCH = "RAG_SEARCH"
     POLICY_CHECK = "POLICY_CHECK"
     ORDER_ACTION = "ORDER_ACTION"
     GENERAL_CHAT = "GENERAL_CHAT"
@@ -734,15 +742,35 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
             )
         return {"task": task_name, "result": result}
 
-    if task_name == TaskType.POLICY_CHECK.value:
+    if (
+        task_name == TaskType.POLICY_CHECK.value
+        or task_name == TaskType.RAG_SEARCH.value
+    ):
         query = (
             args.get("query")
             or args.get("policy")
             or _get_last_user_message(state.get("messages", []))
         )
-        category = args.get("category", "취소/반품/교환")
+        category = args.get(
+            "category",
+            "일반문의" if task_name == TaskType.RAG_SEARCH.value else "취소/반품/교환",
+        )
         result = search_knowledge_base.invoke({"query": query, "category": category})
         return {"task": task_name, "result": result}
+
+    if task_name in {
+        TaskType.PRODUCT_SEARCH.value,
+        TaskType.CLOTHES_RECOMMEND.value,
+        TaskType.IMAGE_SEARCH.value,
+        TaskType.USED_ITEM_REGISTER.value,
+        TaskType.REVIEW_AUTO_GEN.value,
+    }:
+        return {
+            "task": task_name,
+            "result": {
+                "message": f"{task_name} 기능은 현재 준비 중이거나 추가 도구가 필요합니다."
+            },
+        }
 
     if task_name == TaskType.ORDER_ACTION.value:
         action = str(args.get("action", "")).lower()
@@ -980,6 +1008,147 @@ def _execute_single_task(task: Dict[str, Any], state: AgentState) -> Dict[str, A
     }
 
 
+def guardrail_node(state: AgentState):
+    """
+    보안 가드레일:
+    사용자 입력(마지막 메시지)에 PII나 악의적 프롬프트가 있는지 검사합니다.
+    """
+    print("---GUARDRAIL NODE---")
+    messages = state.get("messages", [])
+    user_message = _get_last_user_message(messages)
+
+    if not user_message:
+        return {"is_safe": True, "safe_message": None}
+
+    # 프론트 이벤트 등 JSON 이면 우선 안전하다고 패스 (혹은 추가 검사 가능)
+    if _extract_json_payload(user_message):
+        return {"is_safe": True, "safe_message": None}
+
+    provider, model_name = _resolve_llm_config(state)
+    guardrail_prompt = get_guardrail_prompt(provider=provider, model_name=model_name)
+
+    try:
+        if provider in {"openai", "vllm"}:
+            llm = _make_chat_llm(provider=provider, model=model_name, temperature=0)
+            response = llm.invoke(
+                [
+                    SystemMessage(content=guardrail_prompt),
+                    HumanMessage(content=user_message),
+                ]
+            )
+            raw = response.content if isinstance(response.content, str) else ""
+        else:
+            response = _hf_invoke(
+                [
+                    SystemMessage(content=guardrail_prompt),
+                    HumanMessage(content=user_message),
+                ],
+                model_name,
+                temperature=0,
+            )
+            raw = response.content if isinstance(response.content, str) else ""
+
+        parsed = _extract_json_object(raw)
+        if parsed and isinstance(parsed, dict):
+            is_safe = parsed.get("is_safe", True)
+            message = parsed.get("message")
+            return {
+                "is_safe": is_safe,
+                "safe_message": message if not is_safe else None,
+            }
+
+        # 파싱 실패시 보수적으로 안전하다고 가정하거나 기본값 반환
+        return {"is_safe": True, "safe_message": None}
+    except Exception as e:
+        print(f"[Guardrail] failed: {e}")
+        return {"is_safe": True, "safe_message": None}
+
+
+def route_after_guardrail(state: AgentState) -> Literal["decomposer", "process_output"]:
+    """
+    가드레일 통과 여부에 따라 다음 경로를 결정합니다.
+    """
+    is_safe = state.get("is_safe", True)
+    if is_safe:
+        return "decomposer"
+    # 안전하지 않은 경우 생성할 메시지 할당 후 종료 라우트를 위해 process_output 을 탐
+    return "process_output"
+
+
+def query_transform_node(state: AgentState):
+    """
+    RAG_SEARCH나 POLICY_CHECK를 수행해야 하는 태스크의 쿼리를 보강합니다.
+    """
+    print("---QUERY TRANSFORM NODE---")
+    task_list = state.get("task_list", [])
+    if not task_list:
+        return {}
+
+    provider, model_name = _resolve_llm_config(state)
+    query_transform_prompt = get_query_transform_prompt()
+    messages = state.get("messages", [])
+    context_str = _build_decomposer_context(messages, max_items=4)
+
+    updated_tasks = []
+    for task in task_list:
+        task_name = task.get("task", "")
+        # 검색 대상 태스크인 경우만 처리
+        if task_name in {TaskType.RAG_SEARCH.value, TaskType.POLICY_CHECK.value}:
+            original_query = task.get("args", {}).get("query")
+            if not original_query:
+                updated_tasks.append(task)
+                continue
+
+            prompt_input = f"대화문맥:\n{context_str}\n\n입력: {original_query}"
+
+            try:
+                if provider in {"openai", "vllm"}:
+                    llm = _make_chat_llm(
+                        provider=provider, model=model_name, temperature=0
+                    )
+                    response = llm.invoke(
+                        [
+                            SystemMessage(content=query_transform_prompt),
+                            HumanMessage(content=prompt_input),
+                        ]
+                    )
+                    transformed_query = (
+                        response.content
+                        if isinstance(response.content, str)
+                        else original_query
+                    )
+                else:
+                    response = _hf_invoke(
+                        [
+                            SystemMessage(content=query_transform_prompt),
+                            HumanMessage(content=prompt_input),
+                        ],
+                        model_name,
+                        temperature=0,
+                    )
+                    transformed_query = (
+                        response.content
+                        if isinstance(response.content, str)
+                        else original_query
+                    )
+
+                transformed_query = transformed_query.strip().strip("\"'")
+
+                # 업데이트된 태스크 생성
+                new_task = task.copy()
+                new_args = new_task.get("args", {}).copy()
+                new_args["query"] = transformed_query
+                new_task["args"] = new_args
+                updated_tasks.append(new_task)
+            except Exception as e:
+                print(f"[QueryTransform] failed: {e}")
+                updated_tasks.append(task)
+        else:
+            updated_tasks.append(task)
+
+    return {"task_list": updated_tasks}
+
+
 def decomposer_node(state: AgentState):
     """
     사용자 발화를 Task List(Pydantic) 형태로 분해합니다.
@@ -1099,11 +1268,10 @@ def decomposer_node(state: AgentState):
         }
 
 
-def route_after_decomposer(state: AgentState) -> Literal["fixed_worker", "agent"]:
+def route_after_decomposer(state: AgentState) -> Literal["query_transform", "agent"]:
     """
-    Decomposer 결과를 고정 규칙으로 분기합니다.
-    - 실행 가능한 task가 있으면 fixed_worker
-    - GENERAL_CHAT만 있거나 비어 있으면 agent
+    Decomposer 결과를 검사해서 검색이 필요한 경우 Query Transform으로 보냅니다.
+    실행 가능한 task가 없으면 agent, 있으면 query_transform을 거쳐 worker로 가도록 수정.
     """
     task_list = state.get("task_list", [])
     if not task_list:
@@ -1114,7 +1282,12 @@ def route_after_decomposer(state: AgentState) -> Literal["fixed_worker", "agent"
         for task in task_list
         if str(task.get("task", "")) != TaskType.GENERAL_CHAT.value
     ]
-    return "fixed_worker" if executable_tasks else "agent"
+    return "query_transform" if executable_tasks else "agent"
+
+
+def route_after_query_transform(state: AgentState) -> Literal["fixed_worker"]:
+    """Query Transform 직후 항상 Fixed Worker로 넘깁니다."""
+    return "fixed_worker"
 
 
 def fixed_worker_node(state: AgentState):
@@ -1191,8 +1364,8 @@ def fixed_worker_node(state: AgentState):
                 if executed.get("requires_tool_call") and executed.get("tool_call"):
                     tool_calls.append(executed["tool_call"])
 
-                if executed.get("current_task"):
-                    current_task = executed["current_task"]
+            if executed.get("current_task"):
+                current_task = executed["current_task"]
 
     updates: Dict[str, Any] = {"task_results": task_results}
     if current_task:
@@ -1766,6 +1939,19 @@ def process_output_node(state: AgentState):
     (chat.py에서 참조하는 generation, ui_action, tool_outputs 등을 채움)
     """
     print("---PROCESS OUTPUT---")
+
+    # 가드레일 통과 실패인 경우 우선 처리
+    is_safe = state.get("is_safe", True)
+    if not is_safe:
+        safe_message = (
+            state.get("safe_message") or "부적절한 입력으로 인해 처리할 수 없습니다."
+        )
+        return {
+            "generation": safe_message,
+            "messages": [AIMessage(content=safe_message)],
+            "tool_outputs": [],
+        }
+
     messages = state["messages"]
     last_message = messages[-1]
 
