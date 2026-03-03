@@ -84,6 +84,8 @@ ORDER_ID_REQUIRED_TOOLS = {
     "register_exchange_request",
 }
 
+ORDER_ACTION_COMPLETION_TYPES = {"refund", "cancel", "exchange"}
+
 # Initialize ToolNode -> workflow.py로 이동
 tool_node = ToolNode(TOOLS)
 
@@ -1984,6 +1986,31 @@ def route_after_approval(state: AgentState) -> Literal["tools", "process_output"
     return "process_output"
 
 
+def _should_reset_order_action_context(state: AgentState) -> bool:
+    """
+    ORDER_ACTION(환불/취소/교환)이 최종 실행돼서 현재 후속 컨텍스트를 더 이상 유지할 필요가 없을 때 True.
+    """
+    current_task = state.get("current_task")
+    if not isinstance(current_task, dict):
+        return False
+
+    task_type = current_task.get("type")
+    if task_type not in ORDER_ACTION_COMPLETION_TYPES:
+        return False
+
+    if current_task.get("status") != "executing":
+        return False
+
+    task_results = state.get("task_results")
+    if not isinstance(task_results, list):
+        return False
+
+    return any(
+        isinstance(task, dict) and task.get("task") == TaskType.ORDER_ACTION.value
+        for task in task_results
+    )
+
+
 def process_output_node(state: AgentState):
     """
     최종 응답을 API 스펙에 맞게 가공합니다.
@@ -2040,6 +2067,15 @@ def process_output_node(state: AgentState):
         # 승인 대기 상태인 경우 명시적 플래그 전달 가능
         # (이미 tool_outputs에 show_confirmation이 들어갔을 것임)
         pass
+
+    if _should_reset_order_action_context(state):
+        current_task = state.get("current_task")
+        if isinstance(current_task, dict):
+            completed_task = dict(current_task)
+            completed_task["status"] = "completed"
+            result["last_completed_task"] = completed_task
+        result["current_task"] = None
+        result["prior_action"] = None
 
     return result
 

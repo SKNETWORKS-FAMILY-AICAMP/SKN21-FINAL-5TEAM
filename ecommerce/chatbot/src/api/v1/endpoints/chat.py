@@ -70,23 +70,25 @@ def _parse_tool_output(output) -> dict | None:
     return None
 
 
-def _build_metadata(final_state: dict) -> dict:
+def _build_metadata(final_state: dict | None) -> dict:
     """최종 상태에서 메타데이터 추출"""
-    current_task = final_state.get("current_task") or {}
-    status = (
-        current_task.get("status", "idle") if isinstance(current_task, dict) else "idle"
-    )
+    state_data = final_state if isinstance(final_state, dict) else {}
+    raw_current_task = state_data.get("current_task")
+    current_task = raw_current_task if isinstance(raw_current_task, dict) else None
+    fallback_task = state_data.get("last_completed_task")
+    task_context = current_task or (fallback_task if isinstance(fallback_task, dict) else None)
+    status = task_context.get("status", "idle") if isinstance(task_context, dict) else "idle"
 
+    action_name = f"{task_context.get('type')}_requested" if isinstance(task_context, dict) and status == "completed" else None
+    order_id = task_context.get("target_id") if isinstance(task_context, dict) else None
     return {
         "type": "metadata",
         "action_status": status,
-        "action_name": f"{current_task.get('type')}_requested"
-        if status == "completed"
-        else None,
-        "order_id": current_task.get("target_id"),
+        "action_name": action_name,
+        "order_id": order_id,
         "state": {
-            **final_state,
-            "messages": serialize_messages(final_state.get("messages", [])),
+            **state_data,
+            "messages": serialize_messages(state_data.get("messages", [])),
         },
     }
 
