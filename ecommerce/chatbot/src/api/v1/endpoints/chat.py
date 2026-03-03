@@ -184,9 +184,18 @@ async def chat_streaming_endpoint(
 
                 # A. 토큰 스트리밍
                 if event_type == "on_chat_model_stream":
-                    # 승인용 내부 LLM 등에서 발생한 스트림은 사용자에게 전달하지 않음
+                    # 내부 LLM(승인용, 가드레일, Decomposer 등)에서 발생한 스트림은 사용자에게 전달하지 않음
                     tags = event.get("tags", [])
-                    if "approval_llm" in tags or event.get("name") == "approval_llm":
+                    name = event.get("name", "")
+                    internal_llms = {
+                        "approval_llm",
+                        "guardrail_llm",
+                        "transform_llm",
+                        "decomposer_llm",
+                        "summary_llm",
+                    }
+
+                    if "approval_llm" in tags or name in internal_llms:
                         continue
 
                     chunk = event.get("data", {}).get("chunk")
