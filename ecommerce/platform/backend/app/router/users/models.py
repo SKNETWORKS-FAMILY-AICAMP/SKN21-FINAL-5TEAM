@@ -42,6 +42,13 @@ class UserRole(str, PyEnum):
     ADMIN = "admin"
 
 
+class UserGender(str, PyEnum):
+    """사용자 성별"""
+    MALE = "male"
+    FEMALE = "female"
+    OTHER = "other"
+
+
 # ==================================================
 # User Models
 # ==================================================
@@ -68,6 +75,11 @@ class User(Base):
     )
     phone: Mapped[Optional[str]] = mapped_column(
         String(20), comment='핸드폰번호'
+    )
+    gender: Mapped[Optional[UserGender]] = mapped_column(
+        Enum(UserGender, values_callable=lambda x: [e.value for e in x]),
+        nullable=True,
+        comment='성별'
     )
     status: Mapped[UserStatus] = mapped_column(
         Enum(UserStatus, values_callable=lambda x: [e.value for e in x]),

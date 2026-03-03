@@ -37,7 +37,7 @@ import ecommerce.platform.backend.app.router.user_history.models
 # -------------------------------------------------
 # 실제 사용할 클래스 import
 # -------------------------------------------------
-from ecommerce.platform.backend.app.router.users.models import User, UserStatus, UserRole
+from ecommerce.platform.backend.app.router.users.models import User, UserStatus, UserRole, UserGender
 from ecommerce.platform.backend.app.router.products.models import (
     Category, Product, ProductOption, ProductType,
     UsedProduct, UsedProductOption, UsedProductCondition, UsedProductStatus,
@@ -168,7 +168,8 @@ def create_users(db: Session):
             status=UserStatus.ACTIVE,
             agree_marketing=True,
             agree_sms=True,
-            agree_email=True
+            agree_email=True,
+            gender=UserGender.MALE,
         ),
         User(
             email="admin@example.com",
