@@ -1,31 +1,16 @@
-﻿{
-
+{
     "fcb_version": "",
-5-
-    "fcb_environments": "featu5-55d5f0c",
-
-    "llm_judge_model": "gpt-5-mini",
-
-    "target_model_path": "gpt-5-mini",
-
+    "fcb_environments": "feature#523cc7d",
+    "llm_judge_model": "gpt-4o-mini",
+    "target_model_path": "gpt-4o-mini",
     "singlecall_score": {
-
         "exact total": 5,
-
-        "exact pass cnt": 2,
-
-        "exact pass rate": 0.4,
-
+        "exact pass cnt": 3,
+        "exact pass rate": 0.6,
         "total_cnt": 5,
-
-        "total_pass_cnt": 2,
-
-        "total_pass_rate": 0.4
-
+        "total_pass_cnt": 3,
+        "total_pass_rate": 0.6
     },
-
     "dialog_score": {},
-
     "calldecision_score": {}
-
 }
