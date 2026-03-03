@@ -29,8 +29,7 @@ TOOL_STATUS_MESSAGES = {
 
 # 그래프 노드 이름 → 상태 메시지 매핑
 NODE_STATUS_MESSAGES = {
-    "decomposer": "요청을 분해하고 있습니다...",
-    "fixed_worker": "작업을 고정 전략으로 처리하고 있습니다...",
+    "preprocess": "요청을 분석하고 있습니다...",
     "validation": "실행 전 안전성/유효성을 검토하고 있습니다...",
     "approval": "승인 필요 여부를 확인하고 있습니다...",
     "tools": "필요한 도구를 호출하고 있습니다...",
@@ -190,8 +189,6 @@ async def chat_streaming_endpoint(
                     internal_llms = {
                         "approval_llm",
                         "guardrail_llm",
-                        "transform_llm",
-                        "decomposer_llm",
                         "summary_llm",
                     }
 
@@ -302,7 +299,7 @@ async def chat_streaming_endpoint(
                 final_ui_actions = _extract_ui_actions(final_state)
                 has_ui_action = len(final_ui_actions) > 0
 
-                # 일부 경로(예: fixed_worker 직접 실행)는 on_tool_end 이벤트가 없을 수 있어
+                # 일부 경로에서는 on_tool_end 이벤트가 없을 수 있어
                 # 최종 상태의 UI 액션을 보강 전송한다.
                 for item in final_ui_actions:
                     ui_action_name = str(item.get("ui_action"))

@@ -36,8 +36,8 @@ def _init_ranker():
     model_name = "ms-marco-MiniLM-L-12-v2"
     configured_cache = os.getenv("FLASHRANK_CACHE_DIR")
     cache_candidates = [
-        configured_cache,
         str(Path.home() / ".cache" / "flashrank"),
+        configured_cache,
         "/tmp/flashrank_cache",
         None,
     ]
@@ -48,8 +48,12 @@ def _init_ranker():
             if cache_dir:
                 kwargs["cache_dir"] = cache_dir
             RANKER = Ranker(**kwargs)
+            print(f"Reranker loaded successfully. cache_dir={cache_dir or 'default'}")
             return
-        except Exception:
+        except Exception as e:
+            print(
+                f"Warning: Failed to load reranker with cache_dir={cache_dir or 'default'}: {e}"
+            )
             pass
     RANKER = None
 
@@ -144,6 +148,7 @@ def search_products_vector(query: str, limit: int = 5) -> dict:
             rerank_request = RerankRequest(query=query, passages=passages)
             rerank_results = RANKER.rerank(rerank_request)
 
+            top_k_ids = [res["id"] for res in rerank_results[:limit]]
             # Preserve reranker order
             candidates_by_id = {str(c.id): c for c in candidates}
             final_candidates = [
