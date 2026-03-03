@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import styles from './chatbotfab.module.css';
 import OrderListUI from './OrderListUI';
+import ProductListUI, { UiProduct } from './ProductListUI';
 import { useAuth } from '../authcontext';
 
 type TextMessage = { role: 'user' | 'bot'; type: 'text'; text: string; isStreaming?: boolean; showDivider?: boolean };
@@ -50,7 +51,14 @@ type AddressSelectionPayload = {
   };
 };
 
-type ChatMsg = TextMessage | OrderListMessage | ConfirmationMessage | AddressSearchMessage;
+type ProductListMessage = {
+  role: 'bot';
+  type: 'product_list';
+  message: string;
+  ui_data: UiProduct[];
+};
+
+type ChatMsg = TextMessage | OrderListMessage | ConfirmationMessage | AddressSearchMessage | ProductListMessage;
 type LlmProvider = 'openai' | 'huggingface' | 'vllm';
 type ModelOption = { id: string; provider: LlmProvider; label: string };
 
@@ -575,6 +583,18 @@ export default function ChatbotFab() {
                       message: data.message || '주소 검색 버튼을 눌러주세요.',
                     },
                   ]);
+                } else if (data.ui_action === 'show_product_list') {
+                  setIsLoading(false);
+                  setStatusMessage(null);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: 'bot',
+                      type: 'product_list',
+                      message: data.message,
+                      ui_data: data.ui_data,
+                    },
+                  ]);
                 }
 
                 newState = data.state;
@@ -737,6 +757,17 @@ export default function ChatbotFab() {
                         disabled={isLoading}
                         onSubmit={handleAddressSubmit}
                       />
+                    </div>
+                  </div>
+                </div>
+              );
+            } else if (m.type === 'product_list') {
+              return (
+                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
+                  <div className={styles.botMsg}>
+                    <span className={styles.botIcon}>✦</span>
+                    <div className={styles.botText}>
+                      <ProductListUI products={m.ui_data} message={m.message} />
                     </div>
                   </div>
                 </div>
