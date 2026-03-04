@@ -25,8 +25,8 @@ C. AI Hub 패션/의류 CSV (패션_validation.csv, 의류_validation.csv)
 - Dialog #4: 주문 내역 조회 (주문번호 없음) — 누락: 주문번호 | get_user_orders → get_order_details
 - Dialog #5: 주문 내역 조회 (주문번호 있음) — 누락 없음  | get_order_details
 - Dialog #6: 자연어 키워드 검색      — 누락 없음  | search_products_vector (자연어 직접 검색)
-- Dialog #7: 필터 기반 추천          — 누락 없음  | recommend_clothes (카테고리·색상·용도 필터)
-- Dialog #8: 이미지 검색             — 누락 없음  | search_by_image (GPT Vision → 유사 상품)
+- Dialog #7: 필터 기반 추천          — 누락: 카테고리, 색상, 용도 | recommend_clothes (카테고리·색상·용도 필터)
+- Dialog #8: 이미지 검색             — 누락: 이미지 URL | search_by_image (GPT Vision → 유사 상품)
 - Dialog #9: 중고 판매 신청 + 수거 신청 — 누락: 상품 상태 | register_used_sale → request_pickup
 - Dialog #10: 리뷰 초안 작성 + 리뷰 등록 — 누락: 상품명, 만족도 | generate_review_draft → create_review
 - Dialog #11: 상품권 등록              — 누락: 상품권 코드 | register_gift_card
@@ -435,16 +435,22 @@ d6 = {
 
 
 # ─── Dialog #7 ────────────────────────────────────────────────────────────────
-# 필터 기반 추천 | 누락 슬롯: 없음
-# recommend_clothes (카테고리·색상·용도 필터 직접 호출)
+# 필터 기반 추천 | 누락 슬롯: category, color, usage
+# recommend_clothes (카테고리·색상·용도 슬롯 수집 후 호출)
 # ──────────────────────────────────────────────────────────────────────────────
-U7_1 = "캐주얼한 검정 하의 추천해줘."
+U7_1 = "옷 추천해줘."
+A7_1 = "어떤 종류의 옷을 원하세요? 상의/하의/아우터 등 카테고리와 원하시는 색상, 그리고 캐주얼/스포츠/포멀 등 용도를 알려주세요."
+U7_2 = "검정 하의로 캐주얼하게 입을 거예요."
 TC7a = tc("recommend_clothes", {"category": "Bottomwear", "color": "Black", "usage": "Casual", "user_id": 1})
 TR7a = json.dumps({"success": True, "message": "조건에 맞는 옷 3개를 추천해드릴게요!", "ui_action": "show_product_list", "ui_data": [{"id": 22001, "name": "Levis Men Black Slim Fit Jeans", "price": 30000, "category": "Apparel > Bottomwear > Jeans", "color": "Black", "season": "Fall", "usage": "Casual"}, {"id": 22002, "name": "Roadster Men Black Regular Trousers", "price": 30000, "category": "Apparel > Bottomwear > Trousers", "color": "Black", "season": "Fall", "usage": "Casual"}, {"id": 22003, "name": "Tokyo Talkies Women Black Joggers", "price": 30000, "category": "Apparel > Bottomwear > Joggers", "color": "Black", "season": "Summer", "usage": "Casual"}]}, ensure_ascii=False)
-A7_2 = "캐주얼하게 입기 좋은 검정 하의 3가지를 추천해드렸습니다. 마음에 드시는 상품이 있으신가요?"
+A7_3 = "캐주얼하게 입기 좋은 검정 하의 3가지를 추천해드렸습니다. 마음에 드시는 상품이 있으신가요?"
 
 h7_1 = [
     {"role": "user",      "content": U7_1},
+    {"role": "assistant", "content": A7_1},
+    {"role": "user",      "content": U7_2},
+]
+h7_2 = h7_1 + [
     {"role": "assistant", "content": None, "tool_calls": TC7a},
     {"role": "tool",      "name": "recommend_clothes", "content": TR7a},
 ]
@@ -454,27 +460,37 @@ d7 = {
     "turns": [
         {"turn_num": 1, "serial_num": sn(),
          "query": [{"role": "user", "content": U7_1}],
-         "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC7a},
-         "type_of_output": "call", "acceptable_arguments": None},
+         "ground_truth": {"role": "assistant", "content": A7_1},
+         "type_of_output": "slot", "acceptable_arguments": None},
         {"turn_num": 2, "serial_num": sn(),
          "query": list(h7_1),
-         "ground_truth": {"role": "assistant", "content": A7_2},
+         "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC7a},
+         "type_of_output": "call", "acceptable_arguments": None},
+        {"turn_num": 3, "serial_num": sn(),
+         "query": list(h7_2),
+         "ground_truth": {"role": "assistant", "content": A7_3},
          "type_of_output": "completion", "acceptable_arguments": None},
     ]
 }
 
 
 # ─── Dialog #8 ────────────────────────────────────────────────────────────────
-# 이미지 검색 | 누락 슬롯: 없음
-# search_by_image (GPT-4o Vision 분석 → 유사 상품)
+# 이미지 검색 | 누락 슬롯: image_url
+# search_by_image (이미지 URL 수집 후 GPT-4o Vision 분석 → 유사 상품)
 # ──────────────────────────────────────────────────────────────────────────────
-U8_1 = "이 사진이랑 비슷한 옷 찾아줘. https://img.musinsa.com/sample/oversized_jacket.jpg"
+U8_1 = "이 사진이랑 비슷한 옷 찾아줘."
+A8_1 = "찾으시려는 옷의 이미지 URL을 알려주세요."
+U8_2 = "https://img.musinsa.com/sample/oversized_jacket.jpg"
 TC8a = tc("search_by_image", {"image_url": "https://img.musinsa.com/sample/oversized_jacket.jpg"})
 TR8a = json.dumps({"success": True, "message": "조건에 맞는 옷 3개를 추천해드릴게요!", "ui_action": "show_product_list", "ui_data": [{"id": 44001, "name": "Spykar Men Black Oversized Jacket", "price": 30000, "category": "Apparel > Topwear > Jackets", "color": "Black", "season": "Fall", "usage": "Casual"}, {"id": 44002, "name": "HRX Men Grey Oversized Bomber", "price": 30000, "category": "Apparel > Topwear > Jackets", "color": "Grey", "season": "Winter", "usage": "Casual"}, {"id": 44003, "name": "Roadster Men Khaki Loose Jacket", "price": 30000, "category": "Apparel > Topwear > Jackets", "color": "Khaki", "season": "Fall", "usage": "Casual"}]}, ensure_ascii=False)
-A8_2 = "이미지 속 오버핏 자켓과 유사한 상품 3개를 찾았습니다. 마음에 드시는 상품이 있으신가요?"
+A8_3 = "이미지 속 오버핏 자켓과 유사한 상품 3개를 찾았습니다. 마음에 드시는 상품이 있으신가요?"
 
 h8_1 = [
     {"role": "user",      "content": U8_1},
+    {"role": "assistant", "content": A8_1},
+    {"role": "user",      "content": U8_2},
+]
+h8_2 = h8_1 + [
     {"role": "assistant", "content": None, "tool_calls": TC8a},
     {"role": "tool",      "name": "search_by_image", "content": TR8a},
 ]
@@ -484,11 +500,15 @@ d8 = {
     "turns": [
         {"turn_num": 1, "serial_num": sn(),
          "query": [{"role": "user", "content": U8_1}],
-         "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC8a},
-         "type_of_output": "call", "acceptable_arguments": None},
+         "ground_truth": {"role": "assistant", "content": A8_1},
+         "type_of_output": "slot", "acceptable_arguments": None},
         {"turn_num": 2, "serial_num": sn(),
          "query": list(h8_1),
-         "ground_truth": {"role": "assistant", "content": A8_2},
+         "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC8a},
+         "type_of_output": "call", "acceptable_arguments": None},
+        {"turn_num": 3, "serial_num": sn(),
+         "query": list(h8_2),
+         "ground_truth": {"role": "assistant", "content": A8_3},
          "type_of_output": "completion", "acceptable_arguments": None},
     ]
 }
