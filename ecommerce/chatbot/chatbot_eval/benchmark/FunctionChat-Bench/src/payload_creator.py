@@ -175,7 +175,8 @@ class DialogPayloadCreator(AbstractPayloadCreator):
             for turn in test_input['turns']:
                 messages = [{'role': 'system', 'content': self.system_prompt}]
                 messages.extend(turn['query'])
-                arguments = {key: turn[key] for key in ['serial_num', 'ground_truth', 'acceptable_arguments', 'type_of_output']}
+                arguments = {key: turn[key] for key in ['serial_num', 'ground_truth', 'type_of_output']}
+                arguments['acceptable_arguments'] = turn.get('acceptable_arguments', {})
                 arguments['tools'] = tools
                 arguments['messages'] = messages
                 arguments['temperature'] = self.temperature
