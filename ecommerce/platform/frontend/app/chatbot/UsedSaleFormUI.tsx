@@ -73,13 +73,16 @@ export default function UsedSaleFormUI({
   const [expectedPrice, setExpectedPrice] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
 
+  const effectiveCategoryId = selectedCategoryId || resolvedCategoryOptions[0]?.id || 0;
+  const effectiveCategoryName = selectedCategoryName || resolvedCategoryOptions[0]?.name || '';
+
   const submit = () => {
     if (isSubmitted) return;
 
     const trimmedItemName = itemName.trim();
     const trimmedDescription = description.trim();
 
-    if (!selectedCategoryId) {
+    if (!effectiveCategoryId) {
       alert('카테고리를 선택해주세요.');
       return;
     }
@@ -101,8 +104,8 @@ export default function UsedSaleFormUI({
     }
 
     onSubmit({
-      category_id: selectedCategoryId,
-      category: selectedCategoryName,
+      category_id: effectiveCategoryId,
+      category: effectiveCategoryName,
       item_name: trimmedItemName,
       description: trimmedDescription,
       condition_id: condition.id,
@@ -121,7 +124,7 @@ export default function UsedSaleFormUI({
       {resolvedCategoryOptions.length > 0 ? (
         <select
           className={styles.input}
-          value={selectedCategoryId || ''}
+          value={effectiveCategoryId || ''}
           onChange={(e) => {
             const id = Number(e.target.value);
             const selected = resolvedCategoryOptions.find((item) => item.id === id);
