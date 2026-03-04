@@ -45,9 +45,9 @@ export default function UsedSaleFormUI({
 }: UsedSaleFormUIProps) {
   const resolvedConditionOptions = useMemo<ConditionOption[]>(() => {
     const defaults: ConditionOption[] = [
-      { id: 1, name: '최상' },
-      { id: 2, name: '상' },
-      { id: 3, name: '중' },
+      { id: 1, name: 'S급' },
+      { id: 2, name: 'A급' },
+      { id: 3, name: 'B급' },
     ];
     if (!conditionOptions || conditionOptions.length === 0) return defaults;
 

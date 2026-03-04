@@ -76,9 +76,9 @@ def open_used_sale_form() -> dict:
 
     if not condition_options:
         condition_options = [
-            {"id": 1, "name": "최상", "description": None},
-            {"id": 2, "name": "상", "description": None},
-            {"id": 3, "name": "중", "description": None},
+            {"id": 1, "name": "S급", "description": None},
+            {"id": 2, "name": "A급", "description": None},
+            {"id": 3, "name": "B급", "description": None},
         ]
 
     return {
