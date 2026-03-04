@@ -1,6 +1,6 @@
 {
     "fcb_version": "",
-    "fcb_environments": "feature#44c266c",
+    "fcb_environments": "feature#3927129",
     "llm_judge_model": "gpt-4o-mini",
     "target_model_path": "gpt-4o-mini",
     "singlecall_score": {},
@@ -9,12 +9,10 @@
         "call pass rate": 0.0,
         "completion pass cnt": 0,
         "completion pass rate": 0.0,
-        "slot pass cnt": 1,
-        "slot pass rate": 1.0,
-        "total_pass_cnt": 1,
+        "total_pass_cnt": 0,
         "total_cnt": 11,
-        "total_pass_rate": 0.09090909090909091,
-        "avg(micro)": 0.09090909090909091
+        "total_pass_rate": 0.0,
+        "avg(micro)": 0.0
     },
     "calldecision_score": {}
 }

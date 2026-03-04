@@ -23,21 +23,18 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # ─── 경로 설정 ────────────────────────────────────────────────────────────────
-DATA_DIR = Path(__file__).resolve().parent
+import sys
+from pathlib import Path
 
-def find_project_root(current_path: Path, marker: str = ".env") -> Path:
-    for parent in [current_path] + list(current_path.parents):
-        if (parent / marker).exists():
-            return parent
-    return current_path.parents[4]
+current_dir = Path(__file__).resolve().parent
+if str(current_dir) not in sys.path:
+    sys.path.append(str(current_dir))
 
-PROJECT_ROOT = find_project_root(DATA_DIR)
+from paths import DATA_DIR, PROJECT_ROOT, RAW_DIR, FASHION_CSV, CLOTHES_CSV, TOOLS_PATH
+from dotenv import load_dotenv
+
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
-RAW_DIR     = PROJECT_ROOT / "ecommerce" / "chatbot" / "data" / "raw"
-FASHION_CSV = RAW_DIR / "AI_Hub" / "패션_validation.csv"
-CLOTHES_CSV = RAW_DIR / "AI_Hub" / "의류_validation.csv"
-TOOLS_PATH  = DATA_DIR / "tools.json"
 OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialog_20.jsonl"
 
 # ─── OpenAI 설정 ──────────────────────────────────────────────────────────────
@@ -334,6 +331,19 @@ def generate_dialog(scenario: dict, product_info: dict, dialog_num: int, tools: 
 
         # 후첸리 3: call 턴만 필터링 (Argument Accuracy 전용)
         data["turns"] = filter_call_turns_only(data.get("turns", []))
+
+        # 후처리 4: turn_num 1부터 재정렬 (필터링 후 번호가 2번부터 시작하는 문제 해결)
+        for idx, t in enumerate(data["turns"], start=1):
+            t["turn_num"] = idx
+
+        # 후처리 5: tool_call id를 보기 편한 순차 번호(문자열)로 교체
+        call_id_counter = 1
+        for t in data["turns"]:
+            gt = t.get("ground_truth", {})
+            if isinstance(gt, dict):
+                for tc in gt.get("tool_calls", []) or []:
+                    tc["id"] = f"call_{call_id_counter}"
+                    call_id_counter += 1
 
         if not data["turns"]:
             print(f"[WARN] dialog {dialog_num}: call 턴이 없습니다.")
