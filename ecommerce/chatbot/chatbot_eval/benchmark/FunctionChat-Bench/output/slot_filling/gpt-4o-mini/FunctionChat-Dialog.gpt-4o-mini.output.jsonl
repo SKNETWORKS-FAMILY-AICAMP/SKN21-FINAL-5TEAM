@@ -1,11 +1,11 @@
-{"content": "주문을 취소하기 위해서는 주문번호와 취소 사유가 필요합니다. 주문번호와 취소 사유를 알려주실 수 있나요?", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
-{"content": "주문을 취소하기 위해서는 취소 사유가 필요합니다. \"다른 색으로 다시 주문하려고\"라는 사유로 괜찮으신가요? 확인해 주시면 주문을 취소하겠습니다.", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
-{"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
 {"content": "환불 신청을 위해서는 주문번호와 환불 사유가 필요합니다. 주문번호와 환불 사유를 알려주실 수 있나요?", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
+{"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
+{"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
+{"content": "교환 신청을 위해 몇 가지 정보가 필요합니다.\n\n1. 주문번호를 알려주세요.\n2. 교환 사유는 무엇인가요?\n3. 교환할 새로운 옵션 ID가 있나요? (선택 사항)\n\n이 정보를 제공해 주시면 교환 신청을 도와드리겠습니다.", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}

@@ -37,16 +37,26 @@ import os
 import pandas as pd
 
 # ─── 경로 설정 ───────────────────────────────────────────────────────────────
-from .paths import DATA_DIR, FAQ_PATH, TERMS_PATH, FASHION_CSV, CLOTHES_CSV, TOOLS_PATH
-import os
+import sys
+from pathlib import Path
 
-OUTPUT_PATH    = DATA_DIR / "my_eval_slot_filling_rate_dialogs.jsonl"
+# 현재 파일이 위치한 data 디렉토리를 sys.path에 추가하여 paths.py 임포트
+current_dir = Path(__file__).resolve().parent
+if str(current_dir) not in sys.path:
+    sys.path.append(str(current_dir))
+
+from paths import (
+    DATA_DIR, FAQ_PATH, TERMS_PATH, 
+    FASHION_CSV, CLOTHES_CSV, TOOLS_PATH, PROJECT_ROOT
+)
+
+OUTPUT_PATH = DATA_DIR / "my_eval_slot_filling_rate_dialogs.jsonl"
 
 
 # ─── 헬퍼 함수 ───────────────────────────────────────────────────────────────
 def load_faq_samples(path, categories=None, n=5):
     """무신사 FAQ에서 특정 카테고리의 질문-답변 스타일을 샘플링합니다."""
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8-sig") as f:
         data = json.load(f)
     samples = []
     for item in data:
@@ -63,7 +73,7 @@ def load_faq_samples(path, categories=None, n=5):
 
 def load_terms_clause(path, keyword):
     """전자상거래 표준약관에서 키워드가 포함된 조항 텍스트를 반환합니다."""
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8-sig") as f:
         data = json.load(f)
     for item in data:
         if keyword in item.get("text", ""):
@@ -73,7 +83,7 @@ def load_terms_clause(path, keyword):
 
 def load_csv_product(csv_path, row_idx=5):
     """AI Hub CSV에서 특정 행의 발화문을 반환합니다."""
-    df = pd.read_csv(csv_path, encoding="utf-8")
+    df = pd.read_csv(csv_path, encoding="utf-8-sig")
     utterances = df["발화문"].dropna().tolist()
     if row_idx < len(utterances):
         return utterances[row_idx]
@@ -100,7 +110,7 @@ clothes_utt = load_csv_product(CLOTHES_CSV, row_idx=10)
 print(f"  • 패션 CSV 발화문: {fashion_utt}")
 print(f"  • 의류 CSV 발화문: {clothes_utt}")
 
-with open(TOOLS_PATH, encoding="utf-8") as f:
+with open(TOOLS_PATH, encoding="utf-8-sig") as f:
     tools_def = json.load(f)
 print(f"  • 툴 정의 {len(tools_def)}개 로드")
 
@@ -519,9 +529,9 @@ d8 = {
 # register_used_sale → request_pickup
 # ──────────────────────────────────────────────────────────────────────────────
 U9_1 = "나이키 운동화 중고로 팔고 싶어요."
-A9_1 = "판매 신청을 도와드리겠습니다. 상품 상태(S급/A급/B급)와 희망 판매가를 알려주세요."
-U9_2 = "상태는 'A급'이고 희망가는 50,000원이에요."
-TC9a = tc("register_used_sale", {"category": "신발", "item_name": "나이키 운동화", "condition": "A급", "expected_price": 50000, "user_id": 1})
+A9_1 = "판매 신청을 도와드리겠습니다. 상품 상태(최상/상/중/하)와 희망 판매가를 알려주세요."
+U9_2 = "상태는 '상'이고 희망가는 50,000원이에요."
+TC9a = tc("register_used_sale", {"category": "신발", "item_name": "나이키 운동화", "condition": "상", "expected_price": 50000, "user_id": 1})
 TR9a = json.dumps({"success": True, "tracking_id": "USED-A1B2C3D4", "message": "'나이키 운동화' 상품의 중고 판매가 접수되었습니다. (희망가: 50000)", "next_steps": "검수 센터로 상품을 보내주시거나 수거 신청(request_pickup)을 진행해주세요."}, ensure_ascii=False)
 A9_3 = "중고 판매 신청이 완료되었습니다. 접수 번호는 USED-A1B2C3D4입니다. 수거 신청을 진행하시겠어요?"
 U9_4 = "네, 3월 10일에 서울 강남구 테헤란로 456으로 수거 신청할게요."
@@ -670,7 +680,7 @@ d11 = {
 dialogs = [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11]
 
 print(f"\n[3] JSONL 저장 → {OUTPUT_PATH}")
-with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+with open(OUTPUT_PATH, "w", encoding="utf-8-sig") as f:
     for d in dialogs:
         f.write(json.dumps(d, ensure_ascii=False) + "\n")
 
