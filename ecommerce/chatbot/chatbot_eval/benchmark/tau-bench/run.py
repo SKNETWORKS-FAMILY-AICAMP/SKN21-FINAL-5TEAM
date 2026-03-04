@@ -4,9 +4,11 @@ run.py
 tau-bench 메인 실행 스크립트.
 
 실행 예시:
-    python run.py --model gpt-4o-mini --api_key sk-... --num_runs 1
-    python run.py --model gpt-4o-mini --api_key sk-... --num_runs 4 --task_ids ECOM_TASK_001 ECOM_TASK_002
-    python run.py --model gpt-4o-mini --api_key sk-... --num_runs 8 --max_turns 12
+    python run.py
+    python run.py --tasks_file data/task_completion_rate_tasks.jsonl
+    python run.py --tasks_file data/task_completion_rate_tasks.jsonl --task_ids GBD_TASK_001 GBD_TASK_011
+    python run.py --tasks_file data/task_completion_rate_tasks.jsonl --debug
+    python run.py --tasks_file data/task_completion_rate_tasks.jsonl --model gpt-4o --num_runs 4
 """
 
 import os
@@ -32,7 +34,7 @@ TASKS_PATH = BENCH_DIR / "data" / "tasks.jsonl"
 OUTPUT_DIR = BENCH_DIR / "output"
 
 # .env 로드
-load_dotenv(BENCH_DIR.parents[3] / ".env")
+load_dotenv(BENCH_DIR.parents[4] / ".env")
 
 
 def load_tasks(task_ids: list[str] | None = None, tasks_file: Path | None = None) -> list[dict]:
@@ -80,7 +82,7 @@ def run_single_episode(
     env.reset(task)
 
     trajectory = []
-    turn = 0
+    turn: int = 0
 
     # 첫 번째 사용자 발화 생성
     user_msg = simulator.get_initial_message()
@@ -124,9 +126,9 @@ def run_single_episode(
 
 def run_evaluation(args: argparse.Namespace) -> None:
     """tau-bench 평가 파이프라인을 실행합니다."""
-    api_key = args.api_key or os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        print("❌ OPENAI_API_KEY가 설정되지 않았습니다. --api_key 또는 .env 파일을 확인해주세요.")
+        print("❌ OPENAI_API_KEY가 설정되지 않았습니다. .env 파일을 확인해주세요.")
         sys.exit(1)
 
     print("🚀 τ-Bench 평가 시작...")
@@ -246,10 +248,6 @@ def parse_args() -> argparse.Namespace:
         help="유저 시뮬레이터 모델 (기본값: --model과 동일)"
     )
     parser.add_argument(
-        "--api_key", type=str, default=None,
-        help="OpenAI API 키 (없으면 환경변수 OPENAI_API_KEY 사용)"
-    )
-    parser.add_argument(
         "--num_runs", type=int, default=1,
         help="태스크당 반복 실행 횟수 — Pass@k 계산에 사용 (기본값: 1)"
     )
@@ -266,8 +264,8 @@ def parse_args() -> argparse.Namespace:
         help="평가할 특정 태스크 ID 목록 (없으면 전체 실행)"
     )
     parser.add_argument(
-        "--tasks_file", type=str, default=None,
-        help="태스크 JSONL 파일 경로 (기본값: data/tasks.jsonl). 예: data/tool_chaining_tasks.jsonl"
+        "--tasks_file", type=str, default="data/task_completion_rate_tasks.jsonl",
+        help="태스크 JSONL 파일 경로 (기본값: data/task_completion_rate_tasks.jsonl)"
     )
     parser.add_argument(
         "--debug", action="store_true",
