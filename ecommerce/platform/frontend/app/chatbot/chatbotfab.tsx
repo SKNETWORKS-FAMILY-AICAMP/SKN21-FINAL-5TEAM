@@ -211,6 +211,32 @@ function AnimatedText({ text, className, speed = 20 }: { text: string; className
   return <span className={className}>{text ? displayed : ''}</span>;
 }
 
+function StreamingMarkdown({ text }: { text: string }) {
+  if (!text) return null;
+
+  const endsWithNewline = text.endsWith('\n');
+  const lines = text.split('\n');
+
+  const completedLines = endsWithNewline ? lines : lines.slice(0, -1);
+  const pendingLine = endsWithNewline ? '' : (lines[lines.length - 1] ?? '');
+  const completedMarkdown = completedLines.join('\n').trim();
+
+  return (
+    <>
+      {completedMarkdown ? (
+        <div className={styles.markdownBody}>
+          <ReactMarkdown>{completedMarkdown}</ReactMarkdown>
+        </div>
+      ) : null}
+      {pendingLine ? (
+        <div className={styles.streamingCurrentLine}>
+          <AnimatedText text={pendingLine} speed={14} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function parseThinkContent(rawText: string): { hasThink: boolean; reasoning: string; answer: string } {
   if (!rawText || !rawText.includes('<think>')) {
     return { hasThink: false, reasoning: '', answer: rawText };
@@ -276,7 +302,13 @@ function BotTextContent({ text, isStreaming = false }: { text: string; isStreami
   const parsed = parseThinkContent(text);
 
   if (!parsed.hasThink) {
-    return isStreaming ? <AnimatedText text={text} speed={14} /> : <ReactMarkdown>{text}</ReactMarkdown>;
+    return isStreaming ? (
+      <StreamingMarkdown text={text} />
+    ) : (
+      <div className={styles.markdownBody}>
+        <ReactMarkdown>{text}</ReactMarkdown>
+      </div>
+    );
   }
 
   return (
@@ -284,7 +316,9 @@ function BotTextContent({ text, isStreaming = false }: { text: string; isStreami
       <ReasoningAccordion reasoning={parsed.reasoning} isStreaming={isStreaming} />
       {parsed.answer ? (
         <div className={styles.finalAnswerWrap}>
-          <ReactMarkdown>{parsed.answer}</ReactMarkdown>
+          <div className={styles.markdownBody}>
+            <ReactMarkdown>{parsed.answer}</ReactMarkdown>
+          </div>
         </div>
       ) : null}
     </>
