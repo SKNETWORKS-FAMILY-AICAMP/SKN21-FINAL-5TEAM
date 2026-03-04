@@ -499,9 +499,9 @@ d8 = {
 # register_used_sale → request_pickup
 # ──────────────────────────────────────────────────────────────────────────────
 U9_1 = "나이키 운동화 중고로 팔고 싶어요."
-A9_1 = "판매 신청을 도와드리겠습니다. 상품 상태(최상/상/중/하)와 희망 판매가를 알려주세요."
-U9_2 = "상태는 '상'이고 희망가는 50,000원이에요."
-TC9a = tc("register_used_sale", {"category": "신발", "item_name": "나이키 운동화", "condition": "상", "expected_price": 50000, "user_id": 1})
+A9_1 = "판매 신청을 도와드리겠습니다. 상품 상태(S급/A급/B급)와 희망 판매가를 알려주세요."
+U9_2 = "상태는 'A급'이고 희망가는 50,000원이에요."
+TC9a = tc("register_used_sale", {"category": "신발", "item_name": "나이키 운동화", "condition": "A급", "expected_price": 50000, "user_id": 1})
 TR9a = json.dumps({"success": True, "tracking_id": "USED-A1B2C3D4", "message": "'나이키 운동화' 상품의 중고 판매가 접수되었습니다. (희망가: 50000)", "next_steps": "검수 센터로 상품을 보내주시거나 수거 신청(request_pickup)을 진행해주세요."}, ensure_ascii=False)
 A9_3 = "중고 판매 신청이 완료되었습니다. 접수 번호는 USED-A1B2C3D4입니다. 수거 신청을 진행하시겠어요?"
 U9_4 = "네, 3월 10일에 서울 강남구 테헤란로 456으로 수거 신청할게요."

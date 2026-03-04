@@ -226,7 +226,7 @@ class UsedProductCondition(Base):
         BigInteger, primary_key=True, autoincrement=True, comment='중고 품목 상태 고유 ID'
     )
     condition_name: Mapped[str] = mapped_column(
-        String(50), nullable=False, comment='중고 품목 상태 (최상, 상, 중, 하)'
+        String(50), nullable=False, comment='중고 품목 상태 (S급, A급, B급)'
     )
     depreciation_percent: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(5, 2), comment='감가 퍼센트 (0-100 사이)'
