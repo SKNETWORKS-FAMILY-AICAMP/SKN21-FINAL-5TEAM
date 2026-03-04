@@ -9,8 +9,8 @@ from fastembed import SparseTextEmbedding
 from flashrank import Ranker, RerankRequest
 
 from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
-from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.chatbot.src.core.config import settings
+from ecommerce.chatbot.src.data_preprocessing.bge_m3_embedding import embed_texts
 
 SPARSE_MODEL = None
 RANKER = None
@@ -142,12 +142,7 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
 
     # 임베딩 생성
     try:
-        dense = (
-            get_openai_client()
-            .embeddings.create(input=query, model=settings.EMBEDDING_MODEL)
-            .data[0]
-            .embedding
-        )
+        dense = embed_texts([query])[0]
 
         sparse_idx = None
         sparse_val = None

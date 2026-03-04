@@ -211,6 +211,32 @@ function AnimatedText({ text, className, speed = 20 }: { text: string; className
   return <span className={className}>{text ? displayed : ''}</span>;
 }
 
+function StreamingMarkdown({ text }: { text: string }) {
+  if (!text) return null;
+
+  const endsWithNewline = text.endsWith('\n');
+  const lines = text.split('\n');
+
+  const completedLines = endsWithNewline ? lines : lines.slice(0, -1);
+  const pendingLine = endsWithNewline ? '' : (lines[lines.length - 1] ?? '');
+  const completedMarkdown = completedLines.join('\n').trim();
+
+  return (
+    <>
+      {completedMarkdown ? (
+        <div className={styles.markdownBody}>
+          <ReactMarkdown>{completedMarkdown}</ReactMarkdown>
+        </div>
+      ) : null}
+      {pendingLine ? (
+        <div className={styles.streamingCurrentLine}>
+          <AnimatedText text={pendingLine} speed={14} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function parseThinkContent(rawText: string): { hasThink: boolean; reasoning: string; answer: string } {
   if (!rawText || !rawText.includes('<think>')) {
     return { hasThink: false, reasoning: '', answer: rawText };
@@ -240,6 +266,16 @@ function parseThinkContent(rawText: string): { hasThink: boolean; reasoning: str
     reasoning: reasoningOnly,
     answer: beforeThink,
   };
+}
+
+function normalizeMarkdownForDisplay(rawText: string): string {
+  if (!rawText) return rawText;
+
+  return rawText
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/(^|\n)(\d+)\.\s*\n\s*(?=\S)/g, '$1$2. ')
+    .replace(/(^|\n)([-*])\s*\n\s*(?=\S)/g, '$1$2 ');
 }
 
 function ReasoningAccordion({ reasoning, isStreaming }: { reasoning: string; isStreaming?: boolean }) {
@@ -273,10 +309,17 @@ function ReasoningAccordion({ reasoning, isStreaming }: { reasoning: string; isS
 }
 
 function BotTextContent({ text, isStreaming = false }: { text: string; isStreaming?: boolean }) {
-  const parsed = parseThinkContent(text);
+  const normalizedText = normalizeMarkdownForDisplay(text);
+  const parsed = parseThinkContent(normalizedText);
 
   if (!parsed.hasThink) {
-    return isStreaming ? <AnimatedText text={text} speed={14} /> : <ReactMarkdown>{text}</ReactMarkdown>;
+    return isStreaming ? (
+      <StreamingMarkdown text={text} />
+    ) : (
+      <div className={styles.markdownBody}>
+        <ReactMarkdown>{normalizedText}</ReactMarkdown>
+      </div>
+    );
   }
 
   return (
@@ -284,7 +327,9 @@ function BotTextContent({ text, isStreaming = false }: { text: string; isStreami
       <ReasoningAccordion reasoning={parsed.reasoning} isStreaming={isStreaming} />
       {parsed.answer ? (
         <div className={styles.finalAnswerWrap}>
-          <ReactMarkdown>{parsed.answer}</ReactMarkdown>
+          <div className={styles.markdownBody}>
+            <ReactMarkdown>{parsed.answer}</ReactMarkdown>
+          </div>
         </div>
       ) : null}
     </>
@@ -409,7 +454,7 @@ export default function ChatbotFab() {
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
-  const [panelSize, setPanelSize] = useState({ w: 550, h: 660 });
+  const [panelSize, setPanelSize] = useState({ w: 700, h: 660 });
   const isResizing = useRef(false);
   const [selectedModel, setSelectedModel] = useState<string>(OPENAI_MODELS[0]);
   const [isModelModalOpen, setIsModelModalOpen] = useState(false);
@@ -682,7 +727,7 @@ export default function ChatbotFab() {
                   const completedText = accumulatedText;
                   setMessages((prev) => [
                     ...prev,
-                    { role: 'bot', type: 'text', text: completedText, isStreaming: false, showDivider: true },
+                    { role: 'bot', type: 'text', text: completedText, isStreaming: false },
                   ]);
                 }
                 setStreamingText('');
@@ -948,6 +993,7 @@ export default function ChatbotFab() {
                     <span className={styles.botIcon}>✦</span>
                     <div
                       className={`${styles.botText} ${m.type === 'text' && m.isStreaming ? styles.streaming : ''
+                        } ${m.type === 'text' ? styles.botTextRich : ''
                         } ${m.type === 'text' && m.showDivider ? styles.persistentDivider : ''}`}
                     >
                       {m.type === 'text' ? <BotTextContent text={text} isStreaming={Boolean(m.isStreaming)} /> : text}
