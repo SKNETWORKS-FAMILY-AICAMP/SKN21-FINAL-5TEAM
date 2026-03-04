@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     HF_MODEL_ID: str = "Qwen/Qwen3-0.6B"
     HF_QUANTIZATION: str = "auto"  # auto | none | bnb-4bit | bnb-8bit | dynamic-int8
 
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
-    EMBEDDING_DIM: int = 1536
+    EMBEDDING_MODEL: str = "BAAI/bge-m3"
+    EMBEDDING_DIM: int = 1024
 
     # Qdrant
     QDRANT_URL: str
