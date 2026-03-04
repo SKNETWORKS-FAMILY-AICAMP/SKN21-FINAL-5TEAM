@@ -38,6 +38,48 @@ class ModelCaller:
                 return f.read().strip()
         return ""
 
+    def _normalize_messages(self, messages: List[Dict]) -> List[Dict]:
+        """
+        데이터셋 포맷의 messages를 OpenAI API 포맷으로 변환합니다.
+
+        데이터셋 tool_calls: [{"name": ..., "arguments": ...}]
+        OpenAI API 요구:    [{"id": ..., "type": "function", "function": {"name": ..., "arguments": ...}}]
+        """
+        normalized = []
+        tool_call_id_map: Dict[str, str] = {}
+
+        for i, msg in enumerate(messages):
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                new_tool_calls = []
+                for j, tc in enumerate(msg["tool_calls"]):
+                    tc_id = f"call_{i}_{j}"
+                    tool_call_id_map[tc.get("name", "")] = tc_id
+                    new_tool_calls.append({
+                        "id": tc_id,
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": tc["arguments"],
+                        },
+                    })
+                normalized.append({
+                    "role": "assistant",
+                    "content": msg.get("content"),
+                    "tool_calls": new_tool_calls,
+                })
+            elif msg.get("role") == "tool":
+                tool_name = msg.get("name", "")
+                tc_id = tool_call_id_map.get(tool_name, f"call_{tool_name}")
+                normalized.append({
+                    "role": "tool",
+                    "tool_call_id": tc_id,
+                    "content": msg.get("content", ""),
+                })
+            else:
+                normalized.append(msg)
+
+        return normalized
+
     def call(self, query: List[Dict], tools: List[Dict]) -> Dict:
         """
         모델을 호출하고 응답을 데이터셋 ground_truth 포맷으로 반환합니다.
@@ -51,6 +93,7 @@ class ModelCaller:
         if self.system_prompt:
             messages.append({"role": "system", "content": self.system_prompt})
         messages.extend(query)
+        messages = self._normalize_messages(messages)
 
         try:
             response = self.client.chat.completions.create(
