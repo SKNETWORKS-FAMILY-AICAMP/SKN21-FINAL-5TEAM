@@ -192,6 +192,15 @@
   word-break: break-word;
 }
 
+.botTextRich {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  white-space: normal;
+}
+
 .streaming {
   will-change: transform;
   transform: translateZ(0);
@@ -202,11 +211,11 @@
 
 .streamingPreviewWrap {
   margin-top: 8px;
-  padding: 12px 14px;
-  border: 1px solid #e7ebf3;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
-  box-shadow: 0 2px 10px rgba(36, 59, 87, 0.06);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   animation: fadeUpIn 0.35s ease-out;
 }
 

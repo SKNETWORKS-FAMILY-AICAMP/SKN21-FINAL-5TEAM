@@ -268,6 +268,16 @@ function parseThinkContent(rawText: string): { hasThink: boolean; reasoning: str
   };
 }
 
+function normalizeMarkdownForDisplay(rawText: string): string {
+  if (!rawText) return rawText;
+
+  return rawText
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/(^|\n)(\d+)\.\s*\n\s*(?=\S)/g, '$1$2. ')
+    .replace(/(^|\n)([-*])\s*\n\s*(?=\S)/g, '$1$2 ');
+}
+
 function ReasoningAccordion({ reasoning, isStreaming }: { reasoning: string; isStreaming?: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -299,14 +309,15 @@ function ReasoningAccordion({ reasoning, isStreaming }: { reasoning: string; isS
 }
 
 function BotTextContent({ text, isStreaming = false }: { text: string; isStreaming?: boolean }) {
-  const parsed = parseThinkContent(text);
+  const normalizedText = normalizeMarkdownForDisplay(text);
+  const parsed = parseThinkContent(normalizedText);
 
   if (!parsed.hasThink) {
     return isStreaming ? (
       <StreamingMarkdown text={text} />
     ) : (
       <div className={styles.markdownBody}>
-        <ReactMarkdown>{text}</ReactMarkdown>
+        <ReactMarkdown>{normalizedText}</ReactMarkdown>
       </div>
     );
   }
@@ -443,7 +454,7 @@ export default function ChatbotFab() {
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
-  const [panelSize, setPanelSize] = useState({ w: 550, h: 660 });
+  const [panelSize, setPanelSize] = useState({ w: 700, h: 660 });
   const isResizing = useRef(false);
   const [selectedModel, setSelectedModel] = useState<string>(OPENAI_MODELS[0]);
   const [isModelModalOpen, setIsModelModalOpen] = useState(false);
@@ -716,7 +727,7 @@ export default function ChatbotFab() {
                   const completedText = accumulatedText;
                   setMessages((prev) => [
                     ...prev,
-                    { role: 'bot', type: 'text', text: completedText, isStreaming: false, showDivider: true },
+                    { role: 'bot', type: 'text', text: completedText, isStreaming: false },
                   ]);
                 }
                 setStreamingText('');
@@ -982,6 +993,7 @@ export default function ChatbotFab() {
                     <span className={styles.botIcon}>✦</span>
                     <div
                       className={`${styles.botText} ${m.type === 'text' && m.isStreaming ? styles.streaming : ''
+                        } ${m.type === 'text' ? styles.botTextRich : ''
                         } ${m.type === 'text' && m.showDivider ? styles.persistentDivider : ''}`}
                     >
                       {m.type === 'text' ? <BotTextContent text={text} isStreaming={Boolean(m.isStreaming)} /> : text}
