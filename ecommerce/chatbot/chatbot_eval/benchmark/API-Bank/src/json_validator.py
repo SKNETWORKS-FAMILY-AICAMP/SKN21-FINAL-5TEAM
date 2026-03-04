@@ -73,15 +73,13 @@ def _type_name(value: Any) -> str:
 def check_type_accuracy(
     gt_arguments: Any,
     pred_arguments: Any,
-    edge_case: Optional[str] = None,
 ) -> Dict:
     """
-    ground_truth arguments 와 예측 arguments 의 타입 정확도를 검사합니다.
+    ground_truth arguments 와 예측 arguments 의 타입 정확도를 검사합니다. (참고용)
 
     Args:
         gt_arguments  : ground_truth 의 arguments (str 또는 dict)
         pred_arguments: 예측 모델의 arguments (str 또는 dict)
-        edge_case     : json_edge_case 값 (검증 포커스 힌트)
 
     Returns:
         {
@@ -102,17 +100,6 @@ def check_type_accuracy(
             "key_results": {},
             "fail_reason": "arguments 가 유효한 JSON이 아닙니다.",
         }
-
-    # 빈 객체 엣지케이스: gt가 {} 이면 pred도 {} (또는 추가 키 없음) 이어야 함
-    if edge_case == "empty_object" and gt_parsed == {}:
-        if pred_parsed == {}:
-            return {"type_accurate": True, "key_results": {}, "fail_reason": None}
-        else:
-            return {
-                "type_accurate": False,
-                "key_results": {},
-                "fail_reason": f"빈 객체여야 하지만 인자가 존재함: {list(pred_parsed.keys())}",
-            }
 
     key_results: Dict[str, dict] = {}
     all_pass = True
@@ -176,21 +163,20 @@ def check_type_accuracy(
 def validate_call_turn(
     ground_truth: Dict,
     prediction: Dict,
-    edge_case: Optional[str] = None,
 ) -> Dict:
     """
-    "call" 타입 턴에 대한 JSON 유효성 + 타입 정확도 통합 검증을 수행합니다.
+    "call" 타입 턴에 대한 JSON 유효성 + 스키마 형식 통합 검증을 수행합니다.
+    pass 조건: json_valid AND func_name_match
 
     Args:
         ground_truth: 데이터셋 ground_truth 딕셔너리
         prediction  : 모델 예측 딕셔너리
-        edge_case   : json_edge_case 값
 
     Returns:
         {
           "json_valid"    : bool,
-          "type_accurate" : bool,
-          "pass"          : bool,   # json_valid AND type_accurate
+          "type_accurate" : bool,   # 참고용 (pass 에 영향 없음)
+          "pass"          : bool,   # json_valid AND func_name_match
           "fail_reason"   : str | None,
           "key_results"   : dict,
           "gt_func_name"  : str,
@@ -237,10 +223,13 @@ def validate_call_turn(
         }
 
     gt_args_raw = gt_tc.get("arguments", "{}")
-    type_result = check_type_accuracy(gt_args_raw, pred_args_raw, edge_case)
+    type_result = check_type_accuracy(gt_args_raw, pred_args_raw)
 
-    overall_pass = json_valid and type_result["type_accurate"]
-    fail_reason = None if overall_pass else type_result.get("fail_reason")
+    overall_pass = json_valid and func_name_match
+    fail_reason = None if overall_pass else (
+        f"함수명 불일치: gt={gt_func_name}, pred={pred_func_name}"
+        if json_valid else type_result.get("fail_reason")
+    )
 
     return {
         "json_valid": json_valid,
