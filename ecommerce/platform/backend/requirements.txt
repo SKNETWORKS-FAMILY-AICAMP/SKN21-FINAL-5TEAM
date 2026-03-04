@@ -16,6 +16,7 @@ pydantic-settings       # Pydantic BaseSettings 지원
 
 # 인증 및 보안
 passlib[bcrypt]         # 비밀번호 해싱
+bcrypt<4.0.0           # passlib 72-byte ValueError 호환성 이슈 방지
 python-jose[cryptography] # JWT 토큰 생성 및 검증
 
 # AI 및 LangChain
