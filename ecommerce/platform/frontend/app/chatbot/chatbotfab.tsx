@@ -6,6 +6,7 @@ import styles from './chatbotfab.module.css';
 import OrderListUI from './OrderListUI';
 import ProductListUI, { UiProduct } from './ProductListUI';
 import ReviewFormUI from './ReviewFormUI';
+import UsedSaleFormUI from './UsedSaleFormUI';
 import { useAuth } from '../authcontext';
 
 type TextMessage = { role: 'user' | 'bot'; type: 'text'; text: string; isStreaming?: boolean; showDivider?: boolean };
@@ -71,6 +72,20 @@ type ReviewFormMessage = {
   };
 };
 
+type UsedSaleFormMessage = {
+  role: 'bot';
+  type: 'used_sale_form';
+  message: string;
+  ui_data?: {
+    category_options?: Array<{ id: number; name: string }>;
+    condition_options?: Array<{ id: number; name: string; description?: string | null }>;
+    category_placeholder?: string;
+    item_name_placeholder?: string;
+    description_placeholder?: string;
+    price_placeholder?: string;
+  };
+};
+
 type ReviewSubmissionPayload = {
   event: 'review_submitted';
   action: 'create_review';
@@ -81,7 +96,27 @@ type ReviewSubmissionPayload = {
   source: 'review_form_ui';
 };
 
-type ChatMsg = TextMessage | OrderListMessage | ConfirmationMessage | AddressSearchMessage | ProductListMessage | ReviewFormMessage;
+type UsedSaleSubmissionPayload = {
+  event: 'used_sale_submitted';
+  action: 'register_used_sale';
+  category_id: number;
+  category: string;
+  item_name: string;
+  description: string;
+  condition_id: number;
+  condition: string;
+  expected_price?: number | null;
+  source: 'used_sale_form_ui';
+};
+
+type ChatMsg =
+  | TextMessage
+  | OrderListMessage
+  | ConfirmationMessage
+  | AddressSearchMessage
+  | ProductListMessage
+  | ReviewFormMessage
+  | UsedSaleFormMessage;
 type LlmProvider = 'openai' | 'huggingface' | 'vllm';
 type ModelOption = { id: string; provider: LlmProvider; label: string };
 
@@ -572,13 +607,6 @@ export default function ChatbotFab() {
                   setStatusMessage(composedStatus);
                 }
               } else if (data.type === 'ui_action') {
-                if (accumulatedText.trim()) {
-                  const completedText = accumulatedText;
-                  setMessages((prev) => [
-                    ...prev,
-                    { role: 'bot', type: 'text', text: completedText, isStreaming: false, showDivider: true },
-                  ]);
-                }
                 accumulatedText = '';
                 setStreamingText('');
 
@@ -629,6 +657,18 @@ export default function ChatbotFab() {
                       type: 'review_form',
                       message: data.message || '리뷰를 작성해주세요.',
                       ui_data: data.ui_data, // Contains order_id, product_id, product_name
+                    },
+                  ]);
+                } else if (data.ui_action === 'show_used_sale_form') {
+                  setIsLoading(false);
+                  setStatusMessage(null);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: 'bot',
+                      type: 'used_sale_form',
+                      message: data.message || '중고 판매 등록 정보를 입력해주세요.',
+                      ui_data: data.ui_data,
                     },
                   ]);
                 }
@@ -750,6 +790,31 @@ export default function ChatbotFab() {
     sendMessage(JSON.stringify(finalPayload), true);
   };
 
+  const handleUsedSaleSubmit = (payload: {
+    category_id: number;
+    category: string;
+    item_name: string;
+    description: string;
+    condition_id: number;
+    condition: string;
+    expected_price?: number | null;
+  }) => {
+    const finalPayload: UsedSaleSubmissionPayload = {
+      event: 'used_sale_submitted',
+      action: 'register_used_sale',
+      category_id: payload.category_id,
+      category: payload.category,
+      item_name: payload.item_name,
+      description: payload.description,
+      condition_id: payload.condition_id,
+      condition: payload.condition,
+      expected_price: payload.expected_price ?? null,
+      source: 'used_sale_form_ui',
+    };
+
+    sendMessage(JSON.stringify(finalPayload), true);
+  };
+
 
 
   const onKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
@@ -842,6 +907,26 @@ export default function ChatbotFab() {
                         productId={m.ui_data?.product_id || ''}
                         productName={m.ui_data?.product_name || '상품'}
                         onSubmit={handleReviewSubmit}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            } else if (m.type === 'used_sale_form') {
+              return (
+                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
+                  <div className={styles.botMsg}>
+                    <span className={styles.botIcon}>✦</span>
+                    <div className={styles.botText}>
+                      <UsedSaleFormUI
+                        message={m.message}
+                        categoryOptions={m.ui_data?.category_options}
+                        conditionOptions={m.ui_data?.condition_options}
+                        categoryPlaceholder={m.ui_data?.category_placeholder}
+                        itemNamePlaceholder={m.ui_data?.item_name_placeholder}
+                        descriptionPlaceholder={m.ui_data?.description_placeholder}
+                        pricePlaceholder={m.ui_data?.price_placeholder}
+                        onSubmit={handleUsedSaleSubmit}
                       />
                     </div>
                   </div>

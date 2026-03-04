@@ -2,8 +2,11 @@ import pandas as pd
 from tqdm import tqdm
 from qdrant_client.http import models
 from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
-from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.chatbot.src.core.config import settings
+from ecommerce.chatbot.src.data_preprocessing.bge_m3_embedding import (
+    embed_texts,
+    get_embedding_dim,
+)
 
 
 def ingest_fashion():
@@ -27,13 +30,13 @@ def ingest_fashion():
 
     # Processing
     client = get_qdrant_client()
-    openai = get_openai_client()
 
     # Init Sparse Embedder
     try:
         from fastembed import SparseTextEmbedding
 
         sparse_model = SparseTextEmbedding(model_name="Qdrant/bm25")
+        embedding_dim = get_embedding_dim()
         print("Sparse retrieval model loaded.")
     except Exception as e:
         print(f"Failed to load sparse model: {e}")
@@ -53,7 +56,7 @@ def ingest_fashion():
         collection_name=settings.COLLECTION_FASHION,
         vectors_config={
             "": models.VectorParams(
-                size=settings.EMBEDDING_DIM, distance=models.Distance.COSINE
+                size=embedding_dim, distance=models.Distance.COSINE
             )
         },
         sparse_vectors_config={"text-sparse": models.SparseVectorParams()},
@@ -75,9 +78,8 @@ def ingest_fashion():
             texts.append(text)
 
         try:
-            # Dense Embeddings
-            resp = openai.embeddings.create(input=texts, model=settings.EMBEDDING_MODEL)
-            dense_vectors = [d.embedding for d in resp.data]
+            # Dense Embeddings (BGE-M3)
+            dense_vectors = embed_texts(texts)
 
             # Sparse Embeddings
             sparse_embeddings = list(sparse_model.embed(texts))

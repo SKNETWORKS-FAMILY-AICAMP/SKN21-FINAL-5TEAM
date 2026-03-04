@@ -4,12 +4,15 @@ import uuid
 from tqdm import tqdm
 from qdrant_client.http import models
 from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
-from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.chatbot.src.core.config import settings
+from ecommerce.chatbot.src.data_preprocessing.bge_m3_embedding import (
+    embed_texts,
+    get_embedding_dim,
+)
 import os
 
 
-def ensure_faq_collection(client):
+def ensure_faq_collection(client, embedding_dim: int):
     collection_name = settings.COLLECTION_FAQ
 
     try:
@@ -27,7 +30,7 @@ def ensure_faq_collection(client):
     client.create_collection(
         collection_name=collection_name,
         vectors_config=models.VectorParams(
-            size=settings.EMBEDDING_DIM,
+            size=embedding_dim,
             distance=models.Distance.COSINE,
         ),
         sparse_vectors_config={
@@ -67,13 +70,14 @@ def ingest_faq():
         
     print(f"Loaded {len(data)} records.")
     
-    # Initialize FastEmbed
+    # Initialize sparse model (dense is handled by local BGE-M3 helper)
     from fastembed import SparseTextEmbedding
+
     sparse_model = SparseTextEmbedding(model_name="Qdrant/bm25")
+    embedding_dim = get_embedding_dim()
 
     client = get_qdrant_client()
-    ensure_faq_collection(client)
-    openai = get_openai_client()
+    ensure_faq_collection(client, embedding_dim)
     
     batch_size = 50 
     
@@ -84,12 +88,8 @@ def ingest_faq():
         texts_to_embed = [item['vector_input'] for item in batch]
         
         try:
-            # 1. Dense Embeddings
-            resp = openai.embeddings.create(
-                input=texts_to_embed,
-                model=settings.EMBEDDING_MODEL
-            )
-            dense_vectors = [d.embedding for d in resp.data]
+            # 1. Dense Embeddings (BGE-M3)
+            dense_vectors = embed_texts(texts_to_embed)
             
             # 2. Sparse Embeddings
             sparse_vectors = list(sparse_model.embed(texts_to_embed))
