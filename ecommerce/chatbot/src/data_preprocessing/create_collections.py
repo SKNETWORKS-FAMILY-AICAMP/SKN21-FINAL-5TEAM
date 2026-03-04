@@ -12,7 +12,7 @@ load_dotenv()
 # Configuration
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")  # Default to localhost if not set
-VECTOR_SIZE = 1536  # OpenAI text-embedding-3-small dimension
+VECTOR_SIZE = 1024  # BAAI/bge-m3 dense embedding dimension
 
 
 def get_qdrant_client() -> QdrantClient:
