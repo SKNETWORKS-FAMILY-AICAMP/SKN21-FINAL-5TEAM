@@ -158,6 +158,12 @@ def run_evaluate(
     else: # gpt, mistral, etc.
         model_name = model
 
+    if not output_dir and input_path:
+        if 'arg_accuracy' in input_path:
+            output_dir = 'arg_acc'
+        elif 'slot_filling' in input_path:
+            output_dir = 'slot_filling'
+
     file_paths = get_file_paths(test_prefix, model_name, eval_type, tools_type=tools_type, output_dir=output_dir)
     print(f"[[{model_name} {test_prefix} evaluate start]]")
     process_meta = None
