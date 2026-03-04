@@ -59,7 +59,11 @@ from ecommerce.chatbot.src.tools.recommendation_tools import (
     recommend_clothes,
     search_by_image,
 )
-from ecommerce.chatbot.src.tools.used_tools import register_used_sale, request_pickup
+from ecommerce.chatbot.src.tools.used_tools import (
+    open_used_sale_form,
+    register_used_sale,
+    request_pickup,
+)
 
 # 전체 도구 목록 — LLM이 이 중에서 직접 선택합니다
 TOOLS = [
@@ -86,6 +90,7 @@ TOOLS = [
     recommend_clothes,
     search_by_image,
     # 중고
+    open_used_sale_form,
     register_used_sale,
     request_pickup,
     # 주소
@@ -256,6 +261,32 @@ def preprocess_node(state: AgentState):
         return {"question": user_message}
 
     event = payload.get("event", "")
+
+    # 중고 판매 폼 제출 이벤트
+    if event == "used_sale_submitted":
+        category_id = payload.get("category_id")
+        category_name = str(payload.get("category") or "").strip()
+        item_name = str(payload.get("item_name") or "").strip()
+        description = str(payload.get("description") or "").strip()
+        condition_id = payload.get("condition_id")
+        condition_name = str(payload.get("condition") or "").strip()
+        expected_price = payload.get("expected_price")
+
+        if expected_price in ("", None):
+            natural_msg = (
+                "중고 판매 등록을 진행해주세요. "
+                f"category_id는 {category_id}, category는 '{category_name}', 상품명은 '{item_name}', "
+                f"description은 '{description}', condition_id는 {condition_id}, 상태명은 '{condition_name}', 희망 가격은 미정입니다."
+            )
+        else:
+            natural_msg = (
+                "중고 판매 등록을 진행해주세요. "
+                f"category_id는 {category_id}, category는 '{category_name}', 상품명은 '{item_name}', "
+                f"description은 '{description}', condition_id는 {condition_id}, 상태명은 '{condition_name}', 희망 가격은 {expected_price}원입니다."
+            )
+
+        new_messages = messages[:-1] + [HumanMessage(content=natural_msg)]
+        return {"messages": new_messages, "question": natural_msg}
 
     # 주소 선택 이벤트 → 자연어로 변환
     if event == "address_selected":
@@ -691,7 +722,8 @@ def _should_reset_order_action_context(state: AgentState) -> bool:
         return False
 
     return any(
-        isinstance(task, dict) and task.get("task") == TaskType.ORDER_ACTION.value
+        isinstance(task, dict)
+        and str(task.get("task", "")).lower() in {"order_action", "order-action"}
         for task in task_results
     )
 
@@ -725,8 +757,14 @@ def process_output_node(state: AgentState):
         "tool_outputs": [],
     }
 
-    # UI Action 추출: ToolMessage에서
+    # UI Action 추출: "현재 턴" ToolMessage에서만 수집
+    current_turn_messages = []
     for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            break
+        current_turn_messages.append(msg)
+
+    for msg in reversed(current_turn_messages):
         if isinstance(msg, ToolMessage):
             try:
                 content = msg.content
@@ -737,6 +775,9 @@ def process_output_node(state: AgentState):
                     result["tool_outputs"].append(data)
             except Exception:
                 pass
+
+    if result["tool_outputs"]:
+        result["generation"] = ""
 
     if _should_reset_order_action_context(state):
         current_task = state.get("current_task")

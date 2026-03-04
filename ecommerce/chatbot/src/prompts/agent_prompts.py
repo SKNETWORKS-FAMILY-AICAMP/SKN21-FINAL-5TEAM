@@ -47,6 +47,12 @@ OPENAI_4O_MINI_TOOL_USAGE_INSTRUCTIONS = """
 - 사용자가 리뷰 작성을 원할 때 `rating`과 `content`를 직접 텍스트로 묻지 마세요.
 - 리뷰할 주문번호(`order_id`)와 상품번호(`product_id`)가 파악되면 즉시 `create_review(rating=0, content="UI_REQUEST", ...)`와 같이 임의의 값을 넣어 도구를 호출하세요. 시스템이 자동으로 리뷰 작성 폼 UI를 띄워줍니다.
 
+### 중고 판매 등록 시
+- 사용자가 중고상품 등록/판매를 원할 때 카테고리, 상품명, 설명, 상태, 희망가를 텍스트로 직접 묻지 마세요.
+- 반드시 `open_used_sale_form` 도구를 먼저 호출해 입력 폼 UI를 띄우세요.
+- 사용자가 폼을 제출한 뒤에만 `register_used_sale`을 호출하세요.
+- `register_used_sale` 호출 시 `category_id`(숫자), `condition_id`(usedproductconditions.id), `description`을 반드시 포함하세요.
+
 ### 상품 검색/추천
 - 상품 검색: `search_products_vector` (Hybrid Vector Search)
 - 옷 추천: `recommend_clothes` (사용자 발화에서 의류 카테고리 기호(상의, 하의, 원피스 등)를 추론해 `category` 필드 채움)
@@ -75,6 +81,7 @@ QWEN3_06B_TOOL_USAGE_INSTRUCTIONS = """
 7) 정책 질문: `search_knowledge_base` 사용.
 8) 주소 필요: `open_address_search` 호출 (텍스트로 묻지 말 것).
 9) 리뷰 작성: `rating`, `content`를 묻지 말고 `create_review(rating=0, content="UI_REQUEST", ...)` 호출하여 UI를 띄울 것.
+10) 중고 판매 등록: 텍스트로 슬롯을 묻지 말고 `open_used_sale_form` 호출로 UI를 먼저 띄우고, 제출 후 `category_id`, `condition_id`, `description` 포함해 `register_used_sale` 호출.
 """
 
 

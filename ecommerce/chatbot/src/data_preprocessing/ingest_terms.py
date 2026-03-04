@@ -4,8 +4,8 @@ import uuid
 from tqdm import tqdm
 from qdrant_client.http import models
 from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
-from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.chatbot.src.core.config import settings
+from ecommerce.chatbot.src.data_preprocessing.bge_m3_embedding import embed_texts
 
 def ingest_terms():
     print("--- Starting Ecommerce Terms Ingestion ---")
@@ -24,12 +24,12 @@ def ingest_terms():
         
     print(f"Loaded {len(data)} records.")
     
-    # Initialize FastEmbed for Sparse Vectors
+    # Initialize sparse model (dense is handled by local BGE-M3 helper)
     from fastembed import SparseTextEmbedding
+
     sparse_model = SparseTextEmbedding(model_name="Qdrant/bm25")
 
     client = get_qdrant_client()
-    openai = get_openai_client()
     batch_size = 50
     
     for i in tqdm(range(0, len(data), batch_size), desc="Ingesting Batches"):
@@ -39,12 +39,8 @@ def ingest_terms():
         texts_to_embed = [item['text'] for item in batch]
         
         try:
-            # 1. Dense Embeddings (OpenAI)
-            resp = openai.embeddings.create(
-                input=texts_to_embed,
-                model=settings.EMBEDDING_MODEL
-            )
-            dense_vectors = [d.embedding for d in resp.data]
+            # 1. Dense Embeddings (BGE-M3)
+            dense_vectors = embed_texts(texts_to_embed)
 
             # 2. Sparse Embeddings (FastEmbed BM25)
             sparse_vectors = list(sparse_model.embed(texts_to_embed))

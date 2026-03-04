@@ -144,13 +144,13 @@ async def chat_streaming_endpoint(
 
             # 1. 상태 초기화
             current_state = {
+                **previous_state,
                 "retry_count": 0,
-                "current_task": None,
+                "current_task": previous_state.get("current_task"),
                 "documents": [],
                 "tool_outputs": [],
                 "task_list": [],
                 "task_results": [],
-                **previous_state,
                 "is_authenticated": True,
                 "user_info": {
                     "id": current_user.id,
