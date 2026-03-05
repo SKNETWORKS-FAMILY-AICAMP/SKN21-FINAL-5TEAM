@@ -341,8 +341,21 @@ def preprocess_node(state: AgentState):
     order_id = payload.get("order_id") or payload.get("selected_order_id")
     action = payload.get("action")
 
+    # action-to-tool 직접 매핑: 주문이 이미 특정됐으므로 get_user_orders 재호출 방지
+    _ACTION_TOOL_HINT = {
+        "refund":   "check_refund_eligibility 도구를 바로 호출하세요. get_user_orders는 절대 호출하지 마세요.",
+        "exchange": "check_exchange_eligibility 도구를 바로 호출하세요. get_user_orders는 절대 호출하지 마세요.",
+        "cancel":   "cancel_order 도구를 바로 호출하세요. get_user_orders는 절대 호출하지 마세요.",
+        "review":   "create_review 또는 generate_review_draft 도구를 바로 호출하세요. get_user_orders는 절대 호출하지 마세요.",
+    }
+
     if order_id and action:
-        natural_msg = f"주문번호 {order_id}에 대해 {action} 처리해주세요."
+        hint = _ACTION_TOOL_HINT.get(str(action).lower(), "")
+        natural_msg = (
+            f"사용자가 주문번호 {order_id}을(를) 선택했습니다. "
+            f"요청 액션: {action}. "
+            f"{hint}"
+        )
         new_messages = messages[:-1] + [HumanMessage(content=natural_msg)]
         return {"messages": new_messages, "question": natural_msg}
 
@@ -350,7 +363,12 @@ def preprocess_node(state: AgentState):
         current_task = state.get("current_task") or {}
         task_type = current_task.get("type", "general")
         if task_type in {"cancel", "refund", "exchange"}:
-            natural_msg = f"주문번호 {order_id}에 대해 {task_type} 진행해주세요."
+            hint = _ACTION_TOOL_HINT.get(task_type, "")
+            natural_msg = (
+                f"사용자가 주문번호 {order_id}을(를) 선택했습니다. "
+                f"요청 액션: {task_type}. "
+                f"{hint}"
+            )
         else:
             natural_msg = f"주문번호 {order_id}의 상세 정보를 알려주세요."
         new_messages = messages[:-1] + [HumanMessage(content=natural_msg)]
@@ -722,6 +740,7 @@ def route_after_tools(state: AgentState) -> Literal["agent", "process_output"]:
     도구 실행 후:
     - UI Action이 있으면 → process_output (텍스트 생성 생략)
     - UI Template이 있으면 → ui_generator (LLM이 동적 UI config 생성)
+      단, 현재 턴이 order_selected 이벤트(이미 주문 특정)이면 agent로 보내 결과 해석
     - 그 외 → agent (LLM이 결과 해석 후 답변)
     """
     print("---ROUTE AFTER TOOLS---")
@@ -738,8 +757,15 @@ def route_after_tools(state: AgentState) -> Literal["agent", "process_output"]:
                     if data.get("ui_action"):
                         print(f"---DECISION: UI ACTION ({data['ui_action']}) -> END---")
                         return "process_output"
-                    # 신규 방식: ui_template이 있는 경우 → LLM이 UI config 동적 생성
+                    # 신규 방식: ui_template이 있는 경우
                     if data.get("ui_template"):
+                        # order_selected 이벤트 후 호출된 도구이면 agent로 보내 결과 해석
+                        # (주문 선택 → 환불가능여부 확인 → 결과 설명 흐름)
+                        current_human = _get_last_user_message(messages)
+                        human_payload = _extract_json_payload(current_human)
+                        if human_payload and human_payload.get("event") == "order_selected":
+                            print(f"---DECISION: UI TEMPLATE after order_selected -> AGENT (결과 해석)---")
+                            return "agent"
                         print(f"---DECISION: UI TEMPLATE ({data['ui_template']}) -> UI GENERATOR---")
                         return "ui_generator"
         except Exception:
