@@ -128,7 +128,7 @@ def search_products_vector(query: str, limit: int = 5) -> dict:
     if not candidates:
         return {
             "message": "조건에 맞는 상품을 찾지 못했습니다.",
-            "ui_action": "show_product_list",
+            "ui_template": "product_list",
             "ui_data": [],
         }
 
@@ -178,7 +178,7 @@ def search_products_vector(query: str, limit: int = 5) -> dict:
 
     return {
         "message": f"찾아본 상품 {len(ui_products)}개 목록입니다.",
-        "ui_action": "show_product_list",
+        "ui_template": "product_list",
         "ui_data": ui_products,
         "requires_selection": False,
     }

@@ -147,7 +147,7 @@ def recommend_clothes(
     return {
         "success": True,
         "message": f"조건에 맞는 옷 {len(results)}개를 추천해드릴게요!",
-        "ui_action": "show_product_list",
+        "ui_template": "product_list",
         "ui_data": results,
     }
 

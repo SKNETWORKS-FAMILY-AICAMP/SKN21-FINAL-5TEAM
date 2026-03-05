@@ -50,6 +50,10 @@ class AgentState(TypedDict):
     llm_provider: Optional[str]  # openai | huggingface | vllm
     llm_model: Optional[str]  # gpt-5-mini | Qwen/Qwen3-0.6B ...
 
+    # 9. 동적 UI 메타데이터 (ui_generator_node가 생성)
+    # LLM이 사용자 의도 + Tool 결과를 보고 UI 구성을 동적으로 결정
+    ui_metadata: Optional[Dict[str, Any]]
+
     # 8. 대화/로깅 메타데이터
     conversation_id: Optional[str]  # 프론트와 왕복되는 대화 ID
     turn_id: Optional[str]  # 요청 단위 턴 ID
