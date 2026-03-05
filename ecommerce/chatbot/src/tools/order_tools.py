@@ -923,7 +923,7 @@ def get_user_orders(
             else:
                 msg_suffix = " (주문 내역이 없습니다.)"
             return {
-                "ui_template": "order_list",
+                "ui_action": "show_order_list",
                 "message": base_msg + msg_suffix,
                 "total_orders": 0,
                 "ui_data": [],
@@ -943,7 +943,7 @@ def get_user_orders(
             msg_suffix = " 원하시는 주문을 선택해주세요."
 
         return {
-            "ui_template": "order_list",
+            "ui_action": "show_order_list",
             "message": base_msg + msg_suffix,
             "total_orders": len(ui_data),
             "ui_data": ui_data,
