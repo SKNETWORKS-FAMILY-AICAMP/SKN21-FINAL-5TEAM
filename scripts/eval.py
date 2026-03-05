@@ -31,7 +31,7 @@ import ecommerce.platform.backend.app.router.chatbot_logs.models
 
 from ecommerce.platform.backend.app.router.users.models import User, UserStatus, UserGender
 from ecommerce.platform.backend.app.router.users.crud import hash_password
-from ecommerce.platform.backend.app.router.products.models import ProductOption, ProductType
+from ecommerce.platform.backend.app.router.products.models import ProductOption, ProductType, Category, Product
 from ecommerce.platform.backend.app.router.orders.models import Order, OrderItem
 from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
 from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
@@ -80,8 +80,36 @@ def create_eval_orders(db: Session):
 
     new_product_option = db.query(ProductOption).first()
     if not new_product_option:
-        logger.warning("상품 옵션이 없습니다. seed.py를 먼저 실행하세요.")
-        return
+        logger.info("상품/옵션 데이터가 없어 평가용 임시 카테고리 및 상품 데이터를 생성합니다.")
+        
+        category = Category(id=9999, name="평가용 카테고리", display_order=1, is_active=True)
+        db.add(category)
+        db.flush()
+        
+        product = Product(
+            id=9999,
+            category_id=category.id,
+            name="평가용 임시 상품",
+            description="평가용으로 자동 생성된 상품입니다.",
+            price=Decimal("15000"),
+            is_active=True,
+            tags="eval"
+        )
+        db.add(product)
+        db.flush()
+        
+        for i, color in enumerate(["BLACK", "WHITE", "NAVY", "GREY"]):
+            opt = ProductOption(
+                product_id=product.id,
+                size_name="FREE",
+                color=color,
+                quantity=100,
+                is_active=True
+            )
+            db.add(opt)
+        db.flush()
+        
+        new_product_option = db.query(ProductOption).first()
 
     # 서로 다른 상품 옵션을 연결하여 시나리오 다양성 확보
     all_new_options = db.query(ProductOption).filter(ProductOption.is_active == True).limit(20).all()

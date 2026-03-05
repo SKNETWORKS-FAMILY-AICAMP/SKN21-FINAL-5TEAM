@@ -72,8 +72,11 @@ def run_single_benchmark(name, cmd):
     safe_cmd: list[str] = [arg if arg != OPENAI_API_KEY else "sk-****" for arg in cmd]
     print(f"  CMD: {' '.join(safe_cmd[i] for i in range(min(6, len(safe_cmd))))} ...")
 
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+
     result = subprocess.run(
-        cmd, cwd=BENCH_DIR, capture_output=True, text=False
+        cmd, cwd=BENCH_DIR, capture_output=True, text=False, env=env
     )
 
     stdout_text = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
@@ -94,14 +97,17 @@ def run_single_benchmark(name, cmd):
     return True
 
 
-def run_evaluation():
-    """Singlecall과 Dialog 벤치마크를 순차적으로 실행합니다."""
+def run_evaluation(mode=0):
+    """
+    mode가 1이면 Argument Accuracy만 평가합니다.
+    그 외의 값이면 전체 벤치마크를 실행합니다.
+    """
     print("🚀 FunctionChat-Bench 평가 파이프라인 시작...")
     print(f"   벤치마크 디렉토리: {BENCH_DIR}")
     print(f"   결과 저장 디렉토리: {RESULTS_DIR}")
 
     # 데이터셋 경로
-    arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialog_20.jsonl"
+    arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialog_20_2.jsonl"
     dialog_dataset = BENCH_DIR / "data" / "my_eval_slot_filling_rate_dialogs.jsonl"
 
     # 0. 데이터셋 검증
@@ -138,31 +144,34 @@ def run_evaluation():
         "[1/2] Dialog — Argument Accuracy", cmd_single
     )
 
-    # 2. Dialog (Slot Filling Rate) 평가
-    cmd_dialog = [
-        sys.executable,
-        "evaluate.py",
-        "dialog",
-        "--model",
-        "gpt-4o-mini",
-        "--input_path",
-        f"data/{dialog_dataset.name}",
-        "--system_prompt_path",
-        "data/system_prompt.txt",
-        "--temperature",
-        "0.0",
-        "--api_key",
-        OPENAI_API_KEY,
-        "--num_samples",
-        "11",
-        "--is_batch",
-        "False",
-        "--reset",
-        "True",
-    ]
-    results["dialog"] = run_single_benchmark(
-        "[2/2] Dialog — Slot Filling Rate", cmd_dialog
-    )
+    if mode == 1:
+        print("\n🔹 인수에 '1'이 전달되어 Slot Filling Rate 벤치마크를 생략합니다.")
+    else:
+        # 2. Dialog (Slot Filling Rate) 평가
+        cmd_dialog = [
+            sys.executable,
+            "evaluate.py",
+            "dialog",
+            "--model",
+            "gpt-4o-mini",
+            "--input_path",
+            f"data/{dialog_dataset.name}",
+            "--system_prompt_path",
+            "data/system_prompt.txt",
+            "--temperature",
+            "0.0",
+            "--api_key",
+            OPENAI_API_KEY,
+            "--num_samples",
+            "11",
+            "--is_batch",
+            "False",
+            "--reset",
+            "True",
+        ]
+        results["dialog"] = run_single_benchmark(
+            "[2/2] Dialog — Slot Filling Rate", cmd_dialog
+        )
 
     # 요약
     print(f"\n{'=' * 60}")
@@ -292,6 +301,10 @@ if __name__ == "__main__":
         print("❌ OPENAI_API_KEY가 설정되지 않았습니다. .env 파일을 확인해주세요.")
         sys.exit(1)
 
-    results = run_evaluation()
+    eval_mode = 0
+    if len(sys.argv) > 1 and sys.argv[1] == "1":
+        eval_mode = 1
+
+    results = run_evaluation(mode=eval_mode)
     if results:
         generate_markdown_report(results)
