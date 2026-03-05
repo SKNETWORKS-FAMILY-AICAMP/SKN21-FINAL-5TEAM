@@ -384,10 +384,12 @@ def preprocess_node(state: AgentState):
         if order_id and action in _ORDER_ACTION_TOOL:
             tool_name, tool_args = _ORDER_ACTION_TOOL[action]
             # AIMessage에 tool_calls 직접 주입 (LLM 호출 없음)
+            import uuid as _uuid
+            _tc_id = f"fc_{_uuid.uuid4().hex[:16]}"  # 최대 19자 (OpenAI 40자 제한)
             forced_ai_msg = AIMessage(
                 content="",
                 tool_calls=[{
-                    "id": f"forced_{tool_name}_{order_id}",
+                    "id": _tc_id,
                     "name": tool_name,
                     "args": tool_args,
                     "type": "tool_call",
