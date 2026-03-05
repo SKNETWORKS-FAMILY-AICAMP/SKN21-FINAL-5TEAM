@@ -190,18 +190,8 @@ function resolveProviderByModel(modelId: string): LlmProvider {
 
 function buildOrderListMessage(rawMessage: string | undefined, requiresSelection: boolean | undefined): string {
   const cleaned = (rawMessage || '').trim();
-  const dynamicGuide = cleaned
-    .replace(/^최근\s*\d+일\s*(?:이내|간(?:의)?)?\s*주문\s*(?:목록|내역)입니다\.?\s*/u, '')
-    .trim();
-
-  if (dynamicGuide) {
-    return `${ORDER_LIST_BASE_MESSAGE} ${dynamicGuide}`;
-  }
-
-  if (requiresSelection) {
-    return `${ORDER_LIST_BASE_MESSAGE} 진행하실 주문을 선택해주세요.`;
-  }
-
+  if (cleaned) return cleaned;
+  if (requiresSelection) return `${ORDER_LIST_BASE_MESSAGE} 진행하실 주문을 선택해주세요.`;
   return ORDER_LIST_BASE_MESSAGE;
 }
 
@@ -1127,6 +1117,7 @@ export default function ChatbotFab() {
                         orders={m.orders}
                         onSelect={(ids) => handleOrderSelect(ids, m.prior_action)}
                         requiresSelection={m.requiresSelection}
+                        prior_action={m.prior_action}
                         ui_config={m.ui_config}
                       />
                     </div>

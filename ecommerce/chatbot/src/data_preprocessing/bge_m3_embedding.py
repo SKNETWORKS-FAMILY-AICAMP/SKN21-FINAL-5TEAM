@@ -23,6 +23,11 @@ def _load_model():
     return _TOKENIZER, _MODEL
 
 
+def preload_model() -> None:
+    """서버 시작 시 BGE-M3 모델을 싱글톤으로 미리 로드합니다."""
+    _load_model()
+
+
 def get_embedding_dim() -> int:
     _, model = _load_model()
     return int(model.config.hidden_size)
