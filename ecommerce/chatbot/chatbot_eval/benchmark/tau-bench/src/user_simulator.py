@@ -48,11 +48,48 @@ class UserSimulator:
 
     def _build_system_prompt(self) -> str:
         """현재 태스크 기반 시스템 프롬프트를 생성합니다."""
+        # 의도 변경 시나리오 포맷팅
+        intent_changes = self.task.get("intent_changes", [])
+        if intent_changes:
+            ic_lines = []
+            for ic in intent_changes:
+                ic_lines.append(
+                    f"- 턴 {ic.get('turn', '?')}에서 "
+                    f"'{ic.get('original_intent', '')}' → '{ic.get('new_intent', '')}' 변경\n"
+                    f"  트리거: {ic.get('trigger', '')}"
+                )
+            intent_changes_str = "\n".join(ic_lines)
+        else:
+            intent_changes_str = "없음 (의도 변경 없이 진행)"
+
+        # 제공할 슬롯 값 추출 (expected_actions에서 required_args 수집)
+        slot_lines = []
+        for action in self.task.get("expected_actions", []):
+            tool_name = action.get("tool", "")
+            args = action.get("required_args", {})
+            for key, value in args.items():
+                if key in ("user_id", "confirmed", "requires_selection", "action_context"):
+                    continue
+                slot_lines.append(f"- {key}: {value} (도구: {tool_name})")
+        slot_values_str = "\n".join(slot_lines) if slot_lines else "없음"
+
+        # 예상 도구 호출 흐름 포맷팅
+        expected_actions = self.task.get("expected_actions", [])
+        if expected_actions:
+            flow_parts = [action.get("tool", "") for action in expected_actions]
+            expected_flow_str = " → ".join(flow_parts)
+        else:
+            expected_flow_str = "없음"
+
         return self.system_prompt_template.format(
             task_instruction=self.task.get("instruction", ""),
+            user_goal=self.task.get("user_goal", self.task.get("instruction", "")),
+            intent_changes=intent_changes_str,
+            slot_values=slot_values_str,
+            expected_flow=expected_flow_str,
             initial_db_state=json.dumps(
                 self.task.get("initial_db_state", {}), ensure_ascii=False, indent=2
-            )
+            ),
         )
 
     def respond(self, chatbot_message: str) -> str:

@@ -10,7 +10,7 @@ from openai import OpenAI
 from pathlib import Path
 from .environment import TaskEnvironment
 
-TOOLS_PATH = Path(__file__).resolve().parent.parent.parent / "FunctionChat-Bench" / "data" / "tools.json"
+TOOLS_PATH = Path(__file__).resolve().parent.parent / "data" / "tools.json"
 SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "FunctionChat-Bench" / "data" / "system_prompt.txt"
 
 
