@@ -16,7 +16,7 @@ LangGraph 멀티-에이전트 그래프 정의.
     ▼                      │
   final_generator          │
     │                      ▼
-    ▼         ┌─ refund_subagent
+    ▼         ┌─ order_subagent
    END        ├─ discovery_subagent
               ├─ policy_rag_subagent
               └─ form_action_subagent
@@ -47,7 +47,7 @@ from ecommerce.chatbot.src.graph.nodes.supervisor import (
     supervisor_node,
     route_after_supervisor,
 )
-from ecommerce.chatbot.src.graph.nodes.refund_subagent import refund_subagent_node
+from ecommerce.chatbot.src.graph.nodes.order_subagent import order_subagent_node
 from ecommerce.chatbot.src.graph.nodes.discovery_subagent import discovery_subagent_node
 from ecommerce.chatbot.src.graph.nodes.policy_rag_subagent import policy_rag_subagent_node
 from ecommerce.chatbot.src.graph.nodes.form_action_subagent import form_action_subagent_node
@@ -64,7 +64,7 @@ def build_graph() -> StateGraph:
     builder.add_node("guardrail",              guardrail_node)
     builder.add_node("planner",                planner_node)
     builder.add_node("supervisor",             supervisor_node)
-    builder.add_node("refund_subagent",        refund_subagent_node)
+    builder.add_node("order_subagent",        order_subagent_node)
     builder.add_node("discovery_subagent",     discovery_subagent_node)
     builder.add_node("policy_rag_subagent",    policy_rag_subagent_node)
     builder.add_node("form_action_subagent",   form_action_subagent_node)
@@ -99,7 +99,7 @@ def build_graph() -> StateGraph:
         "supervisor",
         route_after_supervisor,
         {
-            "refund_subagent":       "refund_subagent",
+            "order_subagent":       "order_subagent",
             "discovery_subagent":    "discovery_subagent",
             "policy_rag_subagent":   "policy_rag_subagent",
             "form_action_subagent":  "form_action_subagent",
@@ -111,7 +111,7 @@ def build_graph() -> StateGraph:
     # 각 SubAgent는 처리 완료 후 항상 supervisor 로 돌아가
     # supervisor가 pending_tasks 소진 여부를 판단해 final_generator로 전환한다.
     for subagent in (
-        "refund_subagent",
+        "order_subagent",
         "discovery_subagent",
         "policy_rag_subagent",
         "form_action_subagent",

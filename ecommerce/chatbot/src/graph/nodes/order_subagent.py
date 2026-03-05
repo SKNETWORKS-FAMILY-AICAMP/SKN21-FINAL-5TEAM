@@ -90,9 +90,9 @@ REFUND_SYSTEM_PROMPT = """당신은 MOYEO 쇼핑몰의 Refund SubAgent입니다.
 
 # ── 노드 함수 ─────────────────────────────────────────────
 
-def refund_subagent_node(state: GlobalAgentState) -> dict:
+def order_subagent_node(state: GlobalAgentState) -> dict:
     """
-    Refund SubAgent.
+    Order SubAgent.
     order_context 에서 주문 정보를 참조하고, 도구 호출 결과로 order_context 를 업데이트합니다.
     """
     provider = state.get("llm_provider", "openai")
@@ -181,7 +181,7 @@ def _extract_order_context(messages: list, current_context: dict) -> tuple[dict,
                 continue
 
             # 주문 목록 UI 액션
-            if data.get("ui_template") == "order_list":
+            if data.get("ui_action") == "show_order_list":
                 ui_action = "show_order_list"
 
             # 주소 검색 UI 액션

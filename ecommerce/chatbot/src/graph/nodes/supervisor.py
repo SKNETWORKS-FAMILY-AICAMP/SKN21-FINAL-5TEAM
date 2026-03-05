@@ -16,7 +16,7 @@ from ecommerce.chatbot.src.schemas.planner import TaskIntent
 
 # TaskIntent → SubAgent 노드 이름 매핑
 _INTENT_TO_NODE: dict[str, str] = {
-    TaskIntent.ORDER_CS:             "refund_subagent",
+    TaskIntent.ORDER_CS:             "order_subagent",
     TaskIntent.SEARCH_SIMILAR_TEXT:  "discovery_subagent",
     TaskIntent.SEARCH_SIMILAR_IMAGE: "discovery_subagent",
     TaskIntent.POLICY_RAG:           "policy_rag_subagent",
