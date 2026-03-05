@@ -1,0 +1,3 @@
+{"type": "주문취소", "data": {"user_email": "test@example.com", "order_number": "ORD-eval_dataset-0004"}}
+{"type": "환불", "data": {"user_email": "test@example.com", "order_number": "ORD-eval_dataset-0005"}}
+{"type": "교환", "data": {"user_email": "test@example.com", "order_number": "ORD-eval_dataset-0006"}}
