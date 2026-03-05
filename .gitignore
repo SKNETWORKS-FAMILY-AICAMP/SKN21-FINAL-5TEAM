@@ -5,7 +5,7 @@ ecommerce/chatbot/data/processed
 .env
 !.env.development
 !.env.production
-
+ecommerce/chatbot/chatbot_eval/benchmark/FunctionChat-Bench/output/
 .agent
 __pycache__/
 *.pyc
