@@ -100,6 +100,7 @@ def run_single_benchmark(name, cmd):
 def run_evaluation(mode=0):
     """
     mode가 1이면 Argument Accuracy만 평가합니다.
+    mode가 2이면 Slot Filling Rate만 평가합니다.
     그 외의 값이면 전체 벤치마크를 실행합니다.
     """
     print("🚀 FunctionChat-Bench 평가 파이프라인 시작...")
@@ -119,30 +120,33 @@ def run_evaluation(mode=0):
     results = {}
 
     # 1. Dialog (Argument Accuracy) 평가
-    cmd_single = [
-        sys.executable,
-        "evaluate.py",
-        "dialog",
-        "--model",
-        "gpt-4o-mini",
-        "--input_path",
-        f"data/{arg_accuracy_dataset.name}",
-        "--system_prompt_path",
-        "data/system_prompt.txt",
-        "--temperature",
-        "0.0",
-        "--api_key",
-        OPENAI_API_KEY,
-        "--num_samples",
-        "11",
-        "--is_batch",
-        "False",
-        "--reset",
-        "True",
-    ]
-    results["arg_accuracy"] = run_single_benchmark(
-        "[1/2] Dialog — Argument Accuracy", cmd_single
-    )
+    if mode == 2:
+        print("\n🔹 인수에 '2'가 전달되어 Argument Accuracy 벤치마크를 생략합니다.")
+    else:
+        cmd_single = [
+            sys.executable,
+            "evaluate.py",
+            "dialog",
+            "--model",
+            "gpt-4o-mini",
+            "--input_path",
+            f"data/{arg_accuracy_dataset.name}",
+            "--system_prompt_path",
+            "data/system_prompt.txt",
+            "--temperature",
+            "0.0",
+            "--api_key",
+            OPENAI_API_KEY,
+            "--num_samples",
+            "11",
+            "--is_batch",
+            "False",
+            "--reset",
+            "True",
+        ]
+        results["arg_accuracy"] = run_single_benchmark(
+            "[1/2] Dialog — Argument Accuracy", cmd_single
+        )
 
     if mode == 1:
         print("\n🔹 인수에 '1'이 전달되어 Slot Filling Rate 벤치마크를 생략합니다.")
@@ -235,7 +239,10 @@ def generate_markdown_report(results, mode=0):
 
     # ── Argument Accuracy (Dialog) 결과 ──
     if not results.get("arg_accuracy"):
-        md_content += "## 📊 [Benchmark 1] Argument Accuracy (Dialog)\n- ❌ 평가 실행에 실패했습니다.\n\n"
+        if mode == 2:
+            md_content += "## 📊 [Benchmark 1] Argument Accuracy (Dialog)\n- ℹ️ 평가가 생략되었습니다.\n\n"
+        else:
+            md_content += "## 📊 [Benchmark 1] Argument Accuracy (Dialog)\n- ❌ 평가 실행에 실패했습니다.\n\n"
     elif single_score_file.exists():
         try:
             with open(single_score_file, "r", encoding="utf-8-sig") as f:
@@ -317,8 +324,11 @@ if __name__ == "__main__":
         sys.exit(1)
 
     eval_mode = 0
-    if len(sys.argv) > 1 and sys.argv[1] == "1":
-        eval_mode = 1
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "1":
+            eval_mode = 1
+        elif sys.argv[1] == "2":
+            eval_mode = 2
 
     results = run_evaluation(mode=eval_mode)
     if results:
