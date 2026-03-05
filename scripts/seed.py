@@ -568,7 +568,7 @@ def create_orders(db: Session):
         shipping_fee=Decimal("3000"),
         total_amount=Decimal("55000"),
         status=OrderStatus.DELIVERED,
-        payment_method="계좌이체",
+        payment_method="CARD",
         shipping_request="택배함에 넣어주세요"
     )
     db.add(order6)
