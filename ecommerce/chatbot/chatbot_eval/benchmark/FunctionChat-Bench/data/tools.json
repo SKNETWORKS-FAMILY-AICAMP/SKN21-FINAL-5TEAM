@@ -503,5 +503,214 @@
                 "required": []
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_review_draft",
+            "description": "상품명, 만족도, 키워드를 바탕으로 사용자가 쉽게 선택할 수 있는 리뷰 초안 3가지를 생성합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "product_name": {
+                        "type": "string",
+                        "description": "상품명"
+                    },
+                    "satisfaction": {
+                        "type": "string",
+                        "description": "만족도 (예: 높음, 보통, 낮음)"
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "리뷰에 포함할 키워드 목록 (선택사항)",
+                        "default": null
+                    }
+                },
+                "required": [
+                    "product_name",
+                    "satisfaction"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_products_vector",
+            "description": "고객이 상품(옷, 패션 아이템 등)을 검색하거나 추천받고 싶어할 때, 유사한 상품 목록을 Hybrid Vector Search를 통해 찾아옵니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "검색할 상품의 구체적인 특징, 색상, 카테고리 등 자연어 질의 (예: '여름에 입을 시원한 파란색 반팔티')"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "검색할 상품 개수 (기본 5개)",
+                        "default": 5
+                    }
+                },
+                "required": [
+                    "query"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recommend_clothes",
+            "description": "사용자의 요청(카테고리, 색상, 용도 등)에 맞는 옷을 추천합니다. 챗봇이 의류나 패션 아이템을 추천할 때 사용합니다. [중요] 사용자가 어떤 카테고리(상의, 하의, 아우터, 속옷, 신발 등)를 찾는지 불명확한 경우 이 도구를 호출하지 말고 사용자에게 어떤 옷의 종류를 찾는지 먼저 질문하세요.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "description": "의류 종류 (필수, 예: 'Topwear', 'Bottomwear', 'Dress', 'Skirt', 'Innerwear' 등. 사용자의 발화를 기반으로 영어 분류명으로 추론)"
+                    },
+                    "color": {
+                        "type": "string",
+                        "description": "색상 (선택사항, 예: 'Black', 'Red', 'Blue' 등 영어 색상명)",
+                        "default": null
+                    },
+                    "usage": {
+                        "type": "string",
+                        "description": "용도 (선택사항, 예: 'Casual', 'Formal', 'Sports', 'Party' 등 영어 용도명)",
+                        "default": null
+                    },
+                    "season": {
+                        "type": "string",
+                        "description": "계절 (선택사항, 예: 'Summer', 'Winter', 'Fall', 'Spring')",
+                        "default": null
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "추천할 상품 최대 개수 (기본값 3)",
+                        "default": 3
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "사용자 ID (기본값 1, DB에서 성별 조회용)",
+                        "default": 1
+                    }
+                },
+                "required": [
+                    "category"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_by_image",
+            "description": "이미지(URL)를 기반으로 해당 이미지 속 옷과 유사한 상품을 추천/검색합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "image_url": {
+                        "type": "string",
+                        "description": "검색할 이미지의 URL"
+                    }
+                },
+                "required": [
+                    "image_url"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_used_sale_form",
+            "description": "[CRITICAL] 중고 판매 등록 시 텍스트로 슬롯을 묻지 말고, 반드시 이 도구를 호출해 프론트엔드 입력 폼 UI를 띄웁니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "register_used_sale",
+            "description": "유즈드(중고) 판매 신청을 실제 백엔드 API에 등록합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category_id": {
+                        "type": "integer",
+                        "description": "카테고리 ID"
+                    },
+                    "item_name": {
+                        "type": "string",
+                        "description": "상품명"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "상품 설명 (상태, 사용감, 하자 여부 등)"
+                    },
+                    "condition_id": {
+                        "type": "integer",
+                        "description": "상품 상태 ID (1: S급, 2: A급, 3: B급)"
+                    },
+                    "expected_price": {
+                        "type": "integer",
+                        "description": "희망 가격 (선택사항)",
+                        "default": null
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "사용자 ID",
+                        "default": 1
+                    }
+                },
+                "required": [
+                    "category_id",
+                    "item_name",
+                    "description",
+                    "condition_id"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_pickup",
+            "description": "중고 판매 물품의 수거를 신청합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sale_id": {
+                        "type": "string",
+                        "description": "판매 신청 접수 번호"
+                    },
+                    "pickup_date": {
+                        "type": "string",
+                        "description": "수거 희망 날짜"
+                    },
+                    "pickup_address": {
+                        "type": "string",
+                        "description": "수거 주소"
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "사용자 ID",
+                        "default": 1
+                    }
+                },
+                "required": [
+                    "sale_id",
+                    "pickup_date",
+                    "pickup_address"
+                ]
+            }
+        }
     }
 ]
