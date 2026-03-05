@@ -323,10 +323,14 @@ def preprocess_node(state: AgentState):
             str(payload.get("description") or "").strip()
             or "첨부한 이미지를 참고하여 관련 정보를 알려주세요."
         )
-        natural_msg = (
+        query_text = str(payload.get("query") or "").strip()
+        base_msg = (
             f"{description} 이미지 URL: {image_url}"
             if image_url
             else description
+        )
+        natural_msg = (
+            f"{base_msg} 요청: {query_text}" if query_text else base_msg
         )
 
         new_messages = messages[:-1] + [HumanMessage(content=natural_msg)]
