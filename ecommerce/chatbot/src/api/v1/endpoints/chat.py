@@ -567,6 +567,8 @@ async def chat_streaming_endpoint(
                     ui_data = {
                         "type": "ui_action",
                         "ui_action": ui_action_name,
+                        "ui_template": item.get("ui_template"),
+                        "ui_config": item.get("ui_config"),
                         "ui_data": item.get("ui_data"),
                         "requires_selection": item.get("requires_selection", False),
                         "message": item.get("message", ""),

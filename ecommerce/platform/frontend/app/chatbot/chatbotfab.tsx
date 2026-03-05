@@ -26,6 +26,14 @@ type OrderListMessage = {
   }>;
   requiresSelection?: boolean;
   prior_action?: string | null;
+  ui_config?: {
+    enable_refund_button?: boolean;
+    enable_exchange_button?: boolean;
+    enable_cancel_button?: boolean;
+    enable_selection?: boolean;
+    selectable_statuses?: string[];
+    action_label?: string;
+  };
 };
 
 
@@ -706,6 +714,24 @@ export default function ChatbotFab() {
                       prior_action: data.prior_action,
                     },
                   ]);
+                } else if (data.ui_action === 'order_list') {
+                  // 동적 UI 경로: ui_generator_node 에서 생성한 ui_config 사용
+                  const cfg = data.ui_config || {};
+                  const requiresSel = cfg.enable_selection ?? data.requires_selection ?? false;
+                  setIsLoading(false);
+                  setStatusMessage(null);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: 'bot',
+                      type: 'order_list',
+                      message: data.message || '',
+                      orders: data.ui_data || [],
+                      requiresSelection: requiresSel,
+                      prior_action: data.prior_action,
+                      ui_config: cfg,
+                    },
+                  ]);
                 } else if (data.ui_action === 'show_address_search') {
                   setIsLoading(false);
                   setStatusMessage(null);
@@ -727,6 +753,19 @@ export default function ChatbotFab() {
                       type: 'product_list',
                       message: data.message,
                       ui_data: data.ui_data,
+                    },
+                  ]);
+                } else if (data.ui_action === 'product_list') {
+                  // 동적 UI 경로
+                  setIsLoading(false);
+                  setStatusMessage(null);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: 'bot',
+                      type: 'product_list',
+                      message: data.message || '',
+                      ui_data: data.ui_data || [],
                     },
                   ]);
                 } else if (data.ui_action === 'show_review_form') {
@@ -1088,6 +1127,7 @@ export default function ChatbotFab() {
                         orders={m.orders}
                         onSelect={(ids) => handleOrderSelect(ids, m.prior_action)}
                         requiresSelection={m.requiresSelection}
+                        ui_config={m.ui_config}
                       />
                     </div>
                   </div>
