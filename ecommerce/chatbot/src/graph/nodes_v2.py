@@ -315,7 +315,7 @@ def preprocess_node(state: AgentState):
 
         # 기존 HumanMessage를 자연어로 교체
         new_messages = messages[:-1] + [HumanMessage(content=natural_msg)]
-        return {"messages": new_messages, "question": natural_msg}
+        return {"messages": new_messages, "question": natural_msg, "skip_agent": False}
 
     # 이미지 업로드 이벤트
     if event == "image_uploaded":
@@ -358,23 +358,88 @@ def preprocess_node(state: AgentState):
         )
         new_messages = messages[:-1] + [HumanMessage(content=natural_msg)]
         return {"messages": new_messages, "question": natural_msg}
+    # ── 주문 선택 이벤트 (order_selected) ─────────────────────────────
+    # LLM을 거치지 않고 직접 tool_calls를 주입 → validation 노드로 직행
+    if event == "order_selected":
+        order_id = payload.get("selected_order_id") or payload.get("order_id")
+        action = str(payload.get("action") or "").lower()
+        user_id = _resolve_user_id(state)
+
+        # action → 직접 실행할 tool 이름 + 인자 매핑
+        _ORDER_ACTION_TOOL: dict[str, tuple[str, dict]] = {
+            "refund": (
+                "check_refund_eligibility",
+                {"order_id": order_id, "user_id": user_id, "reason": "환불 요청"},
+            ),
+            "exchange": (
+                "check_exchange_eligibility",
+                {"order_id": order_id, "user_id": user_id, "reason": "교환 요청"},
+            ),
+            "cancel": (
+                "cancel_order",
+                {"order_id": order_id, "user_id": user_id, "reason": "취소 요청", "confirmed": True},
+            ),
+        }
+
+        if order_id and action in _ORDER_ACTION_TOOL:
+            tool_name, tool_args = _ORDER_ACTION_TOOL[action]
+            # AIMessage에 tool_calls 직접 주입 (LLM 호출 없음)
+            forced_ai_msg = AIMessage(
+                content="",
+                tool_calls=[{
+                    "id": f"forced_{tool_name}_{order_id}",
+                    "name": tool_name,
+                    "args": tool_args,
+                    "type": "tool_call",
+                }],
+            )
+            readable_human = HumanMessage(content=f"주문번호 {order_id} {action} 요청")
+            new_messages = messages[:-1] + [readable_human, forced_ai_msg]
+            print(f"---PREPROCESS: order_selected → {tool_name} 직접 주입 (skip_agent)---")
+            return {
+                "messages": new_messages,
+                "question": f"주문번호 {order_id} {action} 요청",
+                "skip_agent": True,
+            }
+
+        # review 등 매핑이 없는 action → agent에게 명확한 메시지로 위임
+        if order_id:
+            natural_msg = f"주문번호 {order_id}에 대해 {action or '처리'} 진행해주세요."
+            new_messages = messages[:-1] + [HumanMessage(content=natural_msg)]
+            return {"messages": new_messages, "question": natural_msg, "skip_agent": False}
+
+    # ── 기타 order_id 포함 이벤트 ─────────────────────────────────────
+    order_id = payload.get("order_id") or payload.get("selected_order_id")
+    action = payload.get("action")
+
+    if order_id and action:
+        natural_msg = f"주문번호 {order_id}에 대해 {action} 진행해주세요."
+        new_messages = messages[:-1] + [HumanMessage(content=natural_msg)]
+        return {"messages": new_messages, "question": natural_msg, "skip_agent": False}
 
     if order_id:
         current_task = state.get("current_task") or {}
         task_type = current_task.get("type", "general")
         if task_type in {"cancel", "refund", "exchange"}:
-            hint = _ACTION_TOOL_HINT.get(task_type, "")
-            natural_msg = (
-                f"사용자가 주문번호 {order_id}을(를) 선택했습니다. "
-                f"요청 액션: {task_type}. "
-                f"{hint}"
-            )
+            natural_msg = f"주문번호 {order_id}에 대해 {task_type} 진행해주세요."
         else:
             natural_msg = f"주문번호 {order_id}의 상세 정보를 알려주세요."
         new_messages = messages[:-1] + [HumanMessage(content=natural_msg)]
-        return {"messages": new_messages, "question": natural_msg}
+        return {"messages": new_messages, "question": natural_msg, "skip_agent": False}
 
-    return {"question": user_message}
+    return {"question": user_message, "skip_agent": False}
+
+
+# ── Router: after preprocess ──────────────────────────────
+def route_after_preprocess(state: AgentState) -> Literal["agent", "validation"]:
+    """
+    preprocess_node가 skip_agent=True를 설정했으면 validation으로 직행.
+    (order_selected 이벤트에서 AIMessage tool_calls를 직접 주입한 경우)
+    """
+    if state.get("skip_agent"):
+        print("---ROUTE: preprocess → validation (skip_agent)---")
+        return "validation"
+    return "agent"
 
 
 # ── Node: Agent ───────────────────────────────────────────
@@ -408,6 +473,8 @@ def agent_node(state: AgentState):
         }
     
     print("---AGENT NODE---")
+    # skip_agent 플래그 리셋 (다음 턴에 영향 없도록)
+    state["skip_agent"] = False
     provider, model_name = resolve_llm_config(state)
     system_prompt = get_ecommerce_system_prompt(
         provider=provider, model_name=model_name
