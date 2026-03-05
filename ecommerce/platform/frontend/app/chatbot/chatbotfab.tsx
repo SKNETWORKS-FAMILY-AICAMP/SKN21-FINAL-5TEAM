@@ -652,154 +652,167 @@ export default function ChatbotFab() {
       const decoder = new TextDecoder();
       let accumulatedText = '';
       let newState = null;
+      let sseBuffer = '';
 
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          sseBuffer += decoder.decode(value, { stream: true });
+          const rawEvents = sseBuffer.split('\n\n');
+          sseBuffer = rawEvents.pop() ?? '';
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.slice(6));
+          for (const rawEvent of rawEvents) {
+            const dataLines = rawEvent
+              .split('\n')
+              .filter((line) => line.startsWith('data: '))
+              .map((line) => line.slice(6));
 
-              if (data.type === 'metadata') {
-                // 상태 저장
-                newState = data.state;
-              } else if (data.type === 'text_chunk') {
-                setIsLoading(false);
-                accumulatedText += data.content;
-                setStreamingText(accumulatedText);
-              } else if (data.type === 'status_update') {
-                // 백엔드에서 전달되는 실시간 노드/모델 상태 메시지 업데이트
-                const composedStatus =
-                  typeof data.status === 'string' && data.status.trim().length > 0
-                    ? data.status
-                    : typeof data.node === 'string' && data.node.trim().length > 0
-                      ? `${data.node} 노드를 처리하고 있습니다...`
-                      : typeof data.model === 'string' && data.model.trim().length > 0
-                        ? `모델 응답을 생성하고 있습니다... (${data.model})`
-                        : null;
+            if (dataLines.length === 0) continue;
 
-                if (composedStatus) {
-                  setStatusMessage(composedStatus);
-                }
-              } else if (data.type === 'ui_action') {
-                accumulatedText = '';
-                setStreamingText('');
+            let data: any;
+            try {
+              data = JSON.parse(dataLines.join('\n'));
+            } catch (parseError) {
+              console.warn('Failed to parse SSE payload:', parseError, dataLines.join('\n'));
+              continue;
+            }
 
-                if (data.ui_action === 'show_order_list') {
-                  setIsLoading(false);
-                  setStatusMessage(null);
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      role: 'bot',
-                      type: 'order_list',
-                      message: buildOrderListMessage(data.message, data.requires_selection),
-                      orders: data.ui_data,
-                      requiresSelection: data.requires_selection,
-                      prior_action: data.prior_action,
-                    },
-                  ]);
-                } else if (data.ui_action === 'order_list') {
-                  // 동적 UI 경로: ui_generator_node 에서 생성한 ui_config 사용
-                  const cfg = data.ui_config || {};
-                  const requiresSel = cfg.enable_selection ?? data.requires_selection ?? false;
-                  setIsLoading(false);
-                  setStatusMessage(null);
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      role: 'bot',
-                      type: 'order_list',
-                      message: data.message || '',
-                      orders: data.ui_data || [],
-                      requiresSelection: requiresSel,
-                      prior_action: data.prior_action,
-                      ui_config: cfg,
-                    },
-                  ]);
-                } else if (data.ui_action === 'show_address_search') {
-                  setIsLoading(false);
-                  setStatusMessage(null);
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      role: 'bot',
-                      type: 'address_search',
-                      message: data.message || '주소 검색 버튼을 눌러주세요.',
-                    },
-                  ]);
-                } else if (data.ui_action === 'show_product_list') {
-                  setIsLoading(false);
-                  setStatusMessage(null);
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      role: 'bot',
-                      type: 'product_list',
-                      message: data.message,
-                      ui_data: data.ui_data,
-                    },
-                  ]);
-                } else if (data.ui_action === 'product_list') {
-                  // 동적 UI 경로
-                  setIsLoading(false);
-                  setStatusMessage(null);
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      role: 'bot',
-                      type: 'product_list',
-                      message: data.message || '',
-                      ui_data: data.ui_data || [],
-                    },
-                  ]);
-                } else if (data.ui_action === 'show_review_form') {
-                  setIsLoading(false);
-                  setStatusMessage(null);
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      role: 'bot',
-                      type: 'review_form',
-                      message: data.message || '리뷰를 작성해주세요.',
-                      ui_data: data.ui_data, // Contains order_id, product_id, product_name
-                    },
-                  ]);
-                } else if (data.ui_action === 'show_used_sale_form') {
-                  setIsLoading(false);
-                  setStatusMessage(null);
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      role: 'bot',
-                      type: 'used_sale_form',
-                      message: data.message || '중고 판매 등록 정보를 입력해주세요.',
-                      ui_data: data.ui_data,
-                    },
-                  ]);
-                }
+            if (data.type === 'metadata') {
+              // 상태 저장
+              newState = data.state;
+            } else if (data.type === 'text_chunk') {
+              setIsLoading(false);
+              accumulatedText += data.content;
+              setStreamingText(accumulatedText);
+            } else if (data.type === 'status_update') {
+              // 백엔드에서 전달되는 실시간 노드/모델 상태 메시지 업데이트
+              const composedStatus =
+                typeof data.status === 'string' && data.status.trim().length > 0
+                  ? data.status
+                  : typeof data.node === 'string' && data.node.trim().length > 0
+                    ? `${data.node} 노드를 처리하고 있습니다...`
+                    : typeof data.model === 'string' && data.model.trim().length > 0
+                      ? `모델 응답을 생성하고 있습니다... (${data.model})`
+                      : null;
 
-                newState = data.state;
-                if (newState) setConversationState(newState);
-              } else if (data.type === 'done') {
-                if (newState) setConversationState(newState);
-                setStatusMessage(null); // 완료 시 상태 메시지 확실히 제거
-                if (accumulatedText.trim()) {
-                  const completedText = accumulatedText;
-                  setMessages((prev) => [
-                    ...prev,
-                    { role: 'bot', type: 'text', text: completedText, isStreaming: false },
-                  ]);
-                }
-                setStreamingText('');
-              } else if (data.type === 'error') {
-                throw new Error(data.message);
+              if (composedStatus) {
+                setStatusMessage(composedStatus);
               }
+            } else if (data.type === 'ui_action') {
+              accumulatedText = '';
+              setStreamingText('');
+
+              if (data.ui_action === 'show_order_list') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'order_list',
+                    message: buildOrderListMessage(data.message, data.requires_selection),
+                    orders: data.ui_data,
+                    requiresSelection: data.requires_selection,
+                    prior_action: data.prior_action,
+                  },
+                ]);
+              } else if (data.ui_action === 'order_list') {
+                // 동적 UI 경로: ui_generator_node 에서 생성한 ui_config 사용
+                const cfg = data.ui_config || {};
+                const requiresSel = cfg.enable_selection ?? data.requires_selection ?? false;
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'order_list',
+                    message: data.message || '',
+                    orders: data.ui_data || [],
+                    requiresSelection: requiresSel,
+                    prior_action: data.prior_action,
+                    ui_config: cfg,
+                  },
+                ]);
+              } else if (data.ui_action === 'show_address_search') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'address_search',
+                    message: data.message || '주소 검색 버튼을 눌러주세요.',
+                  },
+                ]);
+              } else if (data.ui_action === 'show_product_list') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'product_list',
+                    message: data.message,
+                    ui_data: data.ui_data,
+                  },
+                ]);
+              } else if (data.ui_action === 'product_list') {
+                // 동적 UI 경로
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'product_list',
+                    message: data.message || '',
+                    ui_data: data.ui_data || [],
+                  },
+                ]);
+              } else if (data.ui_action === 'show_review_form') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'review_form',
+                    message: data.message || '리뷰를 작성해주세요.',
+                    ui_data: data.ui_data, // Contains order_id, product_id, product_name
+                  },
+                ]);
+              } else if (data.ui_action === 'show_used_sale_form') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'used_sale_form',
+                    message: data.message || '중고 판매 등록 정보를 입력해주세요.',
+                    ui_data: data.ui_data,
+                  },
+                ]);
+              }
+
+              newState = data.state;
+              if (newState) setConversationState(newState);
+            } else if (data.type === 'done') {
+              if (newState) setConversationState(newState);
+              setStatusMessage(null); // 완료 시 상태 메시지 확실히 제거
+              if (accumulatedText.trim()) {
+                const completedText = accumulatedText;
+                setMessages((prev) => [
+                  ...prev,
+                  { role: 'bot', type: 'text', text: completedText, isStreaming: false },
+                ]);
+              }
+              setStreamingText('');
+            } else if (data.type === 'error') {
+              throw new Error(data.message);
             }
           }
         }
