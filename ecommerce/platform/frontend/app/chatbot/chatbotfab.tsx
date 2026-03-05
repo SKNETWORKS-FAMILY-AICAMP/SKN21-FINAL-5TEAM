@@ -89,7 +89,7 @@ type UsedSaleFormMessage = {
 type ImageMessage = {
   role: 'user';
   type: 'image';
-  image_url: string;
+  image_url: string | { _url?: string; url?: string };
   filename: string;
 };
 
@@ -114,6 +114,12 @@ type UsedSaleSubmissionPayload = {
   condition: string;
   expected_price?: number | null;
   source: 'used_sale_form_ui';
+};
+
+const resolveImageUrl = (source?: string | { _url?: string; url?: string } | null): string => {
+  if (!source) return '';
+  if (typeof source === 'string') return source;
+  return source._url ?? source.url ?? '';
 };
 
 type ChatMsg =
@@ -1086,7 +1092,7 @@ export default function ChatbotFab() {
                     {isImage ? (
                       <div className={styles.imagePreviewCard}>
                         <img
-                          src={m.image_url}
+                          src={resolveImageUrl(m.image_url)}
                           alt={m.filename}
                           className={styles.imagePreview}
                         />
