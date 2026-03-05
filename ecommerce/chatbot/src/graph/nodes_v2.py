@@ -316,6 +316,22 @@ def preprocess_node(state: AgentState):
         new_messages = messages[:-1] + [HumanMessage(content=natural_msg)]
         return {"messages": new_messages, "question": natural_msg}
 
+    # 이미지 업로드 이벤트
+    if event == "image_uploaded":
+        image_url = payload.get("image_url") or payload.get("imageUrl")
+        description = (
+            str(payload.get("description") or "").strip()
+            or "첨부한 이미지를 참고하여 관련 정보를 알려주세요."
+        )
+        natural_msg = (
+            f"{description} 이미지 URL: {image_url}"
+            if image_url
+            else description
+        )
+
+        new_messages = messages[:-1] + [HumanMessage(content=natural_msg)]
+        return {"messages": new_messages, "question": natural_msg}
+
     # 주문 선택 이벤트
     order_id = payload.get("order_id") or payload.get("selected_order_id")
     action = payload.get("action")
@@ -342,10 +358,32 @@ def preprocess_node(state: AgentState):
 
 
 def agent_node(state: AgentState):
+    
     """
     LLM이 대화 히스토리와 도구 목록을 보고 답변하거나 도구를 호출합니다.
     이전의 Decomposer + Fixed Worker 역할을 통합합니다.
     """
+    image_bytes = state.get("image_bytes")
+
+    if image_bytes:
+        print("---IMAGE SEARCH TRIGGERED---")
+
+        return {
+            "messages": [
+                AIMessage(
+                    content="이미지를 분석해서 유사 상품을 찾겠습니다.",
+                    tool_calls=[
+                        {
+                            "name": "search_by_image",
+                            "args": {"image_bytes": image_bytes},
+                            "id": "image_search_call",
+                            "type": "tool_call",
+                        }
+                    ],
+                )
+            ]
+        }
+    
     print("---AGENT NODE---")
     provider, model_name = resolve_llm_config(state)
     system_prompt = get_ecommerce_system_prompt(

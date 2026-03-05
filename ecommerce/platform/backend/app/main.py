@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from ecommerce.platform.backend.app.database import engine, Base, create_db_scheme
 from sqlalchemy import inspect, text
@@ -31,6 +32,7 @@ import ecommerce.platform.backend.app.router.users.models
 import ecommerce.platform.backend.app.router.user_history.models
 import logging
 from ecommerce.chatbot.src.api.v1.endpoints.chat import router as chatbot_router
+from ecommerce.platform.backend.app.uploads import CHATBOT_UPLOAD_DIR
 from starlette.middleware.sessions import SessionMiddleware  # 미드웨워 추가
 
 
@@ -154,6 +156,9 @@ app = FastAPI(
     title="E-commerce Platform",
     lifespan=lifespan,  # Lifespan 이벤트 적용
 )
+
+# Chatbot uploads 공개 폴더
+app.mount("/uploads/chatbot", StaticFiles(directory=CHATBOT_UPLOAD_DIR), name="chatbot_uploads")
 
 # ============================================
 # CORS 설정 (프론트엔드와 통신 허용)

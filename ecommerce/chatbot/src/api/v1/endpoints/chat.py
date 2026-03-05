@@ -1,18 +1,23 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any
+import ast
 import json
+import os
 from uuid import uuid4
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from ecommerce.chatbot.src.schemas.chat import ChatRequest, ReviewDraftRequest
 from ecommerce.chatbot.src.graph.workflow import graph_app
 from ecommerce.chatbot.src.tools.service_tools import generate_review_draft
+from ecommerce.chatbot.src.tools.recommendation_tools import search_by_image
 from ecommerce.chatbot.src.infrastructure.conversation_logger import (
     ConversationRunLogger,
 )
 from ecommerce.platform.backend.app.core.auth import get_current_user
 from ecommerce.platform.backend.app.router.users.models import User
+from ecommerce.platform.backend.app.uploads import CHATBOT_UPLOAD_DIR
+from pathlib import Path
 
 router = APIRouter()
 
@@ -119,6 +124,71 @@ def _extract_ui_actions(final_state: dict) -> List[dict]:
     return ui_actions
 
 
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"}
+
+
+def _normalize_image_extension(filename: str | None, content_type: str | None) -> str:
+    name_ext = os.path.splitext((filename or "").lower())[1]
+    if name_ext in ALLOWED_IMAGE_EXTENSIONS:
+        return name_ext
+    if content_type:
+        normalized = content_type.split(";")[0].strip().lower()
+        if normalized == "image/jpeg":
+            return ".jpg"
+        if normalized == "image/png":
+            return ".png"
+        if normalized == "image/webp":
+            return ".webp"
+        if normalized == "image/gif":
+            return ".gif"
+        if normalized == "image/bmp":
+            return ".bmp"
+        if normalized == "image/avif":
+            return ".avif"
+    return ".jpg"
+
+
+@router.post("/upload-image")
+async def upload_chat_image(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """사용자가 업로드한 이미지를 저장하고 공개 URL을 반환한다."""
+    content_type = (file.content_type or "").lower()
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="이미지 파일만 업로드할 수 있습니다.")
+
+    filename = f"{uuid4().hex}{_normalize_image_extension(file.filename, content_type)}"
+    target_path = CHATBOT_UPLOAD_DIR / filename
+
+    try:
+        contents = await file.read()
+
+        # 디버깅 로그
+        print("UPLOAD IMAGE SIZE:", len(contents))
+        print("UPLOAD IMAGE CONTENT TYPE:", content_type)
+        print("UPLOAD IMAGE FILENAME:", filename)
+
+        target_path.write_bytes(contents)
+
+        # 저장 확인 로그
+        print("IMAGE SAVED PATH:", target_path)
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="이미지를 저장하는 중 오류가 발생했습니다.",
+        ) from exc
+
+    image_url = request.url_for("chatbot_uploads", path=filename)
+
+    # 반환 URL 로그
+    print("RETURN IMAGE URL:", image_url)
+
+    return {"url": image_url}
+
+
 @router.post("/stream")
 async def chat_streaming_endpoint(
     request: ChatRequest, current_user: User = Depends(get_current_user)
@@ -142,6 +212,78 @@ async def chat_streaming_endpoint(
             )
             turn_id = f"turn_{uuid4().hex[:12]}"
 
+            payload = None
+            try:
+                payload = json.loads(request.message)
+            except json.JSONDecodeError:
+                payload = None
+
+            image_event = (
+                isinstance(payload, dict) and payload.get("event") == "image_uploaded"
+            )
+            image_url = None
+            if image_event:
+                raw_image_url = payload.get("image_url")
+                if isinstance(raw_image_url, dict):
+                    image_url = raw_image_url.get("_url") or raw_image_url.get("url")
+                elif isinstance(raw_image_url, str):
+                    trimmed = raw_image_url.strip()
+                    if trimmed.startswith(('"', "'")) and trimmed.endswith(('"', "'")):
+                        trimmed = trimmed[1:-1].strip()
+                    if trimmed.startswith("{") and trimmed.endswith("}"):
+                        try:
+                            parsed = ast.literal_eval(trimmed)
+                            if isinstance(parsed, dict):
+                                image_url = parsed.get("_url") or parsed.get("url")
+                        except Exception:
+                            pass
+                    if not image_url:
+                        image_url = trimmed
+
+
+
+            if image_event and image_url:
+
+                print("IMAGE EVENT DETECTED")
+                print("RAW IMAGE URL:", image_url)
+
+                if isinstance(image_url, dict):
+                    image_url = image_url.get("_url") or image_url.get("url")
+
+                image_url = str(image_url).strip()
+
+                print("FINAL IMAGE URL:", image_url)
+
+                filename = image_url.split("/")[-1]
+
+                file_path = CHATBOT_UPLOAD_DIR / filename
+
+                print("IMAGE FILE PATH:", file_path)
+
+                if not file_path.exists():
+                    raise RuntimeError(f"Image file not found: {file_path}")
+
+                image_bytes = file_path.read_bytes()
+
+                print("IMAGE FILE SIZE:", len(image_bytes))
+
+                search_result = search_by_image.invoke({
+                    "image_bytes": image_bytes
+                })
+
+                if "error" in search_result:
+                    raise RuntimeError(search_result["error"])
+
+                ui_payload = {
+                    "type": "ui_action",
+                    "ui_action": search_result.get("ui_action", "show_product_list"),
+                    "ui_data": search_result.get("products", []),
+                }
+
+                yield f"data: {json.dumps(ui_payload, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                return
+                        
             # 1. 상태 초기화
             current_state = {
                 **previous_state,

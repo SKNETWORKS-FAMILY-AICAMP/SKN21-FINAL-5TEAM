@@ -1,11 +1,13 @@
 import os
 import pandas as pd
-from typing import Optional
+from typing import List, Optional
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from ecommerce.platform.backend.app.database import SessionLocal
 from ecommerce.platform.backend.app.models import User
+from ecommerce.platform.backend.app.router.products import crud as product_crud
+from ecommerce.chatbot.src.tools.image_search_tools import search_similar_images_from_bytes
 
 # Path to the sampled dataset
 DATA_PATH = os.path.join(
@@ -148,48 +150,53 @@ def recommend_clothes(
         "ui_data": results,
     }
 
+def _build_product_payloads(product_ids: List[int]) -> List[dict]:
+    db = SessionLocal()
+    try:
+        payloads: List[dict] = []
+        for product_id in product_ids:
+            product = product_crud.get_product_by_id(db, product_id)
+            if not product:
+                continue
+            category = getattr(product.category, "name", None)
+            color = None
+            for opt in getattr(product, "options", []):
+                if opt.color:
+                    color = opt.color
+                    break
+            payloads.append(
+                {
+                    "id": product.id,
+                    "name": product.name,
+                    "price": float(product.price),
+                    "category": category,
+                    "color": color,
+                    "season": None,
+                }
+            )
+        return payloads
+    finally:
+        db.close()
+
 
 @tool
-def search_by_image(image_url: str) -> dict:
+def search_by_image(image_bytes: bytes, top_k: int = 5) -> dict:
     """
-    이미지(URL)를 기반으로 해당 이미지 속 옷과 유사한 상품을 추천/검색합니다.
+    CLIP/FAISS를 활용해 업로드된 이미지와 유사한 상품을 추천합니다.
     """
-    if not image_url:
-        return {"error": "이미지 URL이 필요합니다."}
 
-    prompt = """
-    이 이미지에 있는 주요 의류(옷)의 특징을 분석해주세요.
-    반드시 다음 세 가지 항목을 포함하여 쉼표로 구분해 짧게 답변해주세요.
-    1. 색상 (예: 검정색, 빨간색, 파란색 등)
-    2. 옷 종류/카테고리 (예: 티셔츠, 청바지, 원피스, 셔츠 등)
-    3. 스타일이나 분위기 (예: 캐주얼, 포멀, 스포티 등)
-    
-    답변 예시: 검정색, 셔츠, 포멀
-    """
+    if not isinstance(image_bytes, (bytes, bytearray)):
+        return {"error": "이미지 바이트 데이터를 전달해주세요."}
 
     try:
-        # GPT-4o-mini Vision 호출
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
-        response = llm.invoke(
-            [
-                SystemMessage(content="You are a fashion expert assistant."),
-                HumanMessage(
-                    content=[
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": image_url}},
-                    ]
-                ),
-            ]
-        )
-
-        # 분석된 텍스트
-        features_text = response.content.strip()
-        print(f"[Vision Analysis Result] {features_text}")
-
-        # 분석된 텍스트를 recommend_clothes 도구에 그대로 넘겨서 검색
-        return recommend_clothes.invoke({"preference": features_text, "limit": 5})
-
-    except Exception as e:
+        product_ids = search_similar_images_from_bytes(image_bytes, top_k)
+        print("FAISS SEARCH RESULT:", product_ids)
+        products = _build_product_payloads(product_ids)
         return {
-            "error": f"이미지 분석 중 오류 발생 (올바른 이미지 URL인지 확인해주세요): {str(e)}"
+            "ui_action": "show_product_list",
+            "product_ids": product_ids,
+            "products": products,
         }
+    except Exception as e:
+        print("IMAGE SEARCH ERROR:", e)
+        return {"error": f"이미지 검색 실패: {str(e)}"}
