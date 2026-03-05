@@ -14,6 +14,7 @@ from ecommerce.chatbot.src.graph.nodes_v2 import (
     route_after_approval,
     route_after_tools,
     ui_generator_node,
+    route_after_preprocess,
 )
 
 
@@ -56,8 +57,12 @@ def create_graph():
         },
     )
 
-    # [Preprocess -> Agent] (항상)
-    workflow.add_edge("preprocess", "agent")
+    # [Preprocess -> Agent | Validation] (order_selected 직접 주입 시 validation으로 직행)
+    workflow.add_conditional_edges(
+        "preprocess",
+        route_after_preprocess,
+        {"agent": "agent", "validation": "validation"},
+    )
 
     # [Agent -> Validation or Process Output]
     workflow.add_conditional_edges(
