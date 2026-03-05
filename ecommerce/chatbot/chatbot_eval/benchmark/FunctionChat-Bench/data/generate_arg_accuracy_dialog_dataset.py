@@ -41,7 +41,7 @@ from paths import DATA_DIR, PROJECT_ROOT, RAW_DIR, FASHION_CSV, CLOTHES_CSV, TOO
 
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
-OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialog_20_2.jsonl"
+OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialog_20.jsonl"
 
 # ─── OpenAI 설정 ──────────────────────────────────────────────────────────────
 from openai import OpenAI
@@ -575,7 +575,7 @@ def main():
     print(f"[INFO] CSV 샘플 로드 완료: {len(all_samples)}개 행")
 
     eval_data = load_eval_data()
-    login_user_email = eval_data.get("로그인", {}).get("user_email", "test@example.com")
+    login_user_email = eval_data.get("로그인", {}).get("user_email", "test2@example.com")
     
     ACTION_TO_EVAL_TYPE = {
         "cancel": "주문취소",
