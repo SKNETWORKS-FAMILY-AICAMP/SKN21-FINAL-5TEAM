@@ -180,15 +180,20 @@ class DialogEvaluator:
 
     # ── 단일 턴 평가 ─────────────────────────────────────────────────────────
 
-    def evaluate_turn(self, turn: Dict, tools: List[Dict], caller) -> Dict:
-        """단일 턴을 평가하고 결과를 반환합니다."""
+    def evaluate_turn(self, turn: Dict, tools: List[Dict], caller,
+                       prompt_variables: Optional[Dict[str, str]] = None) -> Dict:
+        """단일 턴을 평가하고 결과를 반환합니다.
+
+        Args:
+            prompt_variables: dialog별 user_id, user_email 등 시스템 프롬프트 치환 변수
+        """
         query = turn["query"]
         ground_truth = turn["ground_truth"]
         turn_type = turn["type_of_output"]
 
-        # 모델 호출
+        # 모델 호출 (user row별 prompt_variables 전달)
         try:
-            prediction = caller.call(query, tools)
+            prediction = caller.call(query, tools, prompt_variables=prompt_variables)
         except Exception as e:
             logging.error(f"모델 호출 실패 (turn {turn['turn_num']}): {e}")
             prediction = {"role": "assistant", "content": None}
@@ -253,12 +258,24 @@ class DialogEvaluator:
         all_results: List[Dict] = []
         with open(output_path, "w", encoding="utf-8") as fw:
             for dialog in tqdm(dialogs, desc="다이얼로그 평가"):
+                # user row별 정보 추출 (generate 스크립트에서 설정한 user_id, user_email)
+                user_id = dialog.get("user_id")
+                user_email = dialog.get("user_email")
+                prompt_variables: Optional[Dict[str, str]] = {}
+                if user_id is not None:
+                    prompt_variables["user_id"] = str(user_id)
+                if user_email:
+                    prompt_variables["user_email"] = user_email
+                if not prompt_variables:
+                    prompt_variables = None
+
                 if self.debug:
-                    print(f"\n▶ Dialog {dialog['dialog_num']}: {dialog.get('dialog_name', '')}")
+                    print(f"\n▶ Dialog {dialog['dialog_num']}: {dialog.get('dialog_name', '')}"
+                          f" (user_id={user_id}, user_email={user_email})")
 
                 tools = dialog["tools"]
                 turn_results = [
-                    self.evaluate_turn(turn, tools, caller)
+                    self.evaluate_turn(turn, tools, caller, prompt_variables=prompt_variables)
                     for turn in dialog["turns"]
                 ]
                 dialog_pass = all(t["pass"] for t in turn_results)
@@ -266,6 +283,8 @@ class DialogEvaluator:
                 dialog_result = {
                     "dialog_num": dialog["dialog_num"],
                     "dialog_name": dialog.get("dialog_name", ""),
+                    "user_id": user_id,
+                    "user_email": user_email,
                     "turns": turn_results,
                     "dialog_pass": dialog_pass,
                 }

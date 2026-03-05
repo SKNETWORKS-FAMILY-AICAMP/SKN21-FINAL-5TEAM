@@ -57,3 +57,36 @@ def count_turns_by_type(dialogs: List[Dict]) -> Dict[str, int]:
             if t in counts:
                 counts[t] += 1
     return counts
+
+
+def group_dialogs_by_user(dialogs: List[Dict]) -> Dict[str, List[Dict]]:
+    """다이얼로그를 user_email 기준으로 그룹핑합니다.
+
+    generate 스크립트에서 각 dialog에 user_id, user_email을 설정하므로
+    이를 기준으로 user row별 다이얼로그 목록을 반환합니다.
+
+    Returns:
+        {user_email: [dialog, ...], ...}
+    """
+    grouped: Dict[str, List[Dict]] = {}
+    for dialog in dialogs:
+        email = dialog.get("user_email", "unknown")
+        if email not in grouped:
+            grouped[email] = []
+        grouped[email].append(dialog)
+    return grouped
+
+
+def get_user_info(dialogs: List[Dict]) -> List[Dict[str, str]]:
+    """다이얼로그에서 고유한 user 정보(user_id, user_email)를 추출합니다."""
+    seen = set()
+    users = []
+    for dialog in dialogs:
+        email = dialog.get("user_email")
+        if email and email not in seen:
+            seen.add(email)
+            users.append({
+                "user_id": str(dialog.get("user_id", "")),
+                "user_email": email,
+            })
+    return users

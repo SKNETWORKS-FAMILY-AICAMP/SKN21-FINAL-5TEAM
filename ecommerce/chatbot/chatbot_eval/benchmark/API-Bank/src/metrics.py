@@ -68,6 +68,34 @@ def compute_metrics(results: List[Dict]) -> Dict:
     }
 
 
+def compute_metrics_per_user(results: List[Dict]) -> Dict[str, Dict]:
+    """user_email 기준으로 그룹핑하여 사용자별 지표를 계산합니다.
+
+    generate 스크립트에서 각 dialog에 user_id, user_email을 설정하므로
+    평가 결과에서도 user row별로 지표를 산출합니다.
+
+    Returns:
+        {user_email: {metrics_dict}, ...}
+    """
+    # user_email 기준으로 결과 그룹핑
+    grouped: Dict[str, List[Dict]] = {}
+    for dialog in results:
+        email = dialog.get("user_email", "unknown")
+        if email not in grouped:
+            grouped[email] = []
+        grouped[email].append(dialog)
+
+    # 사용자별 지표 계산
+    per_user: Dict[str, Dict] = {}
+    for email, user_results in grouped.items():
+        user_metrics = compute_metrics(user_results)
+        user_metrics["user_email"] = email
+        user_metrics["user_id"] = user_results[0].get("user_id")
+        per_user[email] = user_metrics
+
+    return per_user
+
+
 def save_report(
     metrics: Dict,
     results: List[Dict],
@@ -97,9 +125,22 @@ def save_report(
         status = "✅ 통과" if d["dialog_pass"] else "❌ 실패"
         turn_count = len(d.get("turns", []))
         pass_count = sum(1 for t in d.get("turns", []) if t.get("pass"))
+        user_email = d.get("user_email", "")
         dialog_rows += (
-            f"| {d['dialog_num']} | {d['dialog_name']} | {status} "
+            f"| {d['dialog_num']} | {d['dialog_name']} | {user_email} | {status} "
             f"| {pass_count}/{turn_count} 턴 |\n"
+        )
+
+    # 사용자별 지표
+    per_user = compute_metrics_per_user(results)
+    user_rows = ""
+    for email, um in per_user.items():
+        user_rows += (
+            f"| {email} | {um['dialog_pass']}/{um['dialog_total']} "
+            f"| {um['api_call_accuracy'] * 100:.1f}% "
+            f"| {um['response_completion_rate'] * 100:.1f}% "
+            f"| {um['task_completion_rate'] * 100:.1f}% "
+            f"| {um['overall_score'] * 100:.1f}% |\n"
         )
 
     md_content = f"""# 🤖 API-Bank 벤치마크 평가 보고서
@@ -107,6 +148,7 @@ def save_report(
 - **생성 일시**: {timestamp}
 - **평가 모델**: {model}
 - **총 다이얼로그**: {metrics['dialog_total']}개
+- **사용자 수**: {len(per_user)}명
 
 ---
 
@@ -122,10 +164,17 @@ def save_report(
 
 ---
 
+## 👤 사용자별 지표
+
+| 사용자 | 다이얼로그 통과 | API Call | Completion | TCR | Overall |
+|:---|:---:|:---:|:---:|:---:|:---:|
+{user_rows}
+---
+
 ## 📋 다이얼로그별 결과
 
-| # | 다이얼로그 | 결과 | 턴 통과 |
-|:---:|:---|:---:|:---:|
+| # | 다이얼로그 | 사용자 | 결과 | 턴 통과 |
+|:---:|:---|:---|:---:|:---:|
 {dialog_rows}
 ---
 

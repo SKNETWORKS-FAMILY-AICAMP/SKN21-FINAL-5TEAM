@@ -47,25 +47,6 @@ EVAL_DATA_PATH = BENCH_ROOT.parent / "eval_data.jsonl"
 load_dotenv(ENV_PATH)
 
 
-def load_login_user_email() -> Optional[str]:
-    """eval_data.jsonl에서 '로그인' 타입의 user_email을 읽어 반환합니다."""
-    if not EVAL_DATA_PATH.exists():
-        logging.warning(f"eval_data.jsonl 파일을 찾을 수 없습니다: {EVAL_DATA_PATH}")
-        return None
-    with open(EVAL_DATA_PATH, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-                if entry.get("type") == "로그인":
-                    return entry.get("data", {}).get("user_email")
-            except json.JSONDecodeError:
-                continue
-    return None
-
-
 # ── LLM Judge (completion 턴 전용) ──────────────────────────────────────────
 
 def _load_rubric(name: str) -> Optional[str]:

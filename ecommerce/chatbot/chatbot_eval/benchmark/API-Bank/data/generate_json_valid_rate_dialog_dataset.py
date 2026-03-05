@@ -104,7 +104,8 @@ def tc(name, args_dict):
 
 
 def load_eval_data(path):
-    """eval_data.jsonl에서 type별 데이터를 리스트로 반환합니다."""
+    """eval_data.jsonl에서 user_email로 유저를 조회하고, action의 type별로 데이터를 리스트로 반환합니다.
+    action에 type이 없는 경우 해당 다이얼로그는 건너뜁니다."""
     data = {}
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
@@ -112,10 +113,33 @@ def load_eval_data(path):
             if not line:
                 continue
             entry = json.loads(line)
-            type_key = entry["type"]
-            if type_key not in data:
-                data[type_key] = []
-            data[type_key].append(entry["data"])
+            user_email = entry.get("data", {}).get("user_email")
+            if not user_email:
+                continue
+
+            # user 정보 수집
+            if "user" not in data:
+                data["user"] = []
+            data["user"].append({"user_email": user_email})
+
+            # action 자체가 없거나 빈 배열이면 주문 관련 다이얼로그만 건너뜀
+            actions = entry.get("action")
+            if not actions:
+                print(f"  ⚠ action이 없어 주문 관련 다이얼로그를 건너뜁니다: {user_email}")
+                continue
+
+            # action 배열에서 type별로 분류 (type이 없는 action은 건너뜀)
+            for action in actions:
+                action_type = action.get("type")
+                if not action_type:
+                    print(f"  ⚠ action에 type이 없어 건너뜁니다: {action}")
+                    continue
+                action_data = dict(action.get("data", {}))
+                action_data["user_email"] = user_email
+                if action_type not in data:
+                    data[action_type] = []
+                data[action_type].append(action_data)
+
     return data
 
 
@@ -635,11 +659,12 @@ try:
     # user_id → email 역매핑
     user_id_to_email = {v: k for k, v in user_cache.items()}
 
-    # 기본 사용자 (주문 내역 조회, 상품권 등록 등 공통 Dialog용)
-    default_user_id = list(user_cache.values())[0]
-    default_user_email = user_id_to_email[default_user_id]
-    default_order_infos = user_order_cache[default_user_id]
-    print(f"  • 기본 사용자: user_id={default_user_id}, email={default_user_email}")
+    # user 목록 추출 (각 user row마다 다이얼로그 생성)
+    user_entries = eval_data.get("user", [])
+    if not user_entries:
+        first_email = sorted(user_cache.keys())[0]
+        user_entries = [{"user_email": first_email}]
+    print(f"  • 사용자 {len(user_entries)}명 로드: {[e['user_email'] for e in user_entries]}")
 
 finally:
     db.close()
@@ -681,186 +706,192 @@ for info in exchange_infos:
     dialogs.append(d)
     print(f"  • Dialog #{_dnum} 교환 신청 ({info['order_id']}, user_id={uid})")
 
-# 주문 내역 조회 (주문번호 없음) — 1개
-_dnum += 1
-d = build_dialog_order_list(_dnum, default_user_id, default_order_infos, tools_def)
-d["user_id"] = default_user_id
-d["user_email"] = default_user_email
-dialogs.append(d)
-print(f"  • Dialog #{_dnum} 주문 내역 조회 (user_id={default_user_id})")
+# 주문 취소/환불/교환 외 Dialog — 각 user row마다 생성
+for user_entry in user_entries:
+    cur_user_email = user_entry["user_email"]
+    cur_user_id = user_cache[cur_user_email]
+    cur_order_infos = user_order_cache[cur_user_id]
 
-# 주문 상세 조회 (주문번호 있음) — 환불 주문번호 고정, 건수만큼 생성
-for info in refund_infos:
+    # 주문 내역 조회 (주문번호 없음) — 1개
     _dnum += 1
-    uid = info["user_id"]
-    d = build_dialog_order_detail(_dnum, info, uid, tools_def)
-    d["user_id"] = uid
-    d["user_email"] = info["user_email"]
+    d = build_dialog_order_list(_dnum, cur_user_id, cur_order_infos, tools_def)
+    d["user_id"] = cur_user_id
+    d["user_email"] = cur_user_email
     dialogs.append(d)
-    print(f"  • Dialog #{_dnum} 주문 상세 조회 ({info['order_id']}, user_id={uid})")
+    print(f"  • Dialog #{_dnum} 주문 내역 조회 (user_id={cur_user_id})")
+
+    # 주문 상세 조회 (주문번호 있음) — 환불 주문번호 고정, 건수만큼 생성
+    for info in refund_infos:
+        _dnum += 1
+        uid = info["user_id"]
+        d = build_dialog_order_detail(_dnum, info, uid, tools_def)
+        d["user_id"] = uid
+        d["user_email"] = info["user_email"]
+        dialogs.append(d)
+        print(f"  • Dialog #{_dnum} 주문 상세 조회 ({info['order_id']}, user_id={uid})")
 
 
-# ─── 고정 Dialog: 키워드 검색 (#6) ───────────────────────────────────────────
-_dnum += 1
-U6_1 = "파란색 청바지 추천해줘. denim slim fit으로."
-TC6a = tc("search_products_vector", {"query": "파란색 청바지 denim slim fit", "limit": 5})
-TR6a = json.dumps({
-    "message": "검색 결과 3개입니다.", "ui_action": "show_product_list",
-    "ui_data": [
-        {"id": 33001, "name": "Levi's Men Blue Denim Jeans Slim", "price": 59000},
-        {"id": 33002, "name": "청바지 슬림핏 인디고 M", "price": 49000},
-        {"id": 33003, "name": "Calvin Klein Blue Jeans Slim Regular", "price": 75000}
-    ], "requires_selection": False
-}, ensure_ascii=False)
-A6_2 = "파란색 슬림핏 청바지(denim) 3개를 찾았습니다. 마음에 드시는 상품이 있으신가요?"
-h6_q2 = [{"role": "user", "content": U6_1}, {"role": "assistant", "content": None, "tool_calls": TC6a}, {"role": "tool", "name": "search_products_vector", "content": TR6a}]
-dialogs.append({
-    "dialog_num": _dnum, "dialog_name": "키워드 검색",
-    "user_id": default_user_id, "user_email": default_user_email,
-    "tools_count": len(tools_def), "tools": tools_def,
-    "turns": [
-        {"turn_num": 1, "serial_num": sn(), "query": [{"role": "user", "content": U6_1}],
-         "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC6a}, "type_of_output": "call", "acceptable_arguments": None},
-        {"turn_num": 2, "serial_num": sn(), "query": list(h6_q2),
-         "ground_truth": {"role": "assistant", "content": A6_2}, "type_of_output": "completion", "acceptable_arguments": None},
-    ]
-})
-print(f"  • Dialog #{_dnum} 키워드 검색")
+    # ─── 고정 Dialog: 키워드 검색 (#6) ───────────────────────────────────────────
+    _dnum += 1
+    U6_1 = "파란색 청바지 추천해줘. denim slim fit으로."
+    TC6a = tc("search_products_vector", {"query": "파란색 청바지 denim slim fit", "limit": 5})
+    TR6a = json.dumps({
+        "message": "검색 결과 3개입니다.", "ui_action": "show_product_list",
+        "ui_data": [
+            {"id": 33001, "name": "Levi's Men Blue Denim Jeans Slim", "price": 59000},
+            {"id": 33002, "name": "청바지 슬림핏 인디고 M", "price": 49000},
+            {"id": 33003, "name": "Calvin Klein Blue Jeans Slim Regular", "price": 75000}
+        ], "requires_selection": False
+    }, ensure_ascii=False)
+    A6_2 = "파란색 슬림핏 청바지(denim) 3개를 찾았습니다. 마음에 드시는 상품이 있으신가요?"
+    h6_q2 = [{"role": "user", "content": U6_1}, {"role": "assistant", "content": None, "tool_calls": TC6a}, {"role": "tool", "name": "search_products_vector", "content": TR6a}]
+    dialogs.append({
+        "dialog_num": _dnum, "dialog_name": "키워드 검색",
+        "user_id": cur_user_id, "user_email": cur_user_email,
+        "tools_count": len(tools_def), "tools": tools_def,
+        "turns": [
+            {"turn_num": 1, "serial_num": sn(), "query": [{"role": "user", "content": U6_1}],
+             "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC6a}, "type_of_output": "call", "acceptable_arguments": None},
+            {"turn_num": 2, "serial_num": sn(), "query": list(h6_q2),
+             "ground_truth": {"role": "assistant", "content": A6_2}, "type_of_output": "completion", "acceptable_arguments": None},
+        ]
+    })
+    print(f"  • Dialog #{_dnum} 키워드 검색")
 
 
-# ─── 고정 Dialog: 상품 추천 (#7) ─────────────────────────────────────────────
-_dnum += 1
-U7_1 = "옷 추천해줘."
-A7_bot = "어떤 종류의 옷을 찾으시나요? 카테고리(예: 아우터, 상의), 원하시는 색상, 용도(계절/상황)를 알려주시면 딱 맞는 상품을 추천해드릴게요."
-U7_2 = "아우터요. 색상은 네이비랑 블랙 둘 다 괜찮고, 겨울에 입을 거예요."
-TC7a = tc("recommend_clothes", {"category": "아우터", "colors": ["네이비", "블랙"], "purpose": "겨울", "limit": 5})
-TR7a = json.dumps({
-    "message": "추천 상품 3개입니다.", "ui_action": "show_product_list",
-    "ui_data": [
-        {"id": 44001, "name": "울 블렌드 코트 네이비 M", "price": 89000},
-        {"id": 44002, "name": "오버사이즈 패딩 점퍼 블랙 L", "price": 119000},
-        {"id": 44003, "name": "더블 브레스티드 코트 네이비 S", "price": 102000}
-    ]
-}, ensure_ascii=False)
-A7_3 = "네이비·블랙 겨울 아우터 3개를 추천드립니다. 울 블렌드 코트, 오버사이즈 패딩, 더블 브레스티드 코트가 있어요. 마음에 드시는 상품이 있으신가요?"
-h7_q2 = [{"role": "user", "content": U7_1}, {"role": "assistant", "content": A7_bot}]
-h7_q3 = h7_q2 + [{"role": "user", "content": U7_2}, {"role": "assistant", "content": None, "tool_calls": TC7a}, {"role": "tool", "name": "recommend_clothes", "content": TR7a}]
-dialogs.append({
-    "dialog_num": _dnum, "dialog_name": "상품 추천",
-    "user_id": default_user_id, "user_email": default_user_email,
-    "tools_count": len(tools_def), "tools": tools_def,
-    "turns": [
-        {"turn_num": 1, "serial_num": sn(), "query": [{"role": "user", "content": U7_1}],
-         "ground_truth": {"role": "assistant", "content": A7_bot}, "type_of_output": "completion", "acceptable_arguments": None},
-        {"turn_num": 2, "serial_num": sn(), "query": h7_q2 + [{"role": "user", "content": U7_2}],
-         "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC7a}, "type_of_output": "call", "acceptable_arguments": None},
-        {"turn_num": 3, "serial_num": sn(), "query": list(h7_q3),
-         "ground_truth": {"role": "assistant", "content": A7_3}, "type_of_output": "completion", "acceptable_arguments": None},
-    ]
-})
-print(f"  • Dialog #{_dnum} 상품 추천")
+    # ─── 고정 Dialog: 상품 추천 (#7) ─────────────────────────────────────────────
+    _dnum += 1
+    U7_1 = "옷 추천해줘."
+    A7_bot = "어떤 종류의 옷을 찾으시나요? 카테고리(예: 아우터, 상의), 원하시는 색상, 용도(계절/상황)를 알려주시면 딱 맞는 상품을 추천해드릴게요."
+    U7_2 = "아우터요. 색상은 네이비랑 블랙 둘 다 괜찮고, 겨울에 입을 거예요."
+    TC7a = tc("recommend_clothes", {"category": "아우터", "colors": ["네이비", "블랙"], "purpose": "겨울", "limit": 5})
+    TR7a = json.dumps({
+        "message": "추천 상품 3개입니다.", "ui_action": "show_product_list",
+        "ui_data": [
+            {"id": 44001, "name": "울 블렌드 코트 네이비 M", "price": 89000},
+            {"id": 44002, "name": "오버사이즈 패딩 점퍼 블랙 L", "price": 119000},
+            {"id": 44003, "name": "더블 브레스티드 코트 네이비 S", "price": 102000}
+        ]
+    }, ensure_ascii=False)
+    A7_3 = "네이비·블랙 겨울 아우터 3개를 추천드립니다. 울 블렌드 코트, 오버사이즈 패딩, 더블 브레스티드 코트가 있어요. 마음에 드시는 상품이 있으신가요?"
+    h7_q2 = [{"role": "user", "content": U7_1}, {"role": "assistant", "content": A7_bot}]
+    h7_q3 = h7_q2 + [{"role": "user", "content": U7_2}, {"role": "assistant", "content": None, "tool_calls": TC7a}, {"role": "tool", "name": "recommend_clothes", "content": TR7a}]
+    dialogs.append({
+        "dialog_num": _dnum, "dialog_name": "상품 추천",
+        "user_id": cur_user_id, "user_email": cur_user_email,
+        "tools_count": len(tools_def), "tools": tools_def,
+        "turns": [
+            {"turn_num": 1, "serial_num": sn(), "query": [{"role": "user", "content": U7_1}],
+             "ground_truth": {"role": "assistant", "content": A7_bot}, "type_of_output": "completion", "acceptable_arguments": None},
+            {"turn_num": 2, "serial_num": sn(), "query": h7_q2 + [{"role": "user", "content": U7_2}],
+             "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC7a}, "type_of_output": "call", "acceptable_arguments": None},
+            {"turn_num": 3, "serial_num": sn(), "query": list(h7_q3),
+             "ground_truth": {"role": "assistant", "content": A7_3}, "type_of_output": "completion", "acceptable_arguments": None},
+        ]
+    })
+    print(f"  • Dialog #{_dnum} 상품 추천")
 
 
-# ─── 고정 Dialog: 이미지 검색 (#8) ───────────────────────────────────────────
-_dnum += 1
-U8_1 = "이 이미지랑 비슷한 옷 찾아줘."
-A8_bot = "이미지 URL을 알려주시면 유사한 상품을 찾아드릴게요."
-U8_2 = "https://img.musinsa.com/sample/winter_coat_2026-beige.jpg 이 이미지야."
-TC8a = tc("search_by_image", {"image_url": "https://img.musinsa.com/sample/winter_coat_2026-beige.jpg"})
-TR8a = json.dumps({
-    "success": True, "message": "유사 상품 3개를 찾았습니다.", "ui_action": "show_product_list",
-    "ui_data": [
-        {"id": 55001, "name": "Wool Blend Coat Camel M", "price": 89000},
-        {"id": 55002, "name": "Oversized Trench Coat Beige L", "price": 95000},
-        {"id": 55003, "name": "Double Breasted Coat Off-White M", "price": 102000}
-    ]
-}, ensure_ascii=False)
-A8_3 = "이미지 속 코트와 유사한 상품 3개를 찾았습니다. 마음에 드시는 상품이 있으신가요?"
-h8_q2 = [{"role": "user", "content": U8_1}, {"role": "assistant", "content": A8_bot}]
-h8_q3 = h8_q2 + [{"role": "user", "content": U8_2}, {"role": "assistant", "content": None, "tool_calls": TC8a}, {"role": "tool", "name": "search_by_image", "content": TR8a}]
-dialogs.append({
-    "dialog_num": _dnum, "dialog_name": "이미지 검색",
-    "user_id": default_user_id, "user_email": default_user_email,
-    "tools_count": len(tools_def), "tools": tools_def,
-    "turns": [
-        {"turn_num": 1, "serial_num": sn(), "query": [{"role": "user", "content": U8_1}],
-         "ground_truth": {"role": "assistant", "content": A8_bot}, "type_of_output": "completion", "acceptable_arguments": None},
-        {"turn_num": 2, "serial_num": sn(), "query": h8_q2 + [{"role": "user", "content": U8_2}],
-         "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC8a}, "type_of_output": "call", "acceptable_arguments": None},
-        {"turn_num": 3, "serial_num": sn(), "query": list(h8_q3),
-         "ground_truth": {"role": "assistant", "content": A8_3}, "type_of_output": "completion", "acceptable_arguments": None},
-    ]
-})
-print(f"  • Dialog #{_dnum} 이미지 검색")
+    # ─── 고정 Dialog: 이미지 검색 (#8) ───────────────────────────────────────────
+    _dnum += 1
+    U8_1 = "이 이미지랑 비슷한 옷 찾아줘."
+    A8_bot = "이미지 URL을 알려주시면 유사한 상품을 찾아드릴게요."
+    U8_2 = "https://img.musinsa.com/sample/winter_coat_2026-beige.jpg 이 이미지야."
+    TC8a = tc("search_by_image", {"image_url": "https://img.musinsa.com/sample/winter_coat_2026-beige.jpg"})
+    TR8a = json.dumps({
+        "success": True, "message": "유사 상품 3개를 찾았습니다.", "ui_action": "show_product_list",
+        "ui_data": [
+            {"id": 55001, "name": "Wool Blend Coat Camel M", "price": 89000},
+            {"id": 55002, "name": "Oversized Trench Coat Beige L", "price": 95000},
+            {"id": 55003, "name": "Double Breasted Coat Off-White M", "price": 102000}
+        ]
+    }, ensure_ascii=False)
+    A8_3 = "이미지 속 코트와 유사한 상품 3개를 찾았습니다. 마음에 드시는 상품이 있으신가요?"
+    h8_q2 = [{"role": "user", "content": U8_1}, {"role": "assistant", "content": A8_bot}]
+    h8_q3 = h8_q2 + [{"role": "user", "content": U8_2}, {"role": "assistant", "content": None, "tool_calls": TC8a}, {"role": "tool", "name": "search_by_image", "content": TR8a}]
+    dialogs.append({
+        "dialog_num": _dnum, "dialog_name": "이미지 검색",
+        "user_id": cur_user_id, "user_email": cur_user_email,
+        "tools_count": len(tools_def), "tools": tools_def,
+        "turns": [
+            {"turn_num": 1, "serial_num": sn(), "query": [{"role": "user", "content": U8_1}],
+             "ground_truth": {"role": "assistant", "content": A8_bot}, "type_of_output": "completion", "acceptable_arguments": None},
+            {"turn_num": 2, "serial_num": sn(), "query": h8_q2 + [{"role": "user", "content": U8_2}],
+             "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC8a}, "type_of_output": "call", "acceptable_arguments": None},
+            {"turn_num": 3, "serial_num": sn(), "query": list(h8_q3),
+             "ground_truth": {"role": "assistant", "content": A8_3}, "type_of_output": "completion", "acceptable_arguments": None},
+        ]
+    })
+    print(f"  • Dialog #{_dnum} 이미지 검색")
 
 
-# ─── 고정 Dialog: 중고 판매 신청 (#9) ────────────────────────────────────────
-_dnum += 1
-U9_1 = "나이키 에어맥스 270 중고로 팔고 싶어요. 희망가는 50,000원이에요."
-A9_bot = "상품 상태를 알려주시겠어요? (S급 / A급 / B급)"
-U9_2 = "A급이에요."
-TC9a = tc("register_used_sale", {"item_name": "나이키 에어맥스 270", "category": "신발", "condition": "A급", "expected_price": 50000})
-TR9a = json.dumps({"success": True, "tracking_id": "USED-NK270A1", "message": "'나이키 에어맥스 270' 중고 판매가 접수되었습니다. (희망가: 50000원)", "next_steps": "수거 신청(request_pickup)을 진행해주세요."}, ensure_ascii=False)
-TC9b = tc("request_pickup", {"tracking_id": "USED-NK270A1", "pickup_address": "서울 서초구 반포대로 45 201호"})
-TR9b = json.dumps({"status": "success", "message": "수거 신청이 완료되었습니다. 수거 예정일: 2026-03-06"}, ensure_ascii=False)
-A9_4 = "중고 판매 신청이 완료되었습니다. 접수 번호는 USED-NK270A1이며, 수거 예정일은 2026년 3월 6일입니다."
-h9_q2 = [{"role": "user", "content": U9_1}, {"role": "assistant", "content": A9_bot}]
-h9_q3 = h9_q2 + [{"role": "user", "content": U9_2}, {"role": "assistant", "content": None, "tool_calls": TC9a}, {"role": "tool", "name": "register_used_sale", "content": TR9a}]
-h9_q4 = h9_q3 + [{"role": "assistant", "content": None, "tool_calls": TC9b}, {"role": "tool", "name": "request_pickup", "content": TR9b}]
-dialogs.append({
-    "dialog_num": _dnum, "dialog_name": "중고 판매 신청",
-    "user_id": default_user_id, "user_email": default_user_email,
-    "tools_count": len(tools_def), "tools": tools_def,
-    "turns": [
-        {"turn_num": 1, "serial_num": sn(), "query": [{"role": "user", "content": U9_1}],
-         "ground_truth": {"role": "assistant", "content": A9_bot}, "type_of_output": "completion", "acceptable_arguments": None},
-        {"turn_num": 2, "serial_num": sn(), "query": h9_q2 + [{"role": "user", "content": U9_2}],
-         "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC9a}, "type_of_output": "call", "acceptable_arguments": None},
-        {"turn_num": 3, "serial_num": sn(), "query": list(h9_q3),
-         "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC9b}, "type_of_output": "call", "acceptable_arguments": None},
-        {"turn_num": 4, "serial_num": sn(), "query": list(h9_q4),
-         "ground_truth": {"role": "assistant", "content": A9_4}, "type_of_output": "completion", "acceptable_arguments": None},
-    ]
-})
-print(f"  • Dialog #{_dnum} 중고 판매 신청")
+    # ─── 고정 Dialog: 중고 판매 신청 (#9) ────────────────────────────────────────
+    _dnum += 1
+    U9_1 = "나이키 에어맥스 270 중고로 팔고 싶어요. 희망가는 50,000원이에요."
+    A9_bot = "상품 상태를 알려주시겠어요? (S급 / A급 / B급)"
+    U9_2 = "A급이에요."
+    TC9a = tc("register_used_sale", {"item_name": "나이키 에어맥스 270", "category": "신발", "condition": "A급", "expected_price": 50000})
+    TR9a = json.dumps({"success": True, "tracking_id": "USED-NK270A1", "message": "'나이키 에어맥스 270' 중고 판매가 접수되었습니다. (희망가: 50000원)", "next_steps": "수거 신청(request_pickup)을 진행해주세요."}, ensure_ascii=False)
+    TC9b = tc("request_pickup", {"tracking_id": "USED-NK270A1", "pickup_address": "서울 서초구 반포대로 45 201호"})
+    TR9b = json.dumps({"status": "success", "message": "수거 신청이 완료되었습니다. 수거 예정일: 2026-03-06"}, ensure_ascii=False)
+    A9_4 = "중고 판매 신청이 완료되었습니다. 접수 번호는 USED-NK270A1이며, 수거 예정일은 2026년 3월 6일입니다."
+    h9_q2 = [{"role": "user", "content": U9_1}, {"role": "assistant", "content": A9_bot}]
+    h9_q3 = h9_q2 + [{"role": "user", "content": U9_2}, {"role": "assistant", "content": None, "tool_calls": TC9a}, {"role": "tool", "name": "register_used_sale", "content": TR9a}]
+    h9_q4 = h9_q3 + [{"role": "assistant", "content": None, "tool_calls": TC9b}, {"role": "tool", "name": "request_pickup", "content": TR9b}]
+    dialogs.append({
+        "dialog_num": _dnum, "dialog_name": "중고 판매 신청",
+        "user_id": cur_user_id, "user_email": cur_user_email,
+        "tools_count": len(tools_def), "tools": tools_def,
+        "turns": [
+            {"turn_num": 1, "serial_num": sn(), "query": [{"role": "user", "content": U9_1}],
+             "ground_truth": {"role": "assistant", "content": A9_bot}, "type_of_output": "completion", "acceptable_arguments": None},
+            {"turn_num": 2, "serial_num": sn(), "query": h9_q2 + [{"role": "user", "content": U9_2}],
+             "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC9a}, "type_of_output": "call", "acceptable_arguments": None},
+            {"turn_num": 3, "serial_num": sn(), "query": list(h9_q3),
+             "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC9b}, "type_of_output": "call", "acceptable_arguments": None},
+            {"turn_num": 4, "serial_num": sn(), "query": list(h9_q4),
+             "ground_truth": {"role": "assistant", "content": A9_4}, "type_of_output": "completion", "acceptable_arguments": None},
+        ]
+    })
+    print(f"  • Dialog #{_dnum} 중고 판매 신청")
 
 
-# ─── 리뷰 작성 — 첫 번째 주문 사용 (#10) ────────────────────────────────────
-_dnum += 1
-_review_info = cancel_infos[0] if cancel_infos else default_order_infos[0]
-_review_uid = _review_info.get("user_id", default_user_id)
-_review_email = _review_info.get("user_email", default_user_email)
-d = build_dialog_review(_dnum, _review_info, _review_uid, tools_def)
-d["user_id"] = _review_uid
-d["user_email"] = _review_email
-dialogs.append(d)
-print(f"  • Dialog #{_dnum} 리뷰 작성 ({_review_info['order_id']}, user_id={_review_uid})")
+    # ─── 리뷰 작성 — 첫 번째 주문 사용 (#10) ────────────────────────────────────
+    _dnum += 1
+    _review_info = cancel_infos[0] if cancel_infos else cur_order_infos[0]
+    _review_uid = _review_info.get("user_id", cur_user_id)
+    _review_email = _review_info.get("user_email", cur_user_email)
+    d = build_dialog_review(_dnum, _review_info, _review_uid, tools_def)
+    d["user_id"] = _review_uid
+    d["user_email"] = _review_email
+    dialogs.append(d)
+    print(f"  • Dialog #{_dnum} 리뷰 작성 ({_review_info['order_id']}, user_id={_review_uid})")
 
 
-# ─── 고정 Dialog: 상품권 등록 (#11) ──────────────────────────────────────────
-_dnum += 1
-U11_1 = "상품권 등록하고 싶어요."
-A11_bot = "상품권 코드를 입력해주세요."
-U11_2 = "MUSINSA-GIFT-2026-ZXYW 이거야."
-TC11a = tc("register_gift_card", {"code": "MUSINSA-GIFT-2026-ZXYW", "user_id": default_user_id})
-TR11a = json.dumps({"success": True, "amount": 10000, "message": "상품권이 성공적으로 등록되었습니다. 충전 금액: 10,000원"}, ensure_ascii=False)
-A11_3 = "상품권이 성공적으로 등록되었습니다. 10,000원이 충전되었습니다."
-h11_q2 = [{"role": "user", "content": U11_1}, {"role": "assistant", "content": A11_bot}]
-h11_q3 = h11_q2 + [{"role": "user", "content": U11_2}, {"role": "assistant", "content": None, "tool_calls": TC11a}, {"role": "tool", "name": "register_gift_card", "content": TR11a}]
-dialogs.append({
-    "dialog_num": _dnum, "dialog_name": "상품권 등록",
-    "user_id": default_user_id, "user_email": default_user_email,
-    "tools_count": len(tools_def), "tools": tools_def,
-    "turns": [
-        {"turn_num": 1, "serial_num": sn(), "query": [{"role": "user", "content": U11_1}],
-         "ground_truth": {"role": "assistant", "content": A11_bot}, "type_of_output": "completion", "acceptable_arguments": None},
-        {"turn_num": 2, "serial_num": sn(), "query": h11_q2 + [{"role": "user", "content": U11_2}],
-         "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC11a}, "type_of_output": "call", "acceptable_arguments": None},
-        {"turn_num": 3, "serial_num": sn(), "query": list(h11_q3),
-         "ground_truth": {"role": "assistant", "content": A11_3}, "type_of_output": "completion", "acceptable_arguments": None},
-    ]
-})
-print(f"  • Dialog #{_dnum} 상품권 등록")
+    # ─── 고정 Dialog: 상품권 등록 (#11) ──────────────────────────────────────────
+    _dnum += 1
+    U11_1 = "상품권 등록하고 싶어요."
+    A11_bot = "상품권 코드를 입력해주세요."
+    U11_2 = "MUSINSA-GIFT-2026-ZXYW 이거야."
+    TC11a = tc("register_gift_card", {"code": "MUSINSA-GIFT-2026-ZXYW", "user_id": cur_user_id})
+    TR11a = json.dumps({"success": True, "amount": 10000, "message": "상품권이 성공적으로 등록되었습니다. 충전 금액: 10,000원"}, ensure_ascii=False)
+    A11_3 = "상품권이 성공적으로 등록되었습니다. 10,000원이 충전되었습니다."
+    h11_q2 = [{"role": "user", "content": U11_1}, {"role": "assistant", "content": A11_bot}]
+    h11_q3 = h11_q2 + [{"role": "user", "content": U11_2}, {"role": "assistant", "content": None, "tool_calls": TC11a}, {"role": "tool", "name": "register_gift_card", "content": TR11a}]
+    dialogs.append({
+        "dialog_num": _dnum, "dialog_name": "상품권 등록",
+        "user_id": cur_user_id, "user_email": cur_user_email,
+        "tools_count": len(tools_def), "tools": tools_def,
+        "turns": [
+            {"turn_num": 1, "serial_num": sn(), "query": [{"role": "user", "content": U11_1}],
+             "ground_truth": {"role": "assistant", "content": A11_bot}, "type_of_output": "completion", "acceptable_arguments": None},
+            {"turn_num": 2, "serial_num": sn(), "query": h11_q2 + [{"role": "user", "content": U11_2}],
+             "ground_truth": {"role": "assistant", "content": None, "tool_calls": TC11a}, "type_of_output": "call", "acceptable_arguments": None},
+            {"turn_num": 3, "serial_num": sn(), "query": list(h11_q3),
+             "ground_truth": {"role": "assistant", "content": A11_3}, "type_of_output": "completion", "acceptable_arguments": None},
+        ]
+    })
+    print(f"  • Dialog #{_dnum} 상품권 등록")
 
 
 # ─── JSONL 저장 ───────────────────────────────────────────────────────────────
