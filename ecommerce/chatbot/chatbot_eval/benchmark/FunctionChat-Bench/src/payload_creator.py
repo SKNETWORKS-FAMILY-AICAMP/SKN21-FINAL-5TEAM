@@ -170,10 +170,17 @@ class DialogPayloadCreator(AbstractPayloadCreator):
             print("[[reset!! create requests jsonl file]]")
         # 2. create requests json list
         for idx, test_input in enumerate(tqdm(test_set)):
-            # test_input keys = ['dialog_num', 'tools_count', 'tools', 'turns']
+            # test_input keys = ['dialog_num', 'tools_count', 'tools', 'turns', 'user_id', 'user_email']
             tools = test_input['tools']
+            
+            current_user_id = test_input.get("user_id", 1)
+            current_user_email = test_input.get("user_email", "test@test.com")
+            system_prompt_formatted = self.system_prompt
+            if system_prompt_formatted:
+                system_prompt_formatted = system_prompt_formatted.replace("{user_id}", str(current_user_id)).replace("{user_email}", str(current_user_email))
+
             for turn in test_input['turns']:
-                messages = [{'role': 'system', 'content': self.system_prompt}]
+                messages = [{'role': 'system', 'content': system_prompt_formatted}]
                 messages.extend(turn['query'])
                 arguments = {key: turn[key] for key in ['serial_num', 'ground_truth', 'type_of_output']}
                 arguments['acceptable_arguments'] = turn.get('acceptable_arguments', {})
