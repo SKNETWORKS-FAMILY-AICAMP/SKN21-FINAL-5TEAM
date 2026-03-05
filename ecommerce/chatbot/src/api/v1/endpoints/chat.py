@@ -4,15 +4,17 @@ from typing import List, Dict, Any
 import ast
 import json
 import os
+import re
 import requests
 from urllib.parse import urlparse
 from uuid import uuid4
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from ecommerce.chatbot.src.schemas.chat import ChatRequest, ReviewDraftRequest
 from ecommerce.chatbot.src.graph.workflow import graph_app
 from ecommerce.chatbot.src.tools.service_tools import generate_review_draft
 from ecommerce.chatbot.src.tools.recommendation_tools import search_by_image
+from ecommerce.chatbot.src.graph.llm_providers import make_chat_llm
 from ecommerce.chatbot.src.infrastructure.conversation_logger import (
     ConversationRunLogger,
 )
@@ -164,6 +166,61 @@ def _read_image_from_local_url(image_url: str) -> bytes | None:
     return None
 
 
+def _extract_top_k_from_text(text: str | None) -> int | None:
+    if not text:
+        return None
+
+    digits = re.search(r"(\d+)", text)
+    if digits:
+        try:
+            value = int(digits.group(1))
+            return max(1, min(20, value))
+        except ValueError:
+            pass
+
+    return None
+
+
+def _infer_top_k_via_llm(
+    prompt_text: str,
+    provider: str | None,
+    model_name: str | None,
+) -> int | None:
+    if not prompt_text:
+        return None
+
+    target_model = model_name or "gpt-5-mini"
+    target_provider = provider if provider in {"openai", "vllm"} else "openai"
+
+    system_prompt = (
+        "이미지를 기준으로 유사 상품을 안내하는 도우미입니다. "
+        "사용자가 원하는 추천 개수를 자연어로 설명하면, "
+        "반드시 JSON 형식 {'top_k': <number>}만 출력하세요. "
+        "요청에 숫자가 없으면 빈 JSON({})을 출력하세요."
+    )
+
+    try:
+        llm = make_chat_llm(
+            provider=target_provider, model=target_model, temperature=0
+        )
+        response = llm.invoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=prompt_text),
+            ]
+        )
+        content = response.content if isinstance(response.content, str) else ""
+        parsed = json.loads(content)
+        if isinstance(parsed, dict):
+            top_k_val = parsed.get("top_k")
+            if isinstance(top_k_val, int):
+                return max(1, min(20, top_k_val))
+    except Exception:
+        pass
+
+    return None
+
+
 def _resolve_image_url(raw_image_url: Any) -> str | None:
     """다양한 형태의 이미지 URL 입력값을 정제하여 순수 URL 문자열을 반환합니다."""
 
@@ -290,6 +347,12 @@ async def chat_streaming_endpoint(
             if isinstance(payload, dict):
                 payload_query = str(payload.get("query") or "").strip()
 
+            requested_top_k = _extract_top_k_from_text(payload_query)
+            if requested_top_k is None:
+                requested_top_k = _infer_top_k_via_llm(
+                    payload_query, requested_provider, requested_model
+                )
+
 
 
             if image_event and image_url:
@@ -304,7 +367,10 @@ async def chat_streaming_endpoint(
                     except Exception as exc:
                         raise RuntimeError(f"이미지 다운로드 실패: {exc}") from exc
 
-                search_result = search_by_image.invoke({"image_bytes": image_bytes})
+                search_args: Dict[str, Any] = {"image_bytes": image_bytes}
+                if requested_top_k is not None:
+                    search_args["top_k"] = requested_top_k
+                search_result = search_by_image.invoke(search_args)
 
                 if "error" in search_result:
                     raise RuntimeError(search_result["error"])
