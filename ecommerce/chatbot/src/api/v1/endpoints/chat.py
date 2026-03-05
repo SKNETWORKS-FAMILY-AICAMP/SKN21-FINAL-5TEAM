@@ -389,9 +389,8 @@ async def chat_streaming_endpoint(
                 }
 
                 yield f"data: {json.dumps(ui_payload, ensure_ascii=False)}\n\n"
-                if not payload_query:
-                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                    return
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                return
                         
             # 1. 상태 초기화
             current_state = {
