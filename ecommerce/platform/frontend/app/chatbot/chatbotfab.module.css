@@ -159,6 +159,36 @@
   word-break: break-word;
 }
 
+.imageBubble {
+  padding: 8px;
+}
+
+.imagePreviewCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.imagePreview {
+  width: min(180px, 42vw);
+  max-height: 220px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  object-fit: cover;
+  background: #0d0d0d;
+}
+
+.imageFilename {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+  max-width: 180px;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* ===== 봇 메시지 (말풍선 없음) ===== */
 .botMsg {
   display: flex;
@@ -426,6 +456,51 @@
   padding: 8px 12px 4px;
   border-top: 1px solid #eee;
   background: #fff;
+}
+
+.uploadBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid #dadada;
+  background: #f7f7f7;
+  color: #111;
+  font-size: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.uploadBtn:hover:not(:disabled) {
+  border-color: #111;
+  background: #ffffff;
+}
+
+.uploadBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.uploadBtnIcon {
+  line-height: 1;
+  font-size: 24px;
+}
+
+.imageInputField {
+  display: none;
+}
+
+.uploadStatus {
+  min-height: 18px;
+  font-size: 11px;
+  color: #6f7785;
+  margin: 2px 0 0 46px;
+}
+
+.uploadStatusError {
+  color: #c51d34;
 }
 
 .bottomControls {

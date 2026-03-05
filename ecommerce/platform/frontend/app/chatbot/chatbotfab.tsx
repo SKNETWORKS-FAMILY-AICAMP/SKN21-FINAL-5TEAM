@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import styles from './chatbotfab.module.css';
 import OrderListUI from './OrderListUI';
@@ -86,6 +86,13 @@ type UsedSaleFormMessage = {
   };
 };
 
+type ImageMessage = {
+  role: 'user';
+  type: 'image';
+  image_url: string;
+  filename: string;
+};
+
 type ReviewSubmissionPayload = {
   event: 'review_submitted';
   action: 'create_review';
@@ -116,7 +123,8 @@ type ChatMsg =
   | AddressSearchMessage
   | ProductListMessage
   | ReviewFormMessage
-  | UsedSaleFormMessage;
+  | UsedSaleFormMessage
+  | ImageMessage;
 type LlmProvider = 'openai' | 'huggingface' | 'vllm';
 type ModelOption = { id: string; provider: LlmProvider; label: string };
 
@@ -453,7 +461,11 @@ export default function ChatbotFab() {
   const [streamingText, setStreamingText] = useState('');
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
+  const [imageUploadHint, setImageUploadHint] = useState<string | null>(null);
   const [panelSize, setPanelSize] = useState({ w: 700, h: 660 });
   const isResizing = useRef(false);
   const [selectedModel, setSelectedModel] = useState<string>(OPENAI_MODELS[0]);
@@ -755,6 +767,95 @@ export default function ChatbotFab() {
     }
   };
 
+  const openImagePicker = () => {
+    if (isLoading || isUploadingImage) return;
+    fileInputRef.current?.click();
+  };
+
+  const handleImageSelect = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!API_BASE_URL) {
+      setImageUploadError('API 주소가 설정되지 않았습니다.');
+      return;
+    }
+
+    if (!isLoggedIn) {
+      setImageUploadError('이미지를 업로드하려면 로그인해야 합니다.');
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setImageUploadError('이미지 파일만 업로드할 수 있습니다.');
+      return;
+    }
+
+    setIsUploadingImage(true);
+    setImageUploadError(null);
+    setImageUploadHint(null);
+
+    try {
+      const payload = new FormData();
+      payload.append('file', file);
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/chat/upload-image`, {
+        method: 'POST',
+        credentials: 'include',
+        body: payload,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let message = '이미지 업로드에 실패했습니다.';
+        try {
+          const parsedError = JSON.parse(errorText);
+          message = parsedError.detail || parsedError.error || message;
+        } catch {
+          if (errorText) {
+            message = errorText;
+          }
+        }
+        throw new Error(message);
+      }
+
+      const body = await response.json();
+      const imageUrl = body?.url;
+      if (!imageUrl) {
+        throw new Error('이미지 URL을 받지 못했습니다.');
+      }
+
+      setMessages((prev) => [
+        ...prev,
+        { role: 'user', type: 'image', image_url: imageUrl, filename: file.name },
+      ]);
+
+      const eventPayload = {
+        event: 'image_uploaded',
+        image_url: { _url: imageUrl },
+        filename: file.name,
+        description: '첨부한 이미지를 참고하여 관련 정보를 알려주세요.',
+      };
+
+      sendMessage(JSON.stringify(eventPayload), true);
+      setImageUploadHint('이미지 업로드 완료. 필요한 내용을 입력하고 전송하면 분석이 시작됩니다.');
+    } catch (error) {
+      console.error('이미지 업로드 오류:', error);
+      setImageUploadError(error instanceof Error ? error.message : '이미지 업로드에 실패했습니다.');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const uploadNotice = imageUploadError
+    ? { text: imageUploadError, isError: true }
+    : isUploadingImage
+      ? { text: '이미지를 업로드 중입니다...', isError: false }
+      : imageUploadHint
+        ? { text: imageUploadHint, isError: false }
+        : null;
+
   const getInferredAction = () => {
     if (
       typeof conversationState?.current_task === 'object' &&
@@ -978,10 +1079,22 @@ export default function ChatbotFab() {
                 </div>
               );
             } else if (m.role === 'user') {
+              const isImage = m.type === 'image';
               return (
                 <div key={i} className={`${styles.msgRow} ${styles.userRow}`}>
-                  <div className={styles.bubble}>
-                    {m.type === 'text' && <ReactMarkdown>{m.text}</ReactMarkdown>}
+                  <div className={`${styles.bubble} ${isImage ? styles.imageBubble : ''}`}>
+                    {isImage ? (
+                      <div className={styles.imagePreviewCard}>
+                        <img
+                          src={m.image_url}
+                          alt={m.filename}
+                          className={styles.imagePreview}
+                        />
+                        <div className={styles.imageFilename}>{m.filename}</div>
+                      </div>
+                    ) : (
+                      <ReactMarkdown>{m.text}</ReactMarkdown>
+                    )}
                   </div>
                 </div>
               );
@@ -1037,6 +1150,16 @@ export default function ChatbotFab() {
 
         <div className={styles.bottomControls}>
           <div className={styles.inputBar}>
+            <button
+              type="button"
+              className={styles.uploadBtn}
+              onClick={openImagePicker}
+              disabled={isUploadingImage || isLoading}
+              aria-label="이미지 업로드"
+              title="이미지 업로드"
+            >
+              <span className={styles.uploadBtnIcon}>+</span>
+            </button>
             <textarea
               ref={inputRef}
               className={styles.input}
@@ -1051,11 +1174,27 @@ export default function ChatbotFab() {
               type="button"
               className={styles.sendBtn}
               onClick={() => sendMessage()}
-              disabled={isLoading}
+              disabled={isLoading || isUploadingImage}
             >
               전송
             </button>
+            <input
+              type="file"
+              accept="image/*"
+              ref={fileInputRef}
+              onChange={handleImageSelect}
+              className={styles.imageInputField}
+            />
           </div>
+          {uploadNotice && (
+            <div
+              className={`${styles.uploadStatus} ${
+                uploadNotice.isError ? styles.uploadStatusError : ''
+              }`}
+            >
+              {uploadNotice.text}
+            </div>
+          )}
 
           <div className={styles.modelPickerRow}>
             <button
