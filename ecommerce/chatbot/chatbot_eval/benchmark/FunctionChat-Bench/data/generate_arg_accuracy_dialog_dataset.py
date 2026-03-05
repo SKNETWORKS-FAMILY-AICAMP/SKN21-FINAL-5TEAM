@@ -2,15 +2,26 @@
 generate_arg_accuracy_dialog_dataset.py
 
 [목적]
-이커머스 액션 기반 챗봇의 Argument Accuracy 평가를 위한
-Dialog 모드 데이터셋 20개를 생성합니다.
-FunctionChat-Bench 스타일의 JSONL 포맷으로 저장됩니다.
+이커머스 챗봇의 Argument Accuracy 평가를 위한 Dialog 모드 데이터셋을 생성합니다.
+기존 버전을 기반으로 아래 내용이 포함된 20개 시나리오 버전입니다:
+  1. 실제 DB 주문 ID를 상태(status) 포함하여 조회
+  2. 취소/반품/환불/교환이 가능한 경우와 불가능한 경우를 모두 다루는 시나리오 포함
+  3. 주문 상태 정책에 따른 ground_truth 생성
+  4. [핵심] HITL(Human-In-The-Loop) 반영: 주문번호가 주어지더라도 바로 액션을 진행하지 않고, 반드시 get_user_orders를 통해 확인받도록 강제.
+  5. [핵심] 불가능 시나리오 반영: 불가능한 상태라도 봇이 텍스트로 미리 차단하지 않고 get_order_details를 호출하여 시스템적으로 검증하도록 유도.
+
+[주문 상태 정책]
+- PENDING  : 취소/반품/교환 모두 불가
+- PAID     : 취소 가능, 반품 불가(→취소 안내), 교환 무료
+- PREPARING: 취소 가능, 반품 불가(→취소 안내), 교환 무료
+- SHIPPED  : 취소 불가, 반품 가능, 교환 유료
+- DELIVERED(7일 이내): 취소 불가, 반품 가능, 교환 유료
+- DELIVERED(7일 초과): 취소/반품/교환 모두 불가
+- CANCELLED/REFUNDED : 모두 불가
 
 [평가 방식]
-- Slot Filling Rate는 평가하지 않습니다.
 - Argument Accuracy만 평가합니다 (type_of_output == "call" 인 턴만).
-- completion 유형 턴은 평가에 포함하지 않습니다.
-- order_id는 test@example.com의 실제 DB 주문 ID를 사용합니다.
+- FunctionChat-Bench JSONL 포맷으로 저장됩니다.
 """
 
 import json
@@ -22,30 +33,42 @@ import re
 from pathlib import Path
 from dotenv import load_dotenv
 
-# ─── 경로 설정 ────────────────────────────────────────────────────────────────
-import sys
-from pathlib import Path
-
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.append(str(current_dir))
 
 from paths import DATA_DIR, PROJECT_ROOT, RAW_DIR, FASHION_CSV, CLOTHES_CSV, TOOLS_PATH
-from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
-OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialog_20.jsonl"
+OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialog_20_2.jsonl"
 
 # ─── OpenAI 설정 ──────────────────────────────────────────────────────────────
 from openai import OpenAI
-
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-MODEL  = "gpt-4o-mini"
+MODEL = "gpt-4o-mini"
 
-# ─── DB에서 실제 주문 ID 조회 ─────────────────────────────────────────────────
-def get_real_order_ids() -> list:
-    """test@example.com 사용자의 실제 주문 ID 목록을 DB에서 가져옵니다."""
+
+# ─── DB에서 실제 주문 정보 (주문번호 + 상태) 조회 ────────────────────────────
+def load_eval_data() -> dict:
+    """eval_data.jsonl에서 전체 유형(주문취소, 환불, 교환, 로그인 등)의 데이터를 로드하여 dict로 반환합니다."""
+    path = PROJECT_ROOT / "ecommerce/chatbot/chatbot_eval/benchmark/eval_data.jsonl"
+    eval_data = {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip(): continue
+                data = json.loads(line)
+                eval_data[data["type"]] = data.get("data", {})
+    except Exception as e:
+        print(f"[WARN] eval_data.jsonl 읽기 실패: {e}")
+    return eval_data
+
+def get_real_orders_with_status(user_email: str) -> tuple[int, list[dict]]:
+    """
+    user_email 사용자의 실제 주문 목록과 user_id를 DB에서 가져옵니다.
+    각 주문의 order_number, status, shipping_fee, shipping_info(delivered_at) 포함.
+    """
     try:
         from sqlalchemy import create_engine, text
         db_user = os.getenv("DB_USER")
@@ -53,30 +76,77 @@ def get_real_order_ids() -> list:
         db_host = os.getenv("DB_HOST", "localhost")
         db_port = os.getenv("DB_PORT", "3306")
         db_name = os.getenv("DB_NAME")
-        db_url  = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
-        engine  = create_engine(db_url)
+        db_url = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+        engine = create_engine(db_url)
         with engine.connect() as conn:
+            user_row = conn.execute(text(f"SELECT id FROM users WHERE email = '{user_email}'")).fetchone()
+            user_id = user_row[0] if user_row else 1
+
             rows = conn.execute(text(
-                "SELECT o.order_number FROM orders o "
-                "JOIN users u ON o.user_id=u.id "
-                "WHERE u.email='test@example.com' LIMIT 20"
+                "SELECT o.order_number, o.status, o.shipping_fee, si.delivered_at "
+                "FROM orders o "
+                "LEFT JOIN shippinginfo si ON si.order_id = o.id "
+                f"WHERE o.user_id = {user_id} AND o.order_number LIKE 'ORD-eval_dataset-%' "
+                "LIMIT 50"
             )).fetchall()
-        ids = [str(r[0]) for r in rows]
-        if ids:
-            print(f"[INFO] 실제 주문 ID 조회 완료: {ids}")
-            return ids
+        orders = []
+        from datetime import datetime
+        for r in rows:
+            delivered_at = r[3]
+            days_since = None
+            if delivered_at:
+                days_since = (datetime.now() - delivered_at).days
+            orders.append({
+                "order_id": str(r[0]),
+                "status": str(r[1]),
+                "shipping_fee": float(r[2]) if r[2] else 0.0,
+                "days_since_delivery": days_since,
+            })
+        print(f"[INFO] 실제 주문 조회 완료: {[o['order_id'] + '(' + o['status'] + ')' for o in orders]}")
+        return user_id, orders
     except Exception as e:
         print(f"[WARN] DB 조회 실패: {e}")
-    # fallback
-    return ["1", "2", "3"]
+    # Fallback
+    return 1, [
+        {"order_id": "ORD-FALLBACK-0001", "status": "paid",      "shipping_fee": 3000.0, "days_since_delivery": None},
+        {"order_id": "ORD-FALLBACK-0002", "status": "shipped",    "shipping_fee": 3000.0, "days_since_delivery": None},
+        {"order_id": "ORD-FALLBACK-0003", "status": "delivered",  "shipping_fee": 3000.0, "days_since_delivery": 2},
+    ]
+
+
+def classify_order(order: dict) -> dict:
+    """주문 상태에 따라 취소/반품/교환 가능 여부를 판단합니다."""
+    status = order["status"]
+    days = order.get("days_since_delivery")
+
+    can_cancel = status in ("paid", "preparing")
+    can_return = (
+        status in ("shipped", "delivered")
+        and not (status == "delivered" and days is not None and days > 7)
+    )
+    can_exchange = (
+        status in ("paid", "preparing", "shipped", "delivered")
+        and not (status == "delivered" and days is not None and days > 7)
+        and status not in ("cancelled", "refunded")
+    )
+    exchange_free = status in ("paid", "preparing")
+
+    return {
+        "can_cancel": can_cancel,
+        "can_return": can_return,
+        "can_exchange": can_exchange,
+        "exchange_free": exchange_free,
+    }
+
 
 # ─── Tools 로드 ───────────────────────────────────────────────────────────────
 def load_tools() -> list:
     with open(TOOLS_PATH, encoding="utf-8") as f:
         return json.load(f)
 
+
 # ─── CSV 샘플링 ───────────────────────────────────────────────────────────────
-def load_csv_samples(path: Path, n: int = 30) -> list[dict]:
+def load_csv_samples(path: Path, n: int = 100) -> list[dict]:
     rows = []
     try:
         with open(path, encoding="utf-8-sig", newline="") as f:
@@ -89,91 +159,192 @@ def load_csv_samples(path: Path, n: int = 30) -> list[dict]:
         print(f"[WARN] CSV 로드 실패 {path}: {e}")
     return rows
 
+
 def pick_product_info(samples: list[dict]) -> dict:
-    """CSV 행에서 상품 정보 추출 (할루시네이션 방지)"""
     if not samples:
         return {}
     row = random.choice(samples)
-    # 다양한 컬럼명 시도
-    keys = list(row.keys())
-    info = {}
-    for k in keys:
-        v = str(row.get(k, "")).strip()
-        if v and v != "nan":
-            info[k] = v
-    return info
+    return {k: str(v).strip() for k, v in row.items() if str(v).strip() and str(v).strip() != "nan"}
 
-# ─── GPT-4o-mini 호출 ─────────────────────────────────────────────────────────
+
+# ─── GPT 호출 ─────────────────────────────────────────────────────────────────
 def call_gpt(system_prompt: str, user_prompt: str) -> str:
     response = client.chat.completions.create(
         model=MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_prompt},
+            {"role": "user", "content": user_prompt},
         ],
         temperature=0.7,
         max_tokens=3000,
     )
     return response.choices[0].message.content.strip()
 
-# ─── 시나리오 정의 ─────────────────────────────────────────────────────────────
+
+# ─── 주문 상태 정책 정의 ──────────────────────────────────────────────────────
+ORDER_STATUS_POLICY = """
+## 주문 상태 정책 (반드시 준수)
+
+| 상태                   | 취소 | 반품/환불 | 교환       |
+|------------------------|------|-----------|------------|
+| PENDING (결제 대기)    |  불가 | 불가      | 불가       |
+| PAID (결제 완료)       |  가능 | 불가→취소 안내 | 가능(무료) |
+| PREPARING (상품준비중) |  가능 | 불가→취소 안내 | 가능(무료) |
+| SHIPPED (배송중)       |  불가 | 가능      | 가능(유료) |
+| DELIVERED 7일 이내     |  불가 | 가능      | 가능(유료) |
+| DELIVERED 7일 초과     |  불가 | 불가      | 불가       |
+| CANCELLED              |  불가 | 불가      | 불가       |
+| REFUNDED               |  불가 | 불가      | 불가       |
+
+### 취소 (cancel_order)
+- 가능: PAID, PREPARING 상태에서만 가능
+- 처리: 즉시 취소, 전액 환불, 재고 자동 복구
+- 불가 시: 현재 상태에서는 취소가 불가능함을 안내 (tool 미호출 or 오류 반환)
+
+### 반품/환불 (check_refund_eligibility → register_return_request)
+- 가능: SHIPPED 또는 DELIVERED(7일 이내)
+- 판매자 귀책: 전액 환불
+- 구매자 귀책: 왕복 배송비(배송비×2) 차감 후 환불
+- 배송 전(PAID/PREPARING) 상태: 환불 불가 → cancel_order 안내
+
+### 교환 (check_exchange_eligibility → 분기)
+- PAID/PREPARING: change_product_option (무료)
+- SHIPPED/DELIVERED 7일 이내: register_exchange_request (유료, 왕복 배송비)
+- 불가: CANCELLED, REFUNDED, DELIVERED 7일 초과
+"""
+
+# ─── 시나리오 정의 (11개) ──────────────────────────────────────────────────────
 SCENARIOS = [
-    {"id": 1,  "name": "주문 취소",                      "tools": ["cancel_order"],                                   "rag_policy": "optional"},
-    {"id": 2,  "name": "환불 신청",                      "tools": ["check_refund_eligibility", "register_return_request"], "rag_policy": "required"},
-    {"id": 3,  "name": "교환 신청",                      "tools": ["check_exchange_eligibility", "register_exchange_request"], "rag_policy": "optional"},
-    {"id": 4,  "name": "주문 내역 조회 (주문번호 없음)", "tools": ["get_user_orders"],                                "rag_policy": "forbidden"},
-    {"id": 5,  "name": "주문 내역 조회 (주문번호 있음)", "tools": ["get_order_details"],                              "rag_policy": "forbidden"},
-    {"id": 6,  "name": "자연어 키워드 검색",             "tools": ["search_knowledge_base"],                          "rag_policy": "required"},
-    {"id": 7,  "name": "필터 기반 추천",                 "tools": ["search_knowledge_base"],                          "rag_policy": "optional"},
-    {"id": 8,  "name": "이미지 검색",                    "tools": ["search_knowledge_base"],                          "rag_policy": "optional"},
-    {"id": 9,  "name": "중고 판매 신청 + 수거 신청",    "tools": ["open_address_search", "register_return_request"],  "rag_policy": "optional"},
-    {"id": 10, "name": "리뷰 초안 작성 + 리뷰 등록",    "tools": ["create_review"],                                  "rag_policy": "forbidden"},
-    {"id": 11, "name": "상품권 등록",                    "tools": ["register_gift_card"],                             "rag_policy": "forbidden"},
+    {"id": 1,  "name": "주문취소 (가능: PREPARING)", "action": "cancel",   "possible": True,  "required_status": ["preparing", "paid"], "tools": ["get_user_orders", "cancel_order"],            "rag_policy": "optional",  "ux_flow": "select"},
+    {"id": 2,  "name": "환불 (가능: DELIVERED)",    "action": "refund",   "possible": True,  "required_status": ["delivered"],        "tools": ["get_user_orders", "check_refund_eligibility"], "rag_policy": "required",  "ux_flow": "select"},
+    {"id": 3,  "name": "교환 (가능: DELIVERED 유료)", "action": "exchange", "possible": True,  "required_status": ["delivered"],        "tools": ["get_user_orders", "check_exchange_eligibility"], "rag_policy": "optional",  "ux_flow": "select"},
+    {"id": 4,  "name": "주문 내역 조회 (주문번호 없음)", "action": "query",   "possible": True,  "required_status": [],                   "tools": ["get_user_orders"],          "rag_policy": "forbidden", "ux_flow": "direct"},
+    {"id": 5,  "name": "주문 내역 조회 (주문번호 있음)", "action": "query",   "possible": True,  "required_status": [],                   "tools": ["get_order_details"],        "rag_policy": "forbidden", "ux_flow": "direct"},
+    {"id": 6,  "name": "배송 현황 조회",             "action": "query",    "possible": True,  "required_status": ["shipped"],          "tools": ["get_user_orders", "get_shipping_details"],    "rag_policy": "forbidden", "ux_flow": "select"},
+    {"id": 7,  "name": "리뷰 등록",                  "action": "review",   "possible": True,  "required_status": ["delivered"],        "tools": ["get_user_orders", "create_review"],           "rag_policy": "forbidden", "ux_flow": "select"},
+    {"id": 8, "name": "교환 (불가: CANCELLED)",   "action": "exchange", "possible": False, "required_status": ["cancelled"],        "tools": ["get_user_orders", "get_order_details"],       "rag_policy": "optional",  "ux_flow": "select"},
+    {"id": 9, "name": "FAQ 검색 (배송 정책)",         "action": "faq",      "possible": True,  "required_status": [],                   "tools": ["search_knowledge_base"],    "rag_policy": "required",  "ux_flow": "direct"},
+    {"id": 10, "name": "FAQ 검색 (취소/반품 정책)",    "action": "faq",      "possible": True,  "required_status": [],                   "tools": ["search_knowledge_base"],    "rag_policy": "required",  "ux_flow": "direct"},
+    {"id": 11, "name": "결제 수단 변경",               "action": "other",    "possible": True,  "required_status": ["paid", "preparing"],"tools": ["get_user_orders", "update_payment_method"],   "rag_policy": "optional",  "ux_flow": "select"},
 ]
 
-# 20개 배분: 각 시나리오에서 1~2개씩 총 20개 (11개 시나리오 중 9개는 2개, 2개는 1개)
-SCENARIO_DISTRIBUTION = [1,2,3,4,5,6,7,8,9,10,11,1,2,3,4,5,6,7,8,9]
-# 총 20개, 순서 섞기 전에 고정
-
-# ─── acceptable_arguments 정의 ────────────────────────────────────────────────
+# ─── acceptable_arguments ─────────────────────────────────────────────────────
 ACCEPTABLE = {
     "reason": [
-        "단순 변심", "simple_change_of_mind", "change_of_mind",
-        "customer_preference", "사이즈 문제", "색상 불만족",
-        "배송 지연", "상품 불량", "오배송", "파손"
+        "단순 변심", "simple_change_of_mind", "change_of_mind", "customer_preference",
+        "사이즈가 안 맞아요", "색상이 화면과 달라요", "배송이 너무 늦어서 취소합니다",
+        "상품이 파손되었어요", "다른 상품이 배송됨", "마음에 들지 않음"
     ],
-    "size": ["XS", "S", "M", "L", "XL", "90", "95", "100", "105", "FREE"],
+    "size": ["XS", "S", "M", "L", "XL", "90", "95", "100", "105", "FREE", "free"],
     "color": ["black", "white", "ivory", "cream", "beige", "navy", "gray", "brown",
               "블랙", "화이트", "아이보리", "크림", "베이지", "네이비", "그레이", "브라운"],
     "rating": [1, 2, 3, 4, 5],
     "payment_method": ["카드", "계좌이체", "CARD", "BANK_TRANSFER", "카카오페이", "네이버페이"],
 }
 
-# ─── 시나리오별 Dialog 생성 ───────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """당신은 이커머스 챗봇 평가용 데이터셋 전문가입니다.
+
+# ─── 시스템 프롬프트 ──────────────────────────────────────────────────────────
+def get_system_prompt(user_id: int) -> str:
+    return f"""당신은 이커머스 챗봇 평가용 데이터셋 전문가입니다.
 주어진 시나리오에 따라 멀티턴 대화와 Ground Truth tool call을 생성합니다.
+
+{ORDER_STATUS_POLICY}
 
 규칙:
 1. output은 반드시 순수 JSON 객체만 반환합니다. 마크다운 코드블록, 설명 텍스트 없이.
-2. 모든 tool call에는 user_id: 1을 반드시 포함합니다.
-3. order_id는 반드시 {ORDER_ID} placeholder를 사용해야 합니다. [매우 중요] tool_calls의 arguments 뿐만 아니라, "query" 배열 내 user 또는 assistant의 대화 텍스트(content) 안에도 반드시 {ORDER_ID}가 1회 이상 명시적으로 등장해야 합니다.
-4. dialog는 멀티턴으로, 필수 argument(주문번호, 취소사유, 교환사유 등)가 dialog 안에 이미 구체적인 텍스트로 포함되어야 합니다.
+2. 모든 tool call에는 user_id: {user_id}을(를) 반드시 포함합니다.
+3. order_id는 반드시 {{ORDER_ID}} placeholder를 사용해야 합니다. tool_calls의 arguments와 query 대화 내용 모두에 {{ORDER_ID}}를 명시적으로 포함하세요.
+4. dialog는 멀티턴으로, 필수 argument(주문번호, 취소사유, 교환사유 등)가 대화 안에 구체적으로 포함되어야 합니다.
 5. Slot Filling 질문은 생성하지 않습니다. (type_of_output: "slot" 턴은 만들지 않음)
 6. type_of_output: "call" 인 턴이 반드시 2개 이상 포함되어야 합니다.
 7. 상품 정보는 반드시 제공된 CSV 데이터를 기반으로 생성합니다. 임의 상품명 생성 금지.
+8. [중요] 주문 상태(order_status)에 맞게 tool call을 생성하세요.
+9. [중요] user_id는 항상 {user_id}로 고정합니다. 이 챗봇은 로그인된 사용자(user_id={user_id})의 컨텍스트에서 동작하므로, 대화에서 user_id를 사용자에게 묻지 않습니다.
+
+10. [HITL (Human-in-the-loop) 핵심 규칙 - 실제 클라이언트 UX 흐름]
+    사용자가 취소/환불/교환/리뷰 등을 요청할 때, 설령 **주문번호를 같이 제공하더라도** 
+    실제 클라이언트에서는 사용자에게 주문 내역을 띄워주고 확인을 받는 절차(HITL)를 진행합니다.
+    따라서:
+    1단계: 사용자가 정보를 제공하여 요청 (예: "{{ORDER_ID}} 주문 취소할래. 단순변심이야")
+    → 챗봇은 이 주문번호로 바로 취소 도구를 호출하는 것이 아니라,
+      반드시 `get_user_orders(user_id={user_id}, requires_selection=True, action_context="cancel/refund/exchange")` 를 호출하여 
+      목록 UI를 띄워야 합니다. 이것이 턴1의 Ground Truth입니다.
+    
+    2단계: 챗봇이 "목록에서 주문을 선택해주세요" 라고 안내.
+    → 사용자가 목록 UI 프론트엔드를 통해 "{{ORDER_ID}} 주문이요, 사유는 단순 변심입니다" 와 같이 선택.
+    → 이때 챗봇은 해당 action tool (cancel_order, check_refund_eligibility 등)을 호출합니다.
+
+11. [핵심 - 불가능 케이스 검증 방식]
+    possible이 False인 시나리오에서는:
+    - 1단계: 위와 동일하게 무조건 get_user_orders 호출
+    - 2단계: 사용자가 해당하는 불가 주문을 선택하면, **챗봇이 임의로 텍스트로 거절해서는 안 됩니다.**
+      반드시 `get_order_details` (또는 check_refund_eligibility)를 호출하여 백엔드/시스템 상태를 확인하는 call을 만들어야 합니다.
+      이것이 불가 시나리오 턴 2의 Ground Truth입니다.
+    - 대화 맥락에서 assistant가 시스템 호출 없이 섣불리 불가하다고 말하지 않도록 주의하세요.
+
+12. [핵심 - 필수 파라미터 대화 포함]
+    - cancel_order: 주문번호 + 취소 사유
+    - check_refund_eligibility: 주문번호 + 환불 사유
+    - check_exchange_eligibility: 주문번호 + 교환 사유
 """
 
 
-def build_prompt_for_scenario(scenario: dict, product_info: dict, dialog_num: int) -> str:
+def build_prompt_for_scenario(
+    scenario: dict,
+    product_info: dict,
+    dialog_num: int,
+    order: dict,
+    user_email: str,
+    user_id: int,
+) -> str:
     tool_names_str = ", ".join(scenario["tools"])
     product_str = json.dumps(product_info, ensure_ascii=False)
+    action_possible = "가능" if scenario["possible"] else "불가능"
+    order_status = order["status"].upper()
+
+    ux_flow = scenario.get("ux_flow", "direct")
+    action_context_map = {
+        "cancel": "cancel", "refund": "refund", "exchange": "exchange",
+        "review": "review", "query": None, "faq": None, "other": None,
+    }
+    action_context = action_context_map.get(scenario["action"])
+
+    if ux_flow == "select":
+        flow_instruction = f"""
+[대화 흐름 - 주문 선택 UX (반드시 이 흐름을 따르세요: HITL 구조)]
+
+턴 1 (type_of_output: "call"):
+  - 사용자가 처음부터 주문번호를 함께 요청하게 합니다. 
+    예: "{{ORDER_ID}} 주문을 취소하고 싶어요. 단순 변심입니다." 또는 "{{ORDER_ID}} 환불받고 싶은데요, 사이즈가 안 맞네요."
+  - **[중요]** 주문번호가 있더라도, 시스템은 사용자가 화면에서 직접 클릭해 확인(HITL)하도록 유도합니다.
+  - ground_truth: get_user_orders(user_id={user_id}, requires_selection=True, action_context="{action_context or ''}")
+
+턴 2 (type_of_output: "call"):
+  - assistant는 턴 1 이후 "주문 내역에서 원하시는 주문을 선택해주세요." 등으로 명확히 안내합니다.
+  - 사용자가 "네, 이 주문({{ORDER_ID}})입니다." 처럼 선택을 확정합니다.
+  - **[중요 - 가능 시나리오(possible=true)]**: 
+    ground_truth: 해당 action의 최종 tool 호출 (예: cancel_order, check_refund_eligibility 등)
+  - **[중요 - 불가능 시나리오(possible=false)]**: 
+    ground_truth: 시스템이 주문 상태를 확인하기 위해 `get_order_details` 호출 
+"""
+    else:
+        flow_instruction = """
+[대화 흐름 - 직접 요청]
+사용자가 필요한 정보를 직접 대화에서 제공합니다.
+type_of_output이 "call"인 턴이 반드시 2개 이상 포함되어야 합니다.
+"""
 
     return f"""
 시나리오: {scenario['name']} (시나리오 ID: {scenario['id']})
 다이얼로그 번호: {dialog_num}
 평가 대상 tools: {tool_names_str}
 RAG 정책: {scenario['rag_policy']}
+주문 상태: {order_status}
+이 시나리오의 요청 처리 가능 여부: {action_possible}
+UX 흐름: {ux_flow}
+
+{flow_instruction}
 
 참고 상품 정보 (CSV 기반, 이 정보만 사용할 것):
 {product_str}
@@ -183,8 +354,10 @@ RAG 정책: {scenario['rag_policy']}
 {{
   "scenario_id": "{scenario['id']}-{dialog_num}",
   "scenario_name": "{scenario['name']}",
-  "order_id_source": "get_user_orders:test@example.com",
+  "order_status": "{order_status}",
+  "order_id_source": "get_user_orders:{user_email}",
   "rag_policy": "{scenario['rag_policy']}",
+  "possible": {str(scenario['possible']).lower()},
   "source_file": "AI_Hub CSV",
   "source_row_id": "<CSV에서 참조한 행 정보>",
   "evidence": "<사용한 근거>",
@@ -192,156 +365,142 @@ RAG 정책: {scenario['rag_policy']}
     {{
       "turn_num": 1,
       "query": [
-        {{"role": "user", "content": "..."}}
-      ],
-      "ground_truth": {{
-        "role": "assistant",
-        "content": "...",
-        "tool_calls": null
-      }},
-      "type_of_output": "completion"
-    }},
-    {{
-      "turn_num": 2,
-      "query": [
-        {{"role": "user", "content": "..."}},
-        {{"role": "assistant", "content": "..."}},
-        {{"role": "user", "content": "..."}}
+        {{"role": "user", "content": "{{ORDER_ID}} 주문을 취소하고 싶어요. 단순 변심입니다."}}
       ],
       "ground_truth": {{
         "role": "assistant",
         "content": null,
         "tool_calls": [
           {{
-            "id": "random_id",
+            "id": "call_1",
             "type": "function",
             "function": {{
-              "name": "<tool_name>",
-              "arguments": "<JSON string with all required params + user_id: 1>"
+              "name": "get_user_orders",
+              "arguments": "{{\\"user_id\\": {user_id}, \\"requires_selection\\": true, \\"action_context\\": \\"cancel\\"}}"
+            }}
+          }}
+        ]
+      }},
+      "type_of_output": "call",
+      "acceptable_arguments": {{}}
+    }},
+    {{
+      "turn_num": 2,
+      "query": [
+        {{"role": "user", "content": "{{ORDER_ID}} 주문을 취소하고 싶어요. 단순 변심입니다."}},
+        {{"role": "assistant", "content": "주문 목록에서 취소하실 주문을 선택하여 주시기 바랍니다."}},
+        {{"role": "user", "content": "{{ORDER_ID}} 주문. 확인했습니다."}}
+      ],
+      "ground_truth": {{
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {{
+            "id": "call_2",
+            "type": "function",
+            "function": {{
+              "name": "cancel_order",
+              "arguments": "{{\\"order_id\\": \\"{{ORDER_ID}}\\", \\"user_id\\": {user_id}, \\"reason\\": \\"단순 변심\\"}}"
             }}
           }}
         ]
       }},
       "type_of_output": "call",
       "acceptable_arguments": {{
-        "reason": ["단순 변심", "simple_change_of_mind", "customer_preference"]
+        "reason": ["단순 변심", "simple_change_of_mind"]
       }}
     }}
   ]
 }}
 
 중요:
+- 위 예시는 취소 시나리오(가능) 기준입니다. 불가능(possible=false) 조건이라면 턴 2의 ground_truth name이 `get_order_details`가 되도록 생성해야 합니다.
 - type_of_output이 "call"인 턴이 반드시 2개 이상 포함되어야 합니다.
-- completion 유형 턴은 포함해도 되지만, 포함하지 않아도 됩니다. (Argument Accuracy 전용)
 - query 배열은 해당 turn까지의 전체 대화 기록을 포함해야 합니다 (누적 방식).
 - arguments는 JSON 문자열로 직렬화하세요.
-- acceptable_arguments는 type_of_output=="call"인 모든 턴에 반드시 포함해야 합니다. (reason, size, color, rating, payment_method)
-- 해당되는 파라미터가 없다면 빈 딕셔너리 {{}} 귿로 설정하세요. 절대 누락하지 마세요.
+- acceptable_arguments는 type_of_output=="call"인 모든 턴에 반드시 포함해야 합니다.
+- 해당되는 파라미터가 없다면 빈 딕셔너리 {{}} 로 설정하세요.
 - tool call이 없는 턴은 tool_calls를 null로 설정하고 content에 텍스트를 넣으세요.
-- turn_num은 1부터 시작하여 순차적으로 증가합니다.
 """
 
 
-def replace_order_id_in_turns(turns: list, real_order_ids: list) -> list:
-    """{ORDER_ID} placeholder를 DB의 실제 주문 ID로 치환합니다."""
-    if not real_order_ids:
-        return turns
-    chosen_id = random.choice(real_order_ids)
+# ─── 후처리 ───────────────────────────────────────────────────────────────────
+def replace_order_id_in_turns(turns: list, order_id: str) -> list:
+    """{ORDER_ID} placeholder를 실제 주문 ID로 치환합니다."""
     for t in turns:
-        # ground_truth 내 arguments 치환
         gt = t.get("ground_truth", {})
         if gt and isinstance(gt, dict):
-            tool_calls = gt.get("tool_calls", [])
-            if tool_calls:
-                for tc in tool_calls:
-                    fn = tc.get("function", {})
-                    args = fn.get("arguments", "")
-                    if isinstance(args, str):
-                        fn["arguments"] = args.replace("{ORDER_ID}", chosen_id)
-                    elif isinstance(args, dict):
-                        args_str = json.dumps(args, ensure_ascii=False)
-                        fn["arguments"] = args_str.replace("{ORDER_ID}", chosen_id)
-        # query 내 메시지에서도 치환
+            for tc in gt.get("tool_calls", []) or []:
+                fn = tc.get("function", {})
+                args = fn.get("arguments", "")
+                if isinstance(args, str):
+                    fn["arguments"] = args.replace("{ORDER_ID}", order_id)
+                elif isinstance(args, dict):
+                    fn["arguments"] = json.dumps(args, ensure_ascii=False).replace("{ORDER_ID}", order_id)
+
         has_id_in_query = False
         for msg in t.get("query", []):
             if isinstance(msg.get("content"), str):
                 if "{ORDER_ID}" in msg["content"]:
                     has_id_in_query = True
-                msg["content"] = msg["content"].replace("{ORDER_ID}", chosen_id)
-        
-        # [검증] call 타입인데 대화 내용에 대상 ID가 언급되지 않았다면 Warning
+                msg["content"] = msg["content"].replace("{ORDER_ID}", order_id)
+
         if t.get("type_of_output") == "call" and not has_id_in_query:
-            # 강제로 마지막 user 대화에 주문번호를 주입 (Fail-safe)
             if t.get("query"):
-                t["query"][-1]["content"] += f" 주문번호는 {chosen_id} 입니다."
+                t["query"][-1]["content"] += f" 주문번호는 {order_id} 입니다."
     return turns
 
 
-def ensure_acceptable_arguments_on_call_turns(turns: list) -> list:
-    """call 유형 턴에 acceptable_arguments가 없는 경우 빈 딕셔너리로 기본값을 넣어줄니다."""
+def ensure_acceptable_arguments(turns: list) -> list:
     for t in turns:
         if t.get("type_of_output") == "call" and "acceptable_arguments" not in t:
-            # ground_truth의 arguments를 분석해서 적절한 기본값을 샘플링
-            acc = {}
-            gt = t.get("ground_truth", {})
-            tc_list = gt.get("tool_calls", []) if isinstance(gt, dict) else []
-            if tc_list:
-                fn = tc_list[0].get("function", {})
-                args_raw = fn.get("arguments", "{}")
-                try:
-                    args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
-                except:
-                    args = {}
-                # reason 파라미터가 있으면 기본 허용 목록 제공
-                if "reason" in args:
-                    acc["reason"] = ACCEPTABLE["reason"]
-                if "size" in args:
-                    acc["size"] = ACCEPTABLE["size"]
-                if "color" in args:
-                    acc["color"] = ACCEPTABLE["color"]
-                if "rating" in args:
-                    acc["rating"] = ACCEPTABLE["rating"]
-                if "payment_method" in args:
-                    acc["payment_method"] = ACCEPTABLE["payment_method"]
-            t["acceptable_arguments"] = acc
+            t["acceptable_arguments"] = {}
     return turns
 
 
 def filter_call_turns_only(turns: list) -> list:
-    """type_of_output이 'call'인 턴만 필터링합니다."""
     return [t for t in turns if t.get("type_of_output") == "call"]
 
 
-def generate_dialog(scenario: dict, product_info: dict, dialog_num: int, tools: list,
-                    real_order_ids: list) -> dict | None:
-    prompt = build_prompt_for_scenario(scenario, product_info, dialog_num)
+# ─── 다이얼로그 생성 ──────────────────────────────────────────────────────────
+def generate_dialog(
+    scenario: dict,
+    product_info: dict,
+    dialog_num: int,
+    tools: list,
+    order: dict,
+    user_email: str,
+    user_id: int,
+) -> dict | None:
+    prompt = build_prompt_for_scenario(scenario, product_info, dialog_num, order, user_email, user_id)
+    system_prompt = get_system_prompt(user_id)
     try:
-        raw = call_gpt(SYSTEM_PROMPT, prompt)
-        # JSON 파싱 시도
-        # 코드블록 제거
+        raw = call_gpt(system_prompt, prompt)
         raw = re.sub(r"```json\s*", "", raw)
         raw = re.sub(r"```\s*", "", raw)
         data = json.loads(raw.strip())
 
-        # 후첸리 1: {ORDER_ID} 실제 ID로 치환
-        data["turns"] = replace_order_id_in_turns(data.get("turns", []), real_order_ids)
+        # 실제 주문 ID 치환
+        data["turns"] = replace_order_id_in_turns(data.get("turns", []), order["order_id"])
 
-        # 후첸리 2: acceptable_arguments 누락 보완
-        data["turns"] = ensure_acceptable_arguments_on_call_turns(data.get("turns", []))
+        # acceptable_arguments 보완
+        data["turns"] = ensure_acceptable_arguments(data.get("turns", []))
 
-        # 후첸리 3: call 턴만 필터링 (Argument Accuracy 전용)
+        # call 턴만 필터링
         data["turns"] = filter_call_turns_only(data.get("turns", []))
 
-        # 후처리 4: turn_num 1부터 재정렬 (필터링 후 번호가 2번부터 시작하는 문제 해결)
+        # turn_num 1부터 재정렬
         for idx, t in enumerate(data["turns"], start=1):
             t["turn_num"] = idx
 
-        # 후처리 5: tool_call id를 보기 편한 순차 번호(문자열)로 교체
+        # tool_call id 순차 번호로 정리
         call_id_counter = 1
         for t in data["turns"]:
             gt = t.get("ground_truth", {})
             if isinstance(gt, dict):
                 for tc in gt.get("tool_calls", []) or []:
+                    if "type" not in tc:
+                        tc["type"] = "function"
                     tc["id"] = f"call_{call_id_counter}"
                     call_id_counter += 1
 
@@ -349,25 +508,60 @@ def generate_dialog(scenario: dict, product_info: dict, dialog_num: int, tools: 
             print(f"[WARN] dialog {dialog_num}: call 턴이 없습니다.")
             return None
 
-        # tools 필드 추가
         data["dialog_num"] = dialog_num
         data["tools_count"] = len(tools)
         data["tools"] = tools
+        data["user_id"] = user_id
+        data["user_email"] = user_email
+        # 주문 메타 정보 저장
+        data["order_id"] = order["order_id"]
+        data["order_status"] = order["status"]
+        data["possible"] = scenario["possible"]
 
         return data
     except json.JSONDecodeError as e:
-        print(f"[ERROR] JSON 파싱 실패 (dialog {dialog_num}, scenario {scenario['name']}): {e}")
-        print(f"  Raw response (first 300 chars): {raw[:300]}")
+        print(f"[ERROR] JSON 파싱 실패 (dialog {dialog_num}): {e}")
         return None
     except Exception as e:
         print(f"[ERROR] 생성 실패 (dialog {dialog_num}): {e}")
         return None
 
 
+# ─── 주문 선택 로직 ───────────────────────────────────────────────────────────
+def pick_order_for_scenario(scenario: dict, all_orders: list[dict], target_order_number: str = None) -> dict | None:
+    """
+    eval_data.jsonl 에 지정된 target_order_number 가 있으면 그것을 최우선으로 선택합니다.
+    시나리오의 required_status에 맞는 주문을 DB 주문 목록에서 선택합니다.
+    """
+    required = scenario.get("required_status", [])
+    if target_order_number:
+        matched_target = [o for o in all_orders if o["order_id"] == target_order_number]
+        if matched_target:
+            order = matched_target[0]
+            if required and order["status"] not in required:
+                print(f"[WARN] target_order {target_order_number} 상태({order['status']})가 시나리오 필요({required})와 다름. 그래도 사용.")
+            return order
+        else:
+            print(f"[WARN] target_order {target_order_number} 를 사용자 주문 목록에서 못 찾음. 임의 검색으로 진행합니다.")
+
+    if not required:
+        return random.choice(all_orders) if all_orders else None
+
+    # 상태가 맞는 주문 필터링
+    matched = [o for o in all_orders if o["status"] in required]
+    if matched:
+        return random.choice(matched)
+
+    # 없으면 fallback: 첫 번째 주문 사용 (임의)
+    print(f"[WARN] 시나리오 '{scenario['name']}' 에 맞는 상태({required}) 주문 없음. 임의 주문 사용.")
+    return random.choice(all_orders) if all_orders else None
+
+
 # ─── 메인 실행 ────────────────────────────────────────────────────────────────
 def main():
     print("=" * 60)
-    print("Argument Accuracy Dialog 데이터셋 생성 시작")
+    print("Argument Accuracy Dialog 데이터셋 생성 시작 (v2_HITL)")
+    print("주문 번호가 있어도 get_user_orders 호출 및 불가능 케이스 get_order_details 검증 필수")
     print("=" * 60)
 
     # 1. tools 로드
@@ -380,42 +574,74 @@ def main():
     all_samples = fashion_samples + clothes_samples
     print(f"[INFO] CSV 샘플 로드 완료: {len(all_samples)}개 행")
 
-    # 3. 실제 DB 주문 ID 조회
-    real_order_ids = get_real_order_ids()
-    print(f"[INFO] 실제 주문 ID: {real_order_ids}")
+    eval_data = load_eval_data()
+    login_user_email = eval_data.get("로그인", {}).get("user_email", "test@example.com")
+    
+    ACTION_TO_EVAL_TYPE = {
+        "cancel": "주문취소",
+        "refund": "환불",
+        "exchange": "교환"
+    }
 
-    # 4. 시나리오 ID → 시나리오 매핑
-    scenario_map = {s["id"]: s for s in SCENARIOS}
-
-    # 5. 20개 생성
+    # 4. 11개 시나리오 순서대로 생성
     results = []
     serial_counter = 1
 
-    for i, scenario_id in enumerate(SCENARIO_DISTRIBUTION):
-        dialog_num = i + 1
-        scenario = scenario_map[scenario_id]
+    for dialog_num, scenario in enumerate(SCENARIOS, start=1):
+        print(f"\n[{dialog_num:02d}/11] 시나리오 '{scenario['name']}' 생성 중...")
+
+        action = scenario.get("action")
+        target_eval = eval_data.get(ACTION_TO_EVAL_TYPE.get(action)) if action else None
+
+        if target_eval:
+            user_email = target_eval.get("user_email", login_user_email)
+            target_order_number = target_eval.get("order_number")
+        else:
+            user_email = login_user_email
+            target_order_number = None
+
+        user_id, all_orders = get_real_orders_with_status(user_email)
+        if not all_orders:
+            print("[ERROR] 주문 정보를 가져오지 못했습니다. 건너뜁니다.")
+            continue
+
+        # 시나리오에 맞는 주문 선택 (eval_data.jsonl 지정 주문번호 우선)
+        order = pick_order_for_scenario(scenario, all_orders, target_order_number)
+        if not order:
+            print(f"  → 주문 없음. 건너뜁니다.")
+            continue
+
+        print(f"  → 사용 주문: {order['order_id']} (상태: {order['status']})")
+
         product_info = pick_product_info(all_samples) if all_samples else {}
 
-        print(f"\n[{dialog_num:02d}/20] 시나리오 '{scenario['name']}' 생성 중...")
-
-        dialog_data = generate_dialog(scenario, product_info, dialog_num, tools, real_order_ids)
+        dialog_data = generate_dialog(scenario, product_info, dialog_num, tools, order, user_email, user_id)
 
         if dialog_data is None:
             print(f"  → 재시도 중...")
-            dialog_data = generate_dialog(scenario, product_info, dialog_num, tools, real_order_ids)
+            dialog_data = generate_dialog(scenario, product_info, dialog_num, tools, order, user_email, user_id)
 
         if dialog_data is None:
-            print(f"  → 생성 실패, 건너맕니다.")
+            print(f"  → 생성 실패, 건너뜁니다.")
             continue
 
-        # serial_num 보정
+        # serial_num 보정 및 데이터 구조 검증
         turns = dialog_data.get("turns", [])
+        if not isinstance(turns, list):
+            print(f"  → [ERROR] turns가 리스트가 아닙니다. 건너뜁니다.")
+            continue
+
+        validated_turns = []
         for t in turns:
+            if not isinstance(t, dict): continue
             t["serial_num"] = serial_counter
             serial_counter += 1
-
+            validated_turns.append(t)
+        
+        dialog_data["turns"] = validated_turns
         results.append(dialog_data)
-        print(f"  → 완료 ({len(turns)} turns, call 타입: {sum(1 for t in turns if t.get('type_of_output') == 'call')}개)")
+        call_count = sum(1 for t in validated_turns if isinstance(t, dict) and t.get("type_of_output") == "call")
+        print(f"  → 완료 ({len(validated_turns)} turns, call 타입: {call_count}개, possible={scenario['possible']})")
 
     # 5. JSONL 저장
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -425,12 +651,16 @@ def main():
 
     print("\n" + "=" * 60)
     print(f"✅ 데이터셋 생성 완료!")
-    print(f"   총 Dialog 수 : {len(results)}개 / 목표 20개")
+    print(f"   총 Dialog 수 : {len(results)}개")
     total_calls = sum(
         sum(1 for t in item.get("turns", []) if t.get("type_of_output") == "call")
         for item in results
     )
+    possible_count = sum(1 for item in results if item.get("possible") is True)
+    impossible_count = sum(1 for item in results if item.get("possible") is False)
     print(f"   총 call 턴 수: {total_calls}개")
+    print(f"   가능 시나리오: {possible_count}개")
+    print(f"   불가 시나리오: {impossible_count}개")
     print(f"   저장 경로    : {OUTPUT_PATH}")
     print("=" * 60)
 
