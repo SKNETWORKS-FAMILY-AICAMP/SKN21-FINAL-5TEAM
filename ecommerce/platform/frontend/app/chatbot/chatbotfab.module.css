@@ -503,6 +503,31 @@
   color: #c51d34;
 }
 
+.pendingImagePreview {
+  margin: 6px 0 0 46px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.pendingImagePreview img {
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.pendingImageRemove {
+  border: none;
+  background: transparent;
+  color: #c51d34;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+
 .bottomControls {
   position: relative;
   padding-bottom: 8px;
