@@ -14,16 +14,39 @@ type OrderData = {
   can_exchange?: boolean;
 };
 
+type UiConfig = {
+  enable_refund_button?: boolean;
+  enable_exchange_button?: boolean;
+  enable_cancel_button?: boolean;
+  enable_selection?: boolean;
+  selectable_statuses?: string[];
+  action_label?: string;
+};
+
 type OrderListUIProps = {
   message: string;
   orders: OrderData[];
   onSelect: (selectedOrderIds: string[]) => void;
   requiresSelection?: boolean;
+  ui_config?: UiConfig;
 };
 
-export default function OrderListUI({ message, orders, onSelect, requiresSelection = false }: OrderListUIProps) {
+export default function OrderListUI({ message, orders, onSelect, requiresSelection = false, ui_config }: OrderListUIProps) {
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [confirmed, setConfirmed] = React.useState(false);  // 선택 완료 상태
+
+  // ui_config가 있으면 그걸 우선 사용, 없으면 기존 requiresSelection 폴백
+  const showSelection = ui_config?.enable_selection ?? requiresSelection;
+  const showRefundBtn = ui_config?.enable_refund_button;
+  const showExchangeBtn = ui_config?.enable_exchange_button;
+  const showCancelBtn = ui_config?.enable_cancel_button;
+  const selectableStatuses = ui_config?.selectable_statuses;
+  const actionLabel = ui_config?.action_label || `선택 완료 (${selectedIds.size}건)`;
+
+  const isSelectable = (order: OrderData) => {
+    if (!selectableStatuses) return true;
+    return selectableStatuses.includes(order.status);
+  };
 
   const toggleOrder = (orderId: string) => {
     setSelectedIds((prev) => {
@@ -50,13 +73,13 @@ export default function OrderListUI({ message, orders, onSelect, requiresSelecti
       <div className={styles.orderCards}>
         {orders.map((order) => (
           <div key={order.order_id} className={styles.orderCard}>
-            {requiresSelection && (
+            {showSelection && (
               <input
                 type="checkbox"
                 checked={selectedIds.has(order.order_id)}
                 onChange={() => toggleOrder(order.order_id)}
                 className={styles.orderCheckbox}
-                disabled={confirmed}  // 선택 완료 후 비활성화
+                disabled={confirmed || !isSelectable(order)}  // 선택 불가 상태 비활성화
               />
             )}
             <div className={styles.orderContent}>
@@ -75,22 +98,27 @@ export default function OrderListUI({ message, orders, onSelect, requiresSelecti
                 <div className={styles.orderDelivered}>배송완료: {order.delivered_at}</div>
               )}
               <div className={styles.orderActions}>
-                {order.can_cancel && <span className={styles.actionBadge}>취소가능</span>}
-                {order.can_return && <span className={styles.actionBadge}>환불가능</span>}
-                {order.can_exchange && <span className={styles.actionBadge}>교환가능</span>}
+                {/* ui_config 기반 동적 버튼 (있을 때) */}
+                {showRefundBtn && order.can_return && <span className={styles.actionBadge}>환불가능</span>}
+                {showExchangeBtn && order.can_exchange && <span className={styles.actionBadge}>교환가능</span>}
+                {showCancelBtn && order.can_cancel && <span className={styles.actionBadge}>취소가능</span>}
+                {/* ui_config 없을 때 기존 방식 폴백 */}
+                {!ui_config && order.can_cancel && <span className={styles.actionBadge}>취소가능</span>}
+                {!ui_config && order.can_return && <span className={styles.actionBadge}>환불가능</span>}
+                {!ui_config && order.can_exchange && <span className={styles.actionBadge}>교환가능</span>}
               </div>
             </div>
           </div>
         ))}
       </div>
-      {requiresSelection && (
+      {showSelection && (
         <button
           type="button"
           className={styles.confirmBtn}
           onClick={handleConfirm}
           disabled={selectedIds.size === 0 || confirmed}
         >
-          {confirmed ? '선택 완료됨' : `선택 완료 (${selectedIds.size}건)`}
+          {confirmed ? '선택 완료됨' : actionLabel}
         </button>
       )}
     </div>
