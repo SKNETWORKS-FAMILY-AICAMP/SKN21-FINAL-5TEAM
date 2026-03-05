@@ -107,7 +107,7 @@ def run_evaluation(mode=0):
     print(f"   결과 저장 디렉토리: {RESULTS_DIR}")
 
     # 데이터셋 경로
-    arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialog_20_2.jsonl"
+    arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialog_20.jsonl"
     dialog_dataset = BENCH_DIR / "data" / "my_eval_slot_filling_rate_dialogs.jsonl"
 
     # 0. 데이터셋 검증
@@ -134,7 +134,7 @@ def run_evaluation(mode=0):
         "--api_key",
         OPENAI_API_KEY,
         "--num_samples",
-        "20",
+        "11",
         "--is_batch",
         "False",
         "--reset",
@@ -186,7 +186,7 @@ def run_evaluation(mode=0):
     return results
 
 
-def generate_markdown_report(results):
+def generate_markdown_report(results, mode=0):
     """평가 결과를 Markdown 보고서로 생성합니다."""
     # 경로 구조: output/{benchmark_type}/{model_name}/...
     single_score_file = (
@@ -237,11 +237,13 @@ def generate_markdown_report(results):
     if not results.get("arg_accuracy"):
         md_content += "## 📊 [Benchmark 1] Argument Accuracy (Dialog)\n- ❌ 평가 실행에 실패했습니다.\n\n"
     elif single_score_file.exists():
-        with open(single_score_file, "r", encoding="utf-8-sig") as f:
-            data = json.load(f)
-        sc = data.get("dialog_score", {})
-        call_rate = sc.get("call pass rate", 0) * 100
-        md_content += f"""## 📊 [Benchmark 1] Argument Accuracy (Dialog)
+        try:
+            with open(single_score_file, "r", encoding="utf-8-sig") as f:
+                data = json.load(f)
+            if data and "dialog_score" in data:
+                sc = data.get("dialog_score", {})
+                call_rate = sc.get("call pass rate", 0) * 100
+                md_content += f"""## 📊 [Benchmark 1] Argument Accuracy (Dialog)
 | 지표 | 결과 |
 | :--- | :--- |
 | **전체 테스트 케이스** | {sc.get("total_cnt", 0)}개 |
@@ -250,22 +252,31 @@ def generate_markdown_report(results):
 | **Micro 평균** | {sc.get("avg(micro)", 0) * 100:.1f}% |
 
 """
+            else:
+                md_content += "## 📊 [Benchmark 1] Argument Accuracy (Dialog)\n- ❌ 결과 데이터 형식이 올바르지 않습니다.\n\n"
+        except Exception as e:
+            md_content += f"## 📊 [Benchmark 1] Argument Accuracy (Dialog)\n- ❌ 결과 파일 로드 실패: {e}\n\n"
     else:
         md_content += "## 📊 [Benchmark 1] Argument Accuracy (Dialog)\n- 결과 파일을 찾을 수 없습니다.\n\n"
 
     # ── Dialog 결과 ──
     if not results.get("dialog"):
-        md_content += "## 📊 [Benchmark 2] Slot Filling Rate (Dialog)\n- ❌ 평가 실행에 실패했습니다.\n\n"
+        if mode == 1:
+            md_content += "## 📊 [Benchmark 2] Slot Filling Rate (Dialog)\n- ℹ️ 평가가 생략되었습니다.\n\n"
+        else:
+            md_content += "## 📊 [Benchmark 2] Slot Filling Rate (Dialog)\n- ❌ 평가 실행에 실패했습니다.\n\n"
     elif dialog_score_file.exists():
-        with open(dialog_score_file, "r", encoding="utf-8-sig") as f:
-            data = json.load(f)
-        ds = data.get("dialog_score", {})
+        try:
+            with open(dialog_score_file, "r", encoding="utf-8-sig") as f:
+                data = json.load(f)
+            if data and "dialog_score" in data:
+                ds = data.get("dialog_score", {})
 
-        slot_rate = ds.get("slot pass rate", 0) * 100
-        call_rate = ds.get("call pass rate", 0) * 100
-        comp_rate = ds.get("completion pass rate", 0) * 100
+                slot_rate = ds.get("slot pass rate", 0) * 100
+                call_rate = ds.get("call pass rate", 0) * 100
+                comp_rate = ds.get("completion pass rate", 0) * 100
 
-        md_content += f"""## 📊 [Benchmark 2] Slot Filling Rate (Dialog)
+                md_content += f"""## 📊 [Benchmark 2] Slot Filling Rate (Dialog)
 | 지표 | 결과 |
 | :--- | :--- |
 | **전체 테스트 케이스** | {ds.get("total_cnt", 0)}개 |
@@ -280,6 +291,10 @@ def generate_markdown_report(results):
 | **Completion (결과 전달)** | {ds.get("completion pass cnt", 0)}개 | {comp_rate:.1f}% | 툴 실행 결과를 자연스럽게 안내하는 능력 |
 
 """
+            else:
+                 md_content += "## 📊 [Benchmark 2] Slot Filling Rate (Dialog)\n- ❌ 결과 데이터 형식이 올바르지 않습니다.\n\n"
+        except Exception as e:
+            md_content += f"## 📊 [Benchmark 2] Slot Filling Rate (Dialog)\n- ❌ 결과 파일 로드 실패: {e}\n\n"
     else:
         md_content += "## 📊 [Benchmark 2] Slot Filling Rate (Dialog)\n- 결과 파일을 찾을 수 없습니다.\n\n"
 
@@ -307,4 +322,4 @@ if __name__ == "__main__":
 
     results = run_evaluation(mode=eval_mode)
     if results:
-        generate_markdown_report(results)
+        generate_markdown_report(results, mode=eval_mode)
