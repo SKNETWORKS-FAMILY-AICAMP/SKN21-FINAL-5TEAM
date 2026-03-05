@@ -6,11 +6,10 @@ evaluate_json_valid_rate.py  (API-Bank Benchmark)
 generate_json_valid_rate_dialog_dataset.py 로 생성한 JSONL 데이터셋을 사용합니다.
 
 [평가 지표]
-  - JSON Valid Rate (JVR)    : tool_calls.arguments 가 json.loads() 로 파싱 가능한 비율
-  - Type Accuracy Rate (TAR) : 인자 타입이 ground_truth 와 일치하는 비율
-  - Response Completion Rate : completion 턴의 결과 전달 품질 (LLM Judge)
-  - Task Completion Rate     : 다이얼로그 전체 완료율 (모든 턴 pass)
-  - Edge Case Breakdown      : json_edge_case 별 상세 pass/fail 집계
+  - JSON Valid Rate (JVR)   : tool_calls.arguments 가 json.loads() 로 파싱 가능한 비율
+  - Schema Match Rate (SMR) : JSON 유효 + 함수명이 ground_truth 와 일치하는 비율 (pass 기준)
+  - Response Completion Rate: completion 턴의 결과 전달 품질 (LLM Judge)
+  - Task Completion Rate    : 다이얼로그 전체 완료율 (모든 턴 pass)
 
 [사용 예시]
   python evaluate_json_valid_rate.py \\
@@ -93,7 +92,6 @@ def evaluate_turn(
     caller: ModelCaller,
     judge_client: OpenAI,
     judge_model: str,
-    edge_case: Optional[str],
     only_exact: bool,
     debug: bool,
 ) -> Dict:
@@ -132,7 +130,7 @@ def evaluate_turn(
     }
 
     if turn_type == "call":
-        validation = validate_call_turn(ground_truth, prediction, edge_case)
+        validation = validate_call_turn(ground_truth, prediction)
         result.update({
             "json_valid": validation["json_valid"],
             "type_accurate": validation["type_accurate"],
@@ -204,16 +202,15 @@ def evaluate_dialogs(
     all_results: List[Dict] = []
     with open(output_path, "w", encoding="utf-8") as fw:
         for dialog in tqdm(dialogs, desc="다이얼로그 평가"):
-            edge_case = dialog.get("json_edge_case")
             if debug:
-                print(f"\n▶ Dialog {dialog['dialog_num']}: {dialog.get('dialog_name', '')}  [{edge_case}]")
+                print(f"\n▶ Dialog {dialog['dialog_num']}: {dialog.get('dialog_name', '')}")
 
             tools = dialog["tools"]
             turn_results = [
                 evaluate_turn(
                     turn, tools, caller,
                     judge_client, judge_model,
-                    edge_case, only_exact, debug,
+                    only_exact, debug,
                 )
                 for turn in dialog["turns"]
             ]
@@ -222,7 +219,6 @@ def evaluate_dialogs(
             dialog_result = {
                 "dialog_num": dialog["dialog_num"],
                 "dialog_name": dialog.get("dialog_name", ""),
-                "json_edge_case": edge_case,
                 "turns": turn_results,
                 "dialog_pass": dialog_pass,
             }
@@ -236,32 +232,24 @@ def evaluate_dialogs(
 
 def compute_metrics(results: List[Dict]) -> Dict:
     """JSON Valid Rate 전용 메트릭을 계산합니다."""
-    # 전체 집계
-    call_total = json_valid_total = type_acc_total = 0
-    completion_total = completion_pass = 0
-    dialog_pass_count = 0
-
-    # edge_case 별 집계 {edge_case: {"total": int, "json_valid": int, "type_acc": int}}
-    edge_stats: Dict[str, Dict] = {}
+    call_total: int = 0
+    json_valid_total: int = 0
+    schema_match_total: int = 0  # json_valid AND func_name_match
+    completion_total: int = 0
+    completion_pass: int = 0
+    dialog_pass_count: int = 0
 
     for dialog in results:
-        edge_case = dialog.get("json_edge_case", "unknown")
-        if edge_case not in edge_stats:
-            edge_stats[edge_case] = {"total": 0, "json_valid": 0, "type_acc": 0}
-
         for turn in dialog.get("turns", []):
             t = turn["type_of_output"]
             if t == "call":
                 call_total += 1
-                if turn.get("json_valid"):
+                jv = bool(turn.get("json_valid"))
+                fm = bool(turn.get("func_name_match"))
+                if jv:
                     json_valid_total += 1
-                if turn.get("type_accurate"):
-                    type_acc_total += 1
-                edge_stats[edge_case]["total"] += 1
-                if turn.get("json_valid"):
-                    edge_stats[edge_case]["json_valid"] += 1
-                if turn.get("type_accurate"):
-                    edge_stats[edge_case]["type_acc"] += 1
+                if jv and fm:
+                    schema_match_total += 1
             elif t == "completion":
                 completion_total += 1
                 if turn.get("pass"):
@@ -273,37 +261,23 @@ def compute_metrics(results: List[Dict]) -> Dict:
         return a / b if b > 0 else 0.0
 
     jvr = safe_div(json_valid_total, call_total)
-    tar = safe_div(type_acc_total, call_total)
+    smr = safe_div(schema_match_total, call_total)
     rcr = safe_div(completion_pass, completion_total)
     tcr = safe_div(dialog_pass_count, len(results))
-    overall = (jvr + tar) / 2 if call_total > 0 else 0.0
-
-    # edge_case 별 비율 계산
-    edge_case_rates = {
-        ec: {
-            "total": s["total"],
-            "json_valid": s["json_valid"],
-            "type_acc": s["type_acc"],
-            "json_valid_rate": safe_div(s["json_valid"], s["total"]),
-            "type_acc_rate": safe_div(s["type_acc"], s["total"]),
-        }
-        for ec, s in edge_stats.items()
-    }
 
     return {
         "json_valid_rate": jvr,
         "json_valid_pass": json_valid_total,
         "call_total": call_total,
-        "type_accuracy_rate": tar,
-        "type_acc_pass": type_acc_total,
+        "schema_match_rate": smr,
+        "schema_match_pass": schema_match_total,
         "response_completion_rate": rcr,
         "completion_pass": completion_pass,
         "completion_total": completion_total,
         "task_completion_rate": tcr,
         "dialog_pass": dialog_pass_count,
         "dialog_total": len(results),
-        "overall_score": overall,
-        "edge_case_breakdown": edge_case_rates,
+        "overall_score": smr,
     }
 
 
@@ -322,27 +296,16 @@ def save_report(metrics: Dict, results: List[Dict], model: str, output_dir: str)
     # Markdown 보고서
     md_path = os.path.join(output_dir, f"json_valid_{model}.report.md")
 
-    # edge_case 테이블 행
-    edge_rows = ""
-    for ec, s in metrics["edge_case_breakdown"].items():
-        edge_rows += (
-            f"| `{ec}` | {s['json_valid']}/{s['total']} "
-            f"({s['json_valid_rate']*100:.0f}%) | "
-            f"{s['type_acc']}/{s['total']} "
-            f"({s['type_acc_rate']*100:.0f}%) |\n"
-        )
-
     # 다이얼로그별 결과 행
     dialog_rows = ""
     for d in results:
         status = "✅" if d["dialog_pass"] else "❌"
-        ec = d.get("json_edge_case", "-")
         call_turns = [t for t in d.get("turns", []) if t["type_of_output"] == "call"]
         jv_pass = sum(1 for t in call_turns if t.get("json_valid"))
-        ta_pass = sum(1 for t in call_turns if t.get("type_accurate"))
+        sm_pass = sum(1 for t in call_turns if t.get("json_valid") and t.get("func_name_match"))
         dialog_rows += (
-            f"| {d['dialog_num']} | {d['dialog_name']} | `{ec}` | {status} "
-            f"| {jv_pass}/{len(call_turns)} | {ta_pass}/{len(call_turns)} |\n"
+            f"| {d['dialog_num']} | {d['dialog_name']} | {status} "
+            f"| {jv_pass}/{len(call_turns)} | {sm_pass}/{len(call_turns)} |\n"
         )
 
     md_content = f"""# 🧪 API-Bank — JSON Valid Rate 평가 보고서
@@ -359,24 +322,17 @@ def save_report(metrics: Dict, results: List[Dict], model: str, output_dir: str)
 | 지표 | 통과 | 전체 | 비율 |
 |:---|:---:|:---:|:---:|
 | **JSON Valid Rate** (arguments 파싱 성공) | {metrics['json_valid_pass']} | {metrics['call_total']} | {metrics['json_valid_rate']*100:.1f}% |
-| **Type Accuracy Rate** (인자 타입 일치) | {metrics['type_acc_pass']} | {metrics['call_total']} | {metrics['type_accuracy_rate']*100:.1f}% |
+| **Schema Match Rate** (함수명 + JSON 형식 일치) | {metrics['schema_match_pass']} | {metrics['call_total']} | {metrics['schema_match_rate']*100:.1f}% |
 | **Response Completion Rate** (결과 전달 품질) | {metrics['completion_pass']} | {metrics['completion_total']} | {metrics['response_completion_rate']*100:.1f}% |
 | **Task Completion Rate** (다이얼로그 완료율) | {metrics['dialog_pass']} | {metrics['dialog_total']} | {metrics['task_completion_rate']*100:.1f}% |
-| **Overall Score** (JVR·TAR 평균) | — | — | **{metrics['overall_score']*100:.1f}%** |
+| **Overall Score** (Schema Match Rate) | — | — | **{metrics['overall_score']*100:.1f}%** |
 
----
-
-## 🔍 JSON 엣지케이스별 상세 결과
-
-| 엣지케이스 | JSON Valid | Type Accurate |
-|:---|:---:|:---:|
-{edge_rows}
 ---
 
 ## 📋 다이얼로그별 결과
 
-| # | 다이얼로그 | 엣지케이스 | 결과 | JSON Valid | Type Acc |
-|:---:|:---|:---:|:---:|:---:|:---:|
+| # | 다이얼로그 | 결과 | JSON Valid | Schema Match |
+|:---:|:---|:---:|:---:|:---:|
 {dialog_rows}
 ---
 
@@ -385,24 +341,9 @@ def save_report(metrics: Dict, results: List[Dict], model: str, output_dir: str)
 | 지표 | 설명 | 측정 방법 |
 |:---|:---|:---|
 | **JSON Valid Rate** | tool_calls.arguments 가 `json.loads()` 로 파싱 가능한 비율 | 코드 검증 |
-| **Type Accuracy Rate** | 각 인자의 타입이 ground_truth 와 일치하는 비율 | 타입 비교 |
+| **Schema Match Rate** | JSON 유효 + 함수명이 ground_truth 와 일치하는 비율 | 코드 검증 |
 | **Response Completion** | 툴 결과를 자연스럽게 전달하는 능력 | LLM Judge |
 | **Task Completion Rate** | 다이얼로그 전체에서 모든 턴이 pass 된 비율 | 집계 |
-
-### JSON 엣지케이스 설명
-
-| 엣지케이스 | 검증 포인트 |
-|:---|:---|
-| `quote_escape` | content 필드 내 `\"` 큰따옴표 이스케이프 처리 |
-| `array_argument` | `keywords: ["a", "b", "c"]` 배열 타입 인자 |
-| `empty_object` | `arguments: {{}}` 인자 없는 빈 객체 |
-| `boolean_false` | `false` — 문자열 `"false"` 가 아닌 JSON boolean |
-| `boolean_true` | `true` — 문자열 `"true"` 가 아닌 JSON boolean |
-| `null_value` | `null` — JSON null 직렬화 |
-| `integer_argument` | `75000` — float 아닌 순수 정수 타입 |
-| `url_string` | `https://...` 슬래시·콜론 등 특수문자 포함 URL |
-| `long_string` | 100자 이상 장문 문자열 JSON 직렬화 |
-| `unicode_mixed` | 한글+영문 혼합 Unicode 문자열 |
 
 ---
 
@@ -418,10 +359,11 @@ def save_report(metrics: Dict, results: List[Dict], model: str, output_dir: str)
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 @click.command()
-@click.option("--model", required=True, help="평가할 모델명 (예: gpt-4o-mini)")
+@click.option("--model", default="gpt-4o-mini", show_default=True, help="평가할 모델명 (예: gpt-4o-mini)")
 @click.option(
     "--input_path",
-    required=True,
+    default=str(DATA_DIR / "my_eval_json_valid_rate_dialogs.jsonl"),
+    show_default=True,
     help="JSON Valid Rate 다이얼로그 JSONL 경로 "
          "(generate_json_valid_rate_dialog_dataset.py 출력)",
 )
@@ -479,18 +421,14 @@ def evaluate_json_valid_rate(
 
     # ── LLM Judge 설정 ───────────────────────────────────────────────────────
     judge_model = "gpt-4o-mini"
-    judge_key = api_key
     if CONFIG_PATH.exists():
         try:
             cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
             if cfg.get("api_version"):
                 judge_model = cfg["api_version"]
-            cfg_key = cfg.get("api_key", "")
-            if cfg_key and "placeholder" not in cfg_key and "YOUR_OPENAI_KEY" not in cfg_key:
-                judge_key = cfg_key
         except Exception:
             pass
-    judge_client = OpenAI(api_key=judge_key)
+    judge_client = OpenAI(api_key=api_key)
 
     # ── 시작 메시지 ──────────────────────────────────────────────────────────
     print(f"\n{'=' * 60}")
@@ -509,15 +447,10 @@ def evaluate_json_valid_rate(
     if num_samples:
         dialogs = dialogs[:num_samples]
 
-    edge_dist: Dict[str, int] = {}
-    call_turns = 0
-    for d in dialogs:
-        ec = d.get("json_edge_case", "unknown")
-        edge_dist[ec] = edge_dist.get(ec, 0) + 1
-        call_turns += sum(1 for t in d.get("turns", []) if t["type_of_output"] == "call")
-
+    call_turns = sum(
+        1 for d in dialogs for t in d.get("turns", []) if t["type_of_output"] == "call"
+    )
     print(f"  ✓ 다이얼로그 {len(dialogs)}개 / call 턴 {call_turns}개")
-    print(f"  ✓ 엣지케이스 분포: {edge_dist}")
 
     # ── 2. 모델 초기화 ───────────────────────────────────────────────────────
     print("\n[2/4] 모델 초기화 중...")
@@ -561,9 +494,9 @@ def evaluate_json_valid_rate(
         f"({metrics['json_valid_rate']*100:.1f}%)"
     )
     print(
-        f"  Type Accuracy Rate : "
-        f"{metrics['type_acc_pass']}/{metrics['call_total']} "
-        f"({metrics['type_accuracy_rate']*100:.1f}%)"
+        f"  Schema Match Rate  : "
+        f"{metrics['schema_match_pass']}/{metrics['call_total']} "
+        f"({metrics['schema_match_rate']*100:.1f}%)"
     )
     print(
         f"  Response Completion: "
@@ -577,15 +510,6 @@ def evaluate_json_valid_rate(
     )
     print(f"  ─────────────────────────────────────────────")
     print(f"  Overall Score      : {metrics['overall_score']*100:.1f}%")
-
-    if metrics["edge_case_breakdown"]:
-        print(f"\n  [엣지케이스별 JSON Valid Rate]")
-        for ec, s in metrics["edge_case_breakdown"].items():
-            bar = "✅" if s["json_valid_rate"] == 1.0 else ("⚠" if s["json_valid_rate"] > 0 else "❌")
-            print(f"  {bar}  {ec:<20} {s['json_valid']}/{s['total']} ({s['json_valid_rate']*100:.0f}%)")
-
     print(f"{'=' * 60}\n")
 
 
-if __name__ == "__main__":
-    evaluate_json_valid_rate()
