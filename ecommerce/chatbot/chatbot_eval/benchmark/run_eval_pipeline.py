@@ -69,8 +69,8 @@ def run_single_benchmark(name, cmd):
     print(f"{'=' * 60}")
 
     # 보안: API 키 마스킹하여 명령어 출력
-    safe_cmd = [arg if arg != OPENAI_API_KEY else "sk-****" for arg in cmd]
-    print(f"  CMD: {' '.join(safe_cmd[:6])} ...")
+    safe_cmd: list[str] = [arg if arg != OPENAI_API_KEY else "sk-****" for arg in cmd]
+    print(f"  CMD: {' '.join(safe_cmd[i] for i in range(min(6, len(safe_cmd))))} ...")
 
     result = subprocess.run(
         cmd, cwd=BENCH_DIR, capture_output=True, text=False
