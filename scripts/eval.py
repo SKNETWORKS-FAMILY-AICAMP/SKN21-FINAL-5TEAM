@@ -29,7 +29,8 @@ import ecommerce.platform.backend.app.router.payments.models
 import ecommerce.platform.backend.app.router.inventories.models
 import ecommerce.platform.backend.app.router.chatbot_logs.models
 
-from ecommerce.platform.backend.app.router.users.models import User
+from ecommerce.platform.backend.app.router.users.models import User, UserStatus, UserGender
+from ecommerce.platform.backend.app.router.users.crud import hash_password
 from ecommerce.platform.backend.app.router.products.models import ProductOption, ProductType
 from ecommerce.platform.backend.app.router.orders.models import Order, OrderItem
 from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
@@ -44,15 +45,38 @@ logger = logging.getLogger(__name__)
 
 def create_eval_orders(db: Session):
     """평가용 추가 주문 데이터 생성 (Argument Accuracy 벤치마크 대응)"""
-    user = db.query(User).filter(User.email == "test@example.com").first()
+    test2_email = "test2@example.com"
+    user = db.query(User).filter(User.email == test2_email).first()
     if not user:
-        logger.warning("테스트 유저가 없습니다. seed.py를 먼저 실행하세요.")
-        return
+        user = User(
+            email=test2_email,
+            password_hash=hash_password("password123"), 
+            name="테스트2유저",
+            phone="010-2222-2222",
+            status=UserStatus.ACTIVE,
+            agree_marketing=True,
+            agree_sms=True,
+            agree_email=True,
+            gender=UserGender.MALE,
+        )
+        db.add(user)
+        db.flush()
+        logger.info(f"✅ {test2_email} 유저 생성 완료")
 
     address = db.query(ShippingAddress).filter(ShippingAddress.user_id == user.id).first()
     if not address:
-        logger.warning("배송지가 없습니다. seed.py를 먼저 실행하세요.")
-        return
+        address = ShippingAddress(
+            user_id=user.id,
+            recipient_name="테스트2유저",
+            address1="서울시 강남구 테헤란로 123",
+            address2="SKN 타워 10층",
+            post_code="06123",
+            phone="010-2222-2222",
+            is_default=True
+        )
+        db.add(address)
+        db.flush()
+        logger.info(f"✅ {test2_email} 배송지 생성 완료")
 
     new_product_option = db.query(ProductOption).first()
     if not new_product_option:
@@ -60,7 +84,7 @@ def create_eval_orders(db: Session):
         return
 
     # 서로 다른 상품 옵션을 연결하여 시나리오 다양성 확보
-    all_new_options = db.query(ProductOption).filter(ProductOption.is_active == True).limit(5).all()
+    all_new_options = db.query(ProductOption).filter(ProductOption.is_active == True).limit(20).all()
 
     # 4. 상품준비중 주문 (취소 테스트 2건째)
     opt4 = all_new_options[1] if len(all_new_options) > 1 else new_product_option
@@ -120,7 +144,7 @@ def create_eval_orders(db: Session):
         shipping_fee=Decimal("3000"),
         total_amount=Decimal("55000"),
         status=OrderStatus.DELIVERED,
-        payment_method="계좌이체",
+        payment_method="CARD",
         shipping_request="택배함에 넣어주세요"
     )
     db.add(order6)
@@ -135,7 +159,7 @@ def create_eval_orders(db: Session):
     ))
 
     db.flush()
-    logger.info("✅ 평가용 추가 주문 3건 생성 완료")
+    logger.info("✅ 기본 평가용 추가 주문 3건 생성 완료")
 
 
 if __name__ == "__main__":
