@@ -5,6 +5,7 @@ LLM이 bind_tools를 통해 직접 도구를 선택하는 구조로 단순화.
 
 워크플로우:
   START → guardrail → preprocess → agent ⇄ (validation → approval → tools)
+                                         → ui_generator → process_output → END
                                          → process_output → END
 """
 
@@ -720,6 +721,7 @@ def route_after_tools(state: AgentState) -> Literal["agent", "process_output"]:
     """
     도구 실행 후:
     - UI Action이 있으면 → process_output (텍스트 생성 생략)
+    - UI Template이 있으면 → ui_generator (LLM이 동적 UI config 생성)
     - 그 외 → agent (LLM이 결과 해석 후 답변)
     """
     print("---ROUTE AFTER TOOLS---")
@@ -731,14 +733,133 @@ def route_after_tools(state: AgentState) -> Literal["agent", "process_output"]:
             content = last_message.content
             if isinstance(content, str):
                 data = json.loads(content)
-                if isinstance(data, dict) and data.get("ui_action"):
-                    print(f"---DECISION: UI ACTION ({data['ui_action']}) -> END---")
-                    return "process_output"
+                if isinstance(data, dict):
+                    # 기존 방식: ui_action이 직접 지정된 경우 (주소검색, 중고판매 폼 등)
+                    if data.get("ui_action"):
+                        print(f"---DECISION: UI ACTION ({data['ui_action']}) -> END---")
+                        return "process_output"
+                    # 신규 방식: ui_template이 있는 경우 → LLM이 UI config 동적 생성
+                    if data.get("ui_template"):
+                        print(f"---DECISION: UI TEMPLATE ({data['ui_template']}) -> UI GENERATOR---")
+                        return "ui_generator"
         except Exception:
             pass
 
     print("---DECISION: BACK TO AGENT---")
     return "agent"
+
+
+# ── Node: UI Generator ───────────────────────────────────
+
+_UI_GENERATOR_SYSTEM_PROMPT = """당신은 이커머스 챗봇의 UI 구성을 동적으로 결정하는 전문가입니다.
+사용자의 요청 의도와 도구 실행 결과를 분석하여, 가장 적절한 UI 설정을 JSON으로 반환하세요.
+
+## 규칙
+
+### template_type
+- "order_list": 주문 목록을 보여줘야 할 때
+- "product_list": 상품/추천 목록을 보여줘야 할 때
+
+### template_config (template_type별 필드)
+
+**order_list 일 때:**
+- enable_refund_button (bool): 사용자가 환불/반품 의도가 있을 때 true
+- enable_exchange_button (bool): 사용자가 교환 의도가 있을 때 true
+- enable_cancel_button (bool): 사용자가 취소 의도가 있을 때 true
+- enable_selection (bool): 사용자가 특정 주문을 선택해야 할 때 true (단순 조회면 false)
+- selectable_statuses (list[str]): 선택 가능한 주문 상태 목록 (예: ["delivered", "shipped"])
+- action_label (str): 선택 후 버튼 레이블 (예: "환불 신청하기", "교환 신청하기")
+
+**product_list 일 때:**
+- enable_selection (bool): 상품을 선택해야 할 때 true
+- show_add_to_cart (bool): 장바구니 담기 버튼 표시 여부
+- show_recommend_badge (bool): "추천" 뱃지 표시 여부 (추천 맥락이면 true)
+
+## 반환 형식 (JSON만 반환, 설명 없이)
+{
+  "template_type": "...",
+  "message": "사용자에게 표시할 안내 메시지",
+  "template_config": { ... }
+}"""
+
+
+def ui_generator_node(state: AgentState):
+    """
+    LLM이 Tool 결과 + 사용자 의도를 보고 동적 UI 메타데이터를 생성합니다.
+
+    - ui_template이 있는 ToolMessage가 있을 때 호출됩니다.
+    - 생성된 ui_metadata는 process_output_node에서 최종 tool_outputs에 반영됩니다.
+    """
+    print("---UI GENERATOR NODE---")
+    messages = state["messages"]
+
+    # 현재 턴의 메시지와 도구 결과 수집
+    current_turn_messages: list = []
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            current_turn_messages.append(msg)
+            break
+        current_turn_messages.append(msg)
+    current_turn_messages = list(reversed(current_turn_messages))
+
+    # ui_template이 포함된 ToolMessage 추출
+    tool_results_with_template: list[dict] = []
+    for msg in current_turn_messages:
+        if isinstance(msg, ToolMessage):
+            try:
+                data = json.loads(msg.content)
+                if isinstance(data, dict) and data.get("ui_template"):
+                    tool_results_with_template.append(data)
+            except Exception:
+                pass
+
+    if not tool_results_with_template:
+        return {"ui_metadata": None}
+
+    # 사용자 메시지 추출
+    user_message = _get_last_user_message(messages)
+
+    # 도구 결과 요약 (ui_data가 크면 앞 3개만 샘플로 전달)
+    summarized_results = []
+    for r in tool_results_with_template:
+        summarized = dict(r)
+        if isinstance(summarized.get("ui_data"), list) and len(summarized["ui_data"]) > 3:
+            summarized["ui_data"] = summarized["ui_data"][:3]
+            summarized["ui_data_total"] = len(r["ui_data"])
+        summarized_results.append(summarized)
+
+    user_content = (
+        f"사용자 요청: {user_message}\n\n"
+        f"도구 결과:\n{json.dumps(summarized_results, ensure_ascii=False, indent=2)}"
+    )
+
+    provider, model_name = resolve_llm_config(state)
+    try:
+        llm = make_chat_llm(provider=provider, model_name=model_name, temperature=0)
+        response = llm.invoke(
+            [
+                SystemMessage(content=_UI_GENERATOR_SYSTEM_PROMPT),
+                HumanMessage(content=user_content),
+            ]
+        )
+        raw = response.content if hasattr(response, "content") else str(response)
+        ui_metadata = _extract_json_object(raw)
+        if not ui_metadata:
+            raise ValueError("LLM이 유효한 JSON을 반환하지 않았습니다.")
+        print(f"---UI GENERATOR: template={ui_metadata.get('template_type')}---")
+    except Exception as e:
+        print(f"---UI GENERATOR ERROR: {e}, using fallback---")
+        # Fallback: Tool 결과의 ui_template을 그대로 사용
+        first = tool_results_with_template[0]
+        ui_metadata = {
+            "template_type": first.get("ui_template", "order_list"),
+            "message": first.get("message", ""),
+            "template_config": {
+                "enable_selection": first.get("requires_selection", False),
+            },
+        }
+
+    return {"ui_metadata": ui_metadata}
 
 
 # ── Node: Process Output ─────────────────────────────────
@@ -774,6 +895,10 @@ def process_output_node(state: AgentState):
     """
     최종 응답을 API 스펙에 맞게 가공합니다.
     (chat.py에서 참조하는 generation, ui_action, tool_outputs 등을 채움)
+
+    두 가지 경로를 처리합니다:
+    1. ui_metadata 있음 (ui_generator 경유): LLM이 동적으로 생성한 UI config + Tool 데이터를 조합
+    2. ui_action 있음 (기존 방식): 주소검색/중고판매 폼 등 고정 UI trigger
     """
     print("---PROCESS OUTPUT---")
 
@@ -799,27 +924,56 @@ def process_output_node(state: AgentState):
         "tool_outputs": [],
     }
 
-    # UI Action 추출: "현재 턴" ToolMessage에서만 수집
-    current_turn_messages = []
+    # 현재 턴 메시지 수집 (HumanMessage 이후부터)
+    current_turn_messages: list = []
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             break
         current_turn_messages.append(msg)
+    current_turn_messages = list(reversed(current_turn_messages))
 
-    for msg in reversed(current_turn_messages):
-        if isinstance(msg, ToolMessage):
-            try:
-                content = msg.content
-                if not isinstance(content, str):
-                    continue
-                data = json.loads(content)
-                if isinstance(data, dict) and "ui_action" in data:
-                    result["tool_outputs"].append(data)
-            except Exception:
-                pass
+    # ── 경로 1: LLM 동적 UI (ui_generator 경유) ──────────────
+    ui_metadata = state.get("ui_metadata")
+    if ui_metadata and isinstance(ui_metadata, dict) and ui_metadata.get("template_type"):
+        # ui_template이 있는 ToolMessage에서 raw 데이터 수집
+        all_ui_data: list = []
+        for msg in current_turn_messages:
+            if isinstance(msg, ToolMessage):
+                try:
+                    data = json.loads(msg.content)
+                    if isinstance(data, dict) and data.get("ui_template"):
+                        if isinstance(data.get("ui_data"), list):
+                            all_ui_data.extend(data["ui_data"])
+                except Exception:
+                    pass
 
-    if result["tool_outputs"]:
+        result["tool_outputs"] = [
+            {
+                "ui_action": ui_metadata["template_type"],   # 프론트가 읽는 키 통일
+                "ui_template": ui_metadata["template_type"],
+                "ui_config": ui_metadata.get("template_config", {}),
+                "ui_data": all_ui_data,
+                "message": ui_metadata.get("message", ""),
+            }
+        ]
         result["generation"] = ""
+
+    else:
+        # ── 경로 2: 고정 ui_action (주소검색, 중고판매 폼 등) ──────
+        for msg in current_turn_messages:
+            if isinstance(msg, ToolMessage):
+                try:
+                    content = msg.content
+                    if not isinstance(content, str):
+                        continue
+                    data = json.loads(content)
+                    if isinstance(data, dict) and "ui_action" in data:
+                        result["tool_outputs"].append(data)
+                except Exception:
+                    pass
+
+        if result["tool_outputs"]:
+            result["generation"] = ""
 
     if _should_reset_order_action_context(state):
         current_task = state.get("current_task")
