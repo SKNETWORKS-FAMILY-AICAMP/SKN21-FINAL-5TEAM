@@ -23,6 +23,7 @@ class ModelCaller:
         temperature: float = 0.0,
         base_url: Optional[str] = None,
         system_prompt_path: Optional[str] = None,
+        prompt_variables: Optional[Dict[str, str]] = None,
     ):
         self.model = model
         self.temperature = temperature
@@ -30,13 +31,25 @@ class ModelCaller:
             api_key=api_key,
             base_url=base_url if base_url else None,
         )
-        self.system_prompt = self._load_system_prompt(system_prompt_path)
+        self.system_prompt_template = self._load_system_prompt_template(system_prompt_path)
+        self.default_variables = prompt_variables or {}
+        # 기본 변수로 치환된 시스템 프롬프트 (per-call 변수 없을 때 사용)
+        self.system_prompt = self._resolve_prompt(self.default_variables)
 
-    def _load_system_prompt(self, path: Optional[str]) -> str:
+    def _load_system_prompt_template(self, path: Optional[str]) -> str:
+        """시스템 프롬프트 템플릿을 파일에서 로드합니다."""
         if path and os.path.isfile(path):
             with open(path, "r", encoding="utf-8") as f:
                 return f.read().strip()
         return ""
+
+    def _resolve_prompt(self, variables: Optional[Dict[str, str]] = None) -> str:
+        """시스템 프롬프트 템플릿의 플레이스홀더를 실제 값으로 치환합니다."""
+        prompt = self.system_prompt_template
+        if variables:
+            for key, value in variables.items():
+                prompt = prompt.replace(f"{{{key}}}", str(value))
+        return prompt
 
     def _normalize_messages(self, messages: List[Dict]) -> List[Dict]:
         """
@@ -80,18 +93,28 @@ class ModelCaller:
 
         return normalized
 
-    def call(self, query: List[Dict], tools: List[Dict]) -> Dict:
+    def call(self, query: List[Dict], tools: List[Dict], prompt_variables: Optional[Dict[str, str]] = None) -> Dict:
         """
         모델을 호출하고 응답을 데이터셋 ground_truth 포맷으로 반환합니다.
+
+        Args:
+            prompt_variables: dialog별 플레이스홀더 치환 변수 (예: {"user_id": "1", "user_email": "..."})
 
         반환 포맷:
           - 텍스트 응답: {"role": "assistant", "content": "..."}
           - 툴 호출:     {"role": "assistant", "content": None,
                           "tool_calls": [{"name": "...", "arguments": "..."}]}
         """
+        # per-call 변수가 있으면 기본 변수와 합쳐서 새 시스템 프롬프트 생성
+        if prompt_variables:
+            merged = {**self.default_variables, **prompt_variables}
+            system_prompt = self._resolve_prompt(merged)
+        else:
+            system_prompt = self.system_prompt
+
         messages = []
-        if self.system_prompt:
-            messages.append({"role": "system", "content": self.system_prompt})
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
         messages.extend(query)
         messages = self._normalize_messages(messages)
 

@@ -41,7 +41,29 @@ from src.dataset_loader import load_dialogs
 from src.model_caller import ModelCaller
 from src.json_validator import validate_call_turn, is_json_valid
 
+# eval_data.jsonl 경로 (벤치마크 공통 평가 데이터)
+EVAL_DATA_PATH = BENCH_ROOT.parent / "eval_data.jsonl"
+
 load_dotenv(ENV_PATH)
+
+
+def load_login_user_email() -> Optional[str]:
+    """eval_data.jsonl에서 '로그인' 타입의 user_email을 읽어 반환합니다."""
+    if not EVAL_DATA_PATH.exists():
+        logging.warning(f"eval_data.jsonl 파일을 찾을 수 없습니다: {EVAL_DATA_PATH}")
+        return None
+    with open(EVAL_DATA_PATH, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+                if entry.get("type") == "로그인":
+                    return entry.get("data", {}).get("user_email")
+            except json.JSONDecodeError:
+                continue
+    return None
 
 
 # ── LLM Judge (completion 턴 전용) ──────────────────────────────────────────
@@ -94,6 +116,7 @@ def evaluate_turn(
     judge_model: str,
     only_exact: bool,
     debug: bool,
+    prompt_variables: Optional[Dict[str, str]] = None,
 ) -> Dict:
     """
     단일 턴을 평가합니다.
@@ -105,9 +128,9 @@ def evaluate_turn(
     ground_truth = turn["ground_truth"]
     turn_type = turn["type_of_output"]
 
-    # 모델 호출
+    # 모델 호출 (dialog별 prompt_variables로 시스템 프롬프트 치환)
     try:
-        prediction = caller.call(query, tools)
+        prediction = caller.call(query, tools, prompt_variables=prompt_variables)
     except Exception as e:
         logging.error(f"모델 호출 실패 (turn {turn['turn_num']}): {e}")
         prediction = {"role": "assistant", "content": None}
@@ -206,11 +229,19 @@ def evaluate_dialogs(
                 print(f"\n▶ Dialog {dialog['dialog_num']}: {dialog.get('dialog_name', '')}")
 
             tools = dialog["tools"]
+            # dialog별 user_id/user_email을 시스템 프롬프트에 주입
+            dialog_vars = {}
+            if "user_id" in dialog:
+                dialog_vars["user_id"] = str(dialog["user_id"])
+            if "user_email" in dialog:
+                dialog_vars["user_email"] = dialog["user_email"]
+
             turn_results = [
                 evaluate_turn(
                     turn, tools, caller,
                     judge_client, judge_model,
                     only_exact, debug,
+                    prompt_variables=dialog_vars if dialog_vars else None,
                 )
                 for turn in dialog["turns"]
             ]
@@ -454,6 +485,7 @@ def evaluate_json_valid_rate(
 
     # ── 2. 모델 초기화 ───────────────────────────────────────────────────────
     print("\n[2/4] 모델 초기화 중...")
+    # dialog별 user_id/user_email은 evaluate_dialogs에서 per-call로 주입됨
     caller = ModelCaller(
         model=model,
         api_key=api_key,
