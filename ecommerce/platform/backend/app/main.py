@@ -144,6 +144,33 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logging.error(f"챗봇 모델 로딩 실패: {e}")
 
+    # 5. Guardrail 모델 미리 로드 (prismdata/guardrail-ko-11class)
+    try:
+        from ecommerce.chatbot.src.graph.nodes.guardrail import load_guardrail_model
+
+        load_guardrail_model()
+        logging.info("Guardrail 모델 로딩 완료")
+    except Exception as e:
+        logging.error(f"Guardrail 모델 로딩 실패: {e}")
+
+    # 6. BGE-M3 임베딩 모델 미리 로드 (BAAI/bge-m3)
+    try:
+        from ecommerce.chatbot.src.data_preprocessing.bge_m3_embedding import preload_model as preload_bge_m3
+
+        preload_bge_m3()
+        logging.info("BGE-M3 임베딩 모델 로딩 완료")
+    except Exception as e:
+        logging.error(f"BGE-M3 모델 로딩 실패: {e}")
+
+    # 7. KoBART 대화 요약 모델 미리 로드 (EbanLee/kobart-summary-v3)
+    try:
+        from ecommerce.chatbot.src.infrastructure.kobart_summarizer import preload_model as preload_kobart
+
+        preload_kobart()
+        logging.info("KoBART 요약 모델 로딩 완료")
+    except Exception as e:
+        logging.error(f"KoBART 모델 로딩 실패: {e}")
+
     yield
     # 서버 종료 시
     logging.info("서버 종료")

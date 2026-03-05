@@ -1,23 +1,29 @@
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import StreamingResponse
-from typing import List, Dict, Any
-import ast
+"""
+챗봇 스트리밍 엔드포인트.
+
+GlobalAgentState 기반으로 재작성.
+- 상태 초기화: per-turn 필드 매 요청마다 리셋, 이전 턴 오염 방지.
+- 토큰 스트리밍: planner 노드(structured JSON) 제외, 나머지 LLM 토큰 전달.
+- UI 액션: on_tool_end 이벤트에서 즉시 전달.
+- 메타데이터: completed_tasks, ui_action_required + 다음 턴용 persistent state.
+"""
+
 import json
 import os
-import re
-import requests
-from urllib.parse import urlparse
+import traceback
+from typing import Any, Dict, List
 from uuid import uuid4
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
-from ecommerce.chatbot.src.schemas.chat import ChatRequest, ReviewDraftRequest
+from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tracers import LangChainTracer
+
 from ecommerce.chatbot.src.graph.workflow import graph_app
+from ecommerce.chatbot.src.infrastructure.conversation_logger import ConversationRunLogger
+from ecommerce.chatbot.src.schemas.chat import ChatRequest, ReviewDraftRequest
 from ecommerce.chatbot.src.tools.service_tools import generate_review_draft
-from ecommerce.chatbot.src.tools.recommendation_tools import search_by_image
-from ecommerce.chatbot.src.graph.llm_providers import make_chat_llm
-from ecommerce.chatbot.src.infrastructure.conversation_logger import (
-    ConversationRunLogger,
-)
 from ecommerce.platform.backend.app.core.auth import get_current_user
 from ecommerce.platform.backend.app.router.users.models import User
 from ecommerce.platform.backend.app.uploads import CHATBOT_UPLOAD_DIR
@@ -25,31 +31,54 @@ from pathlib import Path
 
 router = APIRouter()
 
-# 도구 이름 → 상태 메시지 매핑
-TOOL_STATUS_MESSAGES = {
-    "get_user_orders": "주문 내역을 조회하고 있습니다...",
-    "get_order_detail": "주문 상세 정보를 확인하고 있습니다...",
-    "get_shipping_details": "배송 상태를 조회하고 있습니다...",
-    "save_shipping_address_from_ui": "입력하신 주소를 저장하고 있습니다...",
-    "register_return_request": "반품 신청을 처리하고 있습니다...",
-    "register_exchange_request": "교환 신청을 처리하고 있습니다...",
-    "cancel_order": "주문 취소를 처리하고 있습니다...",
-    "request_human_handoff": "상담원 연결을 시도하고 있습니다...",
+# ── 노드 진행 상태 메시지 ─────────────────────────────────────────────────────
+NODE_STATUS_MESSAGES: dict[str, str] = {
+    "guardrail":            "입력 내용을 검토하고 있습니다...",
+    "planner":              "요청을 분석하고 있습니다...",
+    "supervisor":           "작업을 배분하고 있습니다...",
+    "refund_subagent":      "주문/환불 정보를 처리하고 있습니다...",
+    "discovery_subagent":   "상품을 검색하고 있습니다...",
+    "policy_rag_subagent":  "정책 문서를 조회하고 있습니다...",
+    "form_action_subagent": "요청을 처리하고 있습니다...",
+    "final_generator":      "최종 응답을 작성하고 있습니다...",
 }
 
-# 그래프 노드 이름 → 상태 메시지 매핑
-NODE_STATUS_MESSAGES = {
-    "preprocess": "요청을 분석하고 있습니다...",
-    "validation": "실행 전 안전성/유효성을 검토하고 있습니다...",
-    "approval": "승인 필요 여부를 확인하고 있습니다...",
-    "tools": "필요한 도구를 호출하고 있습니다...",
-    "agent": "답변을 구성하고 있습니다...",
-    "process_output": "최종 응답을 정리하고 있습니다...",
+# ── 도구 진행 상태 메시지 ─────────────────────────────────────────────────────
+TOOL_STATUS_MESSAGES: dict[str, str] = {
+    "get_user_orders":            "주문 내역을 조회하고 있습니다...",
+    "get_order_details":          "주문 상세 정보를 확인하고 있습니다...",
+    "cancel_order":               "주문 취소를 처리하고 있습니다...",
+    "check_refund_eligibility":   "환불 가능 여부를 확인하고 있습니다...",
+    "register_return_request":    "반품 신청을 처리하고 있습니다...",
+    "check_exchange_eligibility": "교환 가능 여부를 확인하고 있습니다...",
+    "register_exchange_request":  "교환 신청을 처리하고 있습니다...",
+    "open_address_search":        "주소 검색 창을 열고 있습니다...",
+    "search_products_vector":     "유사 상품을 검색하고 있습니다...",
+    "recommend_clothes":          "스타일 추천을 준비하고 있습니다...",
+    "search_knowledge_base":      "정책 문서를 검색하고 있습니다...",
+    "open_used_sale_form":        "중고 판매 등록 폼을 열고 있습니다...",
+    "register_used_sale":         "중고 상품을 등록하고 있습니다...",
+    "create_review":              "리뷰를 등록하고 있습니다...",
+    "register_gift_card":         "상품권을 등록하고 있습니다...",
 }
 
+# 다음 턴에 넘기지 않을 per-turn 필드 (매 요청마다 리셋)
+_PER_TURN_FIELDS = frozenset({
+    "pending_tasks",
+    "completed_tasks",
+    "current_active_task",
+    "agent_results",
+    "guardrail_passed",
+    "messages",
+    "turn_id",
+})
 
-# 메시지 직렬화/역직렬화 (컴프리헨션)
+
+
+# ── 직렬화 / 역직렬화 ──────────────────────────────────────────────────────────
+
 def serialize_messages(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
+    """BaseMessage 리스트 → JSON 직렬화 가능한 dict 리스트."""
     role_map = {HumanMessage: "user", AIMessage: "assistant"}
     return [
         {"role": role_map.get(type(m), "system"), "content": m.content}
@@ -58,549 +87,246 @@ def serialize_messages(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
 
 
 def deserialize_messages(serialized: List[Dict[str, Any]]) -> List[BaseMessage]:
+    """JSON dict 리스트 → BaseMessage 리스트."""
     msg_map = {"user": HumanMessage, "assistant": AIMessage}
     return [
         msg_map[m["role"]](content=m.get("content", ""))
         for m in serialized
-        if m["role"] in msg_map
+        if m.get("role") in msg_map
     ]
 
 
-def _parse_tool_output(output) -> dict | None:
-    """도구 출력을 딕셔너리로 변환"""
+# ── 헬퍼 함수 ──────────────────────────────────────────────────────────────────
+
+def _parse_tool_output(output: Any) -> dict | None:
+    """도구 출력을 딕셔너리로 변환. 파싱 실패 시 None 반환."""
     if isinstance(output, dict):
         return output
-    if isinstance(output, BaseMessage) and hasattr(output, "content"):
+    if isinstance(output, BaseMessage) and isinstance(output.content, str):
         try:
-            if isinstance(output.content, str):
-                return json.loads(output.content)
+            return json.loads(output.content)
         except Exception:
             pass
     return None
 
 
-def _build_metadata(final_state: dict | None) -> dict:
-    """최종 상태에서 메타데이터 추출"""
-    state_data = final_state if isinstance(final_state, dict) else {}
-    raw_current_task = state_data.get("current_task")
-    current_task = raw_current_task if isinstance(raw_current_task, dict) else None
-    fallback_task = state_data.get("last_completed_task")
-    task_context = current_task or (
-        fallback_task if isinstance(fallback_task, dict) else None
-    )
-    status = (
-        task_context.get("status", "idle") if isinstance(task_context, dict) else "idle"
-    )
+def _build_metadata(final_state: dict) -> dict:
+    """
+    최종 상태 → 프론트엔드 전송용 metadata 이벤트 생성.
+    state 필드에는 다음 턴에 재사용할 지속 상태만 포함 (per-turn 필드 제외).
+    """
+    persistent_state = {
+        k: v for k, v in final_state.items()
+        if k not in _PER_TURN_FIELDS
+    }
+    persistent_state["messages"] = serialize_messages(final_state.get("messages", []))
 
-    action_name = (
-        f"{task_context.get('type')}_requested"
-        if isinstance(task_context, dict) and status == "completed"
-        else None
-    )
-    order_id = task_context.get("target_id") if isinstance(task_context, dict) else None
     return {
-        "type": "metadata",
-        "action_status": status,
-        "action_name": action_name,
-        "order_id": order_id,
-        "state": {
-            **state_data,
-            "messages": serialize_messages(state_data.get("messages", [])),
-        },
+        "type":               "metadata",
+        "completed_tasks":    final_state.get("completed_tasks", []),
+        "ui_action_required": final_state.get("ui_action_required"),
+        "state":              persistent_state,
     }
 
 
-def _extract_ui_actions(final_state: dict) -> List[dict]:
-    """최종 상태에서 UI 액션 목록을 안전하게 추출"""
-    if not isinstance(final_state, dict):
-        return []
-
-    outputs = final_state.get("tool_outputs")
-    if not isinstance(outputs, list):
-        return []
-
-    ui_actions: List[dict] = []
-    for output in outputs:
-        parsed = _parse_tool_output(output)
-        if isinstance(parsed, dict) and parsed.get("ui_action"):
-            ui_actions.append(parsed)
-
-    return ui_actions
-
-
-ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"}
-
-
-def _normalize_image_extension(filename: str | None, content_type: str | None) -> str:
-    name_ext = os.path.splitext((filename or "").lower())[1]
-    if name_ext in ALLOWED_IMAGE_EXTENSIONS:
-        return name_ext
-    if content_type:
-        normalized = content_type.split(";")[0].strip().lower()
-        if normalized == "image/jpeg":
-            return ".jpg"
-        if normalized == "image/png":
-            return ".png"
-        if normalized == "image/webp":
-            return ".webp"
-        if normalized == "image/gif":
-            return ".gif"
-        if normalized == "image/bmp":
-            return ".bmp"
-        if normalized == "image/avif":
-            return ".avif"
-    return ".jpg"
-
-
-def _read_image_from_local_url(image_url: str) -> bytes | None:
-    try:
-        parsed = urlparse(image_url)
-    except Exception:
-        return None
-
-    if parsed.path.startswith("/uploads/chatbot/"):
-        filename = os.path.basename(parsed.path)
-        candidate = CHATBOT_UPLOAD_DIR / filename
-        if candidate.exists():
-            return candidate.read_bytes()
+def _get_fallback_text(final_state: dict) -> str | None:
+    """
+    LLM 토큰 스트리밍이 없었을 때 마지막 AIMessage 텍스트 반환.
+    final_generator 가 LLM 호출 없이 agent_results 를 직접 반환하는 경우 사용.
+    """
+    for msg in reversed(final_state.get("messages", [])):
+        if isinstance(msg, AIMessage):
+            content = getattr(msg, "content", "")
+            return str(content).strip() or None
     return None
 
 
-def _extract_top_k_from_text(text: str | None) -> int | None:
-    if not text:
-        return None
 
-    digits = re.search(r"(\d+)", text)
-    if digits:
-        try:
-            value = int(digits.group(1))
-            return max(1, min(20, value))
-        except ValueError:
-            pass
-
-    return None
-
-
-def _infer_top_k_via_llm(
-    prompt_text: str,
-    provider: str | None,
-    model_name: str | None,
-) -> int | None:
-    if not prompt_text:
-        return None
-
-    target_model = model_name or "gpt-5-mini"
-    target_provider = provider if provider in {"openai", "vllm"} else "openai"
-
-    system_prompt = (
-        "이미지를 기준으로 유사 상품을 안내하는 도우미입니다. "
-        "사용자가 원하는 추천 개수를 자연어로 설명하면, "
-        "반드시 JSON 형식 {'top_k': <number>}만 출력하세요. "
-        "요청에 숫자가 없으면 빈 JSON({})을 출력하세요."
-    )
-
-    try:
-        llm = make_chat_llm(
-            provider=target_provider, model=target_model, temperature=0
-        )
-        response = llm.invoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=prompt_text),
-            ]
-        )
-        content = response.content if isinstance(response.content, str) else ""
-        parsed = json.loads(content)
-        if isinstance(parsed, dict):
-            top_k_val = parsed.get("top_k")
-            if isinstance(top_k_val, int):
-                return max(1, min(20, top_k_val))
-    except Exception:
-        pass
-
-    return None
-
-
-def _resolve_image_url(raw_image_url: Any) -> str | None:
-    """다양한 형태의 이미지 URL 입력값을 정제하여 순수 URL 문자열을 반환합니다."""
-
-    if isinstance(raw_image_url, dict):
-        return raw_image_url.get("_url") or raw_image_url.get("url")
-
-    if not isinstance(raw_image_url, str):
-        return None
-
-    candidate = raw_image_url.strip()
-    if not candidate:
-        return None
-
-    if (candidate.startswith(("\"", "'")) and candidate.endswith(("\"", "'"))):
-        candidate = candidate[1:-1].strip()
-        if not candidate:
-            return None
-
-    for parser in (json.loads, ast.literal_eval):
-        try:
-            parsed = parser(candidate)
-        except Exception:
-            continue
-        if isinstance(parsed, dict):
-            inner = parsed.get("_url") or parsed.get("url")
-            if isinstance(inner, str) and inner.strip():
-                return inner.strip()
-            continue
-        if isinstance(parsed, str) and parsed.strip():
-            return parsed.strip()
-
-    if candidate.startswith("{") and candidate.endswith("}"):
-        try:
-            parsed = ast.literal_eval(candidate)
-            if isinstance(parsed, dict):
-                inner = parsed.get("_url") or parsed.get("url")
-                if isinstance(inner, str) and inner.strip():
-                    return inner.strip()
-        except Exception:
-            pass
-
-    return candidate
-
-
-@router.post("/upload-image")
-async def upload_chat_image(
-    request: Request,
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
-):
-    """사용자가 업로드한 이미지를 저장하고 공개 URL을 반환한다."""
-    content_type = (file.content_type or "").lower()
-    if not content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="이미지 파일만 업로드할 수 있습니다.")
-
-    filename = f"{uuid4().hex}{_normalize_image_extension(file.filename, content_type)}"
-    target_path = CHATBOT_UPLOAD_DIR / filename
-
-    try:
-        contents = await file.read()
-
-        # 디버깅 로그
-        print("UPLOAD IMAGE SIZE:", len(contents))
-        print("UPLOAD IMAGE CONTENT TYPE:", content_type)
-        print("UPLOAD IMAGE FILENAME:", filename)
-
-        target_path.write_bytes(contents)
-
-        # 저장 확인 로그
-        print("IMAGE SAVED PATH:", target_path)
-
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail="이미지를 저장하는 중 오류가 발생했습니다.",
-        ) from exc
-
-    image_url = request.url_for("chatbot_uploads", path=filename)
-
-    # 반환 URL 로그
-    print("RETURN IMAGE URL:", image_url)
-
-    return {"url": image_url}
-
+# ── 스트리밍 엔드포인트 ────────────────────────────────────────────────────────
 
 @router.post("/stream")
 async def chat_streaming_endpoint(
-    request: ChatRequest, current_user: User = Depends(get_current_user)
+    request: ChatRequest,
+    current_user: User = Depends(get_current_user),
 ):
-    """스트리밍 방식으로 챗봇 응답 반환 (astream_events 사용)"""
+    """SSE 스트리밍으로 챗봇 응답 반환."""
 
     async def event_generator():
         run_logger = None
         try:
-            previous_state = request.previous_state or {}
-            requested_provider = (
+            previous_state: dict = request.previous_state or {}
+            provider = (
                 (request.provider or previous_state.get("llm_provider") or "openai")
-                .strip()
-                .lower()
+                .strip().lower()
             )
-            requested_model = (
-                request.model or previous_state.get("llm_model") or ""
-            ).strip()
-            conversation_id = (
-                previous_state.get("conversation_id") or f"conv_{uuid4().hex[:12]}"
-            )
+            model = (request.model or previous_state.get("llm_model") or "gpt-4o-mini").strip()
+            conversation_id = previous_state.get("conversation_id") or f"conv_{uuid4().hex[:12]}"
             turn_id = f"turn_{uuid4().hex[:12]}"
 
-            payload = None
-            try:
-                payload = json.loads(request.message)
-            except json.JSONDecodeError:
-                payload = None
+            # 대화 이력 복원
+            history = deserialize_messages(previous_state.get("messages", []))
 
-            image_event = (
-                isinstance(payload, dict) and payload.get("event") == "image_uploaded"
-            )
-            image_url = None
-            if image_event:
-                raw_image_url = payload.get("image_url") or payload.get("imageUrl")
-                image_url = _resolve_image_url(raw_image_url)
+            # ── GlobalAgentState 초기화 ──────────────────────────────────────
+            current_state: dict = {
+                # 지속 필드: 이전 턴 컨텍스트 유지 (HITL 다중 턴 시나리오 대응)
+                "order_context":  previous_state.get("order_context", {}),
+                "search_context": previous_state.get("search_context", {}),
 
-            payload_query = ""
-            if isinstance(payload, dict):
-                payload_query = str(payload.get("query") or "").strip()
+                # 대화 요약: summarize_node가 생성한 압축 이력 (없으면 None)
+                "conversation_summary": previous_state.get("conversation_summary"),
 
-            requested_top_k = _extract_top_k_from_text(payload_query)
-            if requested_top_k is None:
-                requested_top_k = _infer_top_k_via_llm(
-                    payload_query, requested_provider, requested_model
-                )
+                # 메시지: 이전 이력 + 현재 입력
+                "messages": history + [HumanMessage(content=request.message)],
 
+                # per-turn 초기화 (이전 턴 값 오염 방지)
+                "pending_tasks":       [],
+                "completed_tasks":     [],
+                "current_active_task": None,
+                "agent_results":       {},
+                "ui_action_required":  None,
+                "guardrail_passed":    True,
 
-
-            if image_event and image_url:
-                image_url = str(image_url).strip()
-
-                image_bytes = _read_image_from_local_url(image_url)
-                if image_bytes is None:
-                    try:
-                        response = requests.get(image_url, timeout=10)
-                        response.raise_for_status()
-                        image_bytes = response.content
-                    except Exception as exc:
-                        raise RuntimeError(f"이미지 다운로드 실패: {exc}") from exc
-
-                search_args: Dict[str, Any] = {"image_bytes": image_bytes}
-                if requested_top_k is not None:
-                    search_args["top_k"] = requested_top_k
-                search_result = search_by_image.invoke(search_args)
-
-                if "error" in search_result:
-                    raise RuntimeError(search_result["error"])
-
-                raw_ui_action = str(search_result.get("ui_action", "SHOW_PRODUCTS")).strip()
-                ui_action_normalized = (
-                    "show_product_list"
-                    if raw_ui_action.upper() == "SHOW_PRODUCTS"
-                    else raw_ui_action
-                )
-                ui_payload = {
-                    "type": "ui_action",
-                    "ui_action": ui_action_normalized,
-                    "ui_data": search_result.get("products", []),
-                    "product_ids": search_result.get("product_ids", []),
-                }
-
-                yield f"data: {json.dumps(ui_payload, ensure_ascii=False)}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                return
-                        
-            # 1. 상태 초기화
-            current_state = {
-                **previous_state,
-                "retry_count": 0,
-                "current_task": previous_state.get("current_task"),
-                "documents": [],
-                "tool_outputs": [],
-                "task_list": [],
-                "task_results": [],
-                "is_authenticated": True,
+                # 사용자 / LLM / 세션
                 "user_info": {
-                    "id": current_user.id,
-                    "name": current_user.name,
+                    "id":    current_user.id,
+                    "name":  current_user.name,
                     "email": current_user.email,
                 },
-                "llm_provider": requested_provider,
-                "llm_model": requested_model or None,
+                "llm_provider":    provider,
+                "llm_model":       model,
                 "conversation_id": conversation_id,
-                "turn_id": turn_id,
+                "turn_id":         turn_id,
             }
-
-            # 메시지 복구 및 추가
-            serialized_history = (
-                previous_state.get("messages", []) if previous_state else []
-            )
-            history = deserialize_messages(serialized_history) if previous_state else []
-
-            current_state["messages"] = history + [
-                HumanMessage(content=request.message)
-            ]
 
             run_logger = ConversationRunLogger(
                 conversation_id=conversation_id,
                 turn_id=turn_id,
                 user_id=current_user.id,
-                provider=requested_provider,
-                model=requested_model or None,
+                provider=provider,
+                model=model,
             )
             run_logger.set_input(request.message, current_state)
 
-            # 2. 이벤트 스트리밍
-            final_state = None
+            # ── LangSmith 트레이싱 config ────────────────────────────────────
+            langsmith_config: dict = {}
+            if os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true":
+                langsmith_project = os.getenv("LANGCHAIN_PROJECT", "Ecommerce-Chatbot")
+                tracer = LangChainTracer(project_name=langsmith_project)
+                langsmith_config = {
+                    "run_name": f"chat/{conversation_id}/{turn_id}",
+                    "metadata": {
+                        "user_id":         str(current_user.id),
+                        "user_email":      current_user.email,
+                        "conversation_id": conversation_id,
+                        "turn_id":         turn_id,
+                        "llm_provider":    provider,
+                        "llm_model":       model,
+                    },
+                    "tags": ["chatbot", provider, model],
+                    "callbacks": [tracer],
+                }
+
+            # ── 이벤트 스트리밍 ──────────────────────────────────────────────
+            final_state: dict | None = None
             has_streamed_text = False
             streamed_ui_actions: set[str] = set()
             last_langgraph_input = None
-            async for event in graph_app.astream_events(current_state, version="v2"):
-                event_type = event["event"]
 
-                # A. 토큰 스트리밍
-                if event_type == "on_chat_model_stream":
-                    # 내부 LLM(승인용, 가드레일, Decomposer 등)에서 발생한 스트림은 사용자에게 전달하지 않음
-                    tags = event.get("tags", [])
-                    name = event.get("name", "")
-                    internal_llms = {
-                        "approval_llm",
-                        "guardrail_llm",
-                        "summary_llm",
-                    }
+            async for event in graph_app.astream_events(current_state, version="v2", config=RunnableConfig(**langsmith_config) if langsmith_config else None):
+                etype = event["event"]
 
-                    if "approval_llm" in tags or name in internal_llms:
+                # A. LLM 토큰 스트리밍
+                #    planner 는 structured JSON 출력 → 사용자에게 전달하지 않음
+                if etype == "on_chat_model_stream":
+                    node_name = event.get("metadata", {}).get("langgraph_node", "")
+                    if node_name == "planner":
                         continue
-
                     chunk = event.get("data", {}).get("chunk")
                     content = chunk.content if chunk else None
                     if content:
                         has_streamed_text = True
                         yield f"data: {json.dumps({'type': 'text_chunk', 'content': content}, ensure_ascii=False)}\n\n"
 
-                # B. 도구 실행 시작 (상태 메시지)
-                elif event_type == "on_tool_start":
-                    tool_start_data = event.get("data", {})
-                    run_logger.log_tool_start(
-                        event.get("name", "unknown_tool"),
-                        tool_start_data.get("input")
-                        if tool_start_data.get("input") is not None
-                        else tool_start_data,
-                    )
-                    status_msg = TOOL_STATUS_MESSAGES.get(event["name"])
-                    if status_msg:
-                        yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg}, ensure_ascii=False)}\n\n"
-
-                # B-1. 그래프 노드 실행 시작 (실제 진행 단계 표시)
-                elif event_type == "on_chain_start":
-                    node_name = event.get("name")
+                # B. 노드 실행 시작 (진행 상태 표시 + 로깅)
+                elif etype == "on_chain_start":
+                    node_name = event.get("name", "")
                     if node_name == "LangGraph":
                         last_langgraph_input = event.get("data", {}).get("input")
                     else:
-                        node_start_data = event.get("data", {})
-                        run_logger.log_node_start(
-                            node_name or "unknown_node",
-                            node_start_data.get("input")
-                            if node_start_data.get("input") is not None
-                            else node_start_data,
-                        )
+                        run_logger.log_node_start(node_name, event.get("data", {}).get("input"))
                     status_msg = NODE_STATUS_MESSAGES.get(node_name)
                     if status_msg:
                         yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg, 'node': node_name}, ensure_ascii=False)}\n\n"
 
-                # B-2. 모델 호출 시작 (모델 실행 단계 표시)
-                elif event_type == "on_chat_model_start":
-                    model_name = event.get("name") or "chat_model"
-                    model_start_data = event.get("data", {})
-                    run_logger.log_model_start(
-                        model_name,
-                        model_start_data.get("input")
-                        if model_start_data.get("input") is not None
-                        else model_start_data,
-                    )
-                    status_msg = f"모델이 응답을 생성하고 있습니다... ({model_name})"
-                    yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg, 'model': model_name}, ensure_ascii=False)}\n\n"
+                # C. 도구 실행 시작 (진행 상태 표시 + 로깅)
+                elif etype == "on_tool_start":
+                    tool_name = event.get("name", "unknown_tool")
+                    run_logger.log_tool_start(tool_name, event.get("data", {}).get("input"))
+                    status_msg = TOOL_STATUS_MESSAGES.get(tool_name)
+                    if status_msg:
+                        yield f"data: {json.dumps({'type': 'status_update', 'status': status_msg}, ensure_ascii=False)}\n\n"
 
-                elif event_type == "on_chat_model_end":
-                    model_end_data = event.get("data", {})
+                # D. 도구 실행 완료 (UI 액션 즉시 전달)
+                elif etype == "on_tool_end":
+                    tool_name = event.get("name", "unknown_tool")
+                    raw_output = event.get("data", {}).get("output")
+                    run_logger.log_tool_end(tool_name, raw_output)
+
+                    tool_output = _parse_tool_output(raw_output)
+                    if tool_output and tool_output.get("ui_action"):
+                        ui_action_name = str(tool_output["ui_action"])
+                        streamed_ui_actions.add(ui_action_name)
+                        yield f"data: {json.dumps({'type': 'ui_action', 'ui_action': ui_action_name, 'ui_data': tool_output.get('ui_data'), 'requires_selection': tool_output.get('requires_selection', False), 'prior_action': tool_output.get('prior_action'), 'message': tool_output.get('message', '')}, ensure_ascii=False)}\n\n"
+
+                # E. 모델 호출 시작/종료 로깅
+                elif etype == "on_chat_model_start":
+                    run_logger.log_model_start(
+                        event.get("name") or "chat_model",
+                        event.get("data", {}).get("input"),
+                    )
+                elif etype == "on_chat_model_end":
                     run_logger.log_model_end(
                         event.get("name") or "chat_model",
-                        model_end_data.get("output")
-                        if model_end_data.get("output") is not None
-                        else model_end_data,
+                        event.get("data", {}).get("output"),
                     )
 
-                # C. 도구 실행 완료 (UI 액션)
-                elif event_type == "on_tool_end":
-                    tool_end_data = event.get("data", {})
-                    run_logger.log_tool_end(
-                        event.get("name", "unknown_tool"),
-                        tool_end_data.get("output")
-                        if tool_end_data.get("output") is not None
-                        else tool_end_data,
-                    )
-                    tool_output = _parse_tool_output(event["data"].get("output"))
+                # F. 노드 실행 완료 (최종 상태 캡처 + 로깅)
+                elif etype == "on_chain_end":
+                    if event.get("name") == "LangGraph":
+                        final_state = event["data"].get("output")
+                        if isinstance(last_langgraph_input, dict) and isinstance(final_state, dict):
+                            run_logger.log_state_change(last_langgraph_input, final_state)
+                    else:
+                        run_logger.log_node_end(
+                            event.get("name") or "unknown_node",
+                            event.get("data", {}).get("output"),
+                        )
 
-                    if tool_output and tool_output.get("ui_action"):
-                        ui_action_name = str(tool_output.get("ui_action"))
-                        streamed_ui_actions.add(ui_action_name)
-                        ui_data = {
-                            "type": "ui_action",
-                            "ui_action": ui_action_name,
-                            "ui_data": tool_output.get("ui_data"),
-                            "requires_selection": tool_output.get(
-                                "requires_selection", False
-                            ),
-                            "message": tool_output.get("message", ""),
-                        }
-                        yield f"data: {json.dumps(ui_data, ensure_ascii=False)}\n\n"
+            # ── 스트림 종료 후 처리 ──────────────────────────────────────────
+            if isinstance(final_state, dict):
+                # 토큰 스트림이 없었던 경우 (final_generator가 LLM 호출 없이 직접 반환)
+                # → 마지막 AIMessage 텍스트를 폴백으로 전송
+                if not has_streamed_text:
+                    fallback = _get_fallback_text(final_state)
+                    if fallback:
+                        yield f"data: {json.dumps({'type': 'text_chunk', 'content': fallback}, ensure_ascii=False)}\n\n"
 
-                # D. 최종 상태 캡처
-                elif event_type == "on_chain_end" and event["name"] == "LangGraph":
-                    final_state = event["data"].get("output")
-                    if isinstance(last_langgraph_input, dict) and isinstance(
-                        final_state, dict
-                    ):
-                        run_logger.log_state_change(last_langgraph_input, final_state)
-                elif event_type == "on_chain_end":
-                    node_end_data = event.get("data", {})
-                    run_logger.log_node_end(
-                        event.get("name") or "unknown_node",
-                        node_end_data.get("output")
-                        if node_end_data.get("output") is not None
-                        else node_end_data,
-                    )
+                # ui_action_required 가 on_tool_end 에서 미전송된 경우 보강 시그널
+                ui_req = final_state.get("ui_action_required")
+                if ui_req and ui_req not in streamed_ui_actions:
+                    yield f"data: {json.dumps({'type': 'ui_action', 'ui_action': ui_req, 'ui_data': None}, ensure_ascii=False)}\n\n"
 
-            # 3. 메타데이터 전송
-            if final_state:
-                final_ui_actions = _extract_ui_actions(final_state)
-                has_ui_action = len(final_ui_actions) > 0
-
-                # 일부 경로에서는 on_tool_end 이벤트가 없을 수 있어
-                # 최종 상태의 UI 액션을 보강 전송한다.
-                for item in final_ui_actions:
-                    ui_action_name = str(item.get("ui_action"))
-                    if ui_action_name in streamed_ui_actions:
-                        continue
-                    ui_data = {
-                        "type": "ui_action",
-                        "ui_action": ui_action_name,
-                        "ui_template": item.get("ui_template"),
-                        "ui_config": item.get("ui_config"),
-                        "ui_data": item.get("ui_data"),
-                        "requires_selection": item.get("requires_selection", False),
-                        "message": item.get("message", ""),
-                    }
-                    yield f"data: {json.dumps(ui_data, ensure_ascii=False)}\n\n"
-
-                final_text = (
-                    final_state.get("generation")
-                    if isinstance(final_state, dict)
-                    else None
-                )
-                if (
-                    (not has_ui_action)
-                    and (not has_streamed_text)
-                    and isinstance(final_text, str)
-                    and final_text.strip()
-                ):
-                    yield f"data: {json.dumps({'type': 'text_chunk', 'content': final_text}, ensure_ascii=False)}\n\n"
                 yield f"data: {json.dumps(_build_metadata(final_state), ensure_ascii=False)}\n\n"
                 log_path = run_logger.finalize(final_state, success=True)
-                yield f"data: {json.dumps({'type': 'audit_log', 'conversation_id': conversation_id, 'turn_id': turn_id, 'log_path': log_path}, ensure_ascii=False)}\n\n"
             else:
                 log_path = run_logger.finalize(
                     {"messages": current_state.get("messages", [])}, success=True
                 )
-                yield f"data: {json.dumps({'type': 'audit_log', 'conversation_id': conversation_id, 'turn_id': turn_id, 'log_path': log_path}, ensure_ascii=False)}\n\n"
 
+            yield f"data: {json.dumps({'type': 'audit_log', 'conversation_id': conversation_id, 'turn_id': turn_id, 'log_path': log_path}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         except Exception as e:
-            import traceback
-
             traceback.print_exc()
             try:
                 if run_logger:
@@ -617,32 +343,27 @@ async def chat_streaming_endpoint(
     )
 
 
+# ── 리뷰 초안 엔드포인트 ──────────────────────────────────────────────────────
+
 @router.post("/review-draft")
 async def generate_review_draft_endpoint(
-    request: ReviewDraftRequest, current_user: User = Depends(get_current_user)
+    request: ReviewDraftRequest,
+    current_user: User = Depends(get_current_user),
 ):
-    """
-    Generate review drafts based on satisfaction and product name.
-    """
+    """만족도 + 상품명 기반 리뷰 초안 생성."""
     try:
-        # generate_review_draft is a langchain component (StructuredTool)
-        result = generate_review_draft.invoke(
-            {
-                "product_name": request.product_name,
-                "satisfaction": request.satisfaction,
-                "keywords": request.keywords or [],
-            }
-        )
+        result = generate_review_draft.invoke({
+            "product_name": request.product_name,
+            "satisfaction": request.satisfaction,
+            "keywords":     request.keywords or [],
+        })
         if isinstance(result, str):
             try:
                 result = json.loads(result)
             except Exception:
                 pass
-
-        # If result is already a dict from the tool, it contains 'success' and 'drafts'
         if isinstance(result, dict) and "drafts" in result:
             return result
-
         return {"success": True, "drafts": result}
     except Exception as e:
         return {"success": False, "error": str(e)}

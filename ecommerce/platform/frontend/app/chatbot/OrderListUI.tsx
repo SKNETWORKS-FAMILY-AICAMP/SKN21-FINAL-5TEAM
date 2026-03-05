@@ -28,20 +28,37 @@ type OrderListUIProps = {
   orders: OrderData[];
   onSelect: (selectedOrderIds: string[]) => void;
   requiresSelection?: boolean;
+  prior_action?: string | null;
   ui_config?: UiConfig;
 };
 
-export default function OrderListUI({ message, orders, onSelect, requiresSelection = false, ui_config }: OrderListUIProps) {
+export default function OrderListUI({ message, orders, onSelect, requiresSelection = false, prior_action, ui_config }: OrderListUIProps) {
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [confirmed, setConfirmed] = React.useState(false);  // 선택 완료 상태
 
-  // ui_config가 있으면 그걸 우선 사용, 없으면 기존 requiresSelection 폴백
+  // ui_config가 있으면 그걸 우선 사용, 없으면 prior_action → requiresSelection 폴백
   const showSelection = ui_config?.enable_selection ?? requiresSelection;
   const showRefundBtn = ui_config?.enable_refund_button;
   const showExchangeBtn = ui_config?.enable_exchange_button;
   const showCancelBtn = ui_config?.enable_cancel_button;
   const selectableStatuses = ui_config?.selectable_statuses;
-  const actionLabel = ui_config?.action_label || `선택 완료 (${selectedIds.size}건)`;
+
+  // prior_action에 따라 action_label 동적 생성
+  const actionLabelMap: Record<string, string> = {
+    refund:   `환불할 주문 선택 완료 (${selectedIds.size}건)`,
+    exchange: `교환할 주문 선택 완료 (${selectedIds.size}건)`,
+    cancel:   `취소할 주문 선택 완료 (${selectedIds.size}건)`,
+    review:   `리뷰 작성할 주문 선택 완료 (${selectedIds.size}건)`,
+  };
+  const actionLabel =
+    ui_config?.action_label ||
+    (prior_action ? actionLabelMap[prior_action] : null) ||
+    `선택 완료 (${selectedIds.size}건)`;
+
+  // prior_action 기반 배지 표시 여부 (ui_config 없을 때 사용)
+  const showRefundBadge  = !ui_config && (prior_action === 'refund'   || prior_action == null);
+  const showExchangeBadge = !ui_config && (prior_action === 'exchange' || prior_action == null);
+  const showCancelBadge  = !ui_config && (prior_action === 'cancel'   || prior_action == null);
 
   const isSelectable = (order: OrderData) => {
     if (!selectableStatuses) return true;
@@ -102,10 +119,10 @@ export default function OrderListUI({ message, orders, onSelect, requiresSelecti
                 {showRefundBtn && order.can_return && <span className={styles.actionBadge}>환불가능</span>}
                 {showExchangeBtn && order.can_exchange && <span className={styles.actionBadge}>교환가능</span>}
                 {showCancelBtn && order.can_cancel && <span className={styles.actionBadge}>취소가능</span>}
-                {/* ui_config 없을 때 기존 방식 폴백 */}
-                {!ui_config && order.can_cancel && <span className={styles.actionBadge}>취소가능</span>}
-                {!ui_config && order.can_return && <span className={styles.actionBadge}>환불가능</span>}
-                {!ui_config && order.can_exchange && <span className={styles.actionBadge}>교환가능</span>}
+                {/* prior_action 기반 배지 (ui_config 없을 때) */}
+                {showCancelBadge  && order.can_cancel   && <span className={styles.actionBadge}>취소가능</span>}
+                {showRefundBadge  && order.can_return    && <span className={styles.actionBadge}>환불가능</span>}
+                {showExchangeBadge && order.can_exchange && <span className={styles.actionBadge}>교환가능</span>}
               </div>
             </div>
           </div>
