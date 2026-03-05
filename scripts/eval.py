@@ -45,38 +45,44 @@ logger = logging.getLogger(__name__)
 
 def create_eval_orders(db: Session):
     """평가용 추가 주문 데이터 생성 (Argument Accuracy 벤치마크 대응)"""
-    test2_email = "test2@example.com"
-    user = db.query(User).filter(User.email == test2_email).first()
-    if not user:
-        user = User(
-            email=test2_email,
-            password_hash=hash_password("password123"), 
-            name="테스트2유저",
-            phone="010-2222-2222",
-            status=UserStatus.ACTIVE,
-            agree_marketing=True,
-            agree_sms=True,
-            agree_email=True,
-            gender=UserGender.MALE,
-        )
-        db.add(user)
-        db.flush()
-        logger.info(f"✅ {test2_email} 유저 생성 완료")
 
-    address = db.query(ShippingAddress).filter(ShippingAddress.user_id == user.id).first()
-    if not address:
-        address = ShippingAddress(
-            user_id=user.id,
-            recipient_name="테스트2유저",
-            address1="서울시 강남구 테헤란로 123",
-            address2="SKN 타워 10층",
-            post_code="06123",
-            phone="010-2222-2222",
-            is_default=True
-        )
-        db.add(address)
-        db.flush()
-        logger.info(f"✅ {test2_email} 배송지 생성 완료")
+    def get_or_create_user(email, name):
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            user = User(
+                email=email,
+                password_hash=hash_password("password123"), 
+                name=name,
+                phone="010-2222-2222",
+                status=UserStatus.ACTIVE,
+                agree_marketing=True,
+                agree_sms=True,
+                agree_email=True,
+                gender=UserGender.MALE,
+            )
+            db.add(user)
+            db.flush()
+            logger.info(f"✅ {email} 유저 생성 완료")
+        
+        address = db.query(ShippingAddress).filter(ShippingAddress.user_id == user.id).first()
+        if not address:
+            address = ShippingAddress(
+                user_id=user.id,
+                recipient_name=name,
+                address1="서울시 강남구 테헤란로 123",
+                address2="SKN 타워 10층",
+                post_code="06123",
+                phone="010-2222-2222",
+                is_default=True
+            )
+            db.add(address)
+            db.flush()
+            logger.info(f"✅ {email} 배송지 생성 완료")
+        return user, address
+
+    user1, addr1 = get_or_create_user("test@example.com", "테스트1유저")
+    user2, addr2 = get_or_create_user("test2@example.com", "테스트2유저")
+    user3, addr3 = get_or_create_user("test3@example.com", "테스트3유저")
 
     new_product_option = db.query(ProductOption).first()
     if not new_product_option:
@@ -111,83 +117,49 @@ def create_eval_orders(db: Session):
         
         new_product_option = db.query(ProductOption).first()
 
-    # 서로 다른 상품 옵션을 연결하여 시나리오 다양성 확보
     all_new_options = db.query(ProductOption).filter(ProductOption.is_active == True).limit(20).all()
 
-    # 4. 상품준비중 주문 (취소 테스트 2건째)
-    opt4 = all_new_options[1] if len(all_new_options) > 1 else new_product_option
-    order4 = Order(
-        user_id=user.id,
-        order_number="ORD-eval_dataset-0004",
-        shipping_address_id=address.id,
-        subtotal=Decimal("25000"),
-        shipping_fee=Decimal("3000"),
-        total_amount=Decimal("28000"),
-        status=OrderStatus.PREPARING,
-        payment_method="CARD",
-        shipping_request="부재 시 경비실에 맡겨주세요"
-    )
-    db.add(order4)
-    db.flush()
-    db.add(OrderItem(
-        order_id=order4.id,
-        product_option_type=ProductType.NEW,
-        product_option_id=opt4.id,
-        quantity=1,
-        unit_price=Decimal("25000"),
-        subtotal=Decimal("25000")
-    ))
+    def create_order(user, address, order_num, subtotal, ship_fee, status, request_memo, opt_idx, qty, unit_price):
+        opt = all_new_options[opt_idx % len(all_new_options)] if len(all_new_options) > opt_idx else new_product_option
+        order = Order(
+            user_id=user.id,
+            order_number=order_num,
+            shipping_address_id=address.id,
+            subtotal=Decimal(subtotal),
+            shipping_fee=Decimal(ship_fee),
+            total_amount=Decimal(subtotal) + Decimal(ship_fee),
+            status=status,
+            payment_method="CARD",
+            shipping_request=request_memo
+        )
+        db.add(order)
+        db.flush()
+        db.add(OrderItem(
+            order_id=order.id,
+            product_option_type=ProductType.NEW,
+            product_option_id=opt.id,
+            quantity=qty,
+            unit_price=Decimal(unit_price),
+            subtotal=Decimal(subtotal)
+        ))
+        db.flush()
 
-    # 5. 배송완료 주문 (환불/리뷰 테스트 2건째)
-    opt5 = all_new_options[2] if len(all_new_options) > 2 else new_product_option
-    order5 = Order(
-        user_id=user.id,
-        order_number="ORD-eval_dataset-0005",
-        shipping_address_id=address.id,
-        subtotal=Decimal("39000"),
-        shipping_fee=Decimal("0"),
-        total_amount=Decimal("39000"),
-        status=OrderStatus.DELIVERED,
-        payment_method="CARD",
-        shipping_request="문 앞에 놔주세요"
-    )
-    db.add(order5)
-    db.flush()
-    db.add(OrderItem(
-        order_id=order5.id,
-        product_option_type=ProductType.NEW,
-        product_option_id=opt5.id,
-        quantity=1,
-        unit_price=Decimal("39000"),
-        subtotal=Decimal("39000")
-    ))
+    # 테스트 1번 유저 (test@example.com)
+    create_order(user1, addr1, "ORD-eval_dataset-0001", "25000", "3000", OrderStatus.PREPARING, "부재 시 경비실에 맡겨주세요", 1, 1, "25000")
+    create_order(user1, addr1, "ORD-eval_dataset-0002", "39000", "0", OrderStatus.DELIVERED, "문 앞에 놔주세요", 2, 1, "39000")
+    create_order(user1, addr1, "ORD-eval_dataset-0003", "52000", "3000", OrderStatus.DELIVERED, "택배함에 넣어주세요", 3, 2, "26000")
 
-    # 6. 배송완료 주문 (교환/리뷰 테스트 3건째)
-    opt6 = all_new_options[3] if len(all_new_options) > 3 else new_product_option
-    order6 = Order(
-        user_id=user.id,
-        order_number="ORD-eval_dataset-0006",
-        shipping_address_id=address.id,
-        subtotal=Decimal("52000"),
-        shipping_fee=Decimal("3000"),
-        total_amount=Decimal("55000"),
-        status=OrderStatus.DELIVERED,
-        payment_method="CARD",
-        shipping_request="택배함에 넣어주세요"
-    )
-    db.add(order6)
-    db.flush()
-    db.add(OrderItem(
-        order_id=order6.id,
-        product_option_type=ProductType.NEW,
-        product_option_id=opt6.id,
-        quantity=2,
-        unit_price=Decimal("26000"),
-        subtotal=Decimal("52000")
-    ))
+    # 테스트 2번 유저 (test2@example.com)
+    create_order(user2, addr2, "ORD-eval_dataset-0004", "25000", "3000", OrderStatus.PREPARING, "부재 시 경비실에 맡겨주세요", 1, 1, "25000")
+    create_order(user2, addr2, "ORD-eval_dataset-0005", "39000", "0", OrderStatus.DELIVERED, "문 앞에 놔주세요", 2, 1, "39000")
+    create_order(user2, addr2, "ORD-eval_dataset-0006", "52000", "3000", OrderStatus.DELIVERED, "택배함에 넣어주세요", 3, 2, "26000")
 
-    db.flush()
-    logger.info("✅ 기본 평가용 추가 주문 3건 생성 완료")
+    # 테스트 3번 유저 (test3@example.com)
+    create_order(user3, addr3, "ORD-eval_dataset-0007", "25000", "3000", OrderStatus.PREPARING, "부재 시 경비실에 맡겨주세요", 1, 1, "25000")
+    create_order(user3, addr3, "ORD-eval_dataset-0008", "39000", "0", OrderStatus.DELIVERED, "문 앞에 놔주세요", 2, 1, "39000")
+    create_order(user3, addr3, "ORD-eval_dataset-0009", "52000", "3000", OrderStatus.DELIVERED, "택배함에 넣어주세요", 3, 2, "26000")
+
+    logger.info("✅ 3개의 계정에 대해 각각 3건씩 총 9건 생성 완료")
 
 
 if __name__ == "__main__":
