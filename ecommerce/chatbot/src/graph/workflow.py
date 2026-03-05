@@ -13,6 +13,7 @@ from ecommerce.chatbot.src.graph.nodes_v2 import (
     route_after_validation,
     route_after_approval,
     route_after_tools,
+    ui_generator_node,
 )
 
 
@@ -26,7 +27,8 @@ def create_graph():
           -> Agent -> (Validation | Process Output)
           -> Validation -> (Tools | Approval | Process Output)
           -> Approval -> (Tools | Process Output)
-          -> Tools -> (Agent | Process Output)
+          -> Tools -> (Agent | UI Generator | Process Output)
+          -> UI Generator -> Process Output
           -> Process Output -> End
     """
     workflow = StateGraph(AgentState)
@@ -38,6 +40,7 @@ def create_graph():
     workflow.add_node("validation", smart_validation_node)
     workflow.add_node("approval", human_approval_node)
     workflow.add_node("tools", tool_node)
+    workflow.add_node("ui_generator", ui_generator_node)
     workflow.add_node("process_output", process_output_node)
 
     # 2. 엣지 연결
@@ -80,12 +83,15 @@ def create_graph():
         {"tools": "tools", "process_output": "process_output"},
     )
 
-    # [Tools -> Agent / Process Output]
+    # [Tools -> Agent / UI Generator / Process Output]
     workflow.add_conditional_edges(
         "tools",
         route_after_tools,
-        {"agent": "agent", "process_output": "process_output"},
+        {"agent": "agent", "ui_generator": "ui_generator", "process_output": "process_output"},
     )
+
+    # [UI Generator -> Process Output] (항상)
+    workflow.add_edge("ui_generator", "process_output")
 
     workflow.add_edge("process_output", END)
 

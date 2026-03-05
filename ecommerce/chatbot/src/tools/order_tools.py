@@ -923,7 +923,7 @@ def get_user_orders(
             else:
                 msg_suffix = " (주문 내역이 없습니다.)"
             return {
-                "ui_action": "show_order_list",
+                "ui_template": "order_list",
                 "message": base_msg + msg_suffix,
                 "total_orders": 0,
                 "ui_data": [],
@@ -943,12 +943,12 @@ def get_user_orders(
             msg_suffix = " 원하시는 주문을 선택해주세요."
 
         return {
-            "ui_action": "show_order_list",
+            "ui_template": "order_list",
             "message": base_msg + msg_suffix,
             "total_orders": len(ui_data),
             "ui_data": ui_data,
             "requires_selection": requires_selection,
-            "prior_action": action_context,  # Pass context back for state update if handled by tool output processor
+            "prior_action": action_context,
         }
     except Exception as e:
         return {"error": f"주문 목록 조회 실패: {str(e)}"}
