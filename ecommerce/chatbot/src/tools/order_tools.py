@@ -122,10 +122,6 @@ def _get_order_actions(order: Order) -> dict:
     # 1. 취소 가능 여부 (결제 완료, 상품 준비중)
     if order.status in [OrderStatus.PAID, OrderStatus.PREPARING]:
         actions["can_cancel"] = True
-    else:
-        actions["cancel_reason"] = (
-            f"현재 상태({order.status.value})에서는 취소가 불가능합니다. (결제 완료 또는 상품준비중 상태에서만 가능)"
-        )
 
     # 2. 반품 가능 여부 (배송 후)
     if order.status in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
@@ -139,10 +135,7 @@ def _get_order_actions(order: Order) -> dict:
         else:
             # SHIPPED 상태에서는 반품 접수 가능 (단, 배송완료 후 수거)
             actions["can_return"] = True
-    else:
-        actions["return_reason"] = (
-            f"현재 상태({order.status.value})에서는 반품이 불가능합니다. (배송 전)"
-        )
+
 
     # 3. 교환 가능 여부 (배송 전/후)
     if order.status not in [OrderStatus.CANCELLED, OrderStatus.REFUNDED]:
@@ -162,10 +155,6 @@ def _get_order_actions(order: Order) -> dict:
             else:
                 actions["can_exchange"] = True
                 actions["exchange_type"] = "post_shipment"
-    else:
-        actions["exchange_reason"] = (
-            f"현재 상태({order.status.value})에서는 교환이 불가능합니다."
-        )
 
     return actions
 
@@ -845,7 +834,7 @@ def get_user_orders(
     반드시 `requires_selection=True`로설정하여 호출해야 합니다. 그래야 UI에 선택 버튼(체크박스 등)이 표시됩니다.
 
     Args:
-        user_id: 사용자 ID (기본값 1)
+        user_id: 사용자 ID
         limit: 조회할 주문 개수
         days: 조회 기간 (기본값 30일)
         requires_selection: 주문 선택 UI 표시 여부 (액션 수행 전 선택이 필요하면 True)
@@ -947,7 +936,8 @@ def get_user_orders(
             "message": base_msg + msg_suffix,
             "total_orders": len(ui_data),
             "ui_data": ui_data,
-            "requires_selection": requires_selection,
+            # action_context 없는 단순 조회 → 선택 불필요, 강제 False
+            "requires_selection": requires_selection and action_context is not None,
             "prior_action": action_context,
         }
     except Exception as e:

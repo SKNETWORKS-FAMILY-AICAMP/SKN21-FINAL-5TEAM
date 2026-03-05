@@ -49,7 +49,7 @@ _BLOCKED_LABELS: set[str] = {
 }
 
 # 분류 신뢰도 임계값 (이 값 미만이면 통과로 처리 — 모호한 입력은 허용)
-_CONFIDENCE_THRESHOLD: float = 0.85
+_CONFIDENCE_THRESHOLD: float = 0.9
 
 
 # ── 모델 로더 (서버 시작 시 1회 호출) ──────────────────────
