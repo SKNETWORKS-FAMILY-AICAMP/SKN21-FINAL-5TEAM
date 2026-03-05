@@ -15,6 +15,7 @@ export type UiProduct = {
   category?: string;
   color?: string;
   season?: string;
+  image_url?: string;
 };
 
 type ProductOption = {
@@ -157,7 +158,7 @@ export default function ProductListUI({ products, message }: ProductListUIProps)
           const selectedLabel = selectedSizeLabelByProduct[product.id];
           // Mocking Image path for missing images inside chatbot 
           // (Can use fallback UI if image fails to load, or just the same logic as page.tsx)
-          const imgUrl = `/products/${product.id}.jpg`;
+          const imgUrl = product.image_url || `/products/${product.id}.jpg`;
           
           return (
             <div key={product.id} className={styles.productCard}>
@@ -169,6 +170,7 @@ export default function ProductListUI({ products, message }: ProductListUIProps)
                     alt={product.name}
                     fill
                     style={{ objectFit: 'cover' }}
+                    unoptimized
                     onError={(e) => {
                         // Fallback image handling
                         (e.target as HTMLImageElement).src = '/logo.png'; 

@@ -4,6 +4,8 @@ from typing import List, Dict, Any
 import ast
 import json
 import os
+import requests
+from urllib.parse import urlparse
 from uuid import uuid4
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
@@ -148,6 +150,64 @@ def _normalize_image_extension(filename: str | None, content_type: str | None) -
     return ".jpg"
 
 
+def _read_image_from_local_url(image_url: str) -> bytes | None:
+    try:
+        parsed = urlparse(image_url)
+    except Exception:
+        return None
+
+    if parsed.path.startswith("/uploads/chatbot/"):
+        filename = os.path.basename(parsed.path)
+        candidate = CHATBOT_UPLOAD_DIR / filename
+        if candidate.exists():
+            return candidate.read_bytes()
+    return None
+
+
+def _resolve_image_url(raw_image_url: Any) -> str | None:
+    """다양한 형태의 이미지 URL 입력값을 정제하여 순수 URL 문자열을 반환합니다."""
+
+    if isinstance(raw_image_url, dict):
+        return raw_image_url.get("_url") or raw_image_url.get("url")
+
+    if not isinstance(raw_image_url, str):
+        return None
+
+    candidate = raw_image_url.strip()
+    if not candidate:
+        return None
+
+    if (candidate.startswith(("\"", "'")) and candidate.endswith(("\"", "'"))):
+        candidate = candidate[1:-1].strip()
+        if not candidate:
+            return None
+
+    for parser in (json.loads, ast.literal_eval):
+        try:
+            parsed = parser(candidate)
+        except Exception:
+            continue
+        if isinstance(parsed, dict):
+            inner = parsed.get("_url") or parsed.get("url")
+            if isinstance(inner, str) and inner.strip():
+                return inner.strip()
+            continue
+        if isinstance(parsed, str) and parsed.strip():
+            return parsed.strip()
+
+    if candidate.startswith("{") and candidate.endswith("}"):
+        try:
+            parsed = ast.literal_eval(candidate)
+            if isinstance(parsed, dict):
+                inner = parsed.get("_url") or parsed.get("url")
+                if isinstance(inner, str) and inner.strip():
+                    return inner.strip()
+        except Exception:
+            pass
+
+    return candidate
+
+
 @router.post("/upload-image")
 async def upload_chat_image(
     request: Request,
@@ -223,66 +283,49 @@ async def chat_streaming_endpoint(
             )
             image_url = None
             if image_event:
-                raw_image_url = payload.get("image_url")
-                if isinstance(raw_image_url, dict):
-                    image_url = raw_image_url.get("_url") or raw_image_url.get("url")
-                elif isinstance(raw_image_url, str):
-                    trimmed = raw_image_url.strip()
-                    if trimmed.startswith(('"', "'")) and trimmed.endswith(('"', "'")):
-                        trimmed = trimmed[1:-1].strip()
-                    if trimmed.startswith("{") and trimmed.endswith("}"):
-                        try:
-                            parsed = ast.literal_eval(trimmed)
-                            if isinstance(parsed, dict):
-                                image_url = parsed.get("_url") or parsed.get("url")
-                        except Exception:
-                            pass
-                    if not image_url:
-                        image_url = trimmed
+                raw_image_url = payload.get("image_url") or payload.get("imageUrl")
+                image_url = _resolve_image_url(raw_image_url)
+
+            payload_query = ""
+            if isinstance(payload, dict):
+                payload_query = str(payload.get("query") or "").strip()
 
 
 
             if image_event and image_url:
-
-                print("IMAGE EVENT DETECTED")
-                print("RAW IMAGE URL:", image_url)
-
-                if isinstance(image_url, dict):
-                    image_url = image_url.get("_url") or image_url.get("url")
-
                 image_url = str(image_url).strip()
 
-                print("FINAL IMAGE URL:", image_url)
+                image_bytes = _read_image_from_local_url(image_url)
+                if image_bytes is None:
+                    try:
+                        response = requests.get(image_url, timeout=10)
+                        response.raise_for_status()
+                        image_bytes = response.content
+                    except Exception as exc:
+                        raise RuntimeError(f"이미지 다운로드 실패: {exc}") from exc
 
-                filename = image_url.split("/")[-1]
-
-                file_path = CHATBOT_UPLOAD_DIR / filename
-
-                print("IMAGE FILE PATH:", file_path)
-
-                if not file_path.exists():
-                    raise RuntimeError(f"Image file not found: {file_path}")
-
-                image_bytes = file_path.read_bytes()
-
-                print("IMAGE FILE SIZE:", len(image_bytes))
-
-                search_result = search_by_image.invoke({
-                    "image_bytes": image_bytes
-                })
+                search_result = search_by_image.invoke({"image_bytes": image_bytes})
 
                 if "error" in search_result:
                     raise RuntimeError(search_result["error"])
 
+                raw_ui_action = str(search_result.get("ui_action", "SHOW_PRODUCTS")).strip()
+                ui_action_normalized = (
+                    "show_product_list"
+                    if raw_ui_action.upper() == "SHOW_PRODUCTS"
+                    else raw_ui_action
+                )
                 ui_payload = {
                     "type": "ui_action",
-                    "ui_action": search_result.get("ui_action", "show_product_list"),
+                    "ui_action": ui_action_normalized,
                     "ui_data": search_result.get("products", []),
+                    "product_ids": search_result.get("product_ids", []),
                 }
 
                 yield f"data: {json.dumps(ui_payload, ensure_ascii=False)}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                return
+                if not payload_query:
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                    return
                         
             # 1. 상태 초기화
             current_state = {

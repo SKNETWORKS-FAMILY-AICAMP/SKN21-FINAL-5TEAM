@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from ecommerce.platform.backend.app.database import SessionLocal
 from ecommerce.platform.backend.app.models import User
 from ecommerce.platform.backend.app.router.products import crud as product_crud
+from ecommerce.platform.backend.app.router.products import schemas as product_schemas
 from ecommerce.chatbot.src.tools.image_search_tools import search_similar_images_from_bytes
 
 # Path to the sampled dataset
@@ -164,6 +165,16 @@ def _build_product_payloads(product_ids: List[int]) -> List[dict]:
                 if opt.color:
                     color = opt.color
                     break
+            image_url = None
+            try:
+                images = product_crud.get_product_images(
+                    db, product_schemas.ProductType.NEW, product.id
+                )
+                if images:
+                    primary_image = next((img for img in images if img.is_primary), images[0])
+                    image_url = primary_image.image_url
+            except Exception as img_err:
+                print(f"Failed to load images for product {product.id}: {img_err}")
             payloads.append(
                 {
                     "id": product.id,
@@ -172,6 +183,7 @@ def _build_product_payloads(product_ids: List[int]) -> List[dict]:
                     "category": category,
                     "color": color,
                     "season": None,
+                    "image_url": image_url or f"/products/{product.id}.jpg",
                 }
             )
         return payloads

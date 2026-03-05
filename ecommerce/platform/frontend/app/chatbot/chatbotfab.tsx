@@ -93,6 +93,13 @@ type ImageMessage = {
   filename: string;
 };
 
+type PendingImageState = {
+  filename: string;
+  previewUrl: string;
+  objectUrl: string;
+  url?: string;
+};
+
 type ReviewSubmissionPayload = {
   event: 'review_submitted';
   action: 'create_review';
@@ -476,6 +483,18 @@ export default function ChatbotFab() {
   const isResizing = useRef(false);
   const [selectedModel, setSelectedModel] = useState<string>(OPENAI_MODELS[0]);
   const [isModelModalOpen, setIsModelModalOpen] = useState(false);
+  const [pendingImage, setPendingImage] = useState<PendingImageState | null>(null);
+
+  const releasePendingImageObjectUrl = (candidate: PendingImageState | null) => {
+    if (candidate?.objectUrl) {
+      URL.revokeObjectURL(candidate.objectUrl);
+    }
+  };
+
+  const clearPendingImage = () => {
+    releasePendingImageObjectUrl(pendingImage);
+    setPendingImage(null);
+  };
 
   useEffect(() => {
     const storedModel = localStorage.getItem('chatbot_llm_model');
@@ -802,6 +821,15 @@ export default function ChatbotFab() {
     setImageUploadError(null);
     setImageUploadHint(null);
 
+    const previewUrl = URL.createObjectURL(file);
+    const initialPending: PendingImageState = {
+      filename: file.name,
+      previewUrl,
+      objectUrl: previewUrl,
+    };
+    releasePendingImageObjectUrl(pendingImage);
+    setPendingImage(initialPending);
+
     try {
       const payload = new FormData();
       payload.append('file', file);
@@ -832,22 +860,16 @@ export default function ChatbotFab() {
         throw new Error('이미지 URL을 받지 못했습니다.');
       }
 
-      setMessages((prev) => [
-        ...prev,
-        { role: 'user', type: 'image', image_url: imageUrl, filename: file.name },
-      ]);
-
-      const eventPayload = {
-        event: 'image_uploaded',
-        image_url: { _url: imageUrl },
-        filename: file.name,
-        description: '첨부한 이미지를 참고하여 관련 정보를 알려주세요.',
-      };
-
-      sendMessage(JSON.stringify(eventPayload), true);
-      setImageUploadHint('이미지 업로드 완료. 필요한 내용을 입력하고 전송하면 분석이 시작됩니다.');
+      setPendingImage((prev) =>
+        prev
+          ? { ...prev, url: imageUrl }
+          : { ...initialPending, url: imageUrl }
+      );
+      setImageUploadHint('이미지 업로드 완료. 설명을 함께 넣거나 그대로 전송해도 분석이 시작됩니다.');
     } catch (error) {
       console.error('이미지 업로드 오류:', error);
+      releasePendingImageObjectUrl(initialPending);
+      setPendingImage(null);
       setImageUploadError(error instanceof Error ? error.message : '이미지 업로드에 실패했습니다.');
     } finally {
       setIsUploadingImage(false);
@@ -861,6 +883,55 @@ export default function ChatbotFab() {
       : imageUploadHint
         ? { text: imageUploadHint, isError: false }
         : null;
+
+  const handleSend = async () => {
+    if (isLoading || isUploadingImage) return;
+    const trimmedInput = input.trim();
+
+    if (!trimmedInput && !pendingImage) {
+      return;
+    }
+
+    if (pendingImage) {
+      const currentPending = pendingImage;
+      const imageUrl = currentPending.url;
+      if (!imageUrl) {
+        return;
+      }
+
+      const additions: ChatMsg[] = [
+        {
+          role: 'user',
+          type: 'image',
+          image_url: imageUrl,
+          filename: currentPending.filename,
+        },
+      ];
+      if (trimmedInput) {
+        additions.push({ role: 'user', type: 'text', text: trimmedInput });
+      }
+
+      setMessages((prev) => [...prev, ...additions]);
+
+      const eventPayload: Record<string, unknown> = {
+        event: 'image_uploaded',
+        image_url: imageUrl,
+        filename: currentPending.filename,
+        description: '첨부한 이미지를 참고하여 관련 정보를 알려주세요.',
+      };
+      if (trimmedInput) {
+        eventPayload.query = trimmedInput;
+      }
+
+      setInput('');
+      clearPendingImage();
+      setImageUploadHint('메시지를 전송했어요. 결과를 기다려주세요.');
+      await sendMessage(JSON.stringify(eventPayload), true);
+      return;
+    }
+
+    await sendMessage();
+  };
 
   const getInferredAction = () => {
     if (
@@ -972,7 +1043,7 @@ export default function ChatbotFab() {
   const onKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
       e.preventDefault();
-      sendMessage();
+      handleSend();
     }
   };
 
@@ -1179,7 +1250,7 @@ export default function ChatbotFab() {
             <button
               type="button"
               className={styles.sendBtn}
-              onClick={() => sendMessage()}
+              onClick={handleSend}
               disabled={isLoading || isUploadingImage}
             >
               전송
@@ -1199,6 +1270,27 @@ export default function ChatbotFab() {
               }`}
             >
               {uploadNotice.text}
+            </div>
+          )}
+          {pendingImage && (
+            <div className={styles.pendingImagePreview}>
+              <img
+                src={pendingImage.previewUrl || pendingImage.url}
+                alt={pendingImage.filename}
+              />
+              <div>
+                <div>{pendingImage.filename}</div>
+                <button
+                  type="button"
+                  className={styles.pendingImageRemove}
+                  onClick={() => {
+                    clearPendingImage();
+                    setImageUploadHint(null);
+                  }}
+                >
+                  취소
+                </button>
+              </div>
             </div>
           )}
 
