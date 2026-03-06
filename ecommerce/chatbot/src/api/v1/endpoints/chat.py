@@ -33,7 +33,6 @@ from ecommerce.chatbot.src.tools.service_tools import generate_review_draft
 from ecommerce.platform.backend.app.core.auth import get_current_user
 from ecommerce.platform.backend.app.router.users.models import User
 from ecommerce.platform.backend.app.uploads import CHATBOT_UPLOAD_DIR
-from pathlib import Path
 
 class OrjsonResponse(JSONResponse):
     """orjson 기반 고성능 JSON 응답 클래스."""
@@ -64,7 +63,7 @@ TOOL_STATUS_MESSAGES: dict[str, str] = {
     "shipping":                   "배송 정보를 확인하고 있습니다...",
     "change_option":              "주문 옵션을 변경하고 있습니다...",
     "update_payment":             "결제 정보를 수정하고 있습니다...",
-    "search_products_vector":     "유사 상품을 검색하고 있습니다...",
+    "search_by_text_clip":        "추천 스타일 상품을 검색하고 있습니다...",
     "search_by_image":            "이미지와 유사한 상품을 검색하고 있습니다...",
     "recommend_clothes":          "스타일 추천을 준비하고 있습니다...",
     "search_knowledge_base":      "정책 문서를 검색하고 있습니다...",
@@ -192,7 +191,7 @@ def _preprocess_user_message(message: str) -> tuple[str, dict[str, Any]]:
     image_url = _resolve_image_url(payload.get("image_url") or payload.get("imageUrl"))
     query = str(payload.get("query") or "").strip()
     description = str(payload.get("description") or "").strip()
-    base_text = query or description or "첨부한 이미지와 유사한 상품을 찾아줘"
+    base_text = query or description or "이미지 업로드 완료"
 
     normalized_message = base_text
     if image_url:
