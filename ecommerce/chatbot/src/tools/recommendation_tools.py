@@ -8,7 +8,10 @@ from ecommerce.platform.backend.app.database import SessionLocal
 from ecommerce.platform.backend.app.models import User
 from ecommerce.platform.backend.app.router.products import crud as product_crud
 from ecommerce.platform.backend.app.router.products import schemas as product_schemas
-from ecommerce.chatbot.src.tools.image_search_tools import search_similar_images_from_bytes
+from ecommerce.chatbot.src.tools.image_search_tools import (
+    search_similar_products_multimodal,
+    search_similar_products_from_text,
+)
 
 # Path to the sampled dataset
 DATA_PATH = os.path.join(
@@ -46,8 +49,6 @@ def recommend_clothes(
     """
     사용자의 요청(카테고리, 색상, 용도 등)에 맞는 옷을 추천합니다.
     챗봇이 의류나 패션 아이템을 추천할 때 사용합니다.
-    [중요] 사용자가 어떤 카테고리(상의, 하의, 아우터, 속옷, 신발 등)를 찾는지 불명확한 경우 (예: "파티복 추천해줘")
-    이 도구를 호출하지 말고 사용자에게 어떤 옷의 종류를 찾는지 먼저 질문하세요.
 
     Args:
         category: 의류 종류 (필수, 예: "Topwear", "Bottomwear", "Dress", "Skirt", "Innerwear" 등. 사용자의 발화를 기반으로 영어 분류명으로 추론하세요)
@@ -192,7 +193,12 @@ def _build_product_payloads(product_ids: List[int]) -> List[dict]:
 
 
 @tool
-def search_by_image(image_bytes: bytes, top_k: int = 5) -> dict:
+def search_by_image(
+    image_bytes: bytes,
+    top_k: int = 5,
+    query_text: Optional[str] = None,
+    search_mode: str = "similar",
+) -> dict:
     """
     CLIP/FAISS를 활용해 업로드된 이미지와 유사한 상품을 추천합니다.
     """
@@ -201,8 +207,13 @@ def search_by_image(image_bytes: bytes, top_k: int = 5) -> dict:
         return {"error": "이미지 바이트 데이터를 전달해주세요."}
 
     try:
-        product_ids = search_similar_images_from_bytes(image_bytes, top_k)
-        print("FAISS SEARCH RESULT:", product_ids)
+        product_ids = search_similar_products_multimodal(
+            image_bytes=bytes(image_bytes),
+            text=query_text,
+            top_k=top_k,
+            search_mode=search_mode,
+        )
+        print("CLIP SEARCH RESULT:", product_ids)
         products = _build_product_payloads(product_ids)
         return {
             "ui_action": "show_product_list",
@@ -212,3 +223,35 @@ def search_by_image(image_bytes: bytes, top_k: int = 5) -> dict:
     except Exception as e:
         print("IMAGE SEARCH ERROR:", e)
         return {"error": f"이미지 검색 실패: {str(e)}"}
+
+
+@tool
+def search_by_text_clip(
+    query: str,
+    top_k: int = 5,
+    search_mode: str = "similar",
+) -> dict:
+    """
+    CLIP 텍스트 임베딩 기반으로 상품 이미지를 검색합니다.
+    추천/무드/스타일 검색에 사용합니다.
+    """
+
+    query_text = (query or "").strip()
+    if not query_text:
+        return {"error": "검색어를 입력해주세요."}
+
+    try:
+        product_ids = search_similar_products_from_text(
+            text=query_text,
+            top_k=top_k,
+            search_mode=search_mode,
+        )
+        products = _build_product_payloads(product_ids)
+        return {
+            "ui_action": "show_product_list",
+            "product_ids": product_ids,
+            "products": products,
+        }
+    except Exception as e:
+        print("TEXT CLIP SEARCH ERROR:", e)
+        return {"error": f"텍스트 기반 이미지 검색 실패: {str(e)}"}

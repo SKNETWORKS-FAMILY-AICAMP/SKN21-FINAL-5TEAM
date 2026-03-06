@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-import json
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import List, Optional, Tuple
 
-import faiss
 import torch
 from langchain_core.tools import tool
 from PIL import Image
+from qdrant_client import models
 from transformers import CLIPModel, CLIPProcessor
+
+from ecommerce.chatbot.src.core.config import settings
+from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
 
 
 def _vector_store_dir() -> Path:
@@ -26,20 +28,9 @@ def _load_clip(device: torch.device) -> Tuple[CLIPProcessor, CLIPModel]:
     return processor, model
 
 
-def _load_faiss_index() -> Tuple[faiss.IndexFlatIP, Dict[int, int]]:
-    vector_store = _vector_store_dir()
-    faiss_path = vector_store / "image_index.faiss"
-    metadata_path = vector_store / "metadata.json"
-
-    if not faiss_path.exists():
-        raise FileNotFoundError(f"FAISS index not found at {faiss_path}")
-    if not metadata_path.exists():
-        raise FileNotFoundError(f"metadata not found at {metadata_path}")
-
-    metadata = json.loads(metadata_path.read_text())
-    index_to_product = {entry["index"]: int(entry["product_id"]) for entry in metadata}
-    index = faiss.read_index(str(faiss_path))
-    return index, index_to_product
+def _to_unit_vector(tensor: torch.Tensor) -> torch.Tensor:
+    normalized = tensor / tensor.norm(dim=-1, keepdim=True)
+    return normalized.cpu().to(torch.float32).squeeze(0)
 
 
 def _embed_image(image: Image.Image, device: torch.device, processor: CLIPProcessor, model: CLIPModel) -> torch.Tensor:
@@ -53,24 +44,44 @@ def _embed_image(image: Image.Image, device: torch.device, processor: CLIPProces
         image_features = output.pooler_output
     else:
         raise AttributeError("unexpected output from CLIP.get_image_features")
-    normalized = image_features / image_features.norm(dim=-1, keepdim=True)
-    return normalized.cpu().to(torch.float32).squeeze(0)
+    return _to_unit_vector(image_features)
 
 
-def _search_by_embedding(embedding: torch.Tensor, index: faiss.IndexFlatIP, index_to_product: Dict[int, int], top_k: int) -> List[int]:
-    distances, indices = index.search(embedding.numpy().reshape(1, -1), top_k)
-    hits: List[int] = []
-    for idx in indices[0]:
-        if idx == -1:
-            continue
-        product_id = index_to_product.get(int(idx))
-        if product_id is not None:
-            hits.append(product_id)
-    return hits
+def _embed_text(text: str, device: torch.device, processor: CLIPProcessor, model: CLIPModel) -> torch.Tensor:
+    inputs = processor(text=[text], return_tensors="pt", padding=True, truncation=True)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+    with torch.no_grad():
+        output = model.get_text_features(**inputs)
+    if isinstance(output, torch.Tensor):
+        text_features = output
+    elif hasattr(output, "pooler_output"):
+        text_features = output.pooler_output
+    else:
+        raise AttributeError("unexpected output from CLIP.get_text_features")
+    return _to_unit_vector(text_features)
 
 
-_CLIP_RESOURCES: Dict[str, object] = {}
-_FAISS_RESOURCES: Dict[str, object] = {}
+def _combine_query_embeddings(
+    image_embedding: Optional[torch.Tensor],
+    text_embedding: Optional[torch.Tensor],
+    text_weight: float = 0.4,
+) -> torch.Tensor:
+    if image_embedding is None and text_embedding is None:
+        raise ValueError("at least one embedding must be provided")
+    if image_embedding is None:
+        return text_embedding  # type: ignore[return-value]
+    if text_embedding is None:
+        return image_embedding
+
+    alpha = min(0.9, max(0.1, float(text_weight)))
+    mixed = (1.0 - alpha) * image_embedding + alpha * text_embedding
+    norm = mixed.norm(p=2)
+    if float(norm) == 0.0:
+        return image_embedding
+    return mixed / norm
+
+
+_CLIP_RESOURCES: dict[str, object] = {}
 
 
 def _get_clip_resources(device: torch.device) -> Tuple[CLIPProcessor, CLIPModel]:
@@ -81,10 +92,42 @@ def _get_clip_resources(device: torch.device) -> Tuple[CLIPProcessor, CLIPModel]
     return _CLIP_RESOURCES[key]  # type: ignore[return-value]
 
 
-def _get_faiss_resources() -> Tuple[faiss.IndexFlatIP, Dict[int, int]]:
-    if "faiss" not in _FAISS_RESOURCES:
-        _FAISS_RESOURCES["faiss"] = _load_faiss_index()
-    return _FAISS_RESOURCES["faiss"]  # type: ignore[return-value]
+def _search_qdrant_by_embedding(
+    embedding: torch.Tensor,
+    top_k: int,
+    search_mode: str = "similar",
+) -> List[int]:
+    bounded_top_k = max(1, min(20, int(top_k)))
+    query_vector = embedding.tolist()
+
+    if search_mode.lower() == "opposite":
+        query_vector = [-v for v in query_vector]
+
+    client = get_qdrant_client()
+    result = client.query_points(
+        collection_name=settings.COLLECTION_CLIP_IMAGE,
+        query=query_vector,
+        using="",
+        limit=bounded_top_k,
+        with_payload=True,
+    )
+
+    hits: List[int] = []
+    seen: set[int] = set()
+    for point in result.points:
+        payload = point.payload or {}
+        raw_id = payload.get("product_id") or payload.get("id")
+        if raw_id is None:
+            continue
+        try:
+            product_id = int(raw_id)
+        except Exception:
+            continue
+        if product_id in seen:
+            continue
+        seen.add(product_id)
+        hits.append(product_id)
+    return hits
 
 
 def _resolve_device() -> torch.device:
@@ -96,13 +139,32 @@ def _resolve_device() -> torch.device:
     return torch.device("cpu")
 
 
-def _search_image(image: Image.Image, top_k: int) -> List[int]:
-    bounded_top_k = max(1, min(20, int(top_k)))
+def _search_clip(
+    image: Optional[Image.Image] = None,
+    text: Optional[str] = None,
+    top_k: int = 5,
+    search_mode: str = "similar",
+    text_weight: float = 0.4,
+) -> List[int]:
+    if image is None and not text:
+        raise ValueError("image 또는 text 중 하나는 필요합니다.")
+
     device = _resolve_device()
     processor, model = _get_clip_resources(device)
-    index, index_to_product = _get_faiss_resources()
-    embedding = _embed_image(image, device, processor, model)
-    return _search_by_embedding(embedding, index, index_to_product, bounded_top_k)
+
+    image_embedding = None
+    text_embedding = None
+    if image is not None:
+        image_embedding = _embed_image(image, device, processor, model)
+    if text:
+        text_embedding = _embed_text(text, device, processor, model)
+
+    query_embedding = _combine_query_embeddings(
+        image_embedding=image_embedding,
+        text_embedding=text_embedding,
+        text_weight=text_weight,
+    )
+    return _search_qdrant_by_embedding(query_embedding, top_k=top_k, search_mode=search_mode)
 
 
 def search_similar_images(image_path: str, top_k: int = 5) -> List[int]:
@@ -114,7 +176,7 @@ def search_similar_images(image_path: str, top_k: int = 5) -> List[int]:
     with Image.open(candidates) as handle:
         image = handle.convert("RGB")
 
-    return _search_image(image, top_k)
+    return _search_clip(image=image, top_k=top_k)
 
 
 def search_similar_images_from_bytes(image_bytes: bytes, top_k: int = 5) -> List[int]:
@@ -123,12 +185,46 @@ def search_similar_images_from_bytes(image_bytes: bytes, top_k: int = 5) -> List
         image = Image.open(BytesIO(image_bytes)).convert("RGB")
     except Exception as exc:
         raise ValueError(f"이미지 로딩 실패: {exc}") from exc
-    return _search_image(image, top_k)
+    return _search_clip(image=image, top_k=top_k)
+
+
+def search_similar_products_from_text(
+    text: str,
+    top_k: int = 5,
+    search_mode: str = "similar",
+) -> List[int]:
+    query = (text or "").strip()
+    if not query:
+        raise ValueError("텍스트 질의가 비어 있습니다.")
+    return _search_clip(text=query, top_k=top_k, search_mode=search_mode)
+
+
+def search_similar_products_multimodal(
+    image_bytes: bytes | None,
+    text: str | None,
+    top_k: int = 5,
+    search_mode: str = "similar",
+    text_weight: float = 0.4,
+) -> List[int]:
+    image = None
+    if image_bytes is not None:
+        try:
+            image = Image.open(BytesIO(image_bytes)).convert("RGB")
+        except Exception as exc:
+            raise ValueError(f"이미지 로딩 실패: {exc}") from exc
+    query_text = (text or "").strip() or None
+    return _search_clip(
+        image=image,
+        text=query_text,
+        top_k=top_k,
+        search_mode=search_mode,
+        text_weight=text_weight,
+    )
 
 
 @tool
 def search_similar_images_tool(image_bytes: bytes, top_k: int = 5) -> dict:
-    """LangChain tool for FAISS-based image similarity search using raw bytes."""
+    """LangChain tool for CLIP+Qdrant image similarity search using raw bytes."""
     try:
         recommended = search_similar_images_from_bytes(image_bytes, top_k)
         return {"recommended_product_ids": recommended}
