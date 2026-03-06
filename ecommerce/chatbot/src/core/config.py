@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     BACKEND_API_URL: str = "http://localhost:3000"
 
     # Collections
-    COLLECTION_FASHION: str = "fashion_products"
+    COLLECTION_CLIP_IMAGE: str = "fashion_clip_images"
     COLLECTION_FAQ: str = "musinsa_faq"
     COLLECTION_TERMS: str = "ecommerce_terms"
 
