@@ -1,0 +1,11 @@
+.venv/
+myenv/
+ecommerce/platform/frontend/.venv/
+ecommerce/platform/frontend/node_modules/
+ecommerce/platform/frontend/.next/
+frontend/.npm/
+node_modules/
+logs/
+results/
+ecommerce/chatbot/data/raw/
+ecommerce/chatbot/data/processed/
