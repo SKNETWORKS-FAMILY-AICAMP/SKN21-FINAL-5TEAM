@@ -23,3 +23,6 @@ results/
 
 # Ignore chatbot uploaded images
 ecommerce/platform/backend/app/static/chatbot_uploads/
+
+# Ignore Docker files
+.dockerignore
