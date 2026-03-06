@@ -70,6 +70,7 @@ def _search_by_embedding(embedding: torch.Tensor, index: faiss.IndexFlatIP, inde
 
 
 _CLIP_RESOURCES: Dict[str, object] = {}
+_FAISS_RESOURCES: Dict[str, object] = {}
 
 
 def _get_clip_resources(device: torch.device) -> Tuple[CLIPProcessor, CLIPModel]:
@@ -80,12 +81,28 @@ def _get_clip_resources(device: torch.device) -> Tuple[CLIPProcessor, CLIPModel]
     return _CLIP_RESOURCES[key]  # type: ignore[return-value]
 
 
+def _get_faiss_resources() -> Tuple[faiss.IndexFlatIP, Dict[int, int]]:
+    if "faiss" not in _FAISS_RESOURCES:
+        _FAISS_RESOURCES["faiss"] = _load_faiss_index()
+    return _FAISS_RESOURCES["faiss"]  # type: ignore[return-value]
+
+
+def _resolve_device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    mps_backend = getattr(torch.backends, "mps", None)
+    if mps_backend and mps_backend.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 def _search_image(image: Image.Image, top_k: int) -> List[int]:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    bounded_top_k = max(1, min(20, int(top_k)))
+    device = _resolve_device()
     processor, model = _get_clip_resources(device)
-    index, index_to_product = _load_faiss_index()
+    index, index_to_product = _get_faiss_resources()
     embedding = _embed_image(image, device, processor, model)
-    return _search_by_embedding(embedding, index, index_to_product, top_k)
+    return _search_by_embedding(embedding, index, index_to_product, bounded_top_k)
 
 
 def search_similar_images(image_path: str, top_k: int = 5) -> List[int]:
