@@ -147,18 +147,24 @@ false_positive_rate = fp / (fp + tn) if (fp + tn) > 0 else 0.0
 # --------------------------------------------------
 # 7. 실패 사례 및 결과 리포트 저장
 # --------------------------------------------------
+# --------------------------------------------------
+# 7. 실패 사례 및 결과 리포트 저장
+# --------------------------------------------------
 false_negatives = eval_df[(eval_df["y_true"] == 1) & (eval_df["y_pred"] == 0)].copy()
 false_positives = eval_df[(eval_df["y_true"] == 0) & (eval_df["y_pred"] == 1)].copy()
 
-fn_path = current_dir / "kold_false_negatives.csv"
-fp_path = current_dir / "kold_false_positives.csv"
-result_md_path = current_dir / "result.md"
+# 절대 경로로 변환하여 확실하게 저장 (JSONL 형식)
+fn_path = (current_dir / "kold_false_negatives.jsonl").absolute()
+fp_path = (current_dir / "kold_false_positives.jsonl").absolute()
+result_md_path = (current_dir / "result.md").absolute()
 
-false_negatives.to_csv(fn_path, index=False, encoding="utf-8-sig")
-false_positives.to_csv(fp_path, index=False, encoding="utf-8-sig")
+try:
+    # JSONL 형식으로 저장 (각 행이 독립된 JSON 객체)
+    false_negatives.to_json(str(fn_path), orient='records', lines=True, force_ascii=False)
+    false_positives.to_json(str(fp_path), orient='records', lines=True, force_ascii=False)
 
-# 마크다운 리포트 생성
-report_content = f"""# KOLD 가드레일 벤치마크 결과 리포트
+    # 마크다운 리포트 생성
+    report_content = f"""# KOLD 가드레일 벤치마크 결과 리포트
 
 ## 1. 평가 요약
 - **전체 데이터 샘플 수**: {len(data)}
@@ -182,29 +188,32 @@ report_content = f"""# KOLD 가드레일 벤치마크 결과 리포트
 | **실제 차단 (BLOCK, 1)** | 미탐(FN): {fn} | 정탐(TP): {tp} |
 
 ## 4. 분석 상세 파일
-- 미탐 사례 (False Negatives): [kold_false_negatives.csv](./kold_false_negatives.csv)
-- 오탐 사례 (False Positives): [kold_false_positives.csv](./kold_false_positives.csv)
+- 미탐 사례 (False Negatives): [kold_false_negatives.jsonl](./kold_false_negatives.jsonl)
+- 오탐 사례 (False Positives): [kold_false_positives.jsonl](./kold_false_positives.jsonl)
 
 ---
 *생성 시간: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}*
 """
 
-with open(result_md_path, "w", encoding="utf-8") as f:
-    f.write(report_content)
+    with open(str(result_md_path), "w", encoding="utf-8") as f:
+        f.write(report_content)
 
-print(f"\n===== Guardrail Benchmark Result =====")
-print(f"total samples        : {len(data)}")
-print(f"evaluated samples    : {len(eval_df)}")
-print(f"errors               : {errors}")
-print(f"accuracy             : {acc:.4f}")
-print(f"precision (BLOCK)    : {precision:.4f}")
-print(f"recall (BLOCK)       : {recall:.4f}")
-print(f"f1 (BLOCK)           : {f1:.4f}")
-print(f"false_negative_rate  : {false_negative_rate:.4f}")
-print(f"false_positive_rate  : {false_positive_rate:.4f}")
-print(f"TP={tp}, FP={fp}, TN={tn}, FN={fn}")
+    print(f"\n===== Guardrail Benchmark Result =====")
+    print(f"total samples        : {len(data)}")
+    print(f"evaluated samples    : {len(eval_df)}")
+    print(f"errors               : {errors}")
+    print(f"accuracy             : {acc:.4f}")
+    print(f"precision (BLOCK)    : {precision:.4f}")
+    print(f"recall (BLOCK)       : {recall:.4f}")
+    print(f"f1 (BLOCK)           : {f1:.4f}")
+    print(f"false_negative_rate  : {false_negative_rate:.4f}")
+    print(f"false_positive_rate  : {false_positive_rate:.4f}")
+    print(f"TP={tp}, FP={fp}, TN={tn}, FN={fn}")
 
-print(f"\n결과 저장 완료:")
-print(f"- {result_md_path}")
-print(f"- {fn_path}")
-print(f"- {fp_path}")
+    print(f"\n[성공] 데이터 저장 완료:")
+    print(f"- 리포트: {result_md_path}")
+    print(f"- 미탐 사례: {fn_path} ({len(false_negatives)}건 저장)")
+    print(f"- 오탐 사례: {fp_path} ({len(false_positives)}건 저장)")
+
+except Exception as e:
+    print(f"\n[오류] 파일 저장 중 에러 발생: {e}")
