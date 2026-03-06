@@ -55,7 +55,7 @@ OPENAI_4O_MINI_TOOL_USAGE_INSTRUCTIONS = """
 - `register_used_sale` 호출 시 `category_id`(숫자), `condition_id`(usedproductconditions.id), `description`을 반드시 포함하세요.
 
 ### 상품 검색/추천
-- 상품 검색: `search_products_vector` (Hybrid Vector Search)
+- 상품 검색: `search_by_text_clip` (CLIP 기반 추천 검색)
 - 옷 추천: `recommend_clothes` (사용자 발화에서 의류 카테고리 기호(상의, 하의, 원피스 등)를 추론해 `category` 필드 채움)
   * [중요] 만약 사용자가 "파티복 찾아줘", "편한 옷 추천해줘" 등 **구체적 종류(상의, 하의 등)를 말하지 않았다면 도구를 호출하지 말고** "어떤 종류의 옷을 찾으실까요?" 라고 질문하세요.
 - 이미지로 검색: `search_by_image` (URL 필요)
@@ -76,7 +76,7 @@ QWEN3_06B_TOOL_USAGE_INSTRUCTIONS = """
 3) 주문번호 없으면 텍스트로 묻지 말고 액션 도구를 바로 호출. (도구 내부 interrupt가 `show_order_list` UI를 노출)
 4) 주문 선택을 위해 `list_orders`를 직접 호출하지 말 것.
 5) 확신 없을 때 추측 금지. 필요한 슬롯을 Tool/UI로 수집.
-6) 상품 검색: `search_products_vector` 사용.
+6) 상품 검색: `search_by_text_clip` 사용.
 7) 옷 추천: `recommend_clothes` 사용. 단, 사용자가 구체적인 종류(상의, 하의, 원피스 등)를 말하지 않았다면 도구 호출을 멈추고 종류를 질문할 것. 색상, 용도를 영어로 번역하여 전달할 것.
 8) 정책 질문: `search_knowledge_base` 사용.
 9) 리뷰 작성: `rating`, `content`를 묻지 말고 `create_review(rating=0, content="UI_REQUEST", ...)` 호출하여 UI를 띄울 것.
