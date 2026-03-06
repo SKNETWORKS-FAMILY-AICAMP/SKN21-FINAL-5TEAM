@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import os
 import tempfile
+import time
 from ecommerce.platform.backend.app.database import engine, Base, create_db_scheme
 from sqlalchemy import inspect, text
 from ecommerce.platform.backend.app.router.carts.router import router as carts_router
@@ -71,10 +72,9 @@ def auto_add_missing_columns():
     테이블은 있지만 컬럼이 없을 때 자동으로 컬럼 추가
     SQLAlchemy 모델과 실제 DB를 비교하여 누락된 컬럼을 추가합니다.
     """
-    from ecommerce.platform.backend.app.database import SessionLocal
-
     inspector = inspect(engine)
-    db = SessionLocal()
+    pending_sqls: list[str] = []
+    total_missing = 0
 
     try:
         # Base.metadata에 등록된 모든 테이블 순회
@@ -123,16 +123,21 @@ def auto_add_missing_columns():
                         ADD COLUMN {col_name} {col_type} {nullable} {default_clause}
                     """
 
-                    try:
-                        db.execute(text(alter_sql))
-                        db.commit()
-                    except Exception:
-                        db.rollback()
+                    pending_sqls.append(alter_sql)
+                    total_missing += 1
+
+        if not pending_sqls:
+            logging.info("누락 컬럼 없음: 자동 컬럼 마이그레이션 스킵")
+            return
+
+        with engine.begin() as conn:
+            for alter_sql in pending_sqls:
+                conn.execute(text(alter_sql))
+
+        logging.info(f"자동 컬럼 마이그레이션 완료: {total_missing}개 컬럼 추가")
 
     except Exception:
-        db.rollback()
-    finally:
-        db.close()
+        logging.exception("자동 컬럼 마이그레이션 실패")
 
 
 # ============================================
@@ -142,15 +147,22 @@ def auto_add_missing_columns():
 async def lifespan(app: FastAPI):
     # 서버 시작 시
     logging.info("서버 시작")
+    startup_t0 = time.perf_counter()
 
     # 0. DB 스키마 생성(없을 시)
+    step_t0 = time.perf_counter()
     create_db_scheme()
+    logging.info(f"[startup] DB 스키마 확인 완료: {time.perf_counter() - step_t0:.2f}s")
 
     # 1. 테이블 생성
+    step_t0 = time.perf_counter()
     Base.metadata.create_all(bind=engine)  # 테이블이 없다면 생성
+    logging.info(f"[startup] 테이블 생성 완료: {time.perf_counter() - step_t0:.2f}s")
 
     # 2. 누락된 컬럼 자동 추가
+    step_t0 = time.perf_counter()
     auto_add_missing_columns()
+    logging.info(f"[startup] 컬럼 마이그레이션 완료: {time.perf_counter() - step_t0:.2f}s")
 
     # 3. 초기 데이터 적재 (Seed)
     from ecommerce.platform.backend.app.database import SessionLocal
@@ -158,7 +170,9 @@ async def lifespan(app: FastAPI):
 
     db = SessionLocal()
     try:
+        step_t0 = time.perf_counter()
         init_db(db)
+        logging.info(f"[startup] 초기 데이터 적재 완료: {time.perf_counter() - step_t0:.2f}s")
     finally:
         db.close()
 
@@ -167,8 +181,9 @@ async def lifespan(app: FastAPI):
         try:
             from ecommerce.chatbot.src.tools.retrieval_tools import ensure_retrieval_models
 
+            step_t0 = time.perf_counter()
             ensure_retrieval_models()
-            logging.info("챗봇 리트리버 모델 로딩 완료")
+            logging.info(f"챗봇 리트리버 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
         except Exception as e:
             logging.error(f"챗봇 모델 로딩 실패: {e}")
 
@@ -176,8 +191,9 @@ async def lifespan(app: FastAPI):
         try:
             from ecommerce.chatbot.src.graph.nodes.guardrail import load_guardrail_model
 
+            step_t0 = time.perf_counter()
             load_guardrail_model()
-            logging.info("Guardrail 모델 로딩 완료")
+            logging.info(f"Guardrail 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
         except Exception as e:
             logging.error(f"Guardrail 모델 로딩 실패: {e}")
 
@@ -185,8 +201,9 @@ async def lifespan(app: FastAPI):
         try:
             from ecommerce.chatbot.src.data_preprocessing.bge_m3_embedding import preload_model as preload_bge_m3
 
+            step_t0 = time.perf_counter()
             preload_bge_m3()
-            logging.info("BGE-M3 임베딩 모델 로딩 완료")
+            logging.info(f"BGE-M3 임베딩 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
         except Exception as e:
             logging.error(f"BGE-M3 모델 로딩 실패: {e}")
 
@@ -194,12 +211,25 @@ async def lifespan(app: FastAPI):
         try:
             from ecommerce.chatbot.src.infrastructure.kobart_summarizer import preload_model as preload_kobart
 
+            step_t0 = time.perf_counter()
             preload_kobart()
-            logging.info("KoBART 요약 모델 로딩 완료")
+            logging.info(f"KoBART 요약 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
         except Exception as e:
             logging.error(f"KoBART 모델 로딩 실패: {e}")
+
+        # 8. CLIP 검색 모델 미리 로드 (openai/clip-vit-base-patch32)
+        try:
+            from ecommerce.chatbot.src.tools.image_search_tools import preload_clip_resources
+
+            step_t0 = time.perf_counter()
+            preload_clip_resources()
+            logging.info(f"CLIP 검색 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
+        except Exception as e:
+            logging.error(f"CLIP 모델 로딩 실패: {e}")
     else:
         logging.info("모델 프리로드 스킵: 같은 uvicorn reload 세션에서 이미 1회 수행됨")
+
+    logging.info(f"[startup] 전체 초기화 완료: {time.perf_counter() - startup_t0:.2f}s")
 
     yield
     # 서버 종료 시

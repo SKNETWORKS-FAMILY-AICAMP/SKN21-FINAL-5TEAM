@@ -92,6 +92,12 @@ def _get_clip_resources(device: torch.device) -> Tuple[CLIPProcessor, CLIPModel]
     return _CLIP_RESOURCES[key]  # type: ignore[return-value]
 
 
+def preload_clip_resources() -> None:
+    """서버 시작 시 CLIP 모델/프로세서를 1회 미리 로드합니다."""
+    device = _resolve_device()
+    _get_clip_resources(device)
+
+
 def _search_qdrant_by_embedding(
     embedding: torch.Tensor,
     top_k: int,
