@@ -59,12 +59,13 @@ def final_generator_node(state: GlobalAgentState) -> dict:
     agent_results: dict = state.get("agent_results", {})
     ui_action: str | None = state.get("ui_action_required")
 
+    # UI 액션 대기 상태에서는 텍스트를 생성하지 않고 UI 이벤트만 전달
+    if ui_action:
+        return {}
+
     # ── Case 1. 작업 없음 → GENERAL_CHAT 직접 응답 ────────
     if not completed_tasks:
         return _general_chat_response(state, provider, model)
-
-    if ui_action:
-        return {}
 
     # ── Case 2. 단일 작업 → agent_results 결과 그대로 반환 ─
     if len(completed_tasks) == 1:
