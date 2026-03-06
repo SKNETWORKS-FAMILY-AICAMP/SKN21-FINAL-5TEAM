@@ -152,8 +152,10 @@ def run_evaluation(args: argparse.Namespace) -> None:
     )
     evaluator = TaskEvaluator()
 
-    # 출력 디렉토리 설정
-    run_output_dir = OUTPUT_DIR / args.model / datetime.now().strftime("%Y%m%d_%H%M%S")
+    # 출력 디렉토리 설정 — tasks_file 이름에서 타입 추출 (예: task_completion_rate, tool_chaining)
+    tasks_file_stem = Path(args.tasks_file).stem  # "task_completion_rate_tasks"
+    task_type = tasks_file_stem.removesuffix("_tasks")  # "task_completion_rate"
+    run_output_dir = OUTPUT_DIR / args.model / task_type
     run_output_dir.mkdir(parents=True, exist_ok=True)
 
     all_eval_results: list[dict] = []
@@ -217,14 +219,14 @@ def run_evaluation(args: argparse.Namespace) -> None:
             all_eval_results.append(eval_result)
             raw_episodes.append({**episode, "eval": eval_result})
 
-    # 결과 저장
+    # 결과 저장 (같은 폴더에 누적 append)
     results_path = run_output_dir / f"tau_bench.{args.model}.results.jsonl"
-    with open(results_path, "w", encoding="utf-8") as f:
+    with open(results_path, "a", encoding="utf-8") as f:
         for ep in raw_episodes:
             f.write(json.dumps(ep, ensure_ascii=False) + "\n")
-    print(f"\n  ✓ 에피소드 결과 저장: {results_path}")
+    print(f"\n  ✓ 에피소드 결과 저장 (누적): {results_path}")
 
-    # 지표 계산 및 저장
+    # 지표 계산 및 저장 (현재 실행 결과 기준)
     metrics = save_metrics(
         eval_results=all_eval_results,
         model_name=args.model,
