@@ -51,15 +51,25 @@ MODEL = "gpt-4o-mini"
 
 # ─── DB에서 실제 주문 정보 (주문번호 + 상태) 조회 ────────────────────────────
 def load_eval_data() -> dict:
-    """eval_data.jsonl에서 전체 유형(주문취소, 환불, 교환, 로그인 등)의 데이터를 로드하여 dict로 반환합니다."""
+    """eval_data.jsonl에서 데이터를 로드하여 dict로 반환합니다. (새로운 중첩 포맷 지원)"""
     path = PROJECT_ROOT / "ecommerce/chatbot/chatbot_eval/benchmark/eval_data.jsonl"
     eval_data = {}
     try:
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
                 if not line.strip(): continue
-                data = json.loads(line)
-                eval_data[data["type"]] = data.get("data", {})
+                item = json.loads(line)
+                
+                # 새로운 포맷: {"type": "user", "data": {"user_email": "..."}, "action": [...]}
+                if item.get("type") == "user":
+                    user_info = item.get("data", {})
+                    # 기본적으로 test2@example.com 데이터를 우선시하거나 로드된 정보를 저장
+                    eval_data["로그인"] = user_info
+                    for act in item.get("action", []):
+                        eval_data[act["type"]] = act.get("data", {})
+                else:
+                    # 기존 포맷 유지
+                    eval_data[item["type"]] = item.get("data", {})
     except Exception as e:
         print(f"[WARN] eval_data.jsonl 읽기 실패: {e}")
     return eval_data
@@ -335,35 +345,7 @@ def build_prompt_for_scenario(
 type_of_output이 "call"인 턴이 반드시 2개 이상 포함되어야 합니다.
 """
 
-    return f"""
-당신은 이커머스 챗봇 평가용 데이터셋 전문가입니다.
-주어진 시나리오와 상품 정보를 바탕으로, 사용자와 챗봇 간의 대화(turns)를 생성하세요.
-
-시나리오: {scenario['name']} (시나리오 ID: {scenario['id']})
-다이얼로그 번호: {dialog_num}
-평가 대상 tools: {tool_names_str}
-RAG 정책: {scenario['rag_policy']}
-주문 상태: {order_status}
-이 시나리오의 요청 처리 가능 여부: {action_possible}
-UX 흐름: {ux_flow}
-
-{flow_instruction}
-
-참고 상품 정보 (CSV 기반, 이 정보만 사용할 것):
-{product_str}
-
-다음 형식으로 JSON을 반환하세요:
-
-{{
-  "scenario_id": "{scenario['id']}-{dialog_num}",
-  "scenario_name": "{scenario['name']}",
-  "order_status": "{order_status}",
-  "order_id_source": "get_user_orders:{user_email}",
-  "rag_policy": "{scenario['rag_policy']}",
-  "possible": {str(scenario['possible']).lower()},
-  "source_file": "AI_Hub CSV",
-  "source_row_id": "<CSV에서 참조한 행 정보>",
-  "evidence": "<사용한 근거>",
+    turns_example = f"""
   "turns": [
     {{
       "turn_num": 1,
@@ -413,7 +395,38 @@ UX 흐름: {ux_flow}
         "reason": ["단순 변심", "simple_change_of_mind"]
       }}
     }}
-  ]
+  ]"""
+
+    return f"""
+당신은 이커머스 챗봇 평가용 데이터셋 전문가입니다.
+주어진 시나리오와 상품 정보를 바탕으로, 사용자와 챗봇 간의 대화(turns)를 생성하세요.
+
+시나리오: {scenario['name']} (시나리오 ID: {scenario['id']})
+다이얼로그 번호: {dialog_num}
+평가 대상 tools: {tool_names_str}
+RAG 정책: {scenario['rag_policy']}
+주문 상태: {order_status}
+이 시나리오의 요청 처리 가능 여부: {action_possible}
+UX 흐름: {ux_flow}
+
+{flow_instruction}
+
+참고 상품 정보 (CSV 기반, 이 정보만 사용할 것):
+{product_str}
+
+다음 형식으로 JSON을 반환하세요:
+
+{{
+  "scenario_id": "{scenario['id']}-{dialog_num}",
+  "scenario_name": "{scenario['name']}",
+  "order_status": "{order_status}",
+  "order_id_source": "get_user_orders:{user_email}",
+  "rag_policy": "{scenario['rag_policy']}",
+  "possible": {str(scenario['possible']).lower()},
+  "source_file": "AI_Hub CSV",
+  "source_row_id": "<CSV에서 참조한 행 정보>",
+  "evidence": "<사용한 근거>",
+{turns_example}
 }}
 
 중요:

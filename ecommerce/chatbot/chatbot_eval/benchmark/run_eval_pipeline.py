@@ -108,7 +108,7 @@ def run_evaluation(mode=0):
     print(f"   결과 저장 디렉토리: {RESULTS_DIR}")
 
     # 데이터셋 경로
-    arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialog_20.jsonl"
+    arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs.jsonl"
     dialog_dataset = BENCH_DIR / "data" / "my_eval_slot_filling_rate_dialogs.jsonl"
 
     # 0. 데이터셋 검증
@@ -228,7 +228,7 @@ def generate_markdown_report(results, mode=0):
 ### 1. Argument Accuracy (Dialog)
 - **평가 목적**: 챗봇이 멀티턴 대화에서 필요한 인자(Argument)를 얼마나 정확하게 추출하고 올바른 Tool을 호출하는지 측정합니다.
 - **핵심 지표**: 필수 인자 추출 정확도, Tool 선택 정확성, enum 값 범위 준수 여부를 검증합니다.
-- **데이터셋**: `my_eval_arg_accuracy_dialog_20.jsonl` (20개 다이얼로그)
+- **데이터셋**: `my_eval_arg_accuracy_dialogs.jsonl` (11개 다이얼로그)
 
 ### 2. Slot Filling Rate (Dialog)
 - **평가 목적**: **Slot Filling Rate** — 누락 슬롯을 다중 턴 대화로 채워서 올바른 툴 호출까지 가는 능력을 측정합니다.
