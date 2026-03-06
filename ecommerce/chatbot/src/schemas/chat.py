@@ -1,41 +1,49 @@
-from pydantic import BaseModel, ConfigDict, Field
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, Literal
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ReviewDraftRequest(BaseModel):
-    product_name: str = Field(..., description="Product name")
-    satisfaction: str = Field(
-        ..., description="Satisfaction level (e.g. 좋음, 보통, 아쉬움)"
+    product_name: str = Field(..., min_length=1, description="Product name")
+    satisfaction: Literal["좋음", "보통", "아쉬움"] = Field(
+        ..., description="Satisfaction level (좋음|보통|아쉬움)"
     )
-    keywords: Optional[List[str]] = Field(
+    keywords: list[str] = Field(
         default_factory=list, description="Keywords to include"
     )
 
+    @field_validator("product_name")
+    @classmethod
+    def _validate_product_name(cls, v: str) -> str:
+        value = v.strip()
+        if not value:
+            raise ValueError("product_name must not be empty")
+        return value
+
+    @field_validator("keywords")
+    @classmethod
+    def _normalize_keywords(cls, v: list[str]) -> list[str]:
+        return [kw.strip() for kw in v if isinstance(kw, str) and kw.strip()]
+
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., description="User's query")
+    message: str = Field(..., min_length=1, description="User's query")
     # 이전 대화 상태 (메시지 이력 포함)
-    previous_state: Optional[Dict[str, Any]] = Field(
+    previous_state: Dict[str, Any] | None = Field(
         None, description="Full conversation state for stateless processing"
     )
-    provider: Optional[str] = Field(
+    resume_payload: Dict[str, Any] | None = Field(
+        None, description="Structured payload used to resume an interrupted graph step"
+    )
+    provider: Literal["openai", "huggingface", "vllm"] | None = Field(
         None, description="LLM provider (openai|huggingface|vllm)"
     )
-    model: Optional[str] = Field(None, description="Model name or model id")
+    model: str | None = Field(None, description="Model name or model id")
     model_config = ConfigDict(extra="ignore")
 
-
-class ChatResponse(BaseModel):
-    answer: Optional[str] = None
-    action_status: Optional[str] = None
-    action_name: Optional[str] = None
-    order_id: Optional[str] = None
-    ui_action: Optional[str] = Field(
-        None, description="UI action type (e.g., 'show_order_list')"
-    )
-    ui_data: Optional[List[Dict[str, Any]]] = Field(
-        None, description="UI rendering data (e.g., order list)"
-    )
-    state: Dict[str, Any] = Field(
-        ..., description="Updated conversation state to be passed back in next request"
-    )
+    @field_validator("message")
+    @classmethod
+    def _validate_message(cls, v: str) -> str:
+        value = v.strip()
+        if not value:
+            raise ValueError("message must not be empty")
+        return value

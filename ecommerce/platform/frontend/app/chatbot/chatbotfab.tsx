@@ -41,6 +41,24 @@ type ConfirmationMessage = {
   role: 'bot';
   type: 'confirmation';
   message: string;
+  action?: string | null;
+  responded?: boolean;
+};
+
+type OptionListMessage = {
+  role: 'bot';
+  type: 'option_list';
+  message: string;
+  action?: string | null;
+  responded?: boolean;
+  options: Array<{
+    option_id: number;
+    label: string;
+    size_name?: string | null;
+    color?: string | null;
+    quantity?: number;
+    is_current?: boolean;
+  }>;
 };
 
 type AddressSearchMessage = {
@@ -141,6 +159,7 @@ type ChatMsg =
   | TextMessage
   | OrderListMessage
   | ConfirmationMessage
+  | OptionListMessage
   | AddressSearchMessage
   | ProductListMessage
   | ReviewFormMessage
@@ -459,6 +478,121 @@ function AddressSearchCard({
   );
 }
 
+function OptionSelectCard({
+  message,
+  options,
+  disabled,
+  submitted,
+  onSubmit,
+}: {
+  message: string;
+  options: OptionListMessage['options'];
+  disabled: boolean;
+  submitted?: boolean;
+  onSubmit: (optionId: number) => void;
+}) {
+  const normalizeValue = (value?: string | null) => {
+    const trimmed = (value || '').trim();
+    return trimmed.length > 0 ? trimmed : 'FREE';
+  };
+
+  const sizeOptions = Array.from(new Set(options.map((opt) => normalizeValue(opt.size_name))));
+  const colorOptions = Array.from(new Set(options.map((opt) => normalizeValue(opt.color))));
+
+  const [selectedSize, setSelectedSize] = useState<string>(sizeOptions[0] || 'FREE');
+  const [selectedColor, setSelectedColor] = useState<string>(colorOptions[0] || 'FREE');
+
+  const matchedOptions = options.filter(
+    (opt) => normalizeValue(opt.size_name) === selectedSize && normalizeValue(opt.color) === selectedColor,
+  );
+  const selectedOption = matchedOptions[0] || null;
+
+  const onSizeChange = (nextSize: string) => {
+    setSelectedSize(nextSize);
+
+    const availableColors = Array.from(
+      new Set(
+        options
+          .filter((opt) => normalizeValue(opt.size_name) === nextSize)
+          .map((opt) => normalizeValue(opt.color)),
+      ),
+    );
+    if (!availableColors.includes(selectedColor)) {
+      setSelectedColor(availableColors[0] || 'FREE');
+    }
+  };
+
+  const onColorChange = (nextColor: string) => {
+    setSelectedColor(nextColor);
+
+    const availableSizes = Array.from(
+      new Set(
+        options
+          .filter((opt) => normalizeValue(opt.color) === nextColor)
+          .map((opt) => normalizeValue(opt.size_name)),
+      ),
+    );
+    if (!availableSizes.includes(selectedSize)) {
+      setSelectedSize(availableSizes[0] || 'FREE');
+    }
+  };
+
+  return (
+    <div className={styles.confirmationContainer}>
+      <p className={styles.confirmationMessage}>{message}</p>
+
+      <div style={{ display: 'grid', gap: '8px', maxWidth: '420px' }}>
+        <label>
+          <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>사이즈</div>
+          <select
+            className={styles.addressInput}
+            value={selectedSize}
+            onChange={(e) => onSizeChange(e.target.value)}
+            disabled={disabled || Boolean(submitted)}
+          >
+            {sizeOptions.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>색상</div>
+          <select
+            className={styles.addressInput}
+            value={selectedColor}
+            onChange={(e) => onColorChange(e.target.value)}
+            disabled={disabled || Boolean(submitted)}
+          >
+            {colorOptions.map((color) => (
+              <option key={color} value={color}>
+                {color}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div style={{ fontSize: '12px', color: '#666' }}>
+          {selectedOption
+            ? `선택 옵션: 사이즈 ${normalizeValue(selectedOption.size_name)} / 색상 ${normalizeValue(selectedOption.color)} / 재고 ${selectedOption.quantity ?? '-'}${selectedOption.is_current ? ' (현재 옵션)' : ''}`
+            : '선택 가능한 옵션이 없습니다.'}
+        </div>
+
+        <button
+          type="button"
+          className={styles.confirmBtn}
+          onClick={() => selectedOption && onSubmit(selectedOption.option_id)}
+          disabled={!selectedOption || Boolean(selectedOption.is_current) || disabled || Boolean(submitted)}
+        >
+          {submitted ? '선택 완료됨' : '선택 완료'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ChatbotFab() {
   const { isLoggedIn } = useAuth();
   const [open, setOpen] = useState(false);
@@ -599,7 +733,11 @@ export default function ChatbotFab() {
     setOpen((v) => !v);
   };
 
-  const sendMessage = async (textOverride?: string, hidden: boolean = false) => {
+  const sendMessage = async (
+    textOverride?: string,
+    hidden: boolean = false,
+    resumePayload?: Record<string, unknown> | null,
+  ) => {
     const text = typeof textOverride === 'string' ? textOverride : input.trim();
     if (!text || isLoading) return;
 
@@ -637,6 +775,7 @@ export default function ChatbotFab() {
         body: JSON.stringify({
           message: text,
           previous_state: conversationState,
+          resume_payload: resumePayload,
           provider,
           model: selectedModel,
         }),
@@ -671,6 +810,7 @@ export default function ChatbotFab() {
 
             if (dataLines.length === 0) continue;
 
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let data: any;
             try {
               data = JSON.parse(dataLines.join('\n'));
@@ -794,6 +934,33 @@ export default function ChatbotFab() {
                     type: 'used_sale_form',
                     message: data.message || '중고 판매 등록 정보를 입력해주세요.',
                     ui_data: data.ui_data,
+                  },
+                ]);
+              } else if (data.ui_action === 'confirm_order_action') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'confirmation',
+                    message: data.message || '진행 여부를 선택해주세요.',
+                    action: data.ui_data?.action ?? null,
+                    responded: false,
+                  },
+                ]);
+              } else if (data.ui_action === 'show_option_list') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'option_list',
+                    message: data.message || '교환할 옵션을 선택해주세요. 만약 다른 제품으로 교환을 원하시면 주문취소 후 다시 주문해주세요.',
+                    action: data.prior_action ?? data.action ?? null,
+                    options: Array.isArray(data.ui_data) ? data.ui_data : [],
+                    responded: false,
                   },
                 ]);
               }
@@ -997,19 +1164,63 @@ export default function ChatbotFab() {
       order_id: orderIdString,
     }));
 
-    // 선택 이벤트를 구조화된 JSON으로 전송 (백엔드 deterministic 파싱)
+    // interrupt resume payload 전송
     const inferredAction = priorAction || getInferredAction();
-
-    const selectionPayload = {
-      event: 'order_selected',
+    const normalizedAction = String(inferredAction || '').toLowerCase();
+    const resumePayload: Record<string, unknown> = {
       selected_order_id: selectedOrderIds[0],
       selected_order_ids: selectedOrderIds,
-      action: inferredAction,
-      source: 'order_list_ui',
+      ...(inferredAction ? { action: inferredAction } : {}),
     };
 
-    // 사용자 채팅에는 숨기고 상태 전송만 수행
-    sendMessage(JSON.stringify(selectionPayload), true);
+    // 환불은 주문 선택 직후 승인까지 함께 수집
+    if (normalizedAction === 'refund') {
+      const approved = window.confirm('선택한 주문으로 반품 접수를 진행할까요?');
+      resumePayload.approved = approved;
+      resumePayload.confirmed = approved;
+    }
+
+    // 사용자 채팅에는 숨기고 resume_payload만 전달
+    sendMessage('주문 선택 완료', true, resumePayload);
+  };
+
+  const handleConfirmationResponse = (index: number, approved: boolean, action?: string | null) => {
+    setMessages((prev) =>
+      prev.map((msg, i) => {
+        if (i !== index || msg.type !== 'confirmation') return msg;
+        return {
+          ...msg,
+          responded: true,
+        };
+      }),
+    );
+
+    const resumePayload = {
+      approved,
+      ...(action ? { action } : {}),
+    };
+
+    sendMessage(approved ? '승인 선택' : '거절 선택', true, resumePayload);
+  };
+
+  const handleOptionSelect = (index: number, optionId: number, action?: string | null) => {
+    setMessages((prev) =>
+      prev.map((msg, i) => {
+        if (i !== index || msg.type !== 'option_list') return msg;
+        return {
+          ...msg,
+          responded: true,
+        };
+      }),
+    );
+
+    const resumePayload = {
+      new_option_id: optionId,
+      selected_option_id: optionId,
+      ...(action ? { action } : {}),
+    };
+
+    sendMessage('옵션 선택 완료', true, resumePayload);
   };
 
   const handleAddressSubmit = (payload: AddressSelectionPayload) => {
@@ -1199,6 +1410,54 @@ export default function ChatbotFab() {
                   </div>
                 </div>
               );
+            } else if (m.type === 'confirmation') {
+              return (
+                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
+                  <div className={styles.botMsg}>
+                    <span className={styles.botIcon}>✦</span>
+                    <div className={styles.botText}>
+                      <div className={styles.confirmationContainer}>
+                        <p className={styles.confirmationMessage}>{m.message}</p>
+                        <div className={styles.confirmationActions}>
+                          <button
+                            type="button"
+                            className={styles.confirmationApproveBtn}
+                            onClick={() => handleConfirmationResponse(i, true, m.action)}
+                            disabled={Boolean(m.responded) || isLoading}
+                          >
+                            네, 진행할게요
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.confirmationRejectBtn}
+                            onClick={() => handleConfirmationResponse(i, false, m.action)}
+                            disabled={Boolean(m.responded) || isLoading}
+                          >
+                            아니요
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            } else if (m.type === 'option_list') {
+              return (
+                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
+                  <div className={styles.botMsg}>
+                    <span className={styles.botIcon}>✦</span>
+                    <div className={styles.botText}>
+                      <OptionSelectCard
+                        message={m.message}
+                        options={m.options}
+                        disabled={isLoading}
+                        submitted={m.responded}
+                        onSubmit={(optionId) => handleOptionSelect(i, optionId, m.action)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
             } else if (m.role === 'user') {
               const isImage = m.type === 'image';
               return (
@@ -1220,7 +1479,7 @@ export default function ChatbotFab() {
                 </div>
               );
             } else {
-              const text = m.type === 'text' ? m.text : m.message;
+              const text = m.type === 'text' ? m.text : '';
               return (
                 <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
                   <div className={styles.botMsg}>

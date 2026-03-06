@@ -39,10 +39,10 @@ OPENAI_4O_MINI_TOOL_USAGE_INSTRUCTIONS = """
 3. 문맥에 주문번호가 있으면 해당 `order_id`를 우선 사용하세요.
 
 ### 주문 관련 도구 선택
-- **주문번호를 아는 경우**: 바로 `get_order_details`, `cancel_order`, `create_review` 등 해당 도구 호출
-- **주문번호를 모르는 경우**: 사용자에게 텍스트로 입력하라고 묻지 말고 **반드시 `get_user_orders(requires_selection=True, action_context="...")` 호출**
-- `action_context`에 원래 의도(`refund`/`exchange`/`cancel`/`review`)를 **반드시** 채우세요. 위 4가지 경우에 대해서만 `get_user_orders`를 호출해야 합니다.
-- **[절대 금지]** 사용자가 주문을 선택했다는 메시지(예: "주문번호 ORD-XXX을 선택했습니다")가 오면 `get_user_orders`를 다시 호출하지 마세요. 즉시 해당 도구(`check_refund_eligibility`, `check_exchange_eligibility`, `cancel_order` 등)를 호출하세요.
+- **주문번호를 아는 경우**: 바로 `cancel`, `create_review` 등 해당 도구 호출
+- **주문번호를 모르는 경우**: 사용자에게 텍스트로 입력하라고 묻지 말고 `cancel`/`refund`/`exchange`/`change_option`/`shipping`/`update_payment` 중 해당 액션 도구를 바로 호출하세요.
+- 각 액션 도구는 `order_id`가 없으면 내부 interrupt로 `show_order_list` UI를 띄워 주문 선택을 수집합니다.
+- **[절대 금지]** 주문 선택을 위해 `list_orders`를 직접 호출하지 마세요.
 
 ### 리뷰 작성 시
 - 사용자가 리뷰 작성을 원할 때 `rating`과 `content`를 직접 텍스트로 묻지 마세요.
@@ -63,27 +63,24 @@ OPENAI_4O_MINI_TOOL_USAGE_INSTRUCTIONS = """
 ### 정책/규정 질문
 - 배송, 환불, 교환 정책 등 규정 질문: `search_knowledge_base`
 
-### 주소 입력이 필요한 경우
-- 텍스트로 주소를 묻지 말고 **반드시 `open_address_search`를 호출**하세요.
-
 ### 도구 호출 순서
 여러 도구가 필요하면 순서 의존성을 지키세요:
-조회 → 검증(가능 여부 확인) → 실행(접수)
+조회 → 실행(접수)
+(`refund`, `exchange` 내부에서 검증 + 승인 checkpoint를 처리함)
 """
 
 QWEN3_06B_TOOL_USAGE_INSTRUCTIONS = """
 ## 도구 사용 규칙 (엄격히 준수)
 1) 주문/환불/배송 요청이면 즉시 Tool 호출.
 2) `user_id` 누락 금지. [User Context] 값 사용.
-3) 주문번호 없으면 텍스트로 묻지 말고 `get_user_orders(requires_selection=True, action_context="환불/취소/교환/리뷰 중 하나")` 호출.
-4) "주문번호 ORD-XXX을 선택했습니다"와 같이 주문이 이미 특정된 메시지가 오면 get_user_orders를 절대 호출하지 말고 즉시 해당 도구(check_refund_eligibility 등)를 호출할 것.
+3) 주문번호 없으면 텍스트로 묻지 말고 액션 도구를 바로 호출. (도구 내부 interrupt가 `show_order_list` UI를 노출)
+4) 주문 선택을 위해 `list_orders`를 직접 호출하지 말 것.
 5) 확신 없을 때 추측 금지. 필요한 슬롯을 Tool/UI로 수집.
 6) 상품 검색: `search_products_vector` 사용.
 7) 옷 추천: `recommend_clothes` 사용. 단, 사용자가 구체적인 종류(상의, 하의, 원피스 등)를 말하지 않았다면 도구 호출을 멈추고 종류를 질문할 것. 색상, 용도를 영어로 번역하여 전달할 것.
 8) 정책 질문: `search_knowledge_base` 사용.
-9) 주소 필요: `open_address_search` 호출 (텍스트로 묻지 말 것).
-10) 리뷰 작성: `rating`, `content`를 묻지 말고 `create_review(rating=0, content="UI_REQUEST", ...)` 호출하여 UI를 띄울 것.
-11) 중고 판매 등록: 텍스트로 슬롯을 묻지 말고 `open_used_sale_form` 호출로 UI를 먼저 띄우고, 제출 후 `category_id`, `condition_id`, `description` 포함해 `register_used_sale` 호출.
+9) 리뷰 작성: `rating`, `content`를 묻지 말고 `create_review(rating=0, content="UI_REQUEST", ...)` 호출하여 UI를 띄울 것.
+10) 중고 판매 등록: 텍스트로 슬롯을 묻지 말고 `open_used_sale_form` 호출로 UI를 먼저 띄우고, 제출 후 `category_id`, `condition_id`, `description` 포함해 `register_used_sale` 호출.
 """
 
 

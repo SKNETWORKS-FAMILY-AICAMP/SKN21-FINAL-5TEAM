@@ -24,6 +24,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tracers import LangChainTracer
+from langgraph.types import Command
 import orjson
 
 from ecommerce.chatbot.src.graph.workflow import graph_app
@@ -57,14 +58,12 @@ NODE_STATUS_MESSAGES: dict[str, str] = {
 
 # ── 도구 진행 상태 메시지 ─────────────────────────────────────────────────────
 TOOL_STATUS_MESSAGES: dict[str, str] = {
-    "get_user_orders":            "주문 내역을 조회하고 있습니다...",
-    "get_order_details":          "주문 상세 정보를 확인하고 있습니다...",
-    "cancel_order":               "주문 취소를 처리하고 있습니다...",
-    "check_refund_eligibility":   "환불 가능 여부를 확인하고 있습니다...",
-    "register_return_request":    "반품 신청을 처리하고 있습니다...",
-    "check_exchange_eligibility": "교환 가능 여부를 확인하고 있습니다...",
-    "register_exchange_request":  "교환 신청을 처리하고 있습니다...",
-    "open_address_search":        "주소 검색 창을 열고 있습니다...",
+    "cancel":                     "주문 취소를 처리하고 있습니다...",
+    "refund":                     "반품 신청을 처리하고 있습니다...",
+    "exchange":                   "교환 신청을 처리하고 있습니다...",
+    "shipping":                   "배송 정보를 확인하고 있습니다...",
+    "change_option":              "주문 옵션을 변경하고 있습니다...",
+    "update_payment":             "결제 정보를 수정하고 있습니다...",
     "search_products_vector":     "유사 상품을 검색하고 있습니다...",
     "recommend_clothes":          "스타일 추천을 준비하고 있습니다...",
     "search_knowledge_base":      "정책 문서를 검색하고 있습니다...",
@@ -146,6 +145,8 @@ def _build_metadata(final_state: dict) -> dict:
         if k not in _PER_TURN_FIELDS
     }
     persistent_state["messages"] = _serialize_messages(final_state.get("messages", []))
+    persistent_state["awaiting_interrupt"] = False
+    persistent_state.pop("pending_interrupt", None)
 
     return {
         "type":               "metadata",
@@ -158,7 +159,7 @@ def _build_metadata(final_state: dict) -> dict:
 def _get_fallback_text(final_state: dict) -> str | None:
     """
     LLM 토큰 스트리밍이 없었을 때 마지막 AIMessage 텍스트 반환.
-    final_generator 가 LLM 호출 없이 agent_results 를 직접 반환하는 경우 사용.
+    final_generator 가 LLM 호출 없이 messages 를 직접 반환하는 경우 사용.
     """
     for msg in reversed(final_state.get("messages", [])):
         if isinstance(msg, AIMessage):
@@ -182,6 +183,72 @@ def _build_ui_action_payload(tool_output: dict) -> dict:
         "prior_action": tool_output.get("prior_action"),
         "message": tool_output.get("message", ""),
     }
+
+
+def _extract_interrupt_payloads(final_state: dict | None) -> list[dict]:
+    """LangGraph interrupt 결과를 UI 친화 payload 리스트로 변환."""
+    if not isinstance(final_state, dict):
+        return []
+
+    raw_interrupts = final_state.get("__interrupt__")
+    if raw_interrupts is None:
+        return []
+
+    if not isinstance(raw_interrupts, (list, tuple, set)):
+        raw_interrupts = [raw_interrupts]
+
+    payloads: list[dict] = []
+    for item in raw_interrupts:
+        value = None
+
+        if isinstance(item, dict):
+            value = item.get("value")
+        else:
+            value = getattr(item, "value", None)
+
+        if isinstance(value, dict):
+            payloads.append(value)
+        elif value is not None:
+            payloads.append({"message": str(value)})
+
+    return payloads
+
+
+def _extract_interrupt_payloads_from_snapshot(snapshot: Any) -> list[dict]:
+    """checkpointer snapshot에서 interrupt payload 추출 (on_chain_end 누락 대비)."""
+    payloads: list[dict] = []
+
+    if snapshot is None:
+        return payloads
+
+    # 1) 최신 LangGraph: snapshot.interrupts
+    raw_interrupts = getattr(snapshot, "interrupts", None)
+    if isinstance(raw_interrupts, (list, tuple, set)):
+        for item in raw_interrupts:
+            value = getattr(item, "value", None)
+            if isinstance(value, dict):
+                payloads.append(value)
+            elif value is not None:
+                payloads.append({"message": str(value)})
+
+    if payloads:
+        return payloads
+
+    # 2) 일부 런타임: snapshot.tasks[*].interrupts
+    tasks = getattr(snapshot, "tasks", None)
+    if isinstance(tasks, (list, tuple, set)):
+        for task in tasks:
+            task_interrupts = getattr(task, "interrupts", None)
+            if not isinstance(task_interrupts, (list, tuple, set)):
+                continue
+            for item in task_interrupts:
+                value = getattr(item, "value", None)
+                if isinstance(value, dict):
+                    payloads.append(value)
+                elif value is not None:
+                    payloads.append({"message": str(value)})
+
+    return payloads
 
 
 def _build_current_state(
@@ -233,14 +300,10 @@ def _build_stream_config(
     model: str,
     conversation_id: str,
     turn_id: str,
-) -> RunnableConfig | None:
+) -> RunnableConfig:
     """LangSmith 사용 설정 시 RunnableConfig 생성."""
-    if os.getenv("LANGCHAIN_TRACING_V2", "").lower() != "true":
-        return None
-
-    langsmith_project = os.getenv("LANGCHAIN_PROJECT", "Ecommerce-Chatbot")
-    tracer = LangChainTracer(project_name=langsmith_project)
-    return RunnableConfig(
+    base_config = RunnableConfig(
+        configurable={"thread_id": conversation_id},
         run_name=f"chat/{conversation_id}/{turn_id}",
         metadata={
             "user_id": str(current_user.id),
@@ -251,8 +314,15 @@ def _build_stream_config(
             "llm_model": model,
         },
         tags=["chatbot", provider, model],
-        callbacks=[tracer],
     )
+
+    if os.getenv("LANGCHAIN_TRACING_V2", "").lower() != "true":
+        return base_config
+
+    langsmith_project = os.getenv("LANGCHAIN_PROJECT", "Ecommerce-Chatbot")
+    tracer = LangChainTracer(project_name=langsmith_project)
+    base_config["callbacks"] = [tracer]
+    return base_config
 
 
 def _get_text_chunk_payload(event: Any) -> dict | None:
@@ -304,8 +374,17 @@ def _get_tool_ui_payload(event: Any) -> dict | None:
 
 
 def _is_langgraph_end_event(event: Any) -> bool:
-    """LangGraph 실행 종료 이벤트 여부."""
-    return event.get("event") == "on_chain_end" and event.get("name") == "LangGraph"
+    """최상위/그래프 종료 이벤트 후보 여부 (런타임별 name 차이 대응)."""
+    if event.get("event") != "on_chain_end":
+        return False
+
+    output = event.get("data", {}).get("output")
+    if isinstance(output, dict) and (
+        "messages" in output or "__interrupt__" in output or "ui_action_required" in output
+    ):
+        return True
+
+    return event.get("name") == "LangGraph"
 
 
 
@@ -328,15 +407,61 @@ async def chat_streaming_endpoint(
             conversation_id = previous_state.get("conversation_id") or f"conv_{uuid4().hex[:12]}"
             turn_id = f"turn_{uuid4().hex[:12]}"
 
-            current_state = _build_current_state(
-                request=request,
-                current_user=current_user,
-                previous_state=previous_state,
-                provider=provider,
-                model=model,
-                conversation_id=conversation_id,
-                turn_id=turn_id,
-            )
+            pending_interrupt = previous_state.get("pending_interrupt")
+
+            stream_input: dict | Command
+            if pending_interrupt:
+                if not request.resume_payload:
+                    first_payload = (
+                        pending_interrupt[0]
+                        if isinstance(pending_interrupt, list) and pending_interrupt
+                        else None
+                    )
+                    ui_action = "confirm_order_action"
+                    message = "진행을 위해 선택값이 필요합니다."
+                    if isinstance(first_payload, dict):
+                        ui_action = str(first_payload.get("ui_action") or ui_action)
+                        message = str(first_payload.get("message") or message)
+
+                    if isinstance(first_payload, dict) and first_payload.get("ui_action"):
+                        ui_payload = _build_ui_action_payload(first_payload)
+                    else:
+                        ui_payload = {
+                            "type": "ui_action",
+                            "ui_action": ui_action,
+                            "message": message,
+                            "ui_data": first_payload,
+                        }
+
+                    yield _to_sse(ui_payload)
+                    yield _to_sse(
+                        {
+                            "type": "metadata",
+                            "completed_tasks": previous_state.get("completed_tasks", []),
+                            "ui_action_required": ui_action,
+                            "state": {
+                                **previous_state,
+                                "awaiting_interrupt": True,
+                                "pending_interrupt": pending_interrupt,
+                            },
+                        }
+                    )
+                    yield _to_sse({"type": "done"})
+                    return
+
+                stream_input = Command(resume=request.resume_payload)
+            else:
+                current_state = _build_current_state(
+                    request=request,
+                    current_user=current_user,
+                    previous_state=previous_state,
+                    provider=provider,
+                    model=model,
+                    conversation_id=conversation_id,
+                    turn_id=turn_id,
+                )
+                stream_input = current_state
+
             stream_config = _build_stream_config(
                 current_user=current_user,
                 provider=provider,
@@ -349,10 +474,13 @@ async def chat_streaming_endpoint(
             final_state: dict | None = None
             has_streamed_text = False
             streamed_ui_actions: set[str] = set()
+            suppress_text_stream = False
 
-            async for event in graph_app.astream_events(current_state, version="v2", config=stream_config):
+            async for event in graph_app.astream_events(stream_input, version="v2", config=stream_config):
                 text_payload = _get_text_chunk_payload(event)
                 if text_payload:
+                    if suppress_text_stream:
+                        continue
                     has_streamed_text = True
                     yield _to_sse(text_payload)
                     continue
@@ -370,19 +498,81 @@ async def chat_streaming_endpoint(
                 tool_ui_payload = _get_tool_ui_payload(event)
                 if tool_ui_payload:
                     streamed_ui_actions.add(tool_ui_payload["ui_action"])
+                    # UI 액션이 나온 턴은 텍스트를 함께 흘리지 않음
+                    suppress_text_stream = True
                     yield _to_sse(tool_ui_payload)
                     continue
 
                 if _is_langgraph_end_event(event):
-                    final_state = event.get("data", {}).get("output")
+                    output = event.get("data", {}).get("output")
+                    if isinstance(output, dict):
+                        final_state = output
 
             # ── 스트림 종료 후 처리 ──────────────────────────────────────────
+            interrupt_payloads: list[dict] = []
+            if isinstance(final_state, dict):
+                interrupt_payloads = _extract_interrupt_payloads(final_state)
+
+            # on_chain_end 누락/비정형 이벤트 대비: snapshot에서 interrupt 복구
+            if not interrupt_payloads:
+                try:
+                    snapshot = await graph_app.aget_state(stream_config)
+                    interrupt_payloads = _extract_interrupt_payloads_from_snapshot(snapshot)
+                except Exception:
+                    interrupt_payloads = []
+
+            # interrupt가 있으면 반드시 pending_interrupt를 저장해 다음 턴 resume 가능하게 함
+            if interrupt_payloads:
+                first_ui_action = "confirm_order_action"
+                if isinstance(interrupt_payloads[0], dict):
+                    first_ui_action = str(interrupt_payloads[0].get("ui_action") or first_ui_action)
+
+                for payload in interrupt_payloads:
+                    ui_name = str(payload.get("ui_action") or "confirm_order_action")
+
+                    # 이미 on_tool_end에서 같은 UI를 보냈으면 중복 전송 생략
+                    if ui_name in streamed_ui_actions:
+                        continue
+
+                    if payload.get("ui_action"):
+                        yield _to_sse(_build_ui_action_payload(payload))
+                    else:
+                        message = payload.get("message", "진행 여부를 확인해주세요.")
+                        yield _to_sse(
+                            {
+                                "type": "ui_action",
+                                "ui_action": "confirm_order_action",
+                                "message": message,
+                                "ui_data": payload,
+                            }
+                        )
+
+                persisted_state = {
+                    **previous_state,
+                    "conversation_id": conversation_id,
+                    "llm_provider": provider,
+                    "llm_model": model,
+                    "awaiting_interrupt": True,
+                    "pending_interrupt": interrupt_payloads,
+                }
+
+                yield _to_sse(
+                    {
+                        "type": "metadata",
+                        "completed_tasks": previous_state.get("completed_tasks", []),
+                        "ui_action_required": first_ui_action,
+                        "state": persisted_state,
+                    }
+                )
+                yield _to_sse({"type": "done"})
+                return
+
             if isinstance(final_state, dict):
                 ui_req = final_state.get("ui_action_required")
 
-                # ui_action_required 가 state에 있으면 UI 전용 응답 → fallback 텍스트 절대 억제.
-                # on_tool_end SSE 전송 여부와 무관하게 적용 (streamed_ui_actions 파싱 실패 케이스 포함).
-                if not has_streamed_text and not ui_req:
+                # final_generator 가 직접 messages만 반환한 경우(토큰 스트리밍 없음)
+                # 마지막 AIMessage를 text_chunk로 보강 전송
+                if not has_streamed_text and not ui_req and not streamed_ui_actions:
                     fallback = _get_fallback_text(final_state)
                     if fallback:
                         yield _to_sse({"type": "text_chunk", "content": fallback})

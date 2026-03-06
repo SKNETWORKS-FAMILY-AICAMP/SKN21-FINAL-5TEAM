@@ -5,8 +5,6 @@ from typing import List
 
 class TaskIntent(str, Enum):
     # 1. Refund SubAgent (주문 CS)
-    # 취소 / 반품 / 교환의 구체적 분기는 DB 조회 후 RefundSubAgent 내부 Python 로직이 결정.
-    # LLM은 "주문에 문제가 생겼다"는 도메인 의도까지만 분류.
     ORDER_CS = "ORDER_CS"
 
     # 2. Discovery SubAgent (상품 탐색)
