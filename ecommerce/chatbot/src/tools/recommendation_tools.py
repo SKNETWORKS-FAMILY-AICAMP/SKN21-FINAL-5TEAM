@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 from typing import List, Optional
+from flashrank import Ranker, RerankRequest
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -24,6 +25,26 @@ DATA_PATH = os.path.join(
 
 # Global dataframe cache
 _DF_CACHE = None
+_RANKER: Ranker | None = None
+
+
+def _get_ranker() -> Ranker | None:
+    global _RANKER
+    if _RANKER is not None:
+        return _RANKER
+
+    model_name = "ms-marco-MiniLM-L-12-v2"
+    cache_dir = os.getenv("FLASHRANK_CACHE_DIR")
+    try:
+        kwargs = {"model_name": model_name}
+        if cache_dir:
+            kwargs["cache_dir"] = cache_dir
+        _RANKER = Ranker(**kwargs)
+        return _RANKER
+    except Exception as e:
+        print(f"Reranker unavailable, fallback to CLIP order: {e}")
+        _RANKER = None
+        return None
 
 
 def _get_dataframe() -> pd.DataFrame:
@@ -192,6 +213,50 @@ def _build_product_payloads(product_ids: List[int]) -> List[dict]:
         db.close()
 
 
+def _rerank_products_by_query(
+    query_text: str | None,
+    product_ids: List[int],
+    products: List[dict],
+) -> tuple[List[int], List[dict]]:
+    query = (query_text or "").strip()
+    if not query:
+        return product_ids, products
+
+    ranker = _get_ranker()
+    if ranker is None:
+        return product_ids, products
+
+    try:
+        passages = []
+        for p in products:
+            pid = p.get("id")
+            if pid is None:
+                continue
+            text = " ".join(
+                [
+                    str(p.get("name") or ""),
+                    str(p.get("category") or ""),
+                    str(p.get("color") or ""),
+                    str(p.get("season") or ""),
+                ]
+            ).strip()
+            passages.append({"id": str(pid), "text": text})
+
+        if not passages:
+            return product_ids, products
+
+        rerank_results = ranker.rerank(RerankRequest(query=query, passages=passages))
+        reranked_ids = [int(item["id"]) for item in rerank_results]
+        by_id = {int(p["id"]): p for p in products if p.get("id") is not None}
+
+        reordered_products = [by_id[pid] for pid in reranked_ids if pid in by_id]
+        reordered_ids = [pid for pid in reranked_ids if pid in by_id]
+        return reordered_ids, reordered_products
+    except Exception as e:
+        print(f"Reranking fallback to CLIP order: {e}")
+        return product_ids, products
+
+
 @tool
 def search_by_image(
     image_bytes: bytes,
@@ -200,7 +265,7 @@ def search_by_image(
     search_mode: str = "similar",
 ) -> dict:
     """
-    CLIP/FAISS를 활용해 업로드된 이미지와 유사한 상품을 추천합니다.
+    CLIP/Qdrant를 활용해 업로드된 이미지와 유사한 상품을 추천합니다.
     """
 
     if not isinstance(image_bytes, (bytes, bytearray)):
@@ -215,6 +280,7 @@ def search_by_image(
         )
         print("CLIP SEARCH RESULT:", product_ids)
         products = _build_product_payloads(product_ids)
+        product_ids, products = _rerank_products_by_query(query_text, product_ids, products)
         return {
             "ui_action": "show_product_list",
             "product_ids": product_ids,
@@ -247,6 +313,7 @@ def search_by_text_clip(
             search_mode=search_mode,
         )
         products = _build_product_payloads(product_ids)
+        product_ids, products = _rerank_products_by_query(query_text, product_ids, products)
         return {
             "ui_action": "show_product_list",
             "product_ids": product_ids,

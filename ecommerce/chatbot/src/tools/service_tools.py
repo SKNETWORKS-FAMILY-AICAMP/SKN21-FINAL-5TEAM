@@ -6,8 +6,7 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+
 import json
 
 from ecommerce.platform.backend.app.database import SessionLocal
@@ -17,8 +16,6 @@ from ecommerce.platform.backend.app.models import (
     OrderItem,
     Product,
     ProductOption,
-    User,
-    ShippingAddress,
 )
 from ecommerce.chatbot.src.tools.base import BaseAPITool
 
