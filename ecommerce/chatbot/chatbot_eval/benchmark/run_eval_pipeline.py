@@ -97,6 +97,12 @@ def run_single_benchmark(name, cmd):
     return True
 
 
+def count_lines(path):
+    if not path.exists(): return 0
+    with open(path, 'r', encoding='utf-8') as f:
+        return sum(1 for _ in f)
+
+
 def run_evaluation(mode=0):
     """
     mode가 1이면 Argument Accuracy만 평가합니다.
@@ -110,6 +116,9 @@ def run_evaluation(mode=0):
     # 데이터셋 경로
     arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs.jsonl"
     dialog_dataset = BENCH_DIR / "data" / "my_eval_slot_filling_rate_dialogs.jsonl"
+
+    arg_acc_count = count_lines(arg_accuracy_dataset)
+    slot_fill_count = count_lines(dialog_dataset)
 
     # 0. 데이터셋 검증
     for ds_path in [arg_accuracy_dataset, dialog_dataset]:
@@ -138,7 +147,7 @@ def run_evaluation(mode=0):
             "--api_key",
             OPENAI_API_KEY,
             "--num_samples",
-            "11",
+            str(arg_acc_count),
             "--is_batch",
             "False",
             "--reset",
@@ -167,7 +176,7 @@ def run_evaluation(mode=0):
             "--api_key",
             OPENAI_API_KEY,
             "--num_samples",
-            "11",
+            str(slot_fill_count),
             "--is_batch",
             "False",
             "--reset",
@@ -208,6 +217,12 @@ def generate_markdown_report(results, mode=0):
         / "FunctionChat-gpt-4o-mini.eval_score.json"
     )
 
+    # 데이터셋 경로 및 카운트
+    arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs.jsonl"
+    dialog_dataset = BENCH_DIR / "data" / "my_eval_slot_filling_rate_dialogs.jsonl"
+    arg_acc_count = count_lines(arg_accuracy_dataset)
+    slot_fill_count = count_lines(dialog_dataset)
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     report_name = f"eval_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
     report_path = RESULTS_DIR / report_name
@@ -228,12 +243,12 @@ def generate_markdown_report(results, mode=0):
 ### 1. Argument Accuracy (Dialog)
 - **평가 목적**: 챗봇이 멀티턴 대화에서 필요한 인자(Argument)를 얼마나 정확하게 추출하고 올바른 Tool을 호출하는지 측정합니다.
 - **핵심 지표**: 필수 인자 추출 정확도, Tool 선택 정확성, enum 값 범위 준수 여부를 검증합니다.
-- **데이터셋**: `my_eval_arg_accuracy_dialogs.jsonl` (11개 다이얼로그)
+- **데이터셋**: `my_eval_arg_accuracy_dialogs.jsonl` ({arg_acc_count}개 다이얼로그)
 
 ### 2. Slot Filling Rate (Dialog)
 - **평가 목적**: **Slot Filling Rate** — 누락 슬롯을 다중 턴 대화로 채워서 올바른 툴 호출까지 가는 능력을 측정합니다.
 - **핵심 지표**: 사용자가 부족한 정보를 주었을 때 챗봇이 역질문(slot filling)을 통해 정보를 수집하고, 최종적으로 올바른 도구를 올바른 인자로 호출하는지 평가합니다.
-- **데이터셋**: `my_eval_slot_filling_rate_dialogs.jsonl` (11개 다이얼로그)
+- **데이터셋**: `my_eval_slot_filling_rate_dialogs.jsonl` ({slot_fill_count}개 다이얼로그)
 
 """
 
