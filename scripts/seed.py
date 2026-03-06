@@ -95,7 +95,7 @@ def init_db(db: Session):
             create_used_product_conditions(db)
             
         # 5. 중고 상품 데이터 확인 및 생성
-        # if not db.query(UsedProduct).first():
+        if not db.query(UsedProduct).first():
             logger.info("🛠️ 초기 중고 상품 데이터 생성 중...")
             create_used_products(db)
             
