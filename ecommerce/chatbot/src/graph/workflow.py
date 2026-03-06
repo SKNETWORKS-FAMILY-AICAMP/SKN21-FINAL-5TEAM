@@ -31,6 +31,7 @@ LangGraph 멀티-에이전트 그래프 정의.
 """
 
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
 
 from ecommerce.chatbot.src.graph.state import GlobalAgentState
 
@@ -127,4 +128,5 @@ def build_graph() -> StateGraph:
 
 # ── 컴파일된 그래프 (싱글톤 인스턴스) ────────────────────────
 # chat.py endpoint 에서 `from ...workflow import graph_app` 으로 사용.
-graph_app = build_graph().compile()
+_checkpointer = InMemorySaver()
+graph_app = build_graph().compile(checkpointer=_checkpointer)
