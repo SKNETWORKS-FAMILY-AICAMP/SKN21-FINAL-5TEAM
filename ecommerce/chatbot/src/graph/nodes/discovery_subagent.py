@@ -11,10 +11,15 @@ Discovery SubAgent 노드.
 
 설계 원칙:
   - current_active_task 로 TEXT / IMAGE 경로를 분기.
-  - IMAGE 경로: OpenAI Vision 모델로 이미지를 설명 텍스트로 변환 후 벡터 검색.
+    - IMAGE 경로: CLIP/FAISS 기반 이미지 유사 검색을 우선 수행.
+        실패 시 OpenAI Vision 기반 텍스트 검색으로 fallback.
   - TEXT  경로: ReAct 에이전트로 search_products_vector / recommend_clothes 도구 선택.
   - 검색 결과는 search_context 에 저장하여 Final Generator 가 활용.
 """
+
+import re
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 from langchain_core.messages import SystemMessage, AIMessage
 from langgraph.prebuilt import create_react_agent
@@ -23,8 +28,9 @@ from ecommerce.chatbot.src.graph.state import GlobalAgentState
 from ecommerce.chatbot.src.schemas.planner import TaskIntent
 from ecommerce.chatbot.src.graph.llm_providers import make_chat_llm
 from ecommerce.chatbot.src.tools.product_tools import search_products_vector
-from ecommerce.chatbot.src.tools.recommendation_tools import recommend_clothes
+from ecommerce.chatbot.src.tools.recommendation_tools import recommend_clothes, search_by_image
 from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
+from ecommerce.platform.backend.app.uploads import CHATBOT_UPLOAD_DIR
 
 # ── 도구 목록 (TEXT 경로) ──────────────────────────────────
 
@@ -57,6 +63,27 @@ VLM_DESCRIBE_PROMPT = """이 이미지에 있는 패션 아이템을 상세히 �
 - 스타일 특징 (예: 오버핏, 슬림핏, 캐주얼, 포멀 등)
 
 검색 쿼리에 바로 사용할 수 있도록 간결하게 작성하세요."""
+
+
+def _extract_top_k_from_text(text: str | None) -> int | None:
+    if not text:
+        return None
+    match = re.search(r"(\d+)", text)
+    if not match:
+        return None
+    return max(1, min(20, int(match.group(1))))
+
+
+def _load_image_bytes(image_url: str) -> bytes:
+    parsed = urlparse(image_url)
+    if parsed.path.startswith("/uploads/chatbot/"):
+        filename = parsed.path.rsplit("/", 1)[-1]
+        local_path = CHATBOT_UPLOAD_DIR / filename
+        if local_path.exists():
+            return local_path.read_bytes()
+
+    with urlopen(image_url, timeout=10) as response:
+        return response.read()
 
 
 # ── 노드 함수 ─────────────────────────────────────────────
@@ -141,7 +168,42 @@ def _image_search_pipeline(
             "agent_results": {**state.get("agent_results", {}), task: content},
         }
 
-    # ── Step 1. VLM: 이미지 → 텍스트 설명 ──────────────────
+    query_text = str(state.get("search_context", {}).get("search_query") or "").strip()
+    top_k = _extract_top_k_from_text(query_text)
+
+    # ── Step 1. CLIP/FAISS 유사 이미지 검색 ───────────────
+    try:
+        image_bytes = _load_image_bytes(str(image_url))
+        search_args = {"image_bytes": image_bytes}
+        if top_k is not None:
+            search_args["top_k"] = top_k
+        image_result = search_by_image.invoke(search_args)
+
+        if isinstance(image_result, dict) and image_result.get("error"):
+            raise RuntimeError(str(image_result["error"]))
+
+        products = image_result.get("products", []) if isinstance(image_result, dict) else []
+        ui_action = "show_product_list"
+        answer_text = f"이미지와 유사한 상품 {len(products)}개를 찾았습니다."
+
+        return {
+            "search_context": {
+                **state.get("search_context", {}),
+                "image_url": image_url,
+                "retrieved_products": products,
+            },
+            "ui_action_required": ui_action,
+            "completed_tasks": state.get("completed_tasks", []) + ([task] if task else []),
+            "agent_results": {
+                **state.get("agent_results", {}),
+                task: answer_text,
+            },
+        }
+    except Exception:
+        # CLIP/FAISS 실패 시 VLM 텍스트 검색으로 fallback
+        pass
+
+    # ── Step 2. VLM: 이미지 → 텍스트 설명 ──────────────────
     try:
         openai_client = get_openai_client()
         vlm_response = openai_client.chat.completions.create(
@@ -159,7 +221,7 @@ def _image_search_pipeline(
         )
         image_description = (vlm_response.choices[0].message.content or "").strip()
     except Exception as e:
-        content = f"이미지 분석 중 오류가 발생했습니다: {str(e)}"
+        content = f"이미지 검색 중 오류가 발생했습니다: {str(e)}"
         return {
             "messages": [AIMessage(content=content)],
             "completed_tasks": state.get("completed_tasks", []) + ([task] if task else []),

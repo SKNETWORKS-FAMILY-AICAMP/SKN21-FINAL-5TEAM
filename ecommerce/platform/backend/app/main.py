@@ -2,6 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+from pathlib import Path
+import os
+import tempfile
 from ecommerce.platform.backend.app.database import engine, Base, create_db_scheme
 from sqlalchemy import inspect, text
 from ecommerce.platform.backend.app.router.carts.router import router as carts_router
@@ -34,6 +37,30 @@ import logging
 from ecommerce.chatbot.src.api.v1.endpoints.chat import router as chatbot_router
 from ecommerce.platform.backend.app.uploads import CHATBOT_UPLOAD_DIR
 from starlette.middleware.sessions import SessionMiddleware  # 미드웨워 추가
+
+
+def _should_preload_heavy_models_once_per_reload_session() -> bool:
+    """
+    uvicorn --reload 사용 시, 코드 저장으로 인한 워커 재시작마다
+    무거운 모델 프리로드를 반복하지 않도록 1회만 수행합니다.
+
+    기준: 현재 워커의 부모 PID(= reloader 프로세스 PID)
+    - 같은 reloader 세션에서는 최초 1회만 True
+    - 서버를 완전히 다시 실행하면(새 reloader PID) 다시 True
+    """
+    reloader_pid = os.getppid()
+    marker = Path(tempfile.gettempdir()) / f"skn21_model_preload_{reloader_pid}.flag"
+
+    if marker.exists():
+        return False
+
+    try:
+        marker.touch(exist_ok=True)
+    except Exception:
+        # 마커 파일 생성 실패 시에는 안전하게 기존 동작(프리로드 수행)
+        return True
+
+    return True
 
 
 # ============================================
@@ -135,41 +162,44 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    # 4. 챗봇 리트리버 모델 미리 로드 (Pre-loading)
-    try:
-        from ecommerce.chatbot.src.tools.retrieval_tools import ensure_retrieval_models
+    if _should_preload_heavy_models_once_per_reload_session():
+        # 4. 챗봇 리트리버 모델 미리 로드 (Pre-loading)
+        try:
+            from ecommerce.chatbot.src.tools.retrieval_tools import ensure_retrieval_models
 
-        ensure_retrieval_models()
-        logging.info("챗봇 리트리버 모델 로딩 완료")
-    except Exception as e:
-        logging.error(f"챗봇 모델 로딩 실패: {e}")
+            ensure_retrieval_models()
+            logging.info("챗봇 리트리버 모델 로딩 완료")
+        except Exception as e:
+            logging.error(f"챗봇 모델 로딩 실패: {e}")
 
-    # 5. Guardrail 모델 미리 로드 (prismdata/guardrail-ko-11class)
-    try:
-        from ecommerce.chatbot.src.graph.nodes.guardrail import load_guardrail_model
+        # 5. Guardrail 모델 미리 로드 (prismdata/guardrail-ko-11class)
+        try:
+            from ecommerce.chatbot.src.graph.nodes.guardrail import load_guardrail_model
 
-        load_guardrail_model()
-        logging.info("Guardrail 모델 로딩 완료")
-    except Exception as e:
-        logging.error(f"Guardrail 모델 로딩 실패: {e}")
+            load_guardrail_model()
+            logging.info("Guardrail 모델 로딩 완료")
+        except Exception as e:
+            logging.error(f"Guardrail 모델 로딩 실패: {e}")
 
-    # 6. BGE-M3 임베딩 모델 미리 로드 (BAAI/bge-m3)
-    try:
-        from ecommerce.chatbot.src.data_preprocessing.bge_m3_embedding import preload_model as preload_bge_m3
+        # 6. BGE-M3 임베딩 모델 미리 로드 (BAAI/bge-m3)
+        try:
+            from ecommerce.chatbot.src.data_preprocessing.bge_m3_embedding import preload_model as preload_bge_m3
 
-        preload_bge_m3()
-        logging.info("BGE-M3 임베딩 모델 로딩 완료")
-    except Exception as e:
-        logging.error(f"BGE-M3 모델 로딩 실패: {e}")
+            preload_bge_m3()
+            logging.info("BGE-M3 임베딩 모델 로딩 완료")
+        except Exception as e:
+            logging.error(f"BGE-M3 모델 로딩 실패: {e}")
 
-    # 7. KoBART 대화 요약 모델 미리 로드 (EbanLee/kobart-summary-v3)
-    try:
-        from ecommerce.chatbot.src.infrastructure.kobart_summarizer import preload_model as preload_kobart
+        # 7. KoBART 대화 요약 모델 미리 로드 (EbanLee/kobart-summary-v3)
+        try:
+            from ecommerce.chatbot.src.infrastructure.kobart_summarizer import preload_model as preload_kobart
 
-        preload_kobart()
-        logging.info("KoBART 요약 모델 로딩 완료")
-    except Exception as e:
-        logging.error(f"KoBART 모델 로딩 실패: {e}")
+            preload_kobart()
+            logging.info("KoBART 요약 모델 로딩 완료")
+        except Exception as e:
+            logging.error(f"KoBART 모델 로딩 실패: {e}")
+    else:
+        logging.info("모델 프리로드 스킵: 같은 uvicorn reload 세션에서 이미 1회 수행됨")
 
     yield
     # 서버 종료 시
@@ -248,5 +278,5 @@ if __name__ == "__main__":
         "ecommerce.platform.backend.app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=False,
+        reload=True,
     )

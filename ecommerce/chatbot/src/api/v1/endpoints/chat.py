@@ -13,7 +13,7 @@ import traceback
 from typing import Any, Dict, List
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_core.messages import (
     AIMessage,
@@ -65,6 +65,7 @@ TOOL_STATUS_MESSAGES: dict[str, str] = {
     "change_option":              "주문 옵션을 변경하고 있습니다...",
     "update_payment":             "결제 정보를 수정하고 있습니다...",
     "search_products_vector":     "유사 상품을 검색하고 있습니다...",
+    "search_by_image":            "이미지와 유사한 상품을 검색하고 있습니다...",
     "recommend_clothes":          "스타일 추천을 준비하고 있습니다...",
     "search_knowledge_base":      "정책 문서를 검색하고 있습니다...",
     "open_used_sale_form":        "중고 판매 등록 폼을 열고 있습니다...",
@@ -83,6 +84,8 @@ _PER_TURN_FIELDS = frozenset({
     "messages",
     "turn_id",
 })
+
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"}
 
 # ── 직렬화 / 역직렬화 ──────────────────────────────────────────────────────────
 
@@ -133,6 +136,75 @@ def _parse_tool_output(output: Any) -> dict | None:
         except Exception:
             pass
     return None
+
+
+def _normalize_image_extension(filename: str | None, content_type: str | None) -> str:
+    name_ext = os.path.splitext((filename or "").lower())[1]
+    if name_ext in ALLOWED_IMAGE_EXTENSIONS:
+        return name_ext
+    if content_type:
+        normalized = content_type.split(";")[0].strip().lower()
+        if normalized == "image/jpeg":
+            return ".jpg"
+        if normalized == "image/png":
+            return ".png"
+        if normalized == "image/webp":
+            return ".webp"
+        if normalized == "image/gif":
+            return ".gif"
+        if normalized == "image/bmp":
+            return ".bmp"
+        if normalized == "image/avif":
+            return ".avif"
+    return ".jpg"
+
+
+def _resolve_image_url(raw_image_url: Any) -> str | None:
+    if isinstance(raw_image_url, dict):
+        value = raw_image_url.get("_url") or raw_image_url.get("url")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return None
+
+    if isinstance(raw_image_url, str) and raw_image_url.strip():
+        return raw_image_url.strip()
+
+    return None
+
+
+def _preprocess_user_message(message: str) -> tuple[str, dict[str, Any]]:
+    """
+    프론트 구조화 이벤트(JSON 문자열)를 자연어 메시지 + 상태 갱신으로 변환.
+    현재는 image_uploaded 이벤트만 특수 처리한다.
+    """
+    try:
+        payload = orjson.loads(message)
+    except Exception:
+        return message, {}
+
+    if not isinstance(payload, dict):
+        return message, {}
+
+    event_name = str(payload.get("event") or "").strip().lower()
+    if event_name != "image_uploaded":
+        return message, {}
+
+    image_url = _resolve_image_url(payload.get("image_url") or payload.get("imageUrl"))
+    query = str(payload.get("query") or "").strip()
+    description = str(payload.get("description") or "").strip()
+    base_text = query or description or "첨부한 이미지와 유사한 상품을 찾아줘"
+
+    normalized_message = base_text
+    if image_url:
+        normalized_message = f"{base_text}\n[image_url]: {image_url}"
+
+    search_context_update: dict[str, Any] = {}
+    if image_url:
+        search_context_update["image_url"] = image_url
+    if query:
+        search_context_update["search_query"] = query
+
+    return normalized_message, search_context_update
 
 
 def _build_metadata(final_state: dict) -> dict:
@@ -262,6 +334,7 @@ def _build_current_state(
 ) -> dict:
     """요청/이전 상태 기반 GlobalAgentState 구성."""
     history = _deserialize_messages(previous_state.get("messages", []))
+    normalized_message, search_context_update = _preprocess_user_message(request.message)
     turn_defaults = {
         "pending_tasks": [],
         "completed_tasks": [],
@@ -274,11 +347,14 @@ def _build_current_state(
     return {
         # 지속 필드: 이전 턴 컨텍스트 유지 (HITL 다중 턴 시나리오 대응)
         "order_context": previous_state.get("order_context", {}),
-        "search_context": previous_state.get("search_context", {}),
+        "search_context": {
+            **previous_state.get("search_context", {}),
+            **search_context_update,
+        },
         # 대화 요약: summarize_node가 생성한 압축 이력 (없으면 None)
         "conversation_summary": previous_state.get("conversation_summary"),
         # 메시지: 이전 이력 + 현재 입력
-        "messages": history + [HumanMessage(content=request.message)],
+        "messages": history + [HumanMessage(content=normalized_message)],
         # per-turn 초기화 (이전 턴 값 오염 방지)
         **turn_defaults,
         # 사용자 / LLM / 세션
@@ -385,6 +461,38 @@ def _is_langgraph_end_event(event: Any) -> bool:
         return True
 
     return event.get("name") == "LangGraph"
+
+
+@router.post("/upload-image")
+async def upload_chat_image(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """이미지 업로드 후 챗봇 접근 가능한 URL 반환."""
+    _ = current_user
+    content_type = (file.content_type or "").lower()
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="이미지 파일만 업로드할 수 있습니다.")
+
+    filename = f"{uuid4().hex}{_normalize_image_extension(file.filename, content_type)}"
+    target_path = CHATBOT_UPLOAD_DIR / filename
+
+    try:
+        contents = await file.read()
+        if not contents:
+            raise HTTPException(status_code=400, detail="빈 이미지 파일은 업로드할 수 없습니다.")
+        target_path.write_bytes(contents)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="이미지를 저장하는 중 오류가 발생했습니다.",
+        ) from exc
+
+    image_url = request.url_for("chatbot_uploads", path=filename)
+    return {"url": str(image_url)}
 
 
 
@@ -579,7 +687,14 @@ async def chat_streaming_endpoint(
 
                 # ui_action_required 가 on_tool_end 에서 미전송된 경우 보강 시그널
                 if ui_req and ui_req not in streamed_ui_actions:
-                    yield _to_sse({"type": "ui_action", "ui_action": ui_req, "ui_data": None})
+                    ui_data = None
+                    if ui_req == "show_product_list":
+                        ui_data = (
+                            final_state.get("search_context", {}).get("retrieved_products", [])
+                            if isinstance(final_state.get("search_context"), dict)
+                            else []
+                        )
+                    yield _to_sse({"type": "ui_action", "ui_action": ui_req, "ui_data": ui_data})
 
                 yield _to_sse(_build_metadata(final_state))
 
