@@ -1,4 +1,4 @@
-{"content": "환불 신청을 위해서는 주문번호와 환불 사유가 필요합니다. 주문번호와 환불 사유를 알려주실 수 있나요?", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
+{"content": null, "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": [{"id": "call_PMudAsI1lb0SoU1kGrA5PkOk", "function": {"arguments": "{\"user_id\":1,\"requires_selection\":true,\"action_context\":\"refund\"}", "name": "get_user_orders"}, "type": "function"}]}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
@@ -6,6 +6,6 @@
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
-{"content": "교환 신청을 위해 몇 가지 정보가 필요합니다.\n\n1. 주문번호를 알려주세요.\n2. 교환 사유는 무엇인가요?\n3. 교환할 새로운 옵션 ID가 있나요? (선택 사항)\n\n이 정보를 제공해 주시면 교환 신청을 도와드리겠습니다.", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": null}
+{"content": "교환 신청을 위해 먼저 주문 내역을 확인해야 합니다. 잠시만 기다려 주세요. 주문 내역을 조회하겠습니다.", "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": [{"id": "call_RGalbfcxzICzy71Y0vlUZdhk", "function": {"arguments": "{\"user_id\":1,\"requires_selection\":true,\"action_context\":\"exchange\"}", "name": "get_user_orders"}, "type": "function"}]}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
 {"role": "assistant", "content": "", "tool_calls": [], "error": "api response is None"}
