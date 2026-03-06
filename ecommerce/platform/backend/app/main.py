@@ -2,6 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+from pathlib import Path
+import os
+import tempfile
+import time
 from ecommerce.platform.backend.app.database import engine, Base, create_db_scheme
 from sqlalchemy import inspect, text
 from ecommerce.platform.backend.app.router.carts.router import router as carts_router
@@ -36,6 +40,30 @@ from ecommerce.platform.backend.app.uploads import CHATBOT_UPLOAD_DIR
 from starlette.middleware.sessions import SessionMiddleware  # 미드웨워 추가
 
 
+def _should_preload_heavy_models_once_per_reload_session() -> bool:
+    """
+    uvicorn --reload 사용 시, 코드 저장으로 인한 워커 재시작마다
+    무거운 모델 프리로드를 반복하지 않도록 1회만 수행합니다.
+
+    기준: 현재 워커의 부모 PID(= reloader 프로세스 PID)
+    - 같은 reloader 세션에서는 최초 1회만 True
+    - 서버를 완전히 다시 실행하면(새 reloader PID) 다시 True
+    """
+    reloader_pid = os.getppid()
+    marker = Path(tempfile.gettempdir()) / f"skn21_model_preload_{reloader_pid}.flag"
+
+    if marker.exists():
+        return False
+
+    try:
+        marker.touch(exist_ok=True)
+    except Exception:
+        # 마커 파일 생성 실패 시에는 안전하게 기존 동작(프리로드 수행)
+        return True
+
+    return True
+
+
 # ============================================
 # 자동 컬럼 마이그레이션
 # ============================================
@@ -44,10 +72,9 @@ def auto_add_missing_columns():
     테이블은 있지만 컬럼이 없을 때 자동으로 컬럼 추가
     SQLAlchemy 모델과 실제 DB를 비교하여 누락된 컬럼을 추가합니다.
     """
-    from ecommerce.platform.backend.app.database import SessionLocal
-
     inspector = inspect(engine)
-    db = SessionLocal()
+    pending_sqls: list[str] = []
+    total_missing = 0
 
     try:
         # Base.metadata에 등록된 모든 테이블 순회
@@ -96,16 +123,21 @@ def auto_add_missing_columns():
                         ADD COLUMN {col_name} {col_type} {nullable} {default_clause}
                     """
 
-                    try:
-                        db.execute(text(alter_sql))
-                        db.commit()
-                    except Exception:
-                        db.rollback()
+                    pending_sqls.append(alter_sql)
+                    total_missing += 1
+
+        if not pending_sqls:
+            logging.info("누락 컬럼 없음: 자동 컬럼 마이그레이션 스킵")
+            return
+
+        with engine.begin() as conn:
+            for alter_sql in pending_sqls:
+                conn.execute(text(alter_sql))
+
+        logging.info(f"자동 컬럼 마이그레이션 완료: {total_missing}개 컬럼 추가")
 
     except Exception:
-        db.rollback()
-    finally:
-        db.close()
+        logging.exception("자동 컬럼 마이그레이션 실패")
 
 
 # ============================================
@@ -115,15 +147,22 @@ def auto_add_missing_columns():
 async def lifespan(app: FastAPI):
     # 서버 시작 시
     logging.info("서버 시작")
+    startup_t0 = time.perf_counter()
 
     # 0. DB 스키마 생성(없을 시)
+    step_t0 = time.perf_counter()
     create_db_scheme()
+    logging.info(f"[startup] DB 스키마 확인 완료: {time.perf_counter() - step_t0:.2f}s")
 
     # 1. 테이블 생성
+    step_t0 = time.perf_counter()
     Base.metadata.create_all(bind=engine)  # 테이블이 없다면 생성
+    logging.info(f"[startup] 테이블 생성 완료: {time.perf_counter() - step_t0:.2f}s")
 
     # 2. 누락된 컬럼 자동 추가
+    step_t0 = time.perf_counter()
     auto_add_missing_columns()
+    logging.info(f"[startup] 컬럼 마이그레이션 완료: {time.perf_counter() - step_t0:.2f}s")
 
     # 3. 초기 데이터 적재 (Seed)
     from ecommerce.platform.backend.app.database import SessionLocal
@@ -131,45 +170,66 @@ async def lifespan(app: FastAPI):
 
     db = SessionLocal()
     try:
+        step_t0 = time.perf_counter()
         init_db(db)
+        logging.info(f"[startup] 초기 데이터 적재 완료: {time.perf_counter() - step_t0:.2f}s")
     finally:
         db.close()
 
-    # 4. 챗봇 리트리버 모델 미리 로드 (Pre-loading)
-    try:
-        from ecommerce.chatbot.src.tools.retrieval_tools import ensure_retrieval_models
+    if _should_preload_heavy_models_once_per_reload_session():
+        # 4. 챗봇 리트리버 모델 미리 로드 (Pre-loading)
+        try:
+            from ecommerce.chatbot.src.tools.retrieval_tools import ensure_retrieval_models
 
-        ensure_retrieval_models()
-        logging.info("챗봇 리트리버 모델 로딩 완료")
-    except Exception as e:
-        logging.error(f"챗봇 모델 로딩 실패: {e}")
+            step_t0 = time.perf_counter()
+            ensure_retrieval_models()
+            logging.info(f"챗봇 리트리버 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
+        except Exception as e:
+            logging.error(f"챗봇 모델 로딩 실패: {e}")
 
-    # 5. Guardrail 모델 미리 로드 (prismdata/guardrail-ko-11class)
-    try:
-        from ecommerce.chatbot.src.graph.nodes.guardrail import load_guardrail_model
+        # 5. Guardrail 모델 미리 로드 (prismdata/guardrail-ko-11class)
+        try:
+            from ecommerce.chatbot.src.graph.nodes.guardrail import load_guardrail_model
 
-        load_guardrail_model()
-        logging.info("Guardrail 모델 로딩 완료")
-    except Exception as e:
-        logging.error(f"Guardrail 모델 로딩 실패: {e}")
+            step_t0 = time.perf_counter()
+            load_guardrail_model()
+            logging.info(f"Guardrail 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
+        except Exception as e:
+            logging.error(f"Guardrail 모델 로딩 실패: {e}")
 
-    # 6. BGE-M3 임베딩 모델 미리 로드 (BAAI/bge-m3)
-    try:
-        from ecommerce.chatbot.src.data_preprocessing.bge_m3_embedding import preload_model as preload_bge_m3
+        # 6. BGE-M3 임베딩 모델 미리 로드 (BAAI/bge-m3)
+        try:
+            from ecommerce.chatbot.src.data_preprocessing.bge_m3_embedding import preload_model as preload_bge_m3
 
-        preload_bge_m3()
-        logging.info("BGE-M3 임베딩 모델 로딩 완료")
-    except Exception as e:
-        logging.error(f"BGE-M3 모델 로딩 실패: {e}")
+            step_t0 = time.perf_counter()
+            preload_bge_m3()
+            logging.info(f"BGE-M3 임베딩 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
+        except Exception as e:
+            logging.error(f"BGE-M3 모델 로딩 실패: {e}")
 
-    # 7. KoBART 대화 요약 모델 미리 로드 (EbanLee/kobart-summary-v3)
-    try:
-        from ecommerce.chatbot.src.infrastructure.kobart_summarizer import preload_model as preload_kobart
+        # 7. KoBART 대화 요약 모델 미리 로드 (EbanLee/kobart-summary-v3)
+        try:
+            from ecommerce.chatbot.src.infrastructure.kobart_summarizer import preload_model as preload_kobart
 
-        preload_kobart()
-        logging.info("KoBART 요약 모델 로딩 완료")
-    except Exception as e:
-        logging.error(f"KoBART 모델 로딩 실패: {e}")
+            step_t0 = time.perf_counter()
+            preload_kobart()
+            logging.info(f"KoBART 요약 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
+        except Exception as e:
+            logging.error(f"KoBART 모델 로딩 실패: {e}")
+
+        # 8. CLIP 검색 모델 미리 로드 (openai/clip-vit-base-patch32)
+        try:
+            from ecommerce.chatbot.src.tools.image_search_tools import preload_clip_resources
+
+            step_t0 = time.perf_counter()
+            preload_clip_resources()
+            logging.info(f"CLIP 검색 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
+        except Exception as e:
+            logging.error(f"CLIP 모델 로딩 실패: {e}")
+    else:
+        logging.info("모델 프리로드 스킵: 같은 uvicorn reload 세션에서 이미 1회 수행됨")
+
+    logging.info(f"[startup] 전체 초기화 완료: {time.perf_counter() - startup_t0:.2f}s")
 
     yield
     # 서버 종료 시
@@ -248,5 +308,5 @@ if __name__ == "__main__":
         "ecommerce.platform.backend.app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=False,
+        reload=True,
     )
