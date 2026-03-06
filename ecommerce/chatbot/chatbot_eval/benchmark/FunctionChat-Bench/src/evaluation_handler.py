@@ -237,24 +237,29 @@ class EvaluationHandler:
         diff_case_msg = ""
 
         
-        if 'tool_calls' in ground_truth:
-            ground_truth_func = ground_truth.get('tool_calls', [{}])[0].get('function', {})
+        if 'tool_calls' in ground_truth and ground_truth['tool_calls'] is not None:
+            # Handle cases where tool_calls might be an empty list or have no function key safely
+            tc_list = ground_truth.get('tool_calls', [])
+            if tc_list and len(tc_list) > 0:
+                ground_truth_func = tc_list[0].get('function', {})
+            else:
+                ground_truth_func = {}
         else:
             ground_truth_func = ground_truth
             
         g_func_name = ground_truth_func.get('name')
         g_func_args = ground_truth_func.get('arguments', {})
 
-        predict_tools = out.get('tool_calls', [])
+        predict_tools = out.get('tool_calls') or []
         
         if g_func_name == "no_tool_call":
-            if not predict_tools:
+            if not predict_tools or len(predict_tools) == 0:
                 is_pass = "pass"
                 is_pass_bool = True
             else:
                 p_func_name = predict_tools[0].get('function', {}).get('name')
                 diff_case_msg += f"Function name mismatch: g({g_func_name}) | p({p_func_name})\n"
-        elif predict_tools:
+        elif predict_tools and len(predict_tools) > 0:
             predicted_func = predict_tools[0].get('function', {})
             p_func_name = predicted_func.get('name')
             p_func_args = predicted_func.get('arguments', {})

@@ -50,19 +50,28 @@ MODEL = "gpt-4o-mini"
 
 
 # ─── DB에서 실제 주문 정보 (주문번호 + 상태) 조회 ────────────────────────────
-def load_eval_data() -> dict:
-    """eval_data.jsonl에서 전체 유형(주문취소, 환불, 교환, 로그인 등)의 데이터를 로드하여 dict로 반환합니다."""
+def load_eval_users() -> list:
+    """eval_data.jsonl에서 모든 유저 정보와 액션 정보를 로드하여 리스트로 반환합니다."""
     path = PROJECT_ROOT / "ecommerce/chatbot/chatbot_eval/benchmark/eval_data.jsonl"
-    eval_data = {}
+    users = []
     try:
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
                 if not line.strip(): continue
-                data = json.loads(line)
-                eval_data[data["type"]] = data.get("data", {})
+                item = json.loads(line)
+                if item.get("type") == "user":
+                    user_data = {
+                        "email": item["data"]["user_email"],
+                        "actions": {act["type"]: act.get("data", {}) for act in item.get("action", [])}
+                    }
+                    users.append(user_data)
     except Exception as e:
         print(f"[WARN] eval_data.jsonl 읽기 실패: {e}")
-    return eval_data
+    
+    # 만약 유저 데이터가 없으면 기본 유저 추가 (fallback)
+    if not users:
+        users.append({"email": "test2@example.com", "actions": {}})
+    return users
 
 def get_real_orders_with_status(user_email: str) -> tuple[int, list[dict]]:
     """
@@ -335,35 +344,7 @@ def build_prompt_for_scenario(
 type_of_output이 "call"인 턴이 반드시 2개 이상 포함되어야 합니다.
 """
 
-    return f"""
-당신은 이커머스 챗봇 평가용 데이터셋 전문가입니다.
-주어진 시나리오와 상품 정보를 바탕으로, 사용자와 챗봇 간의 대화(turns)를 생성하세요.
-
-시나리오: {scenario['name']} (시나리오 ID: {scenario['id']})
-다이얼로그 번호: {dialog_num}
-평가 대상 tools: {tool_names_str}
-RAG 정책: {scenario['rag_policy']}
-주문 상태: {order_status}
-이 시나리오의 요청 처리 가능 여부: {action_possible}
-UX 흐름: {ux_flow}
-
-{flow_instruction}
-
-참고 상품 정보 (CSV 기반, 이 정보만 사용할 것):
-{product_str}
-
-다음 형식으로 JSON을 반환하세요:
-
-{{
-  "scenario_id": "{scenario['id']}-{dialog_num}",
-  "scenario_name": "{scenario['name']}",
-  "order_status": "{order_status}",
-  "order_id_source": "get_user_orders:{user_email}",
-  "rag_policy": "{scenario['rag_policy']}",
-  "possible": {str(scenario['possible']).lower()},
-  "source_file": "AI_Hub CSV",
-  "source_row_id": "<CSV에서 참조한 행 정보>",
-  "evidence": "<사용한 근거>",
+    turns_example = f"""
   "turns": [
     {{
       "turn_num": 1,
@@ -413,7 +394,38 @@ UX 흐름: {ux_flow}
         "reason": ["단순 변심", "simple_change_of_mind"]
       }}
     }}
-  ]
+  ]"""
+
+    return f"""
+당신은 이커머스 챗봇 평가용 데이터셋 전문가입니다.
+주어진 시나리오와 상품 정보를 바탕으로, 사용자와 챗봇 간의 대화(turns)를 생성하세요.
+
+시나리오: {scenario['name']} (시나리오 ID: {scenario['id']})
+다이얼로그 번호: {dialog_num}
+평가 대상 tools: {tool_names_str}
+RAG 정책: {scenario['rag_policy']}
+주문 상태: {order_status}
+이 시나리오의 요청 처리 가능 여부: {action_possible}
+UX 흐름: {ux_flow}
+
+{flow_instruction}
+
+참고 상품 정보 (CSV 기반, 이 정보만 사용할 것):
+{product_str}
+
+다음 형식으로 JSON을 반환하세요:
+
+{{
+  "scenario_id": "{scenario['id']}-{dialog_num}",
+  "scenario_name": "{scenario['name']}",
+  "order_status": "{order_status}",
+  "order_id_source": "get_user_orders:{user_email}",
+  "rag_policy": "{scenario['rag_policy']}",
+  "possible": {str(scenario['possible']).lower()},
+  "source_file": "AI_Hub CSV",
+  "source_row_id": "<CSV에서 참조한 행 정보>",
+  "evidence": "<사용한 근거>",
+{turns_example}
 }}
 
 중요:
@@ -564,7 +576,7 @@ def pick_order_for_scenario(scenario: dict, all_orders: list[dict], target_order
 # ─── 메인 실행 ────────────────────────────────────────────────────────────────
 def main():
     print("=" * 60)
-    print("Argument Accuracy Dialog 데이터셋 생성 시작 (v2_HITL)")
+    print("Argument Accuracy Dialog 데이터셋 생성 시작 (Multi-User 지원)")
     print("주문 번호가 있어도 get_user_orders 호출 및 불가능 케이스 get_order_details 검증 필수")
     print("=" * 60)
 
@@ -578,74 +590,80 @@ def main():
     all_samples = fashion_samples + clothes_samples
     print(f"[INFO] CSV 샘플 로드 완료: {len(all_samples)}개 행")
 
-    eval_data = load_eval_data()
-    login_user_email = eval_data.get("로그인", {}).get("user_email", "test2@example.com")
-    
+    # 3. 유저 리스트 로드
+    users = load_eval_users()
+    print(f"[INFO] 총 {len(users)}명의 유저에 대해 시나리오를 생성합니다.")
+
     ACTION_TO_EVAL_TYPE = {
         "cancel": "주문취소",
         "refund": "환불",
-        "exchange": "교환"
+        "exchange": "교환",
+        "query": "주문조회"
     }
 
-    # 4. 11개 시나리오 순서대로 생성
     results = []
     serial_counter = 1
+    total_dialog_idx = 1
 
-    for dialog_num, scenario in enumerate(SCENARIOS, start=1):
-        print(f"\n[{dialog_num:02d}/11] 시나리오 '{scenario['name']}' 생성 중...")
-
-        action = scenario.get("action")
-        target_eval = eval_data.get(ACTION_TO_EVAL_TYPE.get(action)) if action else None
-
-        if target_eval:
-            user_email = target_eval.get("user_email", login_user_email)
-            target_order_number = target_eval.get("order_number")
-        else:
-            user_email = login_user_email
-            target_order_number = None
+    # 4. 유저별 순회
+    for u_idx, user_info in enumerate(users, start=1):
+        user_email = user_info["email"]
+        actions = user_info["actions"]
+        print(f"\n>>> [{u_idx}/{len(users)}] 유저 '{user_email}' 데이터 생성 시작")
 
         user_id, all_orders = get_real_orders_with_status(user_email)
         if not all_orders:
-            print("[ERROR] 주문 정보를 가져오지 못했습니다. 건너뜁니다.")
+            print(f"  [ERROR] 유저 {user_email}의 주문 정보를 가져오지 못했습니다. 건너뜁니다.")
             continue
 
-        # 시나리오에 맞는 주문 선택 (eval_data.jsonl 지정 주문번호 우선)
-        order = pick_order_for_scenario(scenario, all_orders, target_order_number)
-        if not order:
-            print(f"  → 주문 없음. 건너뜁니다.")
-            continue
+        # 유저별로 11개 시나리오 실행
+        for s_idx, scenario in enumerate(SCENARIOS, start=1):
+            print(f"  ({s_idx}/11) 시나리오 '{scenario['name']}' 생성 중...")
 
-        print(f"  → 사용 주문: {order['order_id']} (상태: {order['status']})")
+            action = scenario.get("action")
+            target_eval_type = ACTION_TO_EVAL_TYPE.get(action)
+            target_order_number = actions.get(target_eval_type, {}).get("order_number") if target_eval_type else None
 
-        product_info = pick_product_info(all_samples) if all_samples else {}
+            # 시나리오에 맞는 주문 선택
+            order = pick_order_for_scenario(scenario, all_orders, target_order_number)
+            if not order:
+                print(f"    → 맞는 상태의 주문 없음. 건너뜁니다.")
+                continue
 
-        dialog_data = generate_dialog(scenario, product_info, dialog_num, tools, order, user_email, user_id)
+            print(f"    → 사용 주문: {order['order_id']} (상태: {order['status']})")
 
-        if dialog_data is None:
-            print(f"  → 재시도 중...")
-            dialog_data = generate_dialog(scenario, product_info, dialog_num, tools, order, user_email, user_id)
+            product_info = pick_product_info(all_samples) if all_samples else {}
 
-        if dialog_data is None:
-            print(f"  → 생성 실패, 건너뜁니다.")
-            continue
+            # 대화 생성
+            dialog_data = generate_dialog(scenario, product_info, total_dialog_idx, tools, order, user_email, user_id)
 
-        # serial_num 보정 및 데이터 구조 검증
-        turns = dialog_data.get("turns", [])
-        if not isinstance(turns, list):
-            print(f"  → [ERROR] turns가 리스트가 아닙니다. 건너뜁니다.")
-            continue
+            if dialog_data is None:
+                print(f"    → 재시도 중...")
+                dialog_data = generate_dialog(scenario, product_info, total_dialog_idx, tools, order, user_email, user_id)
 
-        validated_turns = []
-        for t in turns:
-            if not isinstance(t, dict): continue
-            t["serial_num"] = serial_counter
-            serial_counter += 1
-            validated_turns.append(t)
-        
-        dialog_data["turns"] = validated_turns
-        results.append(dialog_data)
-        call_count = sum(1 for t in validated_turns if isinstance(t, dict) and t.get("type_of_output") == "call")
-        print(f"  → 완료 ({len(validated_turns)} turns, call 타입: {call_count}개, possible={scenario['possible']})")
+            if dialog_data is None:
+                print(f"    → 생성 실패, 건너뜁니다.")
+                continue
+
+            # serial_num 보정 및 데이터 구조 검증
+            turns = dialog_data.get("turns", [])
+            if not isinstance(turns, list):
+                print(f"    → [ERROR] turns가 리스트가 아닙니다. 건너뜁니다.")
+                continue
+
+            validated_turns = []
+            for t in turns:
+                if not isinstance(t, dict): continue
+                t["serial_num"] = serial_counter
+                serial_counter += 1
+                validated_turns.append(t)
+            
+            dialog_data["turns"] = validated_turns
+            results.append(dialog_data)
+            
+            total_dialog_idx += 1
+            call_count = sum(1 for t in validated_turns if isinstance(t, dict) and t.get("type_of_output") == "call")
+            print(f"    → 완료 ({len(validated_turns)} turns, call 타입: {call_count}개, possible={scenario['possible']})")
 
     # 5. JSONL 저장
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -655,7 +673,9 @@ def main():
 
     print("\n" + "=" * 60)
     print(f"✅ 데이터셋 생성 완료!")
-    print(f"   총 Dialog 수 : {len(results)}개")
+    print(f"   총 유저 수    : {len(users)}명")
+    print(f"   총 시나리오 수 : {len(SCENARIOS)}개")
+    print(f"   최종 Dialog 수 : {len(results)}개")
     total_calls = sum(
         sum(1 for t in item.get("turns", []) if t.get("type_of_output") == "call")
         for item in results
@@ -666,6 +686,7 @@ def main():
     print(f"   가능 시나리오: {possible_count}개")
     print(f"   불가 시나리오: {impossible_count}개")
     print(f"   저장 경로    : {OUTPUT_PATH}")
+    print("=" * 60)
     print("=" * 60)
 
 
