@@ -25,4 +25,4 @@ results/
 ecommerce/platform/backend/app/static/chatbot_uploads/
 
 # Ignore Docker files
-# .dockerignore
+.dockerignore
