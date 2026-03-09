@@ -31,6 +31,7 @@ import random
 import csv
 import re
 from pathlib import Path
+from datetime import datetime
 from dotenv import load_dotenv
 
 current_dir = Path(__file__).resolve().parent
@@ -43,10 +44,30 @@ load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
 OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialogs.jsonl"
 
+# ─── 경로 설정 ────────────────────────────────────────────────────────────────
+# PROJECT_ROOT를 sys.path에 추가하여 ecommerce 패키지 import 가능하게 함
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 # ─── OpenAI 설정 ──────────────────────────────────────────────────────────────
 from openai import OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL = "gpt-4o-mini"
+
+# ─── SQLAlchemy ORM 모델 import (모든 관계 설정을 위해 순서대로) ──────────────
+from ecommerce.platform.backend.app.router.users.models import User
+from ecommerce.platform.backend.app.router.orders.models import Order
+from ecommerce.platform.backend.app.router.shipping.models import ShippingInfo
+from ecommerce.platform.backend.app.router.carts.models import Cart
+from ecommerce.platform.backend.app.router.products.models import Product
+from ecommerce.platform.backend.app.router.reviews.models import Review
+from ecommerce.platform.backend.app.router.payments.models import Payment
+from ecommerce.platform.backend.app.router.points.models import PointHistory
+from ecommerce.platform.backend.app.router.user_history.models import UserHistory
+from ecommerce.platform.backend.app.database import SessionLocal, engine
+
+# ─── DB 세션 생성 ─────────────────────────────────────────────────────────────
+Session = SessionLocal
 
 
 # ─── DB에서 실제 주문 정보 (주문번호 + 상태) 조회 ────────────────────────────
@@ -77,44 +98,49 @@ def get_real_orders_with_status(user_email: str) -> tuple[int, list[dict]]:
     """
     user_email 사용자의 실제 주문 목록과 user_id를 DB에서 가져옵니다.
     각 주문의 order_number, status, shipping_fee, shipping_info(delivered_at) 포함.
+    ORM 기반 쿼리로 성능 최적화됨.
     """
+    session = None
     try:
-        from sqlalchemy import create_engine, text
-        db_user = os.getenv("DB_USER")
-        db_pass = os.getenv("DB_PASSWORD")
-        db_host = os.getenv("DB_HOST", "localhost")
-        db_port = os.getenv("DB_PORT", "3306")
-        db_name = os.getenv("DB_NAME")
-        db_url = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
-        engine = create_engine(db_url)
-        with engine.connect() as conn:
-            user_row = conn.execute(text(f"SELECT id FROM users WHERE email = '{user_email}'")).fetchone()
-            user_id = user_row[0] if user_row else 1
+        session = Session()
+        
+        # 유저 조회
+        user = session.query(User).filter(User.email == user_email).first()
+        user_id = user.id if user else 1
 
-            rows = conn.execute(text(
-                "SELECT o.order_number, o.status, o.shipping_fee, si.delivered_at "
-                "FROM orders o "
-                "LEFT JOIN shippinginfo si ON si.order_id = o.id "
-                f"WHERE o.user_id = {user_id} AND o.order_number LIKE 'ORD-eval_dataset-%' "
-                "LIMIT 50"
-            )).fetchall()
+        # 주문 조회 (ORM 쿼리 - 훨씬 빠름)
+        orders_query = session.query(Order).filter(
+            Order.user_id == user_id,
+            Order.order_number.like('ORD-eval_dataset-%')
+        ).limit(50).all()
+
         orders = []
-        from datetime import datetime
-        for r in rows:
-            delivered_at = r[3]
+        for order in orders_query:
+            # ShippingInfo 조회
+            shipping_info = session.query(ShippingInfo).filter(
+                ShippingInfo.order_id == order.id
+            ).first()
+            
+            delivered_at = shipping_info.delivered_at if shipping_info else None
             days_since = None
             if delivered_at:
                 days_since = (datetime.now() - delivered_at).days
+            
             orders.append({
-                "order_id": str(r[0]),
-                "status": str(r[1]),
-                "shipping_fee": float(r[2]) if r[2] else 0.0,
+                "order_id": str(order.order_number),
+                "status": str(order.status.value if hasattr(order.status, 'value') else order.status),
+                "shipping_fee": float(order.shipping_fee) if order.shipping_fee else 0.0,
                 "days_since_delivery": days_since,
             })
+        
         print(f"[INFO] 실제 주문 조회 완료: {[o['order_id'] + '(' + o['status'] + ')' for o in orders]}")
         return user_id, orders
     except Exception as e:
         print(f"[WARN] DB 조회 실패: {e}")
+    finally:
+        if session:
+            session.close()
+    
     # Fallback
     return 1, [
         {"order_id": "ORD-FALLBACK-0001", "status": "paid",      "shipping_fee": 3000.0, "days_since_delivery": None},
