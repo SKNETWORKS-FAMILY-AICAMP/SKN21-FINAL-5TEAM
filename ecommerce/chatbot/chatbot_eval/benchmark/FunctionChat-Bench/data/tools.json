@@ -2,34 +2,19 @@
     {
         "type": "function",
         "function": {
-            "name": "get_user_orders",
-            "description": "사용자의 최근 주문 목록을 조회합니다. 반품, 취소, 배송 조회 등을 위해 주문 번호를 확인해야 할 때 가장 먼저 사용합니다. UI에서 주문 선택이 필요한 경우 `requires_selection`을 true로 설정하세요.",
+            "name": "shipping",
+            "description": "주문의 배송 현황과 택배사 정보를 통합 조회합니다. 배송 상태, 현재 위치, 예상 도착일, 택배사 정보(이름/전화번호) 등을 반환합니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "order_id": {
+                        "type": "string",
+                        "description": "주문번호"
+                    },
                     "user_id": {
                         "type": "integer",
-                        "description": "사용자 ID (기본값 1)",
+                        "description": "요청자 사용자 ID",
                         "default": 1
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "조회할 최근 주문 개수 (기본값 5)",
-                        "default": 5
-                    },
-                    "days": {
-                        "type": "integer",
-                        "description": "조회 기간 (일 단위, 예: 30일 이내면 30)",
-                        "default": 30
-                    },
-                    "requires_selection": {
-                        "type": "boolean",
-                        "description": "사용자가 주문을 선택할 수 있는 UI 리스트를 보여줄지 여부. 특정 주문에 대한 후속 액션이 예상될 때 사용.",
-                        "default": false
-                    },
-                    "action_context": {
-                        "type": "string",
-                        "description": "주문 선택 후 이어질 액션의 의도. 예: 'refund' (환불), 'cancel' (취소), 'shipping' (배송조회), 'change_option' (옵션변경), 'create_review' (리뷰작성)"
                     }
                 },
                 "required": []
@@ -39,32 +24,196 @@
     {
         "type": "function",
         "function": {
-            "name": "cancel_order",
-            "description": "이미 결제된 주문을 즉시 취소합니다. 배송 시작 전(상품 준비 중) 상태에서만 가능합니다. 취소 사유가 반드시 포함되어야 합니다.",
+            "name": "cancel",
+            "description": "주문을 즉시 취소합니다. 배송 시작 전 단계(결제 완료, 상품 준비중)에서만 사용 가능합니다. 취소 사유가 반드시 포함되어야 합니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "order_id": {
                         "type": "string",
-                        "description": "취소할 주문번호. 형식: ORD-YYYYMMDD-XXXX (예: ORD-20260225-0001)"
+                        "description": "주문번호"
                     },
                     "user_id": {
                         "type": "integer",
-                        "description": "요청자 사용자 ID"
+                        "description": "요청자 사용자 ID",
+                        "default": 1
                     },
                     "reason": {
                         "type": "string",
-                        "description": "취소 사유 (사용자의 발화에서 추출)"
+                        "description": "취소 사유",
+                        "default": "단순 변심"
                     },
                     "confirmed": {
                         "type": "boolean",
-                        "description": "사용자 최종 확인 여부",
-                        "default": true
+                        "description": "사용자 확인 여부 (True일 경우에만 실제 DB 반영)",
+                        "default": null
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "refund",
+            "description": "반품을 접수합니다 (배송 후 수거). 배송중 또는 배송완료 상태에서만 가능합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {
+                        "type": "string",
+                        "description": "주문번호"
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "요청자 사용자 ID",
+                        "default": 1
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "반품 사유",
+                        "default": "단순 변심"
+                    },
+                    "is_seller_fault": {
+                        "type": "boolean",
+                        "description": "판매자 귀책 여부 (True면 반품 배송비 0원)",
+                        "default": false
+                    },
+                    "pickup_address": {
+                        "type": "string",
+                        "description": "(선택) 반품 수거지 주소. 입력되지 않은 경우 주문 시 배송지를 사용합니다.",
+                        "default": null
+                    },
+                    "confirmed": {
+                        "type": "boolean",
+                        "description": "사용자 확인 여부. None이면 checkpoint로 승인 요청을 발생시킵니다.",
+                        "default": null
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "change_option",
+            "description": "주문 옵션을 변경합니다 (배송 전 전용). 결제 완료 또는 상품준비중 상태에서만 옵션 변경이 가능합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {
+                        "type": "string",
+                        "description": "주문번호"
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "요청자 사용자 ID",
+                        "default": 1
+                    },
+                    "new_option_id": {
+                        "type": "integer",
+                        "description": "변경할 새로운 옵션 ID",
+                        "default": null
+                    },
+                    "confirmed": {
+                        "type": "boolean",
+                        "description": "사용자 확인 여부",
+                        "default": null
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "exchange",
+            "description": "교환을 접수합니다 (배송 후, 회수/재배송). 배송중 또는 배송완료 상태에서만 가능합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {
+                        "type": "string",
+                        "description": "주문번호"
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "요청자 사용자 ID",
+                        "default": 1
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "교환 사유",
+                        "default": "단순 변심"
+                    },
+                    "is_seller_fault": {
+                        "type": "boolean",
+                        "description": "판매자 귀책 여부",
+                        "default": false
+                    },
+                    "new_option_id": {
+                        "type": "integer",
+                        "description": "(선택) 교환할 새로운 옵션 ID",
+                        "default": null
+                    },
+                    "pickup_address": {
+                        "type": "string",
+                        "description": "(선택) 반품 수거지 주소. 입력되지 않은 경우 주문 시 배송지를 사용합니다.",
+                        "default": null
+                    },
+                    "confirmed": {
+                        "type": "boolean",
+                        "description": "사용자 확인 여부",
+                        "default": null
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recommend_clothes",
+            "description": "사용자의 요청(카테고리, 색상, 용도 등)에 맞는 옷을 추천합니다. 챗봇이 의류나 패션 아이템을 추천할 때 사용합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "description": "의류 종류 (필수, 예: \"Topwear\", \"Bottomwear\", \"Dress\", \"Skirt\", \"Innerwear\" 등. 사용자의 발화를 기반으로 영어 분류명으로 추론하세요)"
+                    },
+                    "color": {
+                        "type": "string",
+                        "description": "색상 (선택사항, 예: \"Black\", \"Red\", \"Blue\" 등 영어 색상명)",
+                        "default": null
+                    },
+                    "usage": {
+                        "type": "string",
+                        "description": "용도 (선택사항, 예: \"Casual\", \"Formal\", \"Sports\", \"Party\" 등 영어 용도명)",
+                        "default": null
+                    },
+                    "season": {
+                        "type": "string",
+                        "description": "계절 (선택사항, 예: \"Summer\", \"Winter\", \"Fall\", \"Spring\")",
+                        "default": null
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "추천할 상품 최대 개수 (기본값 3)",
+                        "default": 3
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "사용자 ID (기본값 1, DB에서 성별 조회용)",
+                        "default": 1
                     }
                 },
                 "required": [
-                    "order_id",
-                    "reason"
+                    "category"
                 ]
             }
         }
@@ -72,32 +221,176 @@
     {
         "type": "function",
         "function": {
-            "name": "check_refund_eligibility",
-            "description": "환불(취소 또는 반품) 가능 여부를 확인하고 예상 환불 금액을 계산합니다. 실제 접수 전 가능 여부를 먼저 안내해야 할 때 필수적으로 사용합니다.",
+            "name": "search_by_text_clip",
+            "description": "CLIP 텍스트 임베딩 기반으로 상품 이미지를 검색합니다. 추천/무드/스타일 검색에 사용합니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "order_id": {
+                    "query": {
                         "type": "string",
-                        "description": "주문번호. 형식: ORD-YYYYMMDD-XXXX"
+                        "description": "검색어"
                     },
-                    "user_id": {
+                    "top_k": {
                         "type": "integer",
-                        "description": "요청자 사용자 ID"
+                        "description": "검색 결과 개수",
+                        "default": 5
                     },
-                    "reason": {
+                    "search_mode": {
                         "type": "string",
-                        "description": "환불/취소 사유 (기본값: '단순 변심')",
-                        "default": "단순 변심"
-                    },
-                    "is_seller_fault": {
-                        "type": "boolean",
-                        "description": "판매자 귀책 여부 (예: 파손, 오배송의 경우 true)",
-                        "default": false
+                        "description": "검색 모드 (similar, opposite 등)",
+                        "default": "similar"
                     }
                 },
                 "required": [
-                    "order_id"
+                    "query"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_by_image",
+            "description": "CLIP/Qdrant를 활용해 업로드된 이미지와 유사한 상품을 추천합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "image_bytes": {
+                        "type": "string",
+                        "description": "이미지 바이트 데이터 (base64 인코딩 권장)"
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "검색 결과 개수",
+                        "default": 5
+                    },
+                    "query_text": {
+                        "type": "string",
+                        "description": "(선택) 이미지 검색 시 함께 고려할 텍스트 쿼리",
+                        "default": null
+                    },
+                    "search_mode": {
+                        "type": "string",
+                        "description": "검색 모드 (similar, opposite 등)",
+                        "default": "similar"
+                    }
+                },
+                "required": [
+                    "image_bytes"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge_base",
+            "description": "쇼핑몰 규정, 배송 정책, 교환/반품 안내 등 지식 베이스를 검색합니다. 주문 상태나 배송 현황 조회가 아니라, '규정'이나 '정보'를 물어볼 때 사용합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "검색할 질문 내용"
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "카테고리 (배송, 취소/반품/교환, 주문/결제, 회원 정보, 상품/AS 문의, 약관)",
+                        "default": null
+                    }
+                },
+                "required": [
+                    "query"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_used_sale_form",
+            "description": "[CRITICAL] 중고 판매 등록 시 텍스트로 슬롯을 묻지 말고, 반드시 이 도구를 호출해 프론트엔드 입력 폼 UI를 띄웁니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "register_used_sale",
+            "description": "유즈드(중고) 판매 신청을 실제 백엔드 API에 등록합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category_id": {
+                        "type": "integer",
+                        "description": "카테고리 ID"
+                    },
+                    "item_name": {
+                        "type": "string",
+                        "description": "상품명"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "상품 설명 (상태, 사용감, 하자 여부 등)"
+                    },
+                    "condition_id": {
+                        "type": "integer",
+                        "description": "상품 상태 ID (1: S급, 2: A급, 3: B급)"
+                    },
+                    "expected_price": {
+                        "type": "integer",
+                        "description": "희망 가격 (선택사항)",
+                        "default": null
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "사용자 ID",
+                        "default": 1
+                    }
+                },
+                "required": [
+                    "category_id",
+                    "item_name",
+                    "description",
+                    "condition_id"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_pickup",
+            "description": "중고 판매 물품의 수거를 신청합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sale_id": {
+                        "type": "string",
+                        "description": "판매 신청 ID"
+                    },
+                    "pickup_date": {
+                        "type": "string",
+                        "description": "수거 희망 날짜"
+                    },
+                    "pickup_address": {
+                        "type": "string",
+                        "description": "수거 희망 주소"
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "사용자 ID",
+                        "default": 1
+                    }
+                },
+                "required": [
+                    "sale_id",
+                    "pickup_date",
+                    "pickup_address"
                 ]
             }
         }
@@ -110,21 +403,24 @@
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "product_id": {
-                        "type": "string",
-                        "description": "상품 ID"
-                    },
                     "order_id": {
                         "type": "string",
-                        "description": "주문번호"
+                        "description": "주문번호 (구매 내역 확인용)"
+                    },
+                    "product_id": {
+                        "type": "string",
+                        "description": "상품 ID (선택사항, 없으면 주문의 첫 번째 상품 선택)",
+                        "default": ""
                     },
                     "rating": {
                         "type": "integer",
-                        "description": "평점 (1-5)"
+                        "description": "평점 (1-5)",
+                        "default": 0
                     },
                     "content": {
                         "type": "string",
-                        "description": "리뷰 내용"
+                        "description": "리뷰 내용",
+                        "default": ""
                     },
                     "user_id": {
                         "type": "integer",
@@ -133,10 +429,39 @@
                     }
                 },
                 "required": [
-                    "product_id",
-                    "order_id",
-                    "rating",
-                    "content"
+                    "order_id"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_review_draft",
+            "description": "상품명, 만족도, 키워드를 바탕으로 사용자가 쉽게 선택할 수 있는 리뷰 초안 3가지를 생성합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "product_name": {
+                        "type": "string",
+                        "description": "상품명"
+                    },
+                    "satisfaction": {
+                        "type": "string",
+                        "description": "만족도 (높음/보통/낮음 등)"
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "포함될 키워드 목록",
+                        "default": null
+                    }
+                },
+                "required": [
+                    "product_name",
+                    "satisfaction"
                 ]
             }
         }
@@ -161,260 +486,6 @@
                 },
                 "required": [
                     "code"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_reviews",
-            "description": "리뷰를 조회합니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "product_id": {
-                        "type": "string",
-                        "description": "상품 ID"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "조회할 리뷰 개수",
-                        "default": 10
-                    }
-                },
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_address_search",
-            "description": "사용자로부터 주소를 입력받아야 할 때 사용하는 도구입니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "register_exchange_request",
-            "description": "교환 신청을 등록합니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "order_id": {
-                        "type": "string",
-                        "description": "주문번호"
-                    },
-                    "reason": {
-                        "type": "string",
-                        "description": "교환 사유"
-                    },
-                    "user_id": {
-                        "type": "integer",
-                        "description": "사용자 ID"
-                    }
-                },
-                "required": [
-                    "order_id",
-                    "reason"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_knowledge_base",
-            "description": "쇼핑몰 규정, 배송 정책, 교환/반품 안내 등 지식 베이스를 검색합니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "검색할 질문 내용"
-                    },
-                    "category": {
-                        "type": "string",
-                        "description": "카테고리"
-                    }
-                },
-                "required": [
-                    "query"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_order_details",
-            "description": "특정 주문의 상세 내역(상품명, 가격, 배송상태 등)을 조회합니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "order_id": {
-                        "type": "string",
-                        "description": "주문번호"
-                    },
-                    "user_id": {
-                        "type": "integer",
-                        "description": "사용자 ID"
-                    }
-                },
-                "required": [
-                    "order_id"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_shipping_details",
-            "description": "주문의 배송 현황 및 운송장 정보를 조회합니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "order_id": {
-                        "type": "string",
-                        "description": "주문번호"
-                    },
-                    "user_id": {
-                        "type": "integer",
-                        "description": "사용자 ID"
-                    }
-                },
-                "required": [
-                    "order_id"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_payment_method",
-            "description": "미결제 또는 결제 대기 중인 주문의 결제 수단을 변경합니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "order_id": {
-                        "type": "string",
-                        "description": "주문번호"
-                    },
-                    "user_id": {
-                        "type": "integer",
-                        "description": "사용자 ID"
-                    },
-                    "payment_method": {
-                        "type": "string",
-                        "description": "변경할 결제 수단 (카드, 계좌이체 등)"
-                    },
-                    "card_number": {
-                        "type": "string",
-                        "description": "카드번호 (카드 결제 시)"
-                    }
-                },
-                "required": [
-                    "order_id",
-                    "payment_method"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "change_product_option",
-            "description": "주문한 상품의 옵션(사이즈, 색상 등)을 변경합니다. (배송 준비 전 단계에서만 가능)",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "order_id": {
-                        "type": "string",
-                        "description": "주문번호"
-                    },
-                    "user_id": {
-                        "type": "integer",
-                        "description": "사용자 ID"
-                    },
-                    "new_option_id": {
-                        "type": "integer",
-                        "description": "변경할 옵션 ID"
-                    }
-                },
-                "required": [
-                    "order_id",
-                    "new_option_id"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "register_return_request",
-            "description": "반품 신청을 정식으로 등록합니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "order_id": {
-                        "type": "string",
-                        "description": "주문번호"
-                    },
-                    "user_id": {
-                        "type": "integer",
-                        "description": "사용자 ID"
-                    },
-                    "pickup_address": {
-                        "type": "string",
-                        "description": "수거지 주소"
-                    },
-                    "confirmed": {
-                        "type": "boolean",
-                        "description": "최종 확인 여부"
-                    }
-                },
-                "required": [
-                    "order_id",
-                    "pickup_address"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "check_exchange_eligibility",
-            "description": "교환 가능 여부를 확인하고 추가 금약 발생 메시지를 반환합니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "order_id": {
-                        "type": "string",
-                        "description": "주문번호"
-                    },
-                    "user_id": {
-                        "type": "integer",
-                        "description": "사용자 ID"
-                    },
-                    "reason": {
-                        "type": "string",
-                        "description": "교환 사유"
-                    },
-                    "new_option_id": {
-                        "type": "integer",
-                        "description": "교환하려는 옵션 ID"
-                    }
-                },
-                "required": [
-                    "order_id"
                 ]
             }
         }

@@ -1,112 +1,132 @@
+"""
+LangGraph 멀티-에이전트 그래프 정의.
+
+흐름 요약:
+  START
+    │
+    ▼
+  guardrail ──(차단)──────────────────────────────► END
+    │ (통과)
+    ▼
+  planner ──(GENERAL_CHAT 단독)──────────────────► final_generator ──► END
+    │ (서비스 intent 존재)
+    ▼
+  supervisor ─────────────┐
+    │ (queue empty)        │ (loop: SubAgent 완료 후 다시 supervisor)
+    ▼                      │
+  final_generator          │
+    │                      ▼
+    ▼         ┌─ order_subagent
+   END        ├─ discovery_subagent
+              ├─ policy_rag_subagent
+              └─ form_action_subagent
+
+조건부 엣지:
+  - route_after_guardrail  : guardrail_passed → "planner" | "end"
+  - route_after_planner    : pending_tasks 내용 → "final_generator" | "supervisor"
+  - route_after_supervisor : current_active_task → 해당 SubAgent 노드 이름 | "final_generator"
+
+모든 SubAgent는 완료 후 반드시 "supervisor"로 돌아감
+  (supervisor가 pending_tasks를 소진하면 "final_generator"로 전환).
+"""
 
 from langgraph.graph import StateGraph, START, END
-from ecommerce.chatbot.src.graph.state import AgentState
-from ecommerce.chatbot.src.graph.nodes_v2 import (
-    decomposer_node,
-    route_after_decomposer,
-    fixed_worker_node,
-    route_after_workers,
-    agent_node,
-    tool_node,
-    should_continue,
-    process_output_node,
-    smart_validation_node,
-    human_approval_node,
-    route_after_validation,
-    route_after_approval,
-    route_after_tools
+from langgraph.checkpoint.memory import InMemorySaver
+
+from ecommerce.chatbot.src.graph.state import GlobalAgentState
+
+# ── 노드 임포트 ──────────────────────────────────────────
+from ecommerce.chatbot.src.graph.nodes.guardrail import (
+    guardrail_node,
+    route_after_guardrail,
 )
+from ecommerce.chatbot.src.graph.nodes.planner import (
+    planner_node,
+    route_after_planner,
+)
+from ecommerce.chatbot.src.graph.nodes.supervisor import (
+    supervisor_node,
+    route_after_supervisor,
+)
+from ecommerce.chatbot.src.graph.nodes.order_subagent import order_subagent_node
+from ecommerce.chatbot.src.graph.nodes.discovery_subagent import discovery_subagent_node
+from ecommerce.chatbot.src.graph.nodes.policy_rag_subagent import policy_rag_subagent_node
+from ecommerce.chatbot.src.graph.nodes.form_action_subagent import form_action_subagent_node
+from ecommerce.chatbot.src.graph.nodes.final_generator import final_generator_node
+from ecommerce.chatbot.src.graph.nodes.summarize import summarize_node
 
-def create_graph():
-    """
-    고정 실행 전략 워크플로우
-    구조:
-    START -> Decomposer -> (Fixed Worker | Agent)
-        -> Validation -> Approval -> Tools -> (Agent | Output) -> End
-    """
-    workflow = StateGraph(AgentState)
 
-    # 1. 노드 등록
-    workflow.add_node("decomposer", decomposer_node)
-    workflow.add_node("fixed_worker", fixed_worker_node)
-    workflow.add_node("agent", agent_node)
-    workflow.add_node("validation", smart_validation_node)
-    workflow.add_node("approval", human_approval_node)
-    workflow.add_node("tools", tool_node)
-    workflow.add_node("process_output", process_output_node)
+# ── 그래프 빌드 ──────────────────────────────────────────
 
-    # 2. 엣지 연결
-    workflow.add_edge(START, "decomposer")
+def build_graph() -> StateGraph:
+    builder = StateGraph(GlobalAgentState)
 
-    # [Decomposer -> Fixed Worker/Agent]
-    workflow.add_conditional_edges(
-        "decomposer",
-        route_after_decomposer,
+    # ── 노드 등록 ─────────────────────────────────────
+    builder.add_node("guardrail",              guardrail_node)
+    builder.add_node("planner",                planner_node)
+    builder.add_node("supervisor",             supervisor_node)
+    builder.add_node("order_subagent",        order_subagent_node)
+    builder.add_node("discovery_subagent",     discovery_subagent_node)
+    builder.add_node("policy_rag_subagent",    policy_rag_subagent_node)
+    builder.add_node("form_action_subagent",   form_action_subagent_node)
+    builder.add_node("final_generator",        final_generator_node)
+    builder.add_node("summarize",              summarize_node)
+
+    # ── 엔트리포인트 ──────────────────────────────────
+    builder.add_edge(START, "guardrail")
+
+    # ── guardrail → (planner | END) ──────────────────
+    builder.add_conditional_edges(
+        "guardrail",
+        route_after_guardrail,
         {
-            "fixed_worker": "fixed_worker",
-            "agent": "agent",
-        }
+            "planner": "planner",
+            "end":     END,
+        },
     )
 
-    # [Fixed Worker -> Validation or Process Output]
-    workflow.add_conditional_edges(
-        "fixed_worker",
-        route_after_workers,
+    # ── planner → (supervisor | final_generator) ─────
+    builder.add_conditional_edges(
+        "planner",
+        route_after_planner,
         {
-            "validation": "validation",
-            "process_output": "process_output",
-        }
+            "supervisor":       "supervisor",
+            "final_generator":  "final_generator",
+        },
     )
-    
-    # [Agent -> Decision: Tools or End]
-    # 도구 호출이 없으면 바로 종료(Process Output), 있으면 검증(Validation)으로 이동
-    workflow.add_conditional_edges(
-        "agent",
-        should_continue,
-        {
-            "tools": "validation", # 도구 호출 시 바로 실행하지 않고 검증 단계를 거침
-            "end": "process_output"
-        }
-    )
-    
-    # [Validation -> Decision: Approval or Tools]
-    # 검증 후, 민감한 도구(Sensitive)는 승인(Approval)으로, 안전한 도구는 실행(Tools)으로, 
-    # 검증 결과 도구 호출이 취소되었으면 종료(End)로 갈 수도 있음
-    workflow.add_conditional_edges(
-        "validation",
-        route_after_validation,
-        {
-            "tools": "tools",
-            "human_approval": "approval",
-            "end": "process_output"
-        }
-    )
-    
-    # [Approval -> Decision: Tools or End]
-    # 승인되면 Tools, 아니면 Process Output (UI 표시 후 종료)
-    workflow.add_conditional_edges(
-        "approval",
-        route_after_approval,
-        {
-            "tools": "tools",
-            "process_output": "process_output"
-        }
-    )
-    
-    # [Tools -> Decision: Agent or Process Output]
-    # UI Action이 있는 경우 Agent를 거치지 않고 바로 종료 (텍스트 생성 방지)
-    workflow.add_conditional_edges(
-        "tools",
-        route_after_tools,
-        {
-            "agent": "agent",
-            "process_output": "process_output"
-        }
-    )
-    
-    workflow.add_edge("process_output", END)
 
-    return workflow.compile()
+    # ── supervisor → (SubAgent | final_generator) ────
+    builder.add_conditional_edges(
+        "supervisor",
+        route_after_supervisor,
+        {
+            "order_subagent":       "order_subagent",
+            "discovery_subagent":    "discovery_subagent",
+            "policy_rag_subagent":   "policy_rag_subagent",
+            "form_action_subagent":  "form_action_subagent",
+            "final_generator":       "final_generator",
+        },
+    )
 
-# 싱글톤 패턴의 그래프 앱 인스턴스
-graph_app = create_graph()
+    # ── SubAgent → supervisor (loop) ─────────────────
+    # 각 SubAgent는 처리 완료 후 항상 supervisor 로 돌아가
+    # supervisor가 pending_tasks 소진 여부를 판단해 final_generator로 전환한다.
+    for subagent in (
+        "order_subagent",
+        "discovery_subagent",
+        "policy_rag_subagent",
+        "form_action_subagent",
+    ):
+        builder.add_edge(subagent, "supervisor")
+
+    # ── final_generator → summarize → END ──────────────────
+    builder.add_edge("final_generator", "summarize")
+    builder.add_edge("summarize", END)
+
+    return builder
+
+
+# ── 컴파일된 그래프 (싱글톤 인스턴스) ────────────────────────
+# chat.py endpoint 에서 `from ...workflow import graph_app` 으로 사용.
+_checkpointer = InMemorySaver()
+graph_app = build_graph().compile(checkpointer=_checkpointer)

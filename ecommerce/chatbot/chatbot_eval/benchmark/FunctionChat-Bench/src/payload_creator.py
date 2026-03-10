@@ -153,12 +153,72 @@ class CommonPayloadCreator(AbstractPayloadCreator):
 class DialogPayloadCreator(AbstractPayloadCreator):
     def __init__(self, temperature, system_prompt_file_path):
         super().__init__(temperature, 200, system_prompt_file_path)
+        
+        # Scenario to prompt file mapping (shared with evaluation_handler)
+        self.scenario_file_map = {
+            "cancel": "1_cancel_order_system_prompt.txt",
+            "refund": "2_refund_request_system_prompt.txt",
+            "exchange": "3_exchange_request_system_prompt.txt",
+            "shipping_no_id": "4_order_list_lookup_system_prompt.txt",
+            "shipping_with_id": "5_order_detail_lookup_system_prompt.txt",
+            "search_by_text_clip": "6_product_search_keyword_system_prompt.txt",
+            "recommend_clothes": "7_product_recommend_filter_system_prompt.txt",
+            "search_by_image": "8_product_search_image_system_prompt.txt",
+            "used_sale": "9_used_sale_and_pickup_system_prompt.txt",
+            "review": "10_review_draft_and_submit_system_prompt.txt",
+            "register_gift_card": "11_register_gift_card_system_prompt.txt"
+        }
+        from src.paths import BENCH_ROOT
+        self.prompts_dir = os.path.join(str(BENCH_ROOT), 'data', 'system_prompts')
+
+    def _get_branch_prompt(self, scenario_name, scenario_id, user_id, user_email):
+        """Loads a scenario-specific prompt if available, falling back to global system_prompt."""
+        target_scenario = scenario_name
+        if not target_scenario and scenario_id:
+            try:
+                s_id = int(str(scenario_id).split('-')[0])
+                SCENARIO_MAP_LOCAL = {
+                    1: "cancel", 2: "refund", 3: "exchange",
+                    4: "shipping_no_id", 5: "shipping_with_id",
+                    6: "search_by_text_clip", 7: "recommend_clothes",
+                    8: "search_by_image", 9: "used_sale",
+                    10: "review", 11: "register_gift_card"
+                }
+                target_scenario = SCENARIO_MAP_LOCAL.get(s_id)
+            except:
+                pass
+        
+        prompt_file = self.scenario_file_map.get(target_scenario)
+        if prompt_file:
+            path = os.path.join(self.prompts_dir, prompt_file)
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        content = f.read().strip()
+                        return content.replace("{user_id}", str(user_id)).replace("{user_email}", str(user_email))
+                except Exception as e:
+                    print(f"[WARN] Failed to load branch prompt {path}: {e}")
+        
+        return self.system_prompt  # Fallback
 
     @type_check(validate_params)
     def create_payload(self, **kwargs):
         test_set = utils.load_to_jsonl(kwargs['input_file_path'])
         # update input file max_size
         self.max_size = len(test_set)
+
+        # Load full tools for restoration if needed
+        full_tools_path = os.path.join(os.path.dirname(kwargs['input_file_path']), 'tools.json')
+        full_tools_lookup = {}
+        if os.path.exists(full_tools_path):
+            try:
+                with open(full_tools_path, 'r', encoding='utf-8') as f:
+                    all_tools = json.load(f)
+                    for t in all_tools:
+                        full_tools_lookup[t['function']['name']] = t
+            except Exception as e:
+                print(f"[WARN] Failed to load tools.json for restoration: {e}")
+
         # kwargs keys = ['input_file_path', 'request_file_path', 'reset']
         # 1. check to cached file
         api_request_list = []
@@ -168,19 +228,97 @@ class DialogPayloadCreator(AbstractPayloadCreator):
                 return api_request_list
         else:
             print("[[reset!! create requests jsonl file]]")
-        # 2. create requests json list
-        for idx, test_input in enumerate(tqdm(test_set)):
-            # test_input keys = ['dialog_num', 'tools_count', 'tools', 'turns']
-            tools = test_input['tools']
-            for turn in test_input['turns']:
-                messages = [{'role': 'system', 'content': self.system_prompt}]
-                messages.extend(turn['query'])
-                arguments = {key: turn[key] for key in ['serial_num', 'ground_truth', 'acceptable_arguments', 'type_of_output']}
-                arguments['tools'] = tools
-                arguments['messages'] = messages
-                arguments['temperature'] = self.temperature
-                arguments['tool_choice'] = 'auto'
-                api_request_list.append(DialogRequestFormatter(**arguments).to_dict())
+            # 2. create requests json list
+            for idx, test_input in enumerate(tqdm(test_set)):
+                # Handle new format (Flattened & New Schema)
+                is_flattened = ('relevant_tools' in test_input) or ('tools' in test_input and 'turns' not in test_input)
+                has_messages = ('dialogue' in test_input or 'messages' in test_input)
+                
+                if is_flattened and has_messages:
+                    # Restore full tools if possible
+                    tools = []
+                    relevant_tools_list = test_input.get('relevant_tools') or test_input.get('tools', [])
+                    for rt in relevant_tools_list:
+                        name = rt.get('name')
+                        if name in full_tools_lookup:
+                            tools.append(full_tools_lookup[name])
+                        else:
+                            tools.append({
+                                "type": "function",
+                                "function": {
+                                    "name": name,
+                                    "parameters": rt.get("parameters", {})
+                                }
+                            })
+                    
+                    scenario_name = test_input.get('scenario_name')
+                    scenario_id = test_input.get('scenario_id')
+                    user_id = test_input.get('user_id', 1)
+                    user_email = test_input.get('user_email', 'user@example.com')
+                    
+                    # Get branched or default system prompt
+                    current_system_prompt = self._get_branch_prompt(scenario_name, scenario_id, user_id, user_email)
+                    
+                    messages = [{'role': 'system', 'content': current_system_prompt}] if current_system_prompt else []
+                    
+                    dialog_content = test_input.get('dialogue') or test_input.get('messages')
+                    if isinstance(dialog_content, list):
+                        messages.extend(dialog_content)
+                    else:
+                        messages.append({'role': 'user', 'content': dialog_content})
+                    
+                    # task_id to serial_num (int)
+                    task_id = test_input.get('task_id', f'eval_{idx+1:04d}')
+                    try:
+                        serial_num = int(task_id.split('_')[-1])
+                    except Exception:
+                        serial_num = idx + 1
+                    
+                    arguments = {
+                        'serial_num': serial_num,
+                        'messages': messages,
+                        'tools': tools,
+                        'ground_truth': test_input['ground_truth'],
+                        'type_of_output': test_input.get('type_of_output', 'call'),
+                        'acceptable_arguments': test_input.get('acceptable_arguments', {}),
+                        'user_id': user_id,
+                        'scenario_name': scenario_name,
+                        'scenario_id': scenario_id,
+                        'temperature': self.temperature,
+                        'tool_choice': 'auto'
+                    }
+                    api_request_list.append(DialogRequestFormatter(**arguments).to_dict())
+                    continue
+
+                # Original format handling
+                # test_input keys = ['dialog_num', 'tools_count', 'tools', 'turns', 'user_id', 'user_email']
+                tools = test_input['tools']
+                
+                # IMPORTANT: Get scenario info from top-level test_input
+                scenario_name = test_input.get('scenario_name')
+                scenario_id = test_input.get('scenario_id')
+                current_user_id = test_input.get("user_id", 1)
+                current_user_email = test_input.get("user_email", "test@test.com")
+                
+                for turn in test_input['turns']:
+                    # Re-verify user_id from turn if exists
+                    turn_user_id = turn.get('user_id', current_user_id)
+                    
+                    current_system_prompt = self._get_branch_prompt(scenario_name, scenario_id, turn_user_id, current_user_email)
+                    
+                    messages = [{'role': 'system', 'content': current_system_prompt}] if current_system_prompt else []
+                    messages.extend(turn['query'])
+                    
+                    arguments = {key: turn[key] for key in ['serial_num', 'ground_truth', 'type_of_output']}
+                    arguments['acceptable_arguments'] = turn.get('acceptable_arguments', {})
+                    arguments['tools'] = tools
+                    arguments['messages'] = messages
+                    arguments['user_id'] = turn_user_id
+                    arguments['scenario_name'] = scenario_name
+                    arguments['scenario_id'] = scenario_id
+                    arguments['temperature'] = self.temperature
+                    arguments['tool_choice'] = 'auto'
+                    api_request_list.append(DialogRequestFormatter(**arguments).to_dict())
         # 3. write requests jsonl file
         with open(kwargs['request_file_path'], 'w', encoding='utf-8-sig') as fi:
             for api_request in api_request_list:
