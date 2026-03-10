@@ -1,61 +1,74 @@
-from typing import Annotated, TypedDict, List, Dict, Any, Optional, Literal
+from typing import TypedDict, Dict, Any, Optional, Annotated
 from langgraph.graph.message import add_messages
+from langchain_core.messages import BaseMessage
 
-# OrderInfo as a Dict for slot information (from remote version)
-OrderInfo = Dict[str, Any]
 
-class AgentState(TypedDict):
-    """
-    이커머스 CS 상담 및 액션 수행 에이전트의 통합 상태 관리 클래스
-    """
-    
-    # 1. 대화 관리
-    # Note: Using Union[BaseMessage, Dict[str, Any]] to support both formats if needed, 
-    # but the logic generally expects a list of messages.
-    messages: Annotated[List[Any], add_messages]
-    question: str
-    generation: str
-    
-    # 2. 검색 및 지식 베이스
-    documents: List[str] 
-    refined_context: str
-    
-    # 3. 분석 결과 (NLU) & 사용자 컨텍스트
-    category: Optional[str]         # '배송', '취소/반품/교환' 등
-    intent_type: str               # 'info_search' (규정 조회) vs 'execution' (직접 실행)
-    is_authenticated: bool
+class GlobalAgentState(TypedDict):
+    # ---------------------------------------------------------
+    # 1. LLM Context State (대화 이력)
+    # ---------------------------------------------------------
+    # add_messages 리듀서: 동일 ID 메시지 중복 적재 방지 (Tool Call ↔ Tool Result 올바른 매핑 보장)
+    messages: Annotated[list[BaseMessage], add_messages]
+
+    # ---------------------------------------------------------
+    # 2. System Control & Routing State (작업 큐 관리)
+    # ---------------------------------------------------------
+    pending_tasks: list[str]            # 실행 대기 중인 작업 식별자 큐 (예: ["REFUND_PROCESS", "POLICY_RAG"])
+    completed_tasks: list[str]          # 완료된 작업 목록 (Final Generator 노드에서 참고)
+    current_active_task: Optional[str]  # 현재 Supervisor가 Sub-agent에게 할당한 작업
+
+    # ---------------------------------------------------------
+    # 3. Business Payload State (노드 간 & 프론트엔드 통신용 데이터)
+    # ---------------------------------------------------------
+    # 도메인별 페이로드 격리 → Sub-agent 간 Instruction Pollution 방지
+    order_context: Dict[str, Any]
+    # 예: {"target_order_id": "ORD-123", "selected_items": ["ITEM-A"], "refund_reason": None}
+
+    search_context: Dict[str, Any]
+    # 예: {"search_query": "파티용 하의", "image_url": "https://...", "retrieved_products": []}
+
+    # ---------------------------------------------------------
+    # 4. Human-in-the-Loop (HITL) & UI Interaction State
+    # ---------------------------------------------------------
+    # Sub-agent가 이 플래그를 Overwrite → FastAPI → Next.js UI 컴포넌트 마운트
+    ui_action_required: Optional[str]
+    # 예: "RENDER_REFUND_LIST", "RENDER_SIZE_SELECTOR", "RENDER_USED_ITEM_FORM"
+
+    # ---------------------------------------------------------
+    # 5. User Identity State (인증된 사용자 정보)
+    # ---------------------------------------------------------
     user_info: Dict[str, Any]
-    
-    # 4. 액션 제어 및 도구 실행 결과
-    tool_outputs: List[Dict[str, Any]]
-    task_list: List[Dict[str, Any]]          # Decomposer가 추출한 작업 목록
-    task_results: List[Dict[str, Any]]       # Worker 실행 결과 누적
-    
-    # 5. [Refactored State] Structured Task Context
-    # 모든 기존 액션 상태(action_name, action_status, prior_action, order_id 등)는 여기에 통합됨
-    current_task: Optional["TaskContext"]
-    
-    # 6. 제어 플래그
-    is_relevant: bool
-    is_general_chat: bool
-    retry_count: int
-    requires_selection: Optional[bool]  # 주문 목록 조회 시 선택 UI 표시 여부
-    is_evaluation: Optional[bool]       # 벤치마크 평가 진행 여부
+    # 예: {"id": 1, "name": "홍길동", "email": "user@example.com"}
 
-    # 7. 런타임 LLM 설정 (요청별)
-    llm_provider: Optional[str]          # openai | huggingface | vllm
-    llm_model: Optional[str]             # gpt-4o-mini | Qwen/Qwen3-0.6B ...
+    # ---------------------------------------------------------
+    # 6. LLM Routing State (Provider / Model 선택)
+    # ---------------------------------------------------------
+    llm_provider: str   # "openai" | "vllm"
+    llm_model: str      # 예: "gpt-4o-mini", "Qwen/Qwen2.5-7B-Instruct"
 
-    # 8. 대화/로깅 메타데이터
-    conversation_id: Optional[str]       # 프론트와 왕복되는 대화 ID
-    turn_id: Optional[str]               # 요청 단위 턴 ID
+    # ---------------------------------------------------------
+    # 7. Agent Results (Final Generator 전용 취합 필드)
+    # ---------------------------------------------------------
+    # SubAgent들이 messages 를 오염시키지 않고 결과를 기록하는 격리된 공간.
+    # Final Generator 는 이 필드만 읽어 최종 응답을 synthesis 한다.
+    # 형식: { "ORDER_CS": "취소 완료 요약", "POLICY_RAG": "정책 조회 결과" }
+    agent_results: Dict[str, Any]
 
-class TaskContext(TypedDict):
-    """
-    현재 진행 중인 작업의 컨텍스트를 구조화하여 관리합니다.
-    """
-    type: Literal["refund", "cancel", "exchange", "search", "general"]  # 작업 유형
-    status: Literal["idle", "validating", "approving", "executing", "completed"] # 진행 단계
-    target_id: Optional[str]  # 대상 ID (예: order_id)
-    reason: Optional[str]     # 사유 (예: 반품 사유)
-    missing_info: Optional[List[str]] # 부족한 정보 목록
+    # ---------------------------------------------------------
+    # 8. Guardrail State
+    # ---------------------------------------------------------
+    guardrail_passed: bool  # True = 통과, False = 차단 (guardrail_node 기록 → route_after_guardrail 참조)
+
+    # ---------------------------------------------------------
+    # 9. Session Metadata
+    # ---------------------------------------------------------
+    conversation_id: str    # 대화 세션 식별자
+    turn_id: str            # 현재 턴 식별자
+
+    # ---------------------------------------------------------
+    # 10. Conversation Summary (대화 압축 요약)
+    # ---------------------------------------------------------
+    # summarize_node가 이전 메시지를 kobart로 요약하여 저장.
+    # LLM 컨텍스트 길이 절약 + 멀티턴 기억력 유지.
+    # 형식: "사용자가 ORD-123 환불을 요청했고 처리 완료됨. 다음 교환 요청 대기 중."
+    conversation_summary: Optional[str]

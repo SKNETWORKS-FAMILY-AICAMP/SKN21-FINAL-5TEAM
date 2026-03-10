@@ -57,7 +57,7 @@ def load_to_json(file_name):
 
 def load_to_jsonl(input_file_path):
     output = []
-    with open(input_file_path, encoding='utf-8') as f:
+    with open(input_file_path, encoding='utf-8-sig') as f:
         for line in tqdm(f.readlines()):
             try:
                 output.append(json.loads(line))

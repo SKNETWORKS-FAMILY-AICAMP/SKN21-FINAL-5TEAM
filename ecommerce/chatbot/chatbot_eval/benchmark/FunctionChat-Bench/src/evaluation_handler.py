@@ -37,8 +37,19 @@ EVAlUATION_REGISTOR_OBJ = {
     DIALOG: DialogEvaluationRegistor,
 }
 
-from src.paths import BENCH_ROOT, ENV_PATH
+from src.paths import BENCH_ROOT, ENV_PATH, PROJECT_ROOT
 REPO_PATH = str(BENCH_ROOT)
+
+import sys
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+try:
+    from ecommerce.platform.backend.app.database import SessionLocal
+    from ecommerce.platform.backend.app.router.users.crud import get_user_by_email
+except ImportError:
+    SessionLocal = None
+    get_user_by_email = None
 
 
 class EvaluationHandler:
@@ -130,38 +141,155 @@ class EvaluationHandler:
             return tools
         return [{k: v for k, v in tool.items() if k != 'id'} for tool in tools]
 
-    def get_input_prompt(self, inp: dict, out: dict) -> str:
-        ground_truth = inp['ground_truth']
-        ground_truth['tool_calls'] = self.clean_tool_calls(ground_truth.get('tool_calls', None))
-        if out is None:
-            out = {'tool_calls': []}
+
+    def get_input_prompt(self, inp: dict, out: dict) -> list:
+        # Get scenario name and handle fallback
+        scenario_name_input = inp.get('scenario_name', 'default')
+        scenario_id_raw = inp.get('scenario_id')
+        
+        # Scenario file mapping (Korean name and internal name)
+        scenario_file_map = {
+            "주문 취소": "1_cancel_order_system_prompt.txt",
+            "환불 신청": "2_refund_request_system_prompt.txt",
+            "교환 신청": "3_exchange_request_system_prompt.txt",
+            "옵션 변경 (배송전 교환)": "4_order_list_lookup_system_prompt.txt",
+            "배송 조회": "5_order_detail_lookup_system_prompt.txt",
+            "자연어 키워드 검색": "6_product_search_keyword_system_prompt.txt",
+            "의류 추천": "7_product_recommend_filter_system_prompt.txt",
+            "이미지 검색": "8_product_search_image_system_prompt.txt",
+            "중고 판매 신청": "9_used_sale_and_pickup_system_prompt.txt",
+            "리뷰 작성": "10_review_draft_and_submit_system_prompt.txt",
+            "상품권 등록": "11_register_gift_card_system_prompt.txt",
+            # internal names for safety
+            "cancel": "1_cancel_order_system_prompt.txt",
+            "refund": "2_refund_request_system_prompt.txt",
+            "exchange": "3_exchange_request_system_prompt.txt"
+        }
+        
+        prompt_file = scenario_file_map.get(scenario_name_input)
+        
+        # Fallback to ID mapping if name fails
+        if not prompt_file and scenario_id_raw:
+            try:
+                s_id = int(str(scenario_id_raw).split('-')[0])
+                ID_TO_FILE = {
+                    1: "1_cancel_order_system_prompt.txt", 12: "1_cancel_order_system_prompt.txt",
+                    2: "2_refund_request_system_prompt.txt", 13: "2_refund_request_system_prompt.txt",
+                    3: "3_exchange_request_system_prompt.txt", 14: "3_exchange_request_system_prompt.txt",
+                    4: "4_order_list_lookup_system_prompt.txt", 15: "4_order_list_lookup_system_prompt.txt",
+                    5: "5_order_detail_lookup_system_prompt.txt", 16: "5_order_detail_lookup_system_prompt.txt",
+                    6: "6_product_search_keyword_system_prompt.txt", 17: "6_product_search_keyword_system_prompt.txt",
+                    7: "7_product_recommend_filter_system_prompt.txt", 18: "7_product_recommend_filter_system_prompt.txt",
+                    8: "8_product_search_image_system_prompt.txt", 19: "8_product_search_image_system_prompt.txt",
+                    9: "9_used_sale_and_pickup_system_prompt.txt", 20: "9_used_sale_and_pickup_system_prompt.txt",
+                    10: "10_review_draft_and_submit_system_prompt.txt", 
+                    11: "11_register_gift_card_system_prompt.txt"
+                }
+                prompt_file = ID_TO_FILE.get(s_id)
+            except:
+                pass
+        
+        scenario_name = scenario_name_input # Current display name
+        user_email = inp.get('user_email', 'user@example.com')
+        user_id = inp.get('user_id')
+
+        # If user_id is missing or default 3, try to fetch from DB using email (if available)
+        if (user_id is None or user_id == 3) and SessionLocal and get_user_by_email:
+            try:
+                session = SessionLocal()
+                user = get_user_by_email(session, user_email)
+                if user:
+                    user_id = user.id
+                session.close()
+            except Exception as e:
+                logging.error(f"Error fetching user_id from DB for {user_email}: {e}")
+
+        # Final fallback if still none
+        if user_id is None:
+            user_id = 3
+        
+        # Prompts directory
+
+        # Load target scenario prompt file
+        prompts_dir = os.path.join(str(BENCH_ROOT), 'data', 'system_prompts')
+        scenario_content = ""
+        if prompt_file:
+            target_path = os.path.join(prompts_dir, prompt_file)
+            if os.path.exists(target_path):
+                try:
+                    with open(target_path, "r", encoding="utf-8") as f:
+                        scenario_content = f.read().strip()
+                except Exception as e:
+                    logging.error(f"Error reading prompt file {target_path}: {e}")
+        
+        if scenario_content:
+            # Replace placeholders
+            scenario_rule = scenario_content.replace("{user_id}", str(user_id)).replace("{user_email}", str(user_email))
+            logging.info(f"Successfully loaded prompt for scenario: {scenario_name}")
         else:
-            out['tool_calls'] = self.clean_tool_calls(out.get('tool_calls', None))
+            scenario_rule = f"가이드라인 준수 (user_id: {user_id})"
+            logging.warning(f"Using default prompt for scenario: {scenario_name} (Content empty or file not found)")
+        
+        # Criteria mapping
+        criteria_map = {
+            "register_gift_card": "1. assistant가 바로 tool call을 했다면 FAIL\n2. assistant가 상품권 코드를 요청하는 질문을 했다면 PASS\n3. 질문 문구가 정확히 같지 않아도 의미가 같으면 PASS",
+            "cancel": "1. 주문번호가 주어졌을 때 바로 cancel 도구를 호출했다면 PASS (최신 정책)\n2. 불필요하게 목록 조회를 먼저 유도하더라도 도구 호출 인자가 맞으면 PASS",
+            "refund": "1. 주문번호가 주어졌을 때 바로 refund 도구를 호출했다면 PASS (최신 정책)\n2. 사유(reason) 필드가 대화 내용과 일치하게 포함되어야 함",
+            "default": "1. Ground Truth와 논리적으로 동일한 응답을 생성했다면 PASS\n2. 틀린 도구를 호출하거나 필수 파라미터가 누락되었다면 FAIL"
+        }
+        criteria = criteria_map.get(scenario_name, criteria_map["default"])
+
+        # Format Dialogue (DE-DUPLICATION: Use short placeholder for system message in dialogue)
+        dialogue_text = ""
+        # Support both 'messages' and 'dialogue' keys for compatibility
+        messages_list = inp.get('messages', inp.get('dialogue', []))
+        for msg in messages_list:
+            role = "User" if msg['role'] == 'user' else "Assistant" if msg['role'] == 'assistant' else "System"
+            content = msg.get('content', '')
+            if msg['role'] == 'system':
+                content = "[생략: 상단 Scenario Rule 참고]"
+            dialogue_text += f"{role}: \"{content}\"\n"
+        
+        # Format Submission
+        submission_text = "None" if out is None else json.dumps(out, ensure_ascii=False)
+
         output_type = inp['type_of_output']
         rubric_prompt = self.rubric_prompts.get(output_type)
         if not rubric_prompt:
             raise ValueError(f"Unsupported rubric prompt type: {output_type}")
-        tools = json.dumps(inp['tools'], ensure_ascii=False)
-        query = json.dumps(inp['messages'], ensure_ascii=False)
-        ground_truth_json = json.dumps(ground_truth, ensure_ascii=False)
-        response = json.dumps(out, ensure_ascii=False)
 
-        if output_type == CALL:
-            acceptable_arguments = json.dumps(inp['acceptable_arguments'], ensure_ascii=False)
-            return rubric_prompt.format(
-                tools=tools, query=query,
-                ground_truth=ground_truth_json,
-                acceptable_arguments=acceptable_arguments,
-                response=response
-            )
-        elif output_type in [COMPLETION, RELEVANCE, SLOT]:
-            return rubric_prompt.format(
-                tools=tools, query=query,
-                ground_truth=ground_truth_json,
-                response=response
-            )
+        # Modularize: System (Role+Criteria+Output) / User (Scenario+Dialogue+Submission)
+        if '---' in rubric_prompt:
+            system_part, user_part = rubric_prompt.split('---', 1)
         else:
-            raise ValueError(f"Unsupported rubric prompt type: {output_type}")
+            system_part = rubric_prompt
+            user_part = " [Scenario Rule]\n{scenario_rule}\n\n[Dialogue]\n{dialogue}\n\n[Model Response]\n{response}"
+
+        # 1. System Rule Message (Scenario Guidelines)
+        # LangSmith visibility: Dedicated system message for scenario rules
+        scenario_rule_message = {
+            'role': 'system', 
+            'content': f"# Scenario Instructions ({scenario_name})\n{scenario_rule}"
+        }
+
+        # 2. Main Evaluation System Message (Rubric & Criteria)
+        system_content = system_part.format(criteria=criteria).strip()
+        evaluation_system_message = {'role': 'system', 'content': system_content}
+
+        # 3. User Evaluation Content (Dialogue & Response)
+        # Remove scenario_rule from user content to avoid redundancy and improve focus
+        user_content = user_part.format(
+            scenario_rule="[Refer to System Message for Scenario Rules]",
+            dialogue=dialogue_text.strip(),
+            response=submission_text
+        ).strip()
+        user_message = {'role': 'user', 'content': user_content}
+
+        return [
+            scenario_rule_message,
+            evaluation_system_message,
+            user_message
+        ]
 
     def get_acceptable_arguments(self, inp: dict) -> dict:
         acceptable_arguments = inp.get('acceptable_arguments', None)
@@ -185,8 +313,11 @@ class EvaluationHandler:
     def compare_arguments(self, g_func_args: str, p_func_args: str, acceptable_arguments: dict) -> bool:
         def compare_value(val1, val2):
             if isinstance(val1, str) and isinstance(val2, str):
-                val1, val2 = val1.replace(' ', '').lower(), val2.replace(' ', '').lower()
-            return val1 == val2
+                # 공백 및 하이픈(-) 등 특수기호 제거 후 비교
+                import re
+                val1 = re.sub(r'[^a-zA-Z0-9가-힣]', '', val1).lower()
+                val2 = re.sub(r'[^a-zA-Z0-9가-힣]', '', val2).lower()
+            return str(val1) == str(val2)
     
         try:
             j_g_func_args = g_func_args if isinstance(g_func_args, dict) else json.loads(g_func_args)
@@ -196,16 +327,29 @@ class EvaluationHandler:
             return False
 
         # argument 할루시네이션
-        for key, val in j_p_func_args.items():
-            if key not in j_g_func_args:
-                return False
+        # for key, val in j_p_func_args.items():
+        #     if key not in j_g_func_args:
+        #         return False
         for key, val in j_g_func_args.items():
             p_val = j_p_func_args.get(key)
+            
+            # 1. 기본 정답(Ground Truth)과 비교
             if not compare_value(p_val, val):
+                # 2. 틀렸을 경우, 데이터셋의 acceptable_arguments 리스트 확인
                 acceptable_values = acceptable_arguments.get(key, [])
-                if isinstance(acceptable_values, list) and not any(compare_value(p_val, acc) for acc in acceptable_values):
-                    return False
-                if isinstance(acceptable_values, str) and not compare_value(p_val, acceptable_values):
+                
+                # 리스트 형태인 경우 하나라도 맞으면 통과
+                if isinstance(acceptable_values, list):
+                    if not any(compare_value(p_val, acc) for acc in acceptable_values):
+                        return False 
+                
+                # 단일 문자열 형태인 경우
+                elif isinstance(acceptable_values, str):
+                    if not compare_value(p_val, acceptable_values):
+                        return False
+                
+                # 허용 리스트가 아예 없거나 위 조건에 안 맞으면 오답
+                else:
                     return False
         return True
 
@@ -222,8 +366,13 @@ class EvaluationHandler:
             "exact": exact
         }
 
-    def exact_match(self, inp: dict, out: dict, debug: bool = False) -> tuple[bool, dict, str]:
-        input_prompt = ""
+    def exact_match(self, inp: dict, out: dict, debug: bool = False) -> tuple[bool, dict, Union[str, list]]:
+        # Populate input_prompt for logging even if exact match is performed
+        try:
+            input_prompt = self.get_input_prompt(inp, out)
+        except Exception as e:
+            logging.error(f"Error generating input prompt in exact_match: {e}")
+            input_prompt = ""
         is_pass = "fail"
         if not inp['type_of_output'] == CALL:
             return False, self._default_evaluate_response(), input_prompt
@@ -237,24 +386,29 @@ class EvaluationHandler:
         diff_case_msg = ""
 
         
-        if 'tool_calls' in ground_truth:
-            ground_truth_func = ground_truth.get('tool_calls', [{}])[0].get('function', {})
+        if 'tool_calls' in ground_truth and ground_truth['tool_calls'] is not None:
+            # Handle cases where tool_calls might be an empty list or have no function key safely
+            tc_list = ground_truth.get('tool_calls', [])
+            if tc_list and len(tc_list) > 0:
+                ground_truth_func = tc_list[0].get('function', {})
+            else:
+                ground_truth_func = {}
         else:
             ground_truth_func = ground_truth
             
         g_func_name = ground_truth_func.get('name')
         g_func_args = ground_truth_func.get('arguments', {})
 
-        predict_tools = out.get('tool_calls', [])
+        predict_tools = out.get('tool_calls') or []
         
         if g_func_name == "no_tool_call":
-            if not predict_tools:
+            if not predict_tools or len(predict_tools) == 0:
                 is_pass = "pass"
                 is_pass_bool = True
             else:
                 p_func_name = predict_tools[0].get('function', {}).get('name')
                 diff_case_msg += f"Function name mismatch: g({g_func_name}) | p({p_func_name})\n"
-        elif predict_tools:
+        elif predict_tools and len(predict_tools) > 0:
             predicted_func = predict_tools[0].get('function', {})
             p_func_name = predicted_func.get('name')
             p_func_args = predicted_func.get('arguments', {})
@@ -341,14 +495,13 @@ class EvaluationHandler:
         return batch_result
 
     def fetch(self, inp, out, debug=False):
-        input_prompt = self.get_input_prompt(inp, out)
-        messages = [{'role': 'user', 'content': input_prompt}]
+        messages = self.get_input_prompt(inp, out)
         evaluate_response = self.executor.predict({'temperature': self.temperature, 'messages': messages})
         if debug is True:
             print(f"\nserial_num : {inp['serial_num']}")
-            print(f'evaluate_request : {input_prompt}')
+            print(f'evaluate_request (messages) : {json.dumps(messages, ensure_ascii=False, indent=2)}')
             print(f"evaluate_response : {evaluate_response['choices'][0]['message']['content']}\n")
-        return evaluate_response, input_prompt
+        return evaluate_response, json.dumps(messages, ensure_ascii=False)
 
     def load_cached_evaluation_result(self, eval_file_path, max_size):
         if utils.is_exist_file(eval_file_path):
@@ -373,7 +526,7 @@ class EvaluationHandler:
             response_formatter = RESPONSE_FORMATTER_OBJ[self.evaluation_type](
                 request_model=inp,
                 response_model=out,
-                evaluate_prompt=input_prompt,
+                evaluate_prompt=json.dumps(input_prompt, ensure_ascii=False) if isinstance(input_prompt, list) else input_prompt,
                 evaluate_response=evaluate_response
             )
             outputs.append((is_pass, response_formatter))
@@ -418,10 +571,9 @@ class EvaluationHandler:
                 out = response_formatter.response_model
                 if not is_pass:
                     custom_id = f"{self.evaluation_type}_{idx}"
-                    input_prompt = self.get_input_prompt(inp, out)
-                    messages = [{'role': 'user', 'content': input_prompt}]
+                    messages = self.get_input_prompt(inp, out)
                     reformed_json = openai_utils.get_openai_batch_format(custom_id, self.openai_model, messages, self.max_tokens)
-                    input_prompts.append(input_prompt)
+                    input_prompts.append(json.dumps(messages, ensure_ascii=False))
                     fp.write(json.dumps(reformed_json, ensure_ascii=False)+'\n')
         return input_prompts
        

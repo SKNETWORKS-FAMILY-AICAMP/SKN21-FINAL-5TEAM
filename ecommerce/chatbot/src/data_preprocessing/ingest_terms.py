@@ -4,8 +4,59 @@ import uuid
 from tqdm import tqdm
 from qdrant_client.http import models
 from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
-from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.chatbot.src.core.config import settings
+from ecommerce.chatbot.src.data_preprocessing.bge_m3_embedding import (
+    embed_texts,
+    get_embedding_dim,
+)
+
+
+def ensure_terms_collection(client, embedding_dim: int):
+    collection_name = settings.COLLECTION_TERMS
+
+    try:
+        if client.collection_exists(collection_name):
+            return
+    except Exception:
+        # Fallback for older client/server compatibility
+        try:
+            client.get_collection(collection_name=collection_name)
+            return
+        except Exception:
+            pass
+
+    print(f"Collection '{collection_name}' not found. Creating...")
+    client.create_collection(
+        collection_name=collection_name,
+        vectors_config=models.VectorParams(
+            size=embedding_dim,
+            distance=models.Distance.COSINE,
+        ),
+        sparse_vectors_config={
+            "text-sparse": models.SparseVectorParams(
+                index=models.SparseIndexParams(on_disk=False)
+            )
+        },
+    )
+
+    client.create_payload_index(
+        collection_name=collection_name,
+        field_name="clause_title",
+        field_schema=models.TextIndexParams(
+            type="text",
+            tokenizer=models.TokenizerType.WORD,
+            min_token_len=2,
+            max_token_len=20,
+            lowercase=True,
+        ),
+    )
+    client.create_payload_index(
+        collection_name=collection_name,
+        field_name="category",
+        field_schema="keyword",
+    )
+
+    print(f"Collection '{collection_name}' created.")
 
 def ingest_terms():
     print("--- Starting Ecommerce Terms Ingestion ---")
@@ -24,12 +75,14 @@ def ingest_terms():
         
     print(f"Loaded {len(data)} records.")
     
-    # Initialize FastEmbed for Sparse Vectors
+    # Initialize sparse model (dense is handled by local BGE-M3 helper)
     from fastembed import SparseTextEmbedding
+
     sparse_model = SparseTextEmbedding(model_name="Qdrant/bm25")
+    embedding_dim = get_embedding_dim()
 
     client = get_qdrant_client()
-    openai = get_openai_client()
+    ensure_terms_collection(client, embedding_dim)
     batch_size = 50
     
     for i in tqdm(range(0, len(data), batch_size), desc="Ingesting Batches"):
@@ -39,12 +92,8 @@ def ingest_terms():
         texts_to_embed = [item['text'] for item in batch]
         
         try:
-            # 1. Dense Embeddings (OpenAI)
-            resp = openai.embeddings.create(
-                input=texts_to_embed,
-                model=settings.EMBEDDING_MODEL
-            )
-            dense_vectors = [d.embedding for d in resp.data]
+            # 1. Dense Embeddings (BGE-M3)
+            dense_vectors = embed_texts(texts_to_embed)
 
             # 2. Sparse Embeddings (FastEmbed BM25)
             sparse_vectors = list(sparse_model.embed(texts_to_embed))

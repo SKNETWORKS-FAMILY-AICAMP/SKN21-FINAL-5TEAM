@@ -9,12 +9,18 @@ from ecommerce.platform.backend.app.database import get_db
 from ecommerce.platform.backend.app.router.users.models import UserStatus
 from ecommerce.platform.backend.app.router.users import crud, schemas
 from ecommerce.platform.backend.app.router.users.models import User, UserRole
-from ecommerce.platform.backend.app.core.auth import get_current_user, get_current_user_optional
+from ecommerce.platform.backend.app.core.auth import (
+    get_current_user,
+    get_current_user_optional,
+)
 
 import os
 from authlib.integrations.starlette_client import OAuth
 from fastapi.responses import RedirectResponse
-from ecommerce.platform.backend.app.router.user_history import crud as user_history_crud, schemas as user_history_schemas
+from ecommerce.platform.backend.app.router.user_history import (
+    crud as user_history_crud,
+    schemas as user_history_schemas,
+)
 import json
 from datetime import datetime
 
@@ -29,14 +35,16 @@ oauth.register(
     client_id=os.getenv("GOOGLE_CLIENT_ID"),
     client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-    client_kwargs={
-        "scope": "openid email profile"
-    }
+    client_kwargs={"scope": "openid email profile"},
 )
+
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
 
 # =========================
 # Admin - 전체 유저 조회
 # =========================
+
 
 @router.get("/all", response_model=list[schemas.UserListItem])
 def list_all_users(
@@ -51,6 +59,7 @@ def list_all_users(
 # =========================
 # Auth / Register / Login
 # =========================
+
 
 @router.post("/check-email", response_model=schemas.CheckEmailResponse)
 def check_email(body: schemas.CheckEmailRequest, db: Session = Depends(get_db)):
@@ -78,6 +87,7 @@ def register(body: schemas.RegisterRequest, db: Session = Depends(get_db)):
     )
     return {"ok": True}
 
+
 @router.post("/login", response_model=schemas.LoginResponse)
 def login(
     body: schemas.LoginRequest,
@@ -87,20 +97,24 @@ def login(
 ):
     user = crud.get_user_by_email(db, body.email)
     if not user or not user.password_hash:
-        raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 틀렸습니다.")
+        raise HTTPException(
+            status_code=401, detail="이메일 또는 비밀번호가 틀렸습니다."
+        )
 
     if not crud.verify_password(body.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 틀렸습니다.")
+        raise HTTPException(
+            status_code=401, detail="이메일 또는 비밀번호가 틀렸습니다."
+        )
 
     user.last_login_at = datetime.utcnow()
     user_history_crud.track_auth_action(
         db=db,
         user_id=user.id,
         action_type=user_history_schemas.ActionType.LOGIN,
-        action_metadata=json.dumps({
-            "user": user.name,
-            "timestamp": datetime.utcnow().isoformat()
-        }, ensure_ascii=False),
+        action_metadata=json.dumps(
+            {"user": user.name, "timestamp": datetime.utcnow().isoformat()},
+            ensure_ascii=False,
+        ),
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
@@ -112,7 +126,8 @@ def login(
         key="access_token",
         value=access_token,
         httponly=True,
-        samesite="lax",
+        samesite=COOKIE_SAMESITE,
+        secure=COOKIE_SECURE,
         max_age=60 * 60 * 24 * 7,
     )
 
@@ -122,6 +137,7 @@ def login(
         "name": user.name,
         "role": user.role.value,
     }
+
 
 @router.post("/logout")
 def logout(
@@ -133,18 +149,21 @@ def logout(
         db=db,
         user_id=current_user.id,
         action_type=user_history_schemas.ActionType.LOGOUT,
-        action_metadata=json.dumps({
-            "user": current_user.name,
-            "timestamp": datetime.utcnow().isoformat()
-        }, ensure_ascii=False),
+        action_metadata=json.dumps(
+            {"user": current_user.name, "timestamp": datetime.utcnow().isoformat()},
+            ensure_ascii=False,
+        ),
     )
 
     response.delete_cookie(
         key="access_token",
         path="/",
+        samesite=COOKIE_SAMESITE,
+        secure=COOKIE_SECURE,
     )
 
     return {"ok": True}
+
 
 # =========================
 # Cart
@@ -159,6 +178,7 @@ def add_to_cart(
 # Profile (me)
 # =========================
 
+
 @router.get("/me")
 def me(current_user: User | None = Depends(get_current_user_optional)):
     if current_user is None:
@@ -167,6 +187,7 @@ def me(current_user: User | None = Depends(get_current_user_optional)):
         "authenticated": True,
         "id": current_user.id,
         "email": current_user.email,
+        "gender": current_user.gender.value if current_user.gender else None,
         "name": current_user.name,
         "phone": current_user.phone,
         "agree_marketing": current_user.agree_marketing,
@@ -175,6 +196,7 @@ def me(current_user: User | None = Depends(get_current_user_optional)):
         "created_at": current_user.created_at,
         "updated_at": current_user.updated_at,
     }
+
 
 @router.patch("/me", response_model=schemas.UserProfileUpdateResponse)
 def update_my_profile(
@@ -204,6 +226,7 @@ def update_my_profile(
             agree_marketing=updated.agree_marketing,
             agree_sms=updated.agree_sms,
             agree_email=updated.agree_email,
+            gender=updated.gender.value if updated.gender else None,
             created_at=updated.created_at,
             updated_at=updated.updated_at,
         ),
@@ -232,6 +255,7 @@ def change_password(
 # =========================
 # Notification
 # =========================
+
 
 @router.get("/me/notification", response_model=schemas.NotificationSettingResponse)
 def get_notification(current_user=Depends(get_current_user)):
@@ -262,6 +286,7 @@ def update_notification(
 # Body Measurement
 # =========================
 
+
 @router.get("/me/body-measurement", response_model=schemas.BodyMeasurementResponse)
 def get_body_measurement(
     db: Session = Depends(get_db),
@@ -274,7 +299,9 @@ def get_body_measurement(
     return schemas.BodyMeasurementResponse.from_orm(m)
 
 
-@router.put("/me/body-measurement", response_model=schemas.BodyMeasurementUpsertResponse)
+@router.put(
+    "/me/body-measurement", response_model=schemas.BodyMeasurementUpsertResponse
+)
 def upsert_body_measurement(
     body: schemas.BodyMeasurementUpsertRequest,
     db: Session = Depends(get_db),
@@ -292,6 +319,7 @@ def upsert_body_measurement(
 # Withdraw
 # =========================
 
+
 @router.delete("/me")
 def withdraw(
     db: Session = Depends(get_db),
@@ -300,16 +328,19 @@ def withdraw(
     crud.withdraw_user(db, current_user)
 
     response = JSONResponse(content={"ok": True})
-    response.delete_cookie("access_token", path="/")
-    response.delete_cookie("session", path="/")
+    response.delete_cookie("access_token", path="/", samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
+    response.delete_cookie("session", path="/", samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
 
     return response
+
 
 # =========================
 @router.get("/auth/google/login")
 async def google_login(request: Request):
-    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+    # 현재 요청의 호스트를 기준으로 콜백 URL을 동적으로 구성해 state mismatch를 방지
+    redirect_uri = str(request.url_for("google_callback"))
     return await oauth.google.authorize_redirect(request, redirect_uri)
+
 
 @router.get("/auth/google/callback")
 async def google_callback(
@@ -350,10 +381,10 @@ async def google_callback(
         db=db,
         user_id=user.id,
         action_type=user_history_schemas.ActionType.LOGIN,
-        action_metadata=json.dumps({
-            "user": user.name,
-            "timestamp": datetime.utcnow().isoformat()
-        }, ensure_ascii=False),
+        action_metadata=json.dumps(
+            {"user": user.name, "timestamp": datetime.utcnow().isoformat()},
+            ensure_ascii=False,
+        ),
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
@@ -364,12 +395,13 @@ async def google_callback(
     # 4️⃣ JWT 발급
     access_token = create_access_token(user.id)
 
-    response = RedirectResponse(url="http://localhost:3000")
+    response = RedirectResponse(url="/")
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        samesite="lax",
+        samesite=COOKIE_SAMESITE,
+        secure=COOKIE_SECURE,
         max_age=60 * 60 * 24 * 7,
     )
 
