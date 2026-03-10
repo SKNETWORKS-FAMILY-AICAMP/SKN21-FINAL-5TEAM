@@ -38,6 +38,9 @@ oauth.register(
     client_kwargs={"scope": "openid email profile"},
 )
 
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
+
 # =========================
 # Admin - 전체 유저 조회
 # =========================
@@ -123,8 +126,8 @@ def login(
         key="access_token",
         value=access_token,
         httponly=True,
-        samesite="none",
-        secure=True,
+        samesite=COOKIE_SAMESITE,
+        secure=COOKIE_SECURE,
         max_age=60 * 60 * 24 * 7,
     )
 
@@ -155,8 +158,8 @@ def logout(
     response.delete_cookie(
         key="access_token",
         path="/",
-        samesite="none",
-        secure=True,
+        samesite=COOKIE_SAMESITE,
+        secure=COOKIE_SECURE,
     )
 
     return {"ok": True}
@@ -325,8 +328,8 @@ def withdraw(
     crud.withdraw_user(db, current_user)
 
     response = JSONResponse(content={"ok": True})
-    response.delete_cookie("access_token", path="/", samesite="none", secure=True)
-    response.delete_cookie("session", path="/", samesite="none", secure=True)
+    response.delete_cookie("access_token", path="/", samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
+    response.delete_cookie("session", path="/", samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
 
     return response
 
@@ -334,7 +337,8 @@ def withdraw(
 # =========================
 @router.get("/auth/google/login")
 async def google_login(request: Request):
-    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+    # 현재 요청의 호스트를 기준으로 콜백 URL을 동적으로 구성해 state mismatch를 방지
+    redirect_uri = str(request.url_for("google_callback"))
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 
@@ -391,13 +395,13 @@ async def google_callback(
     # 4️⃣ JWT 발급
     access_token = create_access_token(user.id)
 
-    response = RedirectResponse(url="http://localhost:3000")
+    response = RedirectResponse(url="/")
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        samesite="none",
-        secure=True,
+        samesite=COOKIE_SAMESITE,
+        secure=COOKIE_SECURE,
         max_age=60 * 60 * 24 * 7,
     )
 
