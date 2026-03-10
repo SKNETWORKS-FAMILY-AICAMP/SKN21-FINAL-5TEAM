@@ -141,17 +141,35 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
     ensure_retrieval_models()
 
     # 임베딩 생성
+    dense = None
+    sparse_idx = None
+    sparse_val = None
+    dense_error = None
+    sparse_error = None
+
     try:
         dense = embed_texts([query])[0]
+    except Exception as e:
+        dense_error = e
+        print(f"Warning: Dense embedding unavailable, fallback to sparse-only search: {e}")
 
-        sparse_idx = None
-        sparse_val = None
-        if SPARSE_MODEL:
+    if SPARSE_MODEL:
+        try:
             sparse = list(SPARSE_MODEL.embed([query]))[0]
             sparse_idx = sparse.indices.tolist()
             sparse_val = sparse.values.tolist()
-    except Exception as e:
-        return {"error": f"임베딩 생성 실패: {str(e)}"}
+        except Exception as e:
+            sparse_error = e
+            print(f"Warning: Sparse embedding unavailable: {e}")
+
+    if dense is None and (sparse_idx is None or sparse_val is None):
+        if dense_error and sparse_error:
+            return {"error": f"임베딩 생성 실패 (dense/sparse): {dense_error} / {sparse_error}"}
+        if dense_error:
+            return {"error": f"임베딩 생성 실패 (dense): {dense_error}"}
+        if sparse_error:
+            return {"error": f"임베딩 생성 실패 (sparse): {sparse_error}"}
+        return {"error": "임베딩 생성 실패"}
 
     # Hybrid 검색 (FAQ + 약관)
     client = get_qdrant_client()
@@ -161,7 +179,7 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
         query_filter = _build_filter(category, col)
 
         try:
-            if sparse_idx is not None and sparse_val is not None:
+            if dense is not None and sparse_idx is not None and sparse_val is not None:
                 results = client.query_points(
                     collection_name=col,
                     prefetch=[
@@ -180,13 +198,30 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
                     query=models.FusionQuery(fusion=models.Fusion.RRF),
                     limit=20,
                 ).points
-            else:
+            elif dense is not None:
                 # Sparse 모델 실패 시 Dense-only fallback
                 results = client.query_points(
                     collection_name=col,
                     query=dense,
                     using="",
                     filter=query_filter,
+                    limit=20,
+                ).points
+            else:
+                # Dense 비활성화(torch 미설치 등) 시 Sparse-only fallback
+                results = client.query_points(
+                    collection_name=col,
+                    prefetch=[
+                        models.Prefetch(
+                            query=models.SparseVector(
+                                indices=sparse_idx, values=sparse_val
+                            ),
+                            using="text-sparse",
+                            filter=query_filter,
+                            limit=20,
+                        )
+                    ],
+                    query=models.FusionQuery(fusion=models.Fusion.RRF),
                     limit=20,
                 ).points
 
