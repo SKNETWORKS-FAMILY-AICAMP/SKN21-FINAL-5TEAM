@@ -50,40 +50,40 @@ def cli(ctx, q):
 
 
 def default_eval_options(f):
-    f = click.option('--model', prompt='model name', help='gpt-3.5-turbo, gpt-4 ..etc')(f)
-    f = click.option('--input_path', prompt='input file path', help='golden set file name (*.jsonl)')(f)
+    f = click.option('--model', help='gpt-3.5-turbo, gpt-4 ..etc', default='gpt-3.5-turbo')(f)
+    f = click.option('--input_path', help='golden set file name (*.jsonl)')(f)
     # test option
-    f = click.option('--reset', prompt='recreate request file', help='reset request file', cls=DefaultResetPromptOptions)(f)
-    f = click.option('--sample', prompt='Run only 1 case.', help='run sample', cls=DefaultSamplePromptOptions)(f)
-    f = click.option('--debug', prompt='debug flag', help='debugging', cls=DefaultDebugPromptOptions)(f)
-    f = click.option('--only_exact', prompt='evaluate exact match', help='only exact match(True, False)', cls=DefaultOnlyExactPromptOptions)(f)
-    f = click.option('--is_batch', prompt='batch processing', help='batch processing(True, False)', cls=DefaultBatchPromptOptions)(f)
+    f = click.option('--reset', help='reset request file', cls=DefaultResetPromptOptions, default=False)(f)
+    f = click.option('--sample', help='run sample', cls=DefaultSamplePromptOptions, default=False)(f)
+    f = click.option('--debug', help='debugging', cls=DefaultDebugPromptOptions, default=False)(f)
+    f = click.option('--only_exact', help='only exact match(True, False)', cls=DefaultOnlyExactPromptOptions, default=False)(f)
+    f = click.option('--is_batch', help='batch processing(True, False)', cls=DefaultBatchPromptOptions, default=True)(f)
     f = click.option('--output_dir', help='custom output directory name', default=None)(f)
     f = click.option('--num_samples', help='limit the number of test cases', type=int, default=None)(f)
     # openai type
-    f = click.option('--api_key', prompt='model api key', help='api key', cls=DefaultApiKeyPromptOptions)(f)
-    f = click.option('--temperature', prompt='temperature', help='generate temperature', default=DEFAULT_TEMPERATURE)(f)
+    f = click.option('--api_key', help='api key', cls=DefaultApiKeyPromptOptions, default=None)(f)
+    f = click.option('--temperature', help='generate temperature', default=DEFAULT_TEMPERATURE)(f)
     # openai - hosting server type
-    f = click.option('--base_url', prompt='model api url', help='base url', cls=DefaultBaseUrlPromptOptions)(f)
-    f = click.option('--served_model_name', prompt='served model name', help='gpt-3.5-turbo, gpt-4 ..etc', cls=DefaultServedModelNamePromptOptions)(f)
+    f = click.option('--base_url', help='base url', cls=DefaultBaseUrlPromptOptions, default=None)(f)
+    f = click.option('--served_model_name', help='gpt-3.5-turbo, gpt-4 ..etc', cls=DefaultServedModelNamePromptOptions, default=None)(f)
     # gemini
-    f = click.option('--gcloud_project_id', prompt='gemini project id', help='google pid', cls=DefaultGPidPromptOptions)(f)
-    f = click.option('--gcloud_location', prompt='gemini location', help='google cloud location', cls=DefaultGLocPromptOptions)(f)
+    f = click.option('--gcloud_project_id', help='google pid', cls=DefaultGPidPromptOptions, default=None)(f)
+    f = click.option('--gcloud_location', help='google cloud location', cls=DefaultGLocPromptOptions, default=None)(f)
     # for local inference
-    f = click.option('--model_path', prompt='inhouse model path', help='model path in header', cls=DefaultModelPathPromptOptions)(f)
-    f = click.option('--serving_wait_timeout', prompt='serving_wait_timeout', help='--serving-wait-timeout', cls=DefaultServingWaitTimeoutPromptOptions)(f)
-    f = click.option('--tool_parser', prompt='tool_parser', help='--tool-call-parser (like functionary_llama_v3)', cls=DefaultToolParserPromptOptions)(f)
+    f = click.option('--model_path', help='model path in header', cls=DefaultModelPathPromptOptions, default=None)(f)
+    f = click.option('--serving_wait_timeout', help='--serving-wait-timeout', cls=DefaultServingWaitTimeoutPromptOptions, default=600)(f)
+    f = click.option('--tool_parser', help='--tool-call-parser (like functionary_llama_v3)', cls=DefaultToolParserPromptOptions, default=None)(f)
     return f
 
 
 def dialog_eval_options(f):
-    f = click.option('--system_prompt_path', prompt='system_prompt_path', help='system prompt file path')(f)
+    f = click.option('--system_prompt_path', help='system prompt file path', default=None)(f)
     return f
 
 
 def singlecall_eval_options(f):
-    f = click.option('--system_prompt_path', prompt='system_prompt_path', help='system prompt file path')(f)
-    f = click.option('--tools_type', prompt='tools type', help='tools_type = {exact, 4_random, 4_close, 8_random, 8_close}')(f)
+    f = click.option('--system_prompt_path', help='system prompt file path', default=None)(f)
+    f = click.option('--tools_type', help='tools_type = {exact, 4_random, 4_close, 8_random, 8_close}', default='exact')(f)
     return f
 
 
@@ -130,6 +130,75 @@ def get_eval_subtype(eval_type, input_path):
         return subtype
     else:
         return eval_type
+
+def normalize_tools(tools):
+    normalized = []
+    for t in tools or []:
+        # 이미 OpenAI function calling 형식이면 그대로 사용
+        if isinstance(t, dict) and "type" in t and "function" in t:
+            normalized.append(t)
+            continue
+
+        # 간단 포맷 {name, description, parameters} 대응
+        props = {}
+        required = []
+
+        raw_params = t.get("parameters", {}) if isinstance(t, dict) else {}
+
+        # parameters가 dict일 때만 변환
+        for k, v in raw_params.items():
+            # v가 이미 schema dict인 경우
+            if isinstance(v, dict):
+                param_type = v.get("type", "string")
+                props[k] = v
+            else:
+                # v가 "string", "integer" 같은 단순 타입 문자열인 경우
+                param_type = v
+                props[k] = {"type": param_type}
+
+            required.append(k)
+
+        normalized.append({
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "parameters": {
+                    "type": "object",
+                    "properties": props,
+                    "required": required
+                }
+            }
+        })
+    return normalized
+
+
+def normalize_request_tools(api_request_list):
+    """
+    api_request_list 내부의 각 request에서 tools를 정규화한다.
+    request 구조가 조금 달라도 최대한 안전하게 처리.
+    """
+    normalized_requests = []
+
+    for req in api_request_list:
+        if not isinstance(req, dict):
+            normalized_requests.append(req)
+            continue
+
+        new_req = dict(req)
+
+        # 가장 일반적인 경우: request payload 최상단에 tools 존재
+        if "tools" in new_req:
+            new_req["tools"] = normalize_tools(new_req["tools"])
+
+        # 혹시 body/message wrapper 안에 tools가 들어있는 구조도 대비
+        if "body" in new_req and isinstance(new_req["body"], dict) and "tools" in new_req["body"]:
+            new_req["body"] = dict(new_req["body"])
+            new_req["body"]["tools"] = normalize_tools(new_req["body"]["tools"])
+
+        normalized_requests.append(new_req)
+
+    return normalized_requests
 
 def run_evaluate(
         eval_type,
@@ -186,13 +255,16 @@ def run_evaluate(
 
         api_request_list = PayloadCreatorFactory.get_payload_creator(
             eval_type, temperature,
-           system_prompt_path # option arguments
+        system_prompt_path # option arguments
         ).create_payload(
             input_file_path=input_path,
             request_file_path=file_paths['request'],
             reset=reset,
             tools_type=tools_type # option arguments
         )
+
+        # 모델 호출 직전 tools 정규화
+        api_request_list = normalize_request_tools(api_request_list)
         
         if num_samples is not None:
             api_request_list = api_request_list[:num_samples]
