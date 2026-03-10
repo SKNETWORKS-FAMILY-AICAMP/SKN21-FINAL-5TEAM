@@ -26,3 +26,9 @@ ecommerce/platform/backend/app/static/chatbot_uploads/
 
 # Ignore Docker files
 .dockerignore
+
+# Food workspace artifacts
+food/backend/db.sqlite3
+food/backend/media/
+food/frontend/build/
+food/frontend/.env*
