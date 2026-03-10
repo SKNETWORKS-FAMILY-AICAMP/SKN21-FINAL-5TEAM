@@ -16,6 +16,7 @@ ENV_PATH = CUR_DIR.parents[4] / ".env"
 # .env 로드
 load_dotenv(ENV_PATH)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+arg_accuracy_dataset = None
 
 
 def validate_and_normalize_dataset(file_path):
@@ -103,14 +104,19 @@ def count_lines(path):
         return sum(1 for _ in f)
 
 
-def run_evaluation():
+def run_evaluation(mode):
     """Argument Accuracy 평가를 실행합니다."""
     print("🚀 FunctionChat-Bench 평가 파이프라인 시작 (Argument Accuracy)...")
     print(f"   벤치마크 디렉토리: {BENCH_DIR}")
     print(f"   결과 저장 디렉토리: {RESULTS_DIR}")
-
+    global  arg_accuracy_dataset
     # 데이터셋 경로
-    arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs.jsonl"
+    if mode == 1:
+        arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs.jsonl"
+    elif mode == 2:
+        arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs2.jsonl"
+    elif mode == 3:
+        arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs3.jsonl"
     arg_acc_count = count_lines(arg_accuracy_dataset)
 
     # 0. 데이터셋 검증
@@ -129,8 +135,6 @@ def run_evaluation():
         "gpt-4o-mini",
         "--input_path",
         f"data/{arg_accuracy_dataset.name}",
-        "--system_prompt_path",
-        "data/system_prompt.txt",
         "--temperature",
         "0.0",
         "--api_key",
@@ -161,6 +165,7 @@ def run_evaluation():
 
 def generate_markdown_report(results):
     """평가 결과를 Markdown 보고서로 생성합니다."""
+    global arg_accuracy_dataset
     # 경로 구조: output/arg_acc/{model_name}/...
     single_score_file = (
         BENCH_DIR
@@ -171,7 +176,6 @@ def generate_markdown_report(results):
     )
 
     # 데이터셋 경로 및 카운트
-    arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs.jsonl"
     arg_acc_count = count_lines(arg_accuracy_dataset)
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -194,7 +198,7 @@ def generate_markdown_report(results):
 ### 1. Argument Accuracy (Dialog)
 - **평가 목적**: 챗봇이 멀티턴 대화에서 필요한 인자(Argument)를 얼마나 정확하게 추출하고 올바른 Tool을 호출하는지 측정합니다.
 - **핵심 지표**: 필수 인자 추출 정확도, Tool 선택 정확성, enum 값 범위 준수 여부를 검증합니다.
-- **데이터셋**: `my_eval_arg_accuracy_dialogs.jsonl` ({arg_acc_count}개 다이얼로그)
+- **데이터셋**: `{arg_accuracy_dataset}` ({arg_acc_count}개 다이얼로그)
 
 """
 
@@ -225,7 +229,7 @@ def generate_markdown_report(results):
         md_content += "## 📊 Argument Accuracy (Dialog)\n- 결과 파일을 찾을 수 없습니다.\n\n"
 
     md_content += """---
-*본 보고서는 `run_eval_pipeline.py`에 의해 자동으로 생성되었습니다.*
+*본 보고서는 `run_evaluate.py`에 의해 자동으로 생성되었습니다.*
 """
 
     # 폴더 생성 및 저장
@@ -242,6 +246,24 @@ if __name__ == "__main__":
         print("❌ OPENAI_API_KEY가 설정되지 않았습니다. .env 파일을 확인해주세요.")
         sys.exit(1)
 
-    results = run_evaluation()
+    # 명령행 인자에서 모드(1, 2, 3) 파싱
+    if len(sys.argv) < 2:
+        print("⚠️ 사용법: python run_evaluate.py [1|2|3]")
+        print("   1: my_eval_arg_accuracy_dialogs.jsonl")
+        print("   2: my_eval_arg_accuracy_dialogs2.jsonl")
+        print("   3: my_eval_arg_accuracy_dialogs3.jsonl")
+        sys.exit(1)
+    
+    try:
+        mode = int(sys.argv[1])
+    except ValueError:
+        print("❌ 모드는 숫자(1, 2, 3)여야 합니다.")
+        sys.exit(1)
+
+    if mode not in [1, 2, 3]:
+        print("❌ 올바른 모드(1, 2, 3)를 입력해주세요.")
+        sys.exit(1)
+
+    results = run_evaluation(mode)
     if results:
         generate_markdown_report(results)
