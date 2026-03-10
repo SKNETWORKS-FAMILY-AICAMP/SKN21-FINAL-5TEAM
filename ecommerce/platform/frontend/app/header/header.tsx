@@ -98,7 +98,7 @@ export default function Header() {
               ☰
             </button>
             <Link href="/admin/user-history" className={styles.logo}>
-              MOYEO
+              Yaam
             </Link>
           </div>
 
