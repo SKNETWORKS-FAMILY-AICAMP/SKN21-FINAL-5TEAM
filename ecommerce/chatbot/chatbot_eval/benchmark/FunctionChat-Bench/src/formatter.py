@@ -1,5 +1,5 @@
 import json
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Union
 from pydantic import BaseModel, root_validator
 
 PASS = 'pass'
@@ -51,6 +51,18 @@ class RequestFormatter(BaseModel):
     tool_choice: str
     ground_truth: dict
     acceptable_arguments: Optional[str] = None
+    user_id: Optional[int] = None
+    scenario_name: Optional[str] = None
+    scenario_id: Optional[Union[str, int]] = None
+
+    class Config:
+        extra = "allow"
+
+    @root_validator(pre=True)
+    def handle_messages_alias(cls, values):
+        if 'messages' not in values and 'dialogue' in values:
+            values['messages'] = values['dialogue']
+        return values
 
     @root_validator(pre=True)
     def ensure_acceptable_arguments(cls, values):
@@ -94,7 +106,13 @@ class RequestFormatter(BaseModel):
         return self
 
     def to_dict(self):
-        return self.dict()
+        d = self.dict()
+        # Explicitly ensure scenario info is included for evaluation context
+        if hasattr(self, 'scenario_name'):
+            d['scenario_name'] = self.scenario_name
+        if hasattr(self, 'scenario_id'):
+            d['scenario_id'] = self.scenario_id
+        return d
 
 
 class CommonRequestFormatter(RequestFormatter):
@@ -104,6 +122,8 @@ class CommonRequestFormatter(RequestFormatter):
 
 class DialogRequestFormatter(RequestFormatter):
     type_of_output: str
+    scenario_name: Optional[str] = None
+    scenario_id: Optional[Union[str, int]] = None
 
 
 class SingleCallRequestFormatter(RequestFormatter):
@@ -171,7 +191,8 @@ class CommonResponseFormatter(ResponseFormatter):
         acceptable_arguments = json.dumps(model_request['acceptable_arguments'], ensure_ascii=False)
         model_output = json.dumps(model_response, ensure_ascii=False)
         reasoning = json.dumps({'reasoning': evaluate_response['choices'][0]['message']['content']}, ensure_ascii=False)
-        messages = json.dumps(model_request['messages'], ensure_ascii=False)
+        messages_list = model_request.get('messages', model_request.get('dialogue', []))
+        messages = json.dumps(messages_list, ensure_ascii=False)
         tools = json.dumps(model_request['tools'], ensure_ascii=False)
         values['report_arguments'] = {
             'serial_num': serial_num,
@@ -205,7 +226,8 @@ class SingleCallResponseFormatter(ResponseFormatter):
         acceptable_arguments = json.dumps(model_request['acceptable_arguments'], ensure_ascii=False)
         model_output = json.dumps(model_response, ensure_ascii=False)
         reasoning = json.dumps({'reasoning': evaluate_response['choices'][0]['message']['content']}, ensure_ascii=False)
-        messages = json.dumps(model_request['messages'], ensure_ascii=False)
+        messages_list = model_request.get('messages', model_request.get('dialogue', []))
+        messages = json.dumps(messages_list, ensure_ascii=False)
         tools = json.dumps(model_request['tools'], ensure_ascii=False)
         values['report_arguments'] = {
             'serial_num': serial_num,
@@ -238,7 +260,8 @@ class DialogResponseFormatter(ResponseFormatter):
         acceptable_arguments = json.dumps(model_request['acceptable_arguments'], ensure_ascii=False)
         model_output = json.dumps(model_response, ensure_ascii=False)
         reasoning = json.dumps({'reasoning': evaluate_response['choices'][0]['message']['content']}, ensure_ascii=False)
-        messages = json.dumps(model_request['messages'], ensure_ascii=False)
+        messages_list = model_request.get('messages', model_request.get('dialogue', []))
+        messages = json.dumps(messages_list, ensure_ascii=False)
         tools = json.dumps(model_request['tools'], ensure_ascii=False)
         values['report_arguments'] = {
             'serial_num': serial_num,
