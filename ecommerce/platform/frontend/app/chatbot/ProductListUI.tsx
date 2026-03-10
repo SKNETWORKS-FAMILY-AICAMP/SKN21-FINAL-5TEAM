@@ -28,11 +28,11 @@ type ProductOption = {
 };
 
 type ProductListUIProps = {
-  products: UiProduct[];
+  products?: UiProduct[];
   message?: string;
 };
 
-export default function ProductListUI({ products, message }: ProductListUIProps) {
+export default function ProductListUI({ products = [], message }: ProductListUIProps) {
   const router = useRouter();
   const { isLoggedIn } = useAuth();
   

@@ -6,6 +6,8 @@ import styles from './header.module.css';
 import Link from 'next/link';
 import { useAuth } from '../authcontext';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
+
 const ADMIN_MENU = [
   { title: '유저 히스토리', href: '/admin/user-history' },
   { title: '배송정보 작성', href: '/admin/shipping' },
@@ -45,9 +47,7 @@ export default function Header() {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const res = await fetch(
-          'http://localhost:8000/products/categories/menu'
-        );
+        const res = await fetch(`${API_BASE}/products/categories/menu`);
 
         if (!res.ok) {
           throw new Error('카테고리 응답 실패');
