@@ -11,10 +11,6 @@ const Header = () => (
         <Link to="/" style={styles.logo}>
           Yaam
         </Link>
-        <span style={styles.divider}>|</span>
-        <Link to="/used" style={styles.logo}>
-          USED
-        </Link>
       </div>
     </div>
     <div style={styles.searchWrapper}>
@@ -25,14 +21,11 @@ const Header = () => (
       />
     </div>
     <nav style={styles.right}>
-      <Link to="/" style={styles.link}>
+      <Link to="/orders" style={styles.link}>
         상품목록
       </Link>
       <Link to="/mypage" style={styles.link}>
         마이
-      </Link>
-      <Link to="/cart" style={styles.link}>
-        장바구니
       </Link>
       <Link to="/login" style={styles.link}>
         로그인

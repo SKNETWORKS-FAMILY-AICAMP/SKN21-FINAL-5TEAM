@@ -4,6 +4,7 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path("api/products/", include("products.urls")),
+    path("api/orders/", include("orders.urls")),
 ]
 
 if settings.DEBUG:

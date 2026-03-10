@@ -4,10 +4,13 @@ import styles from "./products.module.css";
 
 const PRODUCTS_ENDPOINT = "/api/products/";
 
+const PAGE_SIZE = 8;
+
 const Products = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     let isMounted = true;
@@ -24,6 +27,7 @@ const Products = () => {
       .then((data) => {
         if (isMounted) {
           setProducts(data);
+          setPage(1);
         }
       })
       .catch((err) => {
@@ -107,9 +111,12 @@ const Products = () => {
           )}
 
           {!loading && !error && products.length > 0 && (
-            <div className={styles.grid}>
-              {products.map((product) => (
-                <article key={product.id} className={styles.card}>
+            <>
+              <div className={styles.grid}>
+                {products
+                  .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+                  .map((product) => (
+              <article key={product.id} className={styles.card}>
                   <div className={styles.imageWrapper}>
                     <img
                       src={
@@ -147,10 +154,82 @@ const Products = () => {
                   </div>
                 </article>
               ))}
-            </div>
+              </div>
+              <Pagination
+                currentPage={page}
+                totalItems={products.length}
+                pageSize={PAGE_SIZE}
+                onChange={setPage}
+              />
+            </>
           )}
         </section>
       </div>
+    </div>
+  );
+};
+
+const Pagination = ({ currentPage, totalItems, pageSize, onChange }) => {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const maxButtons = 10;
+
+  if (totalPages === 1) return null;
+
+  const goToPage = (newPage) => {
+    const clamped = Math.min(Math.max(newPage, 1), totalPages);
+    onChange(clamped);
+  };
+
+  let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+  let endPage = startPage + maxButtons - 1;
+  if (endPage > totalPages) {
+    endPage = totalPages;
+    startPage = Math.max(1, endPage - maxButtons + 1);
+  }
+
+  const visiblePages = [];
+  for (let pageNum = startPage; pageNum <= endPage; pageNum += 1) {
+    visiblePages.push(pageNum);
+  }
+
+  return (
+    <div className={styles.pagination}>
+      <button type="button" onClick={() => goToPage(1)} disabled={currentPage === 1}>
+        &lt;&lt;
+      </button>
+      <button
+        type="button"
+        onClick={() => goToPage(currentPage - 1)}
+        disabled={currentPage === 1}
+      >
+        &lt;
+      </button>
+      {visiblePages.map((pageNum) => (
+        <button
+          key={pageNum}
+          type="button"
+          className={
+            currentPage === pageNum ? styles.pageButtonActive : styles.pageButton
+          }
+          onClick={() => goToPage(pageNum)}
+        >
+          {pageNum}
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={() => goToPage(currentPage + 1)}
+        disabled={currentPage === totalPages}
+      >
+        &gt;
+      </button>
+      <button
+        type="button"
+        onClick={() => goToPage(totalPages)}
+        disabled={currentPage === totalPages}
+      >
+        &gt;&gt;
+      </button>
     </div>
   );
 };

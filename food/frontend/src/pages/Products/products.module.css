@@ -219,6 +219,40 @@
   filter: brightness(1.1);
 }
 
+.pagination {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pagination button {
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #d4d4d4;
+  background-color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pageButtonActive {
+  border-color: #00a896;
+  background-color: #00a896;
+  color: #fff;
+}
+
+.pageButton {
+  border-color: #d4d4d4;
+}
+
 @media (max-width: 960px) {
   .page {
     grid-template-columns: 1fr;
