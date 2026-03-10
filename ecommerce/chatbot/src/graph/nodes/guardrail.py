@@ -28,25 +28,8 @@ logger = logging.getLogger(__name__)
 
 _GUARDRAIL_PIPELINE: Pipeline | None = None
 
-# 서비스 허용 레이블 (모델의 실제 클래스명 기준)
-# 모델 로드 후 실제 labels 확인 필요. 기본값은 아래와 같이 설정.
-_ALLOWED_LABELS: set[str] = {
-    "ecommerce",        # 이커머스 관련 질문
-    "customer_service", # 고객 서비스
-    "product",          # 상품 문의
-    "order",            # 주문 관련
-    "delivery",         # 배송 관련
-    "general",          # 일반 대화 (GENERAL_CHAT 경로로 처리)
-}
-
-# 서비스와 무관하거나 유해한 레이블
-_BLOCKED_LABELS: set[str] = {
-    "hate",
-    "sexual",
-    "violence",
-    "politics",
-    "spam",
-}
+# 허용 레이블: 정상 발화만 허용
+_SAFE_LABEL: str = "safe"
 
 # 분류 신뢰도 임계값 (이 값 미만이면 통과로 처리 — 모호한 입력은 허용)
 _CONFIDENCE_THRESHOLD: float = 0.9
@@ -110,12 +93,18 @@ def guardrail_node(state: GlobalAgentState) -> dict:
 
         logger.debug(f"[Guardrail] label={label}, score={score:.3f}, text='{user_text[:50]}'")
 
-        # 신뢰도가 임계값 미만이면 모호한 입력 → 통과
+        # 신뢰도가 임계값 미만이면 모호한 입력 → 차단 (안전 우선)
         if score < _CONFIDENCE_THRESHOLD:
-            return {"guardrail_passed": True}
+            blocked_msg = AIMessage(
+                content="죄송합니다. 해당 내용은 서비스 정책에 따라 답변이 어렵습니다. 쇼핑 관련 문의 사항이 있으시면 말씀해 주세요."
+            )
+            return {
+                "guardrail_passed": False,
+                "messages": [blocked_msg],
+            }
 
-        # 명시적 차단 레이블
-        if label in _BLOCKED_LABELS:
+        # SAFE(정상 발화) 외 모든 클래스 차단
+        if label != _SAFE_LABEL:
             blocked_msg = AIMessage(
                 content="죄송합니다. 해당 내용은 서비스 정책에 따라 답변이 어렵습니다. 쇼핑 관련 문의 사항이 있으시면 말씀해 주세요."
             )
