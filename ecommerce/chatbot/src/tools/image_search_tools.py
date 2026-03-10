@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from io import BytesIO
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -105,6 +107,13 @@ def _combine_query_embeddings(
 _CLIP_RESOURCES: dict[str, object] = {}
 
 
+@dataclass
+class SearchHit:
+    product_id: int
+    dense_score: float
+    payload: dict
+
+
 def _get_clip_resources(device: torch.device) -> Tuple[CLIPProcessor, CLIPModel]:
     _ensure_clip_runtime()
     key = f"clip::{device.type}"
@@ -124,9 +133,11 @@ def preload_clip_resources() -> None:
 def _search_qdrant_by_embedding(
     embedding: torch.Tensor,
     top_k: int,
+    candidate_k: int,
     search_mode: str = "similar",
-) -> List[int]:
+) -> List[SearchHit]:
     bounded_top_k = max(1, min(20, int(top_k)))
+    bounded_candidate_k = max(bounded_top_k, min(300, int(candidate_k)))
     query_vector = embedding.tolist()
 
     if search_mode.lower() == "opposite":
@@ -137,12 +148,11 @@ def _search_qdrant_by_embedding(
         collection_name=settings.COLLECTION_CLIP_IMAGE,
         query=query_vector,
         using="",
-        limit=bounded_top_k,
+        limit=bounded_candidate_k,
         with_payload=True,
     )
 
-    hits: List[int] = []
-    seen: set[int] = set()
+    hits_by_product: dict[int, SearchHit] = {}
     for point in result.points:
         payload = point.payload or {}
         raw_id = payload.get("product_id") or payload.get("id")
@@ -152,11 +162,140 @@ def _search_qdrant_by_embedding(
             product_id = int(raw_id)
         except Exception:
             continue
-        if product_id in seen:
+        score = float(getattr(point, "score", 0.0) or 0.0)
+        existing = hits_by_product.get(product_id)
+        if existing is not None and existing.dense_score >= score:
             continue
-        seen.add(product_id)
-        hits.append(product_id)
-    return hits
+        hits_by_product[product_id] = SearchHit(
+            product_id=product_id,
+            dense_score=score,
+            payload=dict(payload),
+        )
+
+    sorted_hits = sorted(hits_by_product.values(), key=lambda h: h.dense_score, reverse=True)
+    return sorted_hits
+
+
+def _normalize_dense_scores(hits: List[SearchHit]) -> dict[int, float]:
+    if not hits:
+        return {}
+    scores = [h.dense_score for h in hits]
+    min_score = min(scores)
+    max_score = max(scores)
+    if max_score - min_score < 1e-9:
+        return {h.product_id: 1.0 for h in hits}
+    return {
+        h.product_id: (h.dense_score - min_score) / (max_score - min_score)
+        for h in hits
+    }
+
+
+def _extract_query_tokens(query: str) -> set[str]:
+    text = (query or "").lower().strip()
+    if not text:
+        return set()
+    tokens = re.findall(r"[a-z0-9가-힣]+", text)
+    return {t for t in tokens if len(t) >= 2}
+
+
+def _payload_text(payload: dict) -> str:
+    fields = [
+        payload.get("product_display_name") or payload.get("name") or "",
+        payload.get("article_type") or "",
+        payload.get("sub_category") or "",
+        payload.get("usage") or "",
+        payload.get("season") or "",
+        payload.get("base_colour") or "",
+        payload.get("gender") or "",
+    ]
+    return " ".join(str(v).lower() for v in fields if v)
+
+
+def _compute_soft_keyword_boost(query_text: str | None, payload: dict) -> float:
+    query = (query_text or "").strip()
+    if not query:
+        return 0.0
+
+    q_tokens = _extract_query_tokens(query)
+    if not q_tokens:
+        return 0.0
+
+    text = _payload_text(payload)
+    if not text:
+        return 0.0
+
+    token_hits = sum(1 for t in q_tokens if t in text)
+    token_boost = min(0.8, token_hits * 0.16)
+
+    query_lower = query.lower()
+    explicit_boost = 0.0
+
+    usage_value = str(payload.get("usage") or "").lower()
+    season_value = str(payload.get("season") or "").lower()
+    color_value = str(payload.get("base_colour") or "").lower()
+
+    usage_synonyms = {
+        "party": ["party", "파티", "데이트", "모임"],
+        "sports": ["sports", "sport", "운동", "스포츠", "헬스"],
+        "formal": ["formal", "포멀", "정장", "오피스"],
+        "casual": ["casual", "캐주얼", "데일리"],
+        "ethnic": ["ethnic", "전통", "한복", "에스닉"],
+    }
+    season_synonyms = {
+        "summer": ["summer", "여름", "썸머"],
+        "winter": ["winter", "겨울"],
+        "spring": ["spring", "봄"],
+        "fall": ["fall", "autumn", "가을"],
+    }
+    color_synonyms = {
+        "black": ["black", "블랙", "검정", "검은"],
+        "white": ["white", "화이트", "흰", "하얀"],
+        "blue": ["blue", "블루", "파랑", "네이비"],
+        "red": ["red", "레드", "빨강"],
+    }
+
+    for canonical, variants in usage_synonyms.items():
+        if any(v in query_lower for v in variants) and canonical in usage_value:
+            explicit_boost += 0.12
+
+    for canonical, variants in season_synonyms.items():
+        if any(v in query_lower for v in variants) and canonical in season_value:
+            explicit_boost += 0.10
+
+    for canonical, variants in color_synonyms.items():
+        if any(v in query_lower for v in variants) and canonical in color_value:
+            explicit_boost += 0.08
+
+    return min(1.0, token_boost + explicit_boost)
+
+
+def _rerank_hits_with_soft_boost(
+    hits: List[SearchHit],
+    query_text: str | None,
+    top_k: int,
+    dense_weight: float = 0.8,
+    boost_weight: float = 0.2,
+) -> List[int]:
+    bounded_top_k = max(1, min(20, int(top_k)))
+    if not hits:
+        return []
+
+    query = (query_text or "").strip()
+    if not query:
+        return [h.product_id for h in hits[:bounded_top_k]]
+
+    dense_norm = _normalize_dense_scores(hits)
+    alpha = min(0.95, max(0.55, float(dense_weight)))
+    beta = min(0.45, max(0.05, float(boost_weight)))
+
+    scored: list[tuple[float, int]] = []
+    for hit in hits:
+        boost = _compute_soft_keyword_boost(query, hit.payload)
+        final_score = alpha * dense_norm.get(hit.product_id, 0.0) + beta * boost
+        scored.append((final_score, hit.product_id))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [pid for _, pid in scored[:bounded_top_k]]
 
 
 def _resolve_device() -> torch.device:
@@ -195,7 +334,20 @@ def _search_clip(
         text_embedding=text_embedding,
         text_weight=text_weight,
     )
-    return _search_qdrant_by_embedding(query_embedding, top_k=top_k, search_mode=search_mode)
+    candidate_k = max(top_k * 10, 80)
+    hits = _search_qdrant_by_embedding(
+        query_embedding,
+        top_k=top_k,
+        candidate_k=candidate_k,
+        search_mode=search_mode,
+    )
+    return _rerank_hits_with_soft_boost(
+        hits=hits,
+        query_text=text,
+        top_k=top_k,
+        dense_weight=0.8,
+        boost_weight=0.2,
+    )
 
 
 def search_similar_images(image_path: str, top_k: int = 5) -> List[int]:
