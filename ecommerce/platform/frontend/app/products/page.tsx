@@ -1,13 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import Image from 'next/image';
 import styles from './product.module.css';
 
 const PRODUCTS_PER_PAGE = 10;
 const PAGE_GROUP_SIZE = 10;
-const API_BASE = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
 type Category = {
   id: number;
@@ -31,12 +30,17 @@ type ProductOption = {
   is_active: boolean;
 };
 
+type ProductImage = {
+  image_url: string;
+  is_primary: boolean;
+};
+
 type User = {
   id: number;
   email: string;
 };
 
-export default function ProductsPage() {
+function ProductsPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -46,6 +50,7 @@ export default function ProductsPage() {
   const categoryId = categoryIdParam ? Number(categoryIdParam) : null;
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [imageMap, setImageMap] = useState<Record<number, string>>({});
   const [categories, setCategories] = useState<Category[]>([]);
   const [subCategories, setSubCategories] = useState<Category[]>([]);
   const [activeSubId, setActiveSubId] = useState<number | null>(null);
@@ -308,6 +313,34 @@ export default function ProductsPage() {
     return products.slice(start, start + PRODUCTS_PER_PAGE);
   }, [products, currentPage]);
 
+  useEffect(() => {
+    if (!API_BASE || currentProducts.length === 0) return;
+
+    const fetchImages = async () => {
+      const nextMap: Record<number, string> = {};
+      await Promise.all(
+        currentProducts.map(async (product) => {
+          try {
+            const res = await fetch(`${API_BASE}/products/images/new/${product.id}`);
+            if (!res.ok) return;
+            const images: ProductImage[] = await res.json();
+            const primary = images.find((img) => img.is_primary) || images[0];
+            if (primary?.image_url) {
+              nextMap[product.id] = primary.image_url;
+            }
+          } catch {
+            // ignore image fetch failure and fallback to static path
+          }
+        })
+      );
+      if (Object.keys(nextMap).length > 0) {
+        setImageMap((prev) => ({ ...prev, ...nextMap }));
+      }
+    };
+
+    fetchImages();
+  }, [currentProducts]);
+
   return (
     <main className={styles.main}>
       <header>
@@ -353,12 +386,11 @@ export default function ProductsPage() {
                 }
               >
                 <div className={styles.productImage}>
-                  <Image
-                    src={`/products/${product.id}.jpg`}
+                  <img
+                    src={imageMap[product.id] || `/products/${product.id}.jpg`}
                     alt={product.name}
-                    fill
-                    sizes="(max-width: 1200px) 20vw, 240px"
-                    style={{ objectFit: 'cover' }}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    loading="lazy"
                   />
                 </div>
 
@@ -515,5 +547,13 @@ export default function ProductsPage() {
         </button>
       </nav>
     </main>
+  );
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ProductsPageContent />
+    </Suspense>
   );
 }

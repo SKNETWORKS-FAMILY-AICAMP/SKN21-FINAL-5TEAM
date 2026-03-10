@@ -24,6 +24,7 @@ generate_arg_accuracy_dialog_dataset.py
 - FunctionChat-Bench JSONL 포맷으로 저장됩니다.
 """
 
+
 import json
 import os
 import sys
@@ -40,6 +41,25 @@ if str(current_dir) not in sys.path:
 from paths import DATA_DIR, PROJECT_ROOT, RAW_DIR, FASHION_CSV, CLOTHES_CSV, TOOLS_PATH
 
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
+
+# 프로젝트 루트를 sys.path에 추가 (backend 모듈 import용)
+sys.path.insert(0, str(PROJECT_ROOT))
+
+
+# models, crud, db 등 명시적 import (실제 경로에 맞게 조정)
+from ecommerce.platform.backend.app.database import SessionLocal
+from ecommerce.platform.backend.app.router.users.models import User
+from ecommerce.platform.backend.app.router.orders.models import Order
+from ecommerce.platform.backend.app.router.shipping.models import ShippingInfo
+from ecommerce.platform.backend.app.router.points.models import PointHistory
+from ecommerce.platform.backend.app.router.user_history.models import UserHistory
+from ecommerce.platform.backend.app.router.carts.models import Cart
+from ecommerce.platform.backend.app.router.payments.models import Payment
+from ecommerce.platform.backend.app.router.products.models import Product
+from ecommerce.platform.backend.app.router.reviews.models import Review
+# ... 필요한 모든 관계 모델 import (추가 필요시 아래에 계속 추가)
+from ecommerce.platform.backend.app.router.users.crud import get_user_by_email
+from ecommerce.platform.backend.app.router.orders.crud import get_orders_by_user_id
 
 OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialogs.jsonl"
 
@@ -75,46 +95,36 @@ def load_eval_users() -> list:
 
 def get_real_orders_with_status(user_email: str) -> tuple[int, list[dict]]:
     """
-    user_email 사용자의 실제 주문 목록과 user_id를 DB에서 가져옵니다.
+    user_email 사용자의 실제 주문 목록과 user_id를 ORM 세션에서 가져옵니다.
     각 주문의 order_number, status, shipping_fee, shipping_info(delivered_at) 포함.
     """
     try:
-        from sqlalchemy import create_engine, text
-        db_user = os.getenv("DB_USER")
-        db_pass = os.getenv("DB_PASSWORD")
-        db_host = os.getenv("DB_HOST", "localhost")
-        db_port = os.getenv("DB_PORT", "3306")
-        db_name = os.getenv("DB_NAME")
-        db_url = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
-        engine = create_engine(db_url)
-        with engine.connect() as conn:
-            user_row = conn.execute(text(f"SELECT id FROM users WHERE email = '{user_email}'")).fetchone()
-            user_id = user_row[0] if user_row else 1
-
-            rows = conn.execute(text(
-                "SELECT o.order_number, o.status, o.shipping_fee, si.delivered_at "
-                "FROM orders o "
-                "LEFT JOIN shippinginfo si ON si.order_id = o.id "
-                f"WHERE o.user_id = {user_id} AND o.order_number LIKE 'ORD-eval_dataset-%' "
-                "LIMIT 50"
-            )).fetchall()
-        orders = []
         from datetime import datetime
-        for r in rows:
-            delivered_at = r[3]
+        session = SessionLocal()
+        user = get_user_by_email(session, user_email)
+        user_id = user.id if user else 1
+
+        # crud 함수로 주문 목록 조회 (limit 50)
+        orders, _ = get_orders_by_user_id(session, user_id, limit=50)
+        result = []
+        for o in orders:
+            delivered_at = None
+            if hasattr(o, "shipping_info") and o.shipping_info:
+                delivered_at = o.shipping_info.delivered_at
             days_since = None
             if delivered_at:
                 days_since = (datetime.now() - delivered_at).days
-            orders.append({
-                "order_id": str(r[0]),
-                "status": str(r[1]),
-                "shipping_fee": float(r[2]) if r[2] else 0.0,
+            result.append({
+                "order_id": o.order_number,
+                "status": o.status,
+                "shipping_fee": o.shipping_fee or 0.0,
                 "days_since_delivery": days_since,
             })
-        print(f"[INFO] 실제 주문 조회 완료: {[o['order_id'] + '(' + o['status'] + ')' for o in orders]}")
-        return user_id, orders
+        session.close()
+        print(f"[INFO] 실제 주문 조회 완료: {[o['order_id'] + '(' + o['status'] + ')' for o in result]}")
+        return user_id, result
     except Exception as e:
-        print(f"[WARN] DB 조회 실패: {e}")
+        print(f"[WARN] ORM DB 조회 실패: {e}")
     # Fallback
     return 1, [
         {"order_id": "ORD-FALLBACK-0001", "status": "paid",      "shipping_fee": 3000.0, "days_since_delivery": None},
@@ -224,17 +234,17 @@ ORDER_STATUS_POLICY = """
 
 # ─── 시나리오 정의 (11개) ──────────────────────────────────────────────────────
 SCENARIOS = [
-    {"id": 1,  "name": "주문취소 (가능: PREPARING)", "action": "cancel",   "possible": True,  "required_status": ["preparing", "paid"], "tools": ["get_user_orders", "cancel_order"],            "rag_policy": "optional",  "ux_flow": "select"},
-    {"id": 2,  "name": "환불 (가능: DELIVERED)",    "action": "refund",   "possible": True,  "required_status": ["delivered"],        "tools": ["get_user_orders", "check_refund_eligibility"], "rag_policy": "required",  "ux_flow": "select"},
-    {"id": 3,  "name": "교환 (가능: DELIVERED 유료)", "action": "exchange", "possible": True,  "required_status": ["delivered"],        "tools": ["get_user_orders", "check_exchange_eligibility"], "rag_policy": "optional",  "ux_flow": "select"},
-    {"id": 4,  "name": "주문 내역 조회 (주문번호 없음)", "action": "query",   "possible": True,  "required_status": [],                   "tools": ["get_user_orders"],          "rag_policy": "forbidden", "ux_flow": "direct"},
-    {"id": 5,  "name": "주문 내역 조회 (주문번호 있음)", "action": "query",   "possible": True,  "required_status": [],                   "tools": ["get_order_details"],        "rag_policy": "forbidden", "ux_flow": "direct"},
-    {"id": 6,  "name": "배송 현황 조회",             "action": "query",    "possible": True,  "required_status": ["shipped"],          "tools": ["get_user_orders", "get_shipping_details"],    "rag_policy": "forbidden", "ux_flow": "select"},
-    {"id": 7,  "name": "리뷰 등록",                  "action": "review",   "possible": True,  "required_status": ["delivered"],        "tools": ["get_user_orders", "create_review"],           "rag_policy": "forbidden", "ux_flow": "select"},
-    {"id": 8, "name": "교환 (불가: CANCELLED)",   "action": "exchange", "possible": False, "required_status": ["cancelled"],        "tools": ["get_user_orders", "get_order_details"],       "rag_policy": "optional",  "ux_flow": "select"},
-    {"id": 9, "name": "FAQ 검색 (배송 정책)",         "action": "faq",      "possible": True,  "required_status": [],                   "tools": ["search_knowledge_base"],    "rag_policy": "required",  "ux_flow": "direct"},
-    {"id": 10, "name": "FAQ 검색 (취소/반품 정책)",    "action": "faq",      "possible": True,  "required_status": [],                   "tools": ["search_knowledge_base"],    "rag_policy": "required",  "ux_flow": "direct"},
-    {"id": 11, "name": "결제 수단 변경",               "action": "other",    "possible": True,  "required_status": ["paid", "preparing"],"tools": ["get_user_orders", "update_payment_method"],   "rag_policy": "optional",  "ux_flow": "select"},
+    {"id": 1, "name": "주문 취소", "action": "cancel", "possible": True, "required_status": ["preparing", "paid"], "tools": ["get_user_orders", "cancel_order"], "rag_policy": "optional", "ux_flow": "select"},
+    {"id": 2, "name": "환불 신청", "action": "refund", "possible": True, "required_status": ["delivered", "shipped"], "tools": ["get_user_orders", "check_refund_eligibility", "register_return_request"], "rag_policy": "required", "ux_flow": "select"},
+    {"id": 3, "name": "교환 신청", "action": "exchange", "possible": True, "required_status": ["delivered", "shipped", "paid", "preparing"], "tools": ["get_user_orders", "check_exchange_eligibility", "register_exchange_request"], "rag_policy": "optional", "ux_flow": "select"},
+    {"id": 4, "name": "주문 내역 조회 (주문번호 없음)", "action": "order_query_no_id", "possible": True, "required_status": [], "tools": ["get_user_orders"], "rag_policy": "forbidden", "ux_flow": "direct"},
+    {"id": 5, "name": "주문 내역 조회 (주문번호 있음)", "action": "order_query_with_id", "possible": True, "required_status": [], "tools": ["get_order_details"], "rag_policy": "forbidden", "ux_flow": "direct"},
+    {"id": 6, "name": "자연어 키워드 검색", "action": "keyword_search", "possible": True, "required_status": [], "tools": ["search_knowledge_base"], "rag_policy": "required", "ux_flow": "direct"},
+    {"id": 7, "name": "필터 기반 추천", "action": "filter_recommend", "possible": True, "required_status": [], "tools": ["get_user_orders", "recommend_products_by_filter"], "rag_policy": "optional", "ux_flow": "select"},
+    {"id": 8, "name": "이미지 검색", "action": "image_search", "possible": True, "required_status": [], "tools": ["search_products_by_image"], "rag_policy": "optional", "ux_flow": "direct"},
+    {"id": 9, "name": "중고 판매 신청 + 수거 신청", "action": "resale_and_pickup", "possible": True, "required_status": ["delivered"], "tools": ["register_resale_request", "register_pickup_request"], "rag_policy": "optional", "ux_flow": "select"},
+    {"id": 10, "name": "리뷰 초안 작성 + 리뷰 등록", "action": "review_draft_and_register", "possible": True, "required_status": ["delivered"], "tools": ["create_review_draft", "create_review"], "rag_policy": "optional", "ux_flow": "select"},
+    {"id": 11, "name": "상품권 등록", "action": "register_giftcard", "possible": True, "required_status": [], "tools": ["register_giftcard"], "rag_policy": "optional", "ux_flow": "direct"},
 ]
 
 # ─── acceptable_arguments ─────────────────────────────────────────────────────

@@ -792,6 +792,8 @@ export default function ChatbotFab() {
       let accumulatedText = '';
       let newState = null;
       let sseBuffer = '';
+      let metadataUiActionHandled = false;
+      let hasUiActionEvent = false;
 
       if (reader) {
         while (true) {
@@ -822,6 +824,29 @@ export default function ChatbotFab() {
             if (data.type === 'metadata') {
               // 상태 저장
               newState = data.state;
+
+              // 백엔드가 metadata로 UI 액션만 전달하는 경우도 처리
+              if (
+                !hasUiActionEvent &&
+                !metadataUiActionHandled &&
+                data.ui_action_required === 'show_product_list'
+              ) {
+                const products = data.state?.search_context?.retrieved_products;
+                if (Array.isArray(products) && products.length > 0) {
+                  metadataUiActionHandled = true;
+                  setIsLoading(false);
+                  setStatusMessage(null);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: 'bot',
+                      type: 'product_list',
+                      message: '비슷한 상품을 찾아드렸습니다.',
+                      ui_data: products,
+                    },
+                  ]);
+                }
+              }
             } else if (data.type === 'text_chunk') {
               setIsLoading(false);
               accumulatedText += data.content;
@@ -841,6 +866,7 @@ export default function ChatbotFab() {
                 setStatusMessage(composedStatus);
               }
             } else if (data.type === 'ui_action') {
+              hasUiActionEvent = true;
               accumulatedText = '';
               setStreamingText('');
 
@@ -890,13 +916,14 @@ export default function ChatbotFab() {
               } else if (data.ui_action === 'show_product_list') {
                 setIsLoading(false);
                 setStatusMessage(null);
+                const products = Array.isArray(data.ui_data) ? data.ui_data : [];
                 setMessages((prev) => [
                   ...prev,
                   {
                     role: 'bot',
                     type: 'product_list',
                     message: data.message,
-                    ui_data: data.ui_data,
+                    ui_data: products,
                   },
                 ]);
               } else if (data.ui_action === 'product_list') {

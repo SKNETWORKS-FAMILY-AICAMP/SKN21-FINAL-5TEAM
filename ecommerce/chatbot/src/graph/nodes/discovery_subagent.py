@@ -18,6 +18,7 @@ Discovery SubAgent 노드.
 """
 
 import re
+import base64
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
@@ -87,6 +88,25 @@ def _load_image_bytes(image_url: str) -> bytes:
 
     with urlopen(image_url, timeout=10) as response:
         return response.read()
+
+
+def _bytes_to_data_url(image_bytes: bytes, image_url: str) -> str:
+    parsed = urlparse(image_url)
+    path = parsed.path.lower()
+    mime_type = "image/jpeg"
+    if path.endswith(".png"):
+        mime_type = "image/png"
+    elif path.endswith(".webp"):
+        mime_type = "image/webp"
+    elif path.endswith(".gif"):
+        mime_type = "image/gif"
+    elif path.endswith(".bmp"):
+        mime_type = "image/bmp"
+    elif path.endswith(".avif"):
+        mime_type = "image/avif"
+
+    encoded = base64.b64encode(image_bytes).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
 
 
 # ── 노드 함수 ─────────────────────────────────────────────
@@ -190,6 +210,8 @@ def _image_search_pipeline(
     top_k = _extract_top_k_from_text(query_text)
     search_mode = _detect_image_search_mode(query_text)
 
+    image_bytes: bytes | None = None
+
     # ── Step 1. CLIP/Qdrant 유사 이미지 검색 ───────────────
     try:
         image_bytes = _load_image_bytes(str(image_url))
@@ -232,6 +254,10 @@ def _image_search_pipeline(
 
     # ── Step 2. VLM: 이미지 → 텍스트 설명 ──────────────────
     try:
+        if image_bytes is None:
+            image_bytes = _load_image_bytes(str(image_url))
+        openai_image_url = _bytes_to_data_url(image_bytes, str(image_url))
+
         openai_client = get_openai_client()
         vlm_response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -240,7 +266,7 @@ def _image_search_pipeline(
                     "role": "user",
                     "content": [
                         {"type": "text", "text": VLM_DESCRIBE_PROMPT},
-                        {"type": "image_url", "image_url": {"url": image_url}},
+                        {"type": "image_url", "image_url": {"url": openai_image_url}},
                     ],
                 }
             ],
@@ -256,17 +282,21 @@ def _image_search_pipeline(
         }
 
     # ── Step 2. Retrieve: 설명 텍스트로 벡터 검색 ──────────
+    requested_top_k = top_k if top_k is not None else 5
     retrieval_result = search_by_text_clip.invoke({
         "query": image_description,
-        "top_k": 5,
+        "top_k": requested_top_k,
         "search_mode": "similar",
     })
+
+    retrieved_products = retrieval_result.get("products", []) if isinstance(retrieval_result, dict) else []
+    found_count = len(retrieved_products)
 
     answer = AIMessage(
         content=(
             f"이미지를 분석했습니다.\n"
             f"**분석 결과**: {image_description}\n\n"
-            f"비슷한 스타일의 상품을 찾아드렸습니다."
+            f"비슷한 스타일의 상품 {found_count}개를 찾았습니다."
         )
     )
 
@@ -276,8 +306,9 @@ def _image_search_pipeline(
             **state.get("search_context", {}),
             "image_url": image_url,
             "image_description": image_description,
-            "retrieved_products": retrieval_result.get("products", []),
+            "retrieved_products": retrieved_products,
         },
+        "ui_action_required": "show_product_list" if retrieved_products else None,
         "completed_tasks": state.get("completed_tasks", []) + ([task] if task else []),
         "agent_results": {
             **state.get("agent_results", {}),
