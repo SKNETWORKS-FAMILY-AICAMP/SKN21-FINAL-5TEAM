@@ -246,10 +246,18 @@ def _to_sse(payload: dict) -> bytes:
 
 def _build_ui_action_payload(tool_output: dict) -> dict:
     """도구 출력 기반 UI 액션 payload 생성."""
+    ui_action = str(tool_output["ui_action"])
+    ui_data = tool_output.get("ui_data")
+    if ui_action == "show_product_list" and ui_data is None:
+        # recommendation_tools 계열은 products 키를 사용하므로 호환 처리
+        products = tool_output.get("products")
+        if isinstance(products, list):
+            ui_data = products
+
     return {
         "type": "ui_action",
-        "ui_action": str(tool_output["ui_action"]),
-        "ui_data": tool_output.get("ui_data"),
+        "ui_action": ui_action,
+        "ui_data": ui_data,
         "requires_selection": tool_output.get("requires_selection", False),
         "prior_action": tool_output.get("prior_action"),
         "message": tool_output.get("message", ""),
@@ -693,6 +701,11 @@ async def chat_streaming_endpoint(
                             if isinstance(final_state.get("search_context"), dict)
                             else []
                         )
+                    try:
+                        ui_len = len(ui_data) if isinstance(ui_data, list) else "n/a"
+                        print(f"[chat.stream] emit ui_action={ui_req}, ui_len={ui_len}")
+                    except Exception:
+                        pass
                     yield _to_sse({"type": "ui_action", "ui_action": ui_req, "ui_data": ui_data})
 
                 yield _to_sse(_build_metadata(final_state))
