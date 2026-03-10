@@ -2,6 +2,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
 # 의존성 먼저 복사 (캐시 활용)
 COPY ecommerce/platform/frontend/package.json ecommerce/platform/frontend/package-lock.json* ./
 
