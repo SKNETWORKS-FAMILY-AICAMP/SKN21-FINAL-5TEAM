@@ -22,6 +22,13 @@ class ProductImage:
     product_id: int
     image_url: str
     absolute_path: Path
+    product_display_name: str | None = None
+    article_type: str | None = None
+    sub_category: str | None = None
+    usage: str | None = None
+    season: str | None = None
+    base_colour: str | None = None
+    gender: str | None = None
 
 
 def _project_root() -> Path:
@@ -33,6 +40,45 @@ def _load_catalog(csv_path: Path, image_root: Path) -> list[ProductImage]:
         raise FileNotFoundError(f"image csv not found: {csv_path}")
 
     df = pd.read_csv(csv_path, usecols=["product_id", "image_url"])
+
+    styles_csv_path = (
+        _project_root()
+        / "ecommerce"
+        / "chatbot"
+        / "data"
+        / "processed"
+        / "fashion-1000-balanced"
+        / "sampled_styles.csv"
+    )
+    styles_by_id: dict[int, dict[str, Any]] = {}
+    if styles_csv_path.exists():
+        styles_df = pd.read_csv(
+            styles_csv_path,
+            usecols=[
+                "id",
+                "gender",
+                "subCategory",
+                "articleType",
+                "baseColour",
+                "season",
+                "usage",
+                "productDisplayName",
+            ],
+        )
+        for _, s in styles_df.iterrows():
+            try:
+                pid = int(s["id"])
+            except Exception:
+                continue
+            styles_by_id[pid] = {
+                "product_display_name": str(s.get("productDisplayName") or "").strip() or None,
+                "article_type": str(s.get("articleType") or "").strip() or None,
+                "sub_category": str(s.get("subCategory") or "").strip() or None,
+                "usage": str(s.get("usage") or "").strip() or None,
+                "season": str(s.get("season") or "").strip() or None,
+                "base_colour": str(s.get("baseColour") or "").strip() or None,
+                "gender": str(s.get("gender") or "").strip() or None,
+            }
     image_root_resolved = image_root.resolve()
 
     rows: list[ProductImage] = []
@@ -47,11 +93,19 @@ def _load_catalog(csv_path: Path, image_root: Path) -> list[ProductImage]:
         if not image_path.exists():
             continue
 
+        style_meta = styles_by_id.get(int(row["product_id"]), {})
         rows.append(
             ProductImage(
                 product_id=int(row["product_id"]),
                 image_url=image_url,
                 absolute_path=image_path,
+                product_display_name=style_meta.get("product_display_name"),
+                article_type=style_meta.get("article_type"),
+                sub_category=style_meta.get("sub_category"),
+                usage=style_meta.get("usage"),
+                season=style_meta.get("season"),
+                base_colour=style_meta.get("base_colour"),
+                gender=style_meta.get("gender"),
             )
         )
 
@@ -140,6 +194,13 @@ def ingest_clip_images(batch_size: int = 64) -> None:
                     payload={
                         "product_id": item.product_id,
                         "image_url": item.image_url,
+                        "product_display_name": item.product_display_name,
+                        "article_type": item.article_type,
+                        "sub_category": item.sub_category,
+                        "usage": item.usage,
+                        "season": item.season,
+                        "base_colour": item.base_colour,
+                        "gender": item.gender,
                     },
                 )
             )

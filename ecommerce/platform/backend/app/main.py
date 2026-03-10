@@ -166,7 +166,7 @@ async def lifespan(app: FastAPI):
 
     # 3. 초기 데이터 적재 (Seed)
     from ecommerce.platform.backend.app.database import SessionLocal
-    from scripts.seed import init_db
+    from ecommerce.scripts.seed import init_db
 
     db = SessionLocal()
     try:
