@@ -1,4 +1,5 @@
 .venv/
+.git/
 myenv/
 ecommerce/platform/frontend/.venv/
 ecommerce/platform/frontend/node_modules/
