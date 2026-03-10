@@ -215,6 +215,32 @@ def _build_product_payloads(product_ids: List[int]) -> List[dict]:
         db.close()
 
 
+def _keyword_fallback_products(query_text: str, top_k: int) -> tuple[List[int], List[dict]]:
+    db = SessionLocal()
+    try:
+        limit = max(1, min(top_k, 20))
+        products = product_crud.get_products(
+            db,
+            keyword=query_text,
+            is_active=True,
+            skip=0,
+            limit=limit,
+        )
+        # 키워드 매칭 결과가 없으면 기본 상품 목록으로 보강
+        if not products:
+            products = product_crud.get_products(
+                db,
+                is_active=True,
+                skip=0,
+                limit=limit,
+            )
+        product_ids = [p.id for p in products if getattr(p, "id", None) is not None]
+        payloads = _build_product_payloads(product_ids)
+        return product_ids, payloads
+    finally:
+        db.close()
+
+
 def _rerank_products_by_query(
     query_text: str | None,
     product_ids: List[int],
@@ -323,4 +349,12 @@ def search_by_text_clip(
         }
     except Exception as e:
         print("TEXT CLIP SEARCH ERROR:", e)
+        fallback_ids, fallback_products = _keyword_fallback_products(query_text, top_k)
+        if fallback_products:
+            return {
+                "ui_action": "show_product_list",
+                "product_ids": fallback_ids,
+                "products": fallback_products,
+                "fallback": "keyword_search",
+            }
         return {"error": f"텍스트 기반 이미지 검색 실패: {str(e)}"}

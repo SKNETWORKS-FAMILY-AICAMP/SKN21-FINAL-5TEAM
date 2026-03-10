@@ -1,0 +1,1 @@
+from pathlib import Path\ntext = Path('ecommerce/chatbot/src/graph/nodes_v2.py').read_text().splitlines()\nstart = next(i for i,l in enumerate(text) if 'def agent_node' in l)\nfor idx in range(start, min(len(text), start+200)):\n    print(f'{idx+1:03}: {text[idx]}')\n

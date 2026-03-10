@@ -8,14 +8,34 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-import torch
 from langchain_core.tools import tool
 from PIL import Image
-from qdrant_client import models
-from transformers import CLIPModel, CLIPProcessor
 
 from ecommerce.chatbot.src.core.config import settings
 from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
+
+try:
+    import torch
+    from transformers import CLIPModel, CLIPProcessor
+
+    _CLIP_RUNTIME_READY = True
+    _CLIP_IMPORT_ERROR: Exception | None = None
+except Exception as exc:
+    torch = None  # type: ignore[assignment]
+    CLIPModel = None  # type: ignore[assignment]
+    CLIPProcessor = None  # type: ignore[assignment]
+    _CLIP_RUNTIME_READY = False
+    _CLIP_IMPORT_ERROR = exc
+
+
+def _ensure_clip_runtime() -> None:
+    if _CLIP_RUNTIME_READY:
+        return
+    detail = f": {_CLIP_IMPORT_ERROR}" if _CLIP_IMPORT_ERROR else ""
+    raise RuntimeError(
+        "CLIP image search is disabled because torch/transformers runtime is unavailable"
+        f"{detail}"
+    )
 
 
 def _vector_store_dir() -> Path:
@@ -23,6 +43,7 @@ def _vector_store_dir() -> Path:
 
 
 def _load_clip(device: torch.device) -> Tuple[CLIPProcessor, CLIPModel]:
+    _ensure_clip_runtime()
     processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
     model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
     model.to(device)
@@ -94,6 +115,7 @@ class SearchHit:
 
 
 def _get_clip_resources(device: torch.device) -> Tuple[CLIPProcessor, CLIPModel]:
+    _ensure_clip_runtime()
     key = f"clip::{device.type}"
     if key not in _CLIP_RESOURCES:
         processor, model = _load_clip(device)
@@ -103,6 +125,7 @@ def _get_clip_resources(device: torch.device) -> Tuple[CLIPProcessor, CLIPModel]
 
 def preload_clip_resources() -> None:
     """서버 시작 시 CLIP 모델/프로세서를 1회 미리 로드합니다."""
+    _ensure_clip_runtime()
     device = _resolve_device()
     _get_clip_resources(device)
 
@@ -276,6 +299,7 @@ def _rerank_hits_with_soft_boost(
 
 
 def _resolve_device() -> torch.device:
+    _ensure_clip_runtime()
     if torch.cuda.is_available():
         return torch.device("cuda")
     mps_backend = getattr(torch.backends, "mps", None)
@@ -291,6 +315,7 @@ def _search_clip(
     search_mode: str = "similar",
     text_weight: float = 0.4,
 ) -> List[int]:
+    _ensure_clip_runtime()
     if image is None and not text:
         raise ValueError("image 또는 text 중 하나는 필요합니다.")
 
