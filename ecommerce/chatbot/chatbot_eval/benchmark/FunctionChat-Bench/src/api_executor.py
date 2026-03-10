@@ -4,6 +4,7 @@ import openai
 import logging
 import traceback
 import time
+from langsmith import wrappers
 
 try:
     from mistralai.client import MistralClient
@@ -86,9 +87,9 @@ class OpenaiModelAzureAPI(AbstractModelAPIExecutor):
         api_version (str): The version of the Azure OpenAI API to use.
         """
         super().__init__(model, api_key)  # 수정된 부분
-        self.client = openai.AzureOpenAI(azure_endpoint=api_base,
+        self.client = wrappers.wrap_openai(openai.AzureOpenAI(azure_endpoint=api_base,
                                          api_key=api_key,
-                                         api_version=api_version)
+                                         api_version=api_version))
         self.openai_chat_completion = self.client.chat.completions.create
 
     def predict(self, api_request):
@@ -113,7 +114,7 @@ class OpenaiModelAPI(AbstractModelAPIExecutor):
         use_eval (bool): Whether the API is for evaluation.
         """
         super().__init__(model, api_key)  # 수정된 부분
-        self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
+        self.client = wrappers.wrap_openai(openai.OpenAI(api_key=api_key, base_url=base_url))
         self.openai_chat_completion = self.client.chat.completions.create
         if use_eval is True:
             self.predict = self.predict_eval
@@ -171,7 +172,7 @@ class SolarModelAPI(AbstractModelAPIExecutor):
         base_url (str): The base URL for the Solar API endpoint.
         """
         super().__init__(model, api_key)
-        self.client = openai.OpenAI(base_url=base_url, api_key=api_key)
+        self.client = wrappers.wrap_openai(openai.OpenAI(base_url=base_url, api_key=api_key))
         self.openai_chat_completion = self.client.chat.completions.create
 
     def predict(self, api_request):
@@ -249,7 +250,7 @@ class InhouseModelAPI(AbstractModelAPIExecutor):
         served_model_name : This is the information that needs to be passed in the header when calling the model API.
         """
         super().__init__(model, api_key)
-        self.client = openai.OpenAI(base_url=base_url, api_key=api_key)
+        self.client = wrappers.wrap_openai(openai.OpenAI(base_url=base_url, api_key=api_key))
         self.openai_chat_completion = self.client.chat.completions.create
         self.served_model_name = served_model_name
 

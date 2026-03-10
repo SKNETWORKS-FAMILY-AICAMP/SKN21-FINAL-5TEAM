@@ -74,6 +74,8 @@ class MeResponse(BaseModel):
     address1: Optional[str] = None
     address2: Optional[str] = None
 
+    gender: Optional[str] = None
+
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

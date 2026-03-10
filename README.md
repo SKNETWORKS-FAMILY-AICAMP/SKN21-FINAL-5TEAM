@@ -9,13 +9,13 @@ SK Networks Family AI Camp - Team 5 | End-to-End Full Stack Implementation
 
 ## 기술 스택
 
-| 분야 | 기술 |
-|------|------|
-| **AI Core** | LangGraph, LangChain, OpenAI API, RAG |
-| **Backend** | Python 3.13, FastAPI, SQLAlchemy |
+| 분야         | 기술                                           |
+| ------------ | ---------------------------------------------- |
+| **AI Core**  | LangGraph, LangChain, OpenAI API, RAG          |
+| **Backend**  | Python 3.13, FastAPI, SQLAlchemy               |
 | **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS |
-| **Database** | MySQL 8.0 (관계형), Qdrant (벡터) |
-| **DevOps** | Docker, Docker Compose, Nginx, AWS |
+| **Database** | MySQL 8.0 (관계형), Qdrant (벡터)              |
+| **DevOps**   | Docker, Docker Compose, Nginx, AWS             |
 
 ## 프로젝트 구조
 
@@ -72,13 +72,13 @@ Intent Classification (NLU)
 
 ### 품질 검증: Synthetic Data
 
-GPT-4o-mini 기반 합성 데이터 생성 및 검증 결과:
+GPT-5-mini 기반 합성 데이터 생성 및 검증 결과:
 
-| Test Scenarios | 지표 | 결과 |
-|----------------|------|------|
+| Test Scenarios         | 지표            | 결과 |
+| ---------------------- | --------------- | ---- |
 | **Single-turn** (단순) | Intent Coverage | 100% |
-| **Multi-turn** (문맥) | Tool Coverage | 100% |
-| **Edge Case** (예외) | Balance Score | >0.7 |
+| **Multi-turn** (문맥)  | Tool Coverage   | 100% |
+| **Edge Case** (예외)   | Balance Score   | >0.7 |
 
 ---
 
@@ -97,11 +97,11 @@ Users ──┬── Orders ──── Payments
 
 ### 데이터 무결성 및 보안 전략
 
-| 전략 | 구현 | 설명 |
-|------|------|------|
-| **Cascade Delete** | `on_delete='CASCADE'` | 부모 데이터 삭제 시 자식 데이터 자동 정리 |
-| **Constraints** | `CHECK (price > 0)` | 가격, 수량 등 논리적 오류 DB 차단 |
-| **Soft Delete** | `deleted_at: DATETIME` | 데이터 영구 삭제 방지 및 이력 보존 |
+| 전략               | 구현                   | 설명                                      |
+| ------------------ | ---------------------- | ----------------------------------------- |
+| **Cascade Delete** | `on_delete='CASCADE'`  | 부모 데이터 삭제 시 자식 데이터 자동 정리 |
+| **Constraints**    | `CHECK (price > 0)`    | 가격, 수량 등 논리적 오류 DB 차단         |
+| **Soft Delete**    | `deleted_at: DATETIME` | 데이터 영구 삭제 방지 및 이력 보존        |
 
 ### 커머스 비즈니스 로직: 주문 상태 머신
 

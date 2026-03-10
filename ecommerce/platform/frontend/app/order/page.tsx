@@ -363,17 +363,6 @@ export default function OrdersPage() {
         throw new Error(errorData.detail || "환불 요청에 실패했습니다");
       }
 
-      // User History에 환불 요청 기록
-      try {
-        await fetch(`${API_BASE}/user-history/users/${user.id}/track/refund`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ order_id: orderId }),
-        });
-      } catch (err) {
-        console.error("Failed to track order_re:", err);
-      }
-
       showAlert("환불이 요청되었습니다");
       fetchOrders(); // 목록 새로고침
     } catch (err) {

@@ -4,12 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import styles from './shipping.module.css';
 import { useAuth } from '../authcontext';
 
-declare global {
-  interface Window {
-    daum: any;
-  }
-}
-
 
 interface ShippingAddress {
   id: number;
@@ -19,6 +13,12 @@ interface ShippingAddress {
   post_code: string;
   phone: string;
   is_default?: boolean;
+}
+
+interface DaumPostcodeAddressData {
+  zonecode?: string;
+  postcode?: string;
+  address?: string;
 }
 
 export default function ShippingPage() {
@@ -59,7 +59,7 @@ export default function ShippingPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if ((window as any).daum && (window as any).daum.Postcode) return;
+    if (window.daum && window.daum.Postcode) return;
 
     const script = document.createElement('script');
     script.src = 'https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js';
@@ -73,13 +73,13 @@ export default function ShippingPage() {
 
   const openKakaoPostcode = useCallback(() => {
     if (typeof window === 'undefined') return;
-    const daum = (window as any).daum;
+    const daum = window.daum;
     if (!daum || !daum.Postcode) {
       console.error('Daum postcode script not loaded');
       return;
     }
     new daum.Postcode({
-      oncomplete: (data: any) => {
+      oncomplete: (data: DaumPostcodeAddressData) => {
         setFormData(prev => ({
           ...prev,
           post_code: data.zonecode || data.postcode || '',

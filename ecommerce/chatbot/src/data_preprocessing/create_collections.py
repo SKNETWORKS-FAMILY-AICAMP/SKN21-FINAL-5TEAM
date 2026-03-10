@@ -1,7 +1,6 @@
 
 import os
-import sys
-from typing import Dict, Any, List
+from typing import Dict, Any
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -12,7 +11,8 @@ load_dotenv()
 # Configuration
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")  # Default to localhost if not set
-VECTOR_SIZE = 1536  # OpenAI text-embedding-3-small dimension
+VECTOR_SIZE = 1024  # BAAI/bge-m3 dense embedding dimension
+CLIP_VECTOR_SIZE = 512  # openai/clip-vit-base-patch32 projection dimension
 
 
 def get_qdrant_client() -> QdrantClient:
@@ -31,27 +31,14 @@ def create_collections():
     client = get_qdrant_client()
     
     collections_config: Dict[str, Dict[str, Any]] = {
-        "fashion_products": {
+        "fashion_clip_images": {
             "vectors_config": models.VectorParams(
-                size=VECTOR_SIZE,
+                size=CLIP_VECTOR_SIZE,
                 distance=models.Distance.COSINE
             ),
-            "sparse_vectors_config": {
-                "text-sparse": models.SparseVectorParams(
-                    index=models.SparseIndexParams(
-                        on_disk=False,
-                    )
-                )
-            },
             "indexes": [
-                {"field_name": "gender", "schema": "keyword"},
-                {"field_name": "masterCategory", "schema": "keyword"},
-                {"field_name": "subCategory", "schema": "keyword"},
-                {"field_name": "articleType", "schema": "keyword"},
-                {"field_name": "baseColour", "schema": "keyword"},
-                {"field_name": "season", "schema": "keyword"},
-                {"field_name": "year", "schema": "integer"},
-                {"field_name": "usage", "schema": "keyword"},
+                {"field_name": "product_id", "schema": "integer"},
+                {"field_name": "image_url", "schema": "keyword"},
             ]
         },
         "musinsa_faq": {
@@ -121,7 +108,7 @@ def create_collections():
                     collection_name=name,
                     field_name=field_name,
                     field_schema=models.TextIndexParams(
-                        type="text",
+                        type=models.TextIndexType.TEXT,
                         tokenizer=models.TokenizerType.WORD,
                         min_token_len=2,
                         max_token_len=20,

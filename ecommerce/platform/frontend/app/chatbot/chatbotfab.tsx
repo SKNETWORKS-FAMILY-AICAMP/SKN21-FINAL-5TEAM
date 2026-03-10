@@ -1,9 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import styles from './chatbotfab.module.css';
 import OrderListUI from './OrderListUI';
+import ProductListUI, { UiProduct } from './ProductListUI';
+import ReviewFormUI from './ReviewFormUI';
+import UsedSaleFormUI from './UsedSaleFormUI';
 import { useAuth } from '../authcontext';
 
 type TextMessage = { role: 'user' | 'bot'; type: 'text'; text: string; isStreaming?: boolean; showDivider?: boolean };
@@ -22,6 +25,15 @@ type OrderListMessage = {
     can_exchange?: boolean;
   }>;
   requiresSelection?: boolean;
+  prior_action?: string | null;
+  ui_config?: {
+    enable_refund_button?: boolean;
+    enable_exchange_button?: boolean;
+    enable_cancel_button?: boolean;
+    enable_selection?: boolean;
+    selectable_statuses?: string[];
+    action_label?: string;
+  };
 };
 
 
@@ -29,6 +41,24 @@ type ConfirmationMessage = {
   role: 'bot';
   type: 'confirmation';
   message: string;
+  action?: string | null;
+  responded?: boolean;
+};
+
+type OptionListMessage = {
+  role: 'bot';
+  type: 'option_list';
+  message: string;
+  action?: string | null;
+  responded?: boolean;
+  options: Array<{
+    option_id: number;
+    label: string;
+    size_name?: string | null;
+    color?: string | null;
+    quantity?: number;
+    is_current?: boolean;
+  }>;
 };
 
 type AddressSearchMessage = {
@@ -50,7 +80,91 @@ type AddressSelectionPayload = {
   };
 };
 
-type ChatMsg = TextMessage | OrderListMessage | ConfirmationMessage | AddressSearchMessage;
+type ProductListMessage = {
+  role: 'bot';
+  type: 'product_list';
+  message: string;
+  ui_data: UiProduct[];
+};
+
+type ReviewFormMessage = {
+  role: 'bot';
+  type: 'review_form';
+  message: string;
+  ui_data: {
+    order_id: string;
+    product_id: string;
+    product_name: string;
+  };
+};
+
+type UsedSaleFormMessage = {
+  role: 'bot';
+  type: 'used_sale_form';
+  message: string;
+  ui_data?: {
+    category_options?: Array<{ id: number; name: string }>;
+    condition_options?: Array<{ id: number; name: string; description?: string | null }>;
+    category_placeholder?: string;
+    item_name_placeholder?: string;
+    description_placeholder?: string;
+    price_placeholder?: string;
+  };
+};
+
+type ImageMessage = {
+  role: 'user';
+  type: 'image';
+  image_url: string | { _url?: string; url?: string };
+  filename: string;
+};
+
+type PendingImageState = {
+  filename: string;
+  previewUrl: string;
+  objectUrl: string;
+  url?: string;
+};
+
+type ReviewSubmissionPayload = {
+  event: 'review_submitted';
+  action: 'create_review';
+  rating: number;
+  content: string;
+  order_id: string;
+  product_id: string;
+  source: 'review_form_ui';
+};
+
+type UsedSaleSubmissionPayload = {
+  event: 'used_sale_submitted';
+  action: 'register_used_sale';
+  category_id: number;
+  category: string;
+  item_name: string;
+  description: string;
+  condition_id: number;
+  condition: string;
+  expected_price?: number | null;
+  source: 'used_sale_form_ui';
+};
+
+const resolveImageUrl = (source?: string | { _url?: string; url?: string } | null): string => {
+  if (!source) return '';
+  if (typeof source === 'string') return source;
+  return source._url ?? source.url ?? '';
+};
+
+type ChatMsg =
+  | TextMessage
+  | OrderListMessage
+  | ConfirmationMessage
+  | OptionListMessage
+  | AddressSearchMessage
+  | ProductListMessage
+  | ReviewFormMessage
+  | UsedSaleFormMessage
+  | ImageMessage;
 type LlmProvider = 'openai' | 'huggingface' | 'vllm';
 type ModelOption = { id: string; provider: LlmProvider; label: string };
 
@@ -62,7 +176,7 @@ type DaumPostcodeData = {
 
 declare global {
   interface Window {
-    daum?: {
+    daum: {
       Postcode: new (options: { oncomplete: (data: DaumPostcodeData) => void }) => {
         open: () => void;
       };
@@ -95,18 +209,8 @@ function resolveProviderByModel(modelId: string): LlmProvider {
 
 function buildOrderListMessage(rawMessage: string | undefined, requiresSelection: boolean | undefined): string {
   const cleaned = (rawMessage || '').trim();
-  const dynamicGuide = cleaned
-    .replace(/^최근\s*\d+일\s*(?:이내|간(?:의)?)?\s*주문\s*(?:목록|내역)입니다\.?\s*/u, '')
-    .trim();
-
-  if (dynamicGuide) {
-    return `${ORDER_LIST_BASE_MESSAGE} ${dynamicGuide}`;
-  }
-
-  if (requiresSelection) {
-    return `${ORDER_LIST_BASE_MESSAGE} 진행하실 주문을 선택해주세요.`;
-  }
-
+  if (cleaned) return cleaned;
+  if (requiresSelection) return `${ORDER_LIST_BASE_MESSAGE} 진행하실 주문을 선택해주세요.`;
   return ORDER_LIST_BASE_MESSAGE;
 }
 
@@ -145,6 +249,32 @@ function AnimatedText({ text, className, speed = 20 }: { text: string; className
   return <span className={className}>{text ? displayed : ''}</span>;
 }
 
+function StreamingMarkdown({ text }: { text: string }) {
+  if (!text) return null;
+
+  const endsWithNewline = text.endsWith('\n');
+  const lines = text.split('\n');
+
+  const completedLines = endsWithNewline ? lines : lines.slice(0, -1);
+  const pendingLine = endsWithNewline ? '' : (lines[lines.length - 1] ?? '');
+  const completedMarkdown = completedLines.join('\n').trim();
+
+  return (
+    <>
+      {completedMarkdown ? (
+        <div className={styles.markdownBody}>
+          <ReactMarkdown>{completedMarkdown}</ReactMarkdown>
+        </div>
+      ) : null}
+      {pendingLine ? (
+        <div className={styles.streamingCurrentLine}>
+          <AnimatedText text={pendingLine} speed={14} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function parseThinkContent(rawText: string): { hasThink: boolean; reasoning: string; answer: string } {
   if (!rawText || !rawText.includes('<think>')) {
     return { hasThink: false, reasoning: '', answer: rawText };
@@ -174,6 +304,16 @@ function parseThinkContent(rawText: string): { hasThink: boolean; reasoning: str
     reasoning: reasoningOnly,
     answer: beforeThink,
   };
+}
+
+function normalizeMarkdownForDisplay(rawText: string): string {
+  if (!rawText) return rawText;
+
+  return rawText
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/(^|\n)(\d+)\.\s*\n\s*(?=\S)/g, '$1$2. ')
+    .replace(/(^|\n)([-*])\s*\n\s*(?=\S)/g, '$1$2 ');
 }
 
 function ReasoningAccordion({ reasoning, isStreaming }: { reasoning: string; isStreaming?: boolean }) {
@@ -207,10 +347,17 @@ function ReasoningAccordion({ reasoning, isStreaming }: { reasoning: string; isS
 }
 
 function BotTextContent({ text, isStreaming = false }: { text: string; isStreaming?: boolean }) {
-  const parsed = parseThinkContent(text);
+  const normalizedText = normalizeMarkdownForDisplay(text);
+  const parsed = parseThinkContent(normalizedText);
 
   if (!parsed.hasThink) {
-    return isStreaming ? <AnimatedText text={text} speed={14} /> : <ReactMarkdown>{text}</ReactMarkdown>;
+    return isStreaming ? (
+      <StreamingMarkdown text={text} />
+    ) : (
+      <div className={styles.markdownBody}>
+        <ReactMarkdown>{normalizedText}</ReactMarkdown>
+      </div>
+    );
   }
 
   return (
@@ -218,7 +365,9 @@ function BotTextContent({ text, isStreaming = false }: { text: string; isStreami
       <ReasoningAccordion reasoning={parsed.reasoning} isStreaming={isStreaming} />
       {parsed.answer ? (
         <div className={styles.finalAnswerWrap}>
-          <ReactMarkdown>{parsed.answer}</ReactMarkdown>
+          <div className={styles.markdownBody}>
+            <ReactMarkdown>{parsed.answer}</ReactMarkdown>
+          </div>
         </div>
       ) : null}
     </>
@@ -329,6 +478,121 @@ function AddressSearchCard({
   );
 }
 
+function OptionSelectCard({
+  message,
+  options,
+  disabled,
+  submitted,
+  onSubmit,
+}: {
+  message: string;
+  options: OptionListMessage['options'];
+  disabled: boolean;
+  submitted?: boolean;
+  onSubmit: (optionId: number) => void;
+}) {
+  const normalizeValue = (value?: string | null) => {
+    const trimmed = (value || '').trim();
+    return trimmed.length > 0 ? trimmed : 'FREE';
+  };
+
+  const sizeOptions = Array.from(new Set(options.map((opt) => normalizeValue(opt.size_name))));
+  const colorOptions = Array.from(new Set(options.map((opt) => normalizeValue(opt.color))));
+
+  const [selectedSize, setSelectedSize] = useState<string>(sizeOptions[0] || 'FREE');
+  const [selectedColor, setSelectedColor] = useState<string>(colorOptions[0] || 'FREE');
+
+  const matchedOptions = options.filter(
+    (opt) => normalizeValue(opt.size_name) === selectedSize && normalizeValue(opt.color) === selectedColor,
+  );
+  const selectedOption = matchedOptions[0] || null;
+
+  const onSizeChange = (nextSize: string) => {
+    setSelectedSize(nextSize);
+
+    const availableColors = Array.from(
+      new Set(
+        options
+          .filter((opt) => normalizeValue(opt.size_name) === nextSize)
+          .map((opt) => normalizeValue(opt.color)),
+      ),
+    );
+    if (!availableColors.includes(selectedColor)) {
+      setSelectedColor(availableColors[0] || 'FREE');
+    }
+  };
+
+  const onColorChange = (nextColor: string) => {
+    setSelectedColor(nextColor);
+
+    const availableSizes = Array.from(
+      new Set(
+        options
+          .filter((opt) => normalizeValue(opt.color) === nextColor)
+          .map((opt) => normalizeValue(opt.size_name)),
+      ),
+    );
+    if (!availableSizes.includes(selectedSize)) {
+      setSelectedSize(availableSizes[0] || 'FREE');
+    }
+  };
+
+  return (
+    <div className={styles.confirmationContainer}>
+      <p className={styles.confirmationMessage}>{message}</p>
+
+      <div style={{ display: 'grid', gap: '8px', maxWidth: '420px' }}>
+        <label>
+          <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>사이즈</div>
+          <select
+            className={styles.addressInput}
+            value={selectedSize}
+            onChange={(e) => onSizeChange(e.target.value)}
+            disabled={disabled || Boolean(submitted)}
+          >
+            {sizeOptions.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>색상</div>
+          <select
+            className={styles.addressInput}
+            value={selectedColor}
+            onChange={(e) => onColorChange(e.target.value)}
+            disabled={disabled || Boolean(submitted)}
+          >
+            {colorOptions.map((color) => (
+              <option key={color} value={color}>
+                {color}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div style={{ fontSize: '12px', color: '#666' }}>
+          {selectedOption
+            ? `선택 옵션: 사이즈 ${normalizeValue(selectedOption.size_name)} / 색상 ${normalizeValue(selectedOption.color)} / 재고 ${selectedOption.quantity ?? '-'}${selectedOption.is_current ? ' (현재 옵션)' : ''}`
+            : '선택 가능한 옵션이 없습니다.'}
+        </div>
+
+        <button
+          type="button"
+          className={styles.confirmBtn}
+          onClick={() => selectedOption && onSubmit(selectedOption.option_id)}
+          disabled={!selectedOption || Boolean(selectedOption.is_current) || disabled || Boolean(submitted)}
+        >
+          {submitted ? '선택 완료됨' : '선택 완료'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ChatbotFab() {
   const { isLoggedIn } = useAuth();
   const [open, setOpen] = useState(false);
@@ -342,11 +606,27 @@ export default function ChatbotFab() {
   const [streamingText, setStreamingText] = useState('');
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
-  const [panelSize, setPanelSize] = useState({ w: 550, h: 660 });
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
+  const [imageUploadHint, setImageUploadHint] = useState<string | null>(null);
+  const [panelSize, setPanelSize] = useState({ w: 700, h: 660 });
   const isResizing = useRef(false);
   const [selectedModel, setSelectedModel] = useState<string>(OPENAI_MODELS[0]);
   const [isModelModalOpen, setIsModelModalOpen] = useState(false);
+  const [pendingImage, setPendingImage] = useState<PendingImageState | null>(null);
+
+  const releasePendingImageObjectUrl = (candidate: PendingImageState | null) => {
+    if (candidate?.objectUrl) {
+      URL.revokeObjectURL(candidate.objectUrl);
+    }
+  };
+
+  const clearPendingImage = () => {
+    releasePendingImageObjectUrl(pendingImage);
+    setPendingImage(null);
+  };
 
   useEffect(() => {
     const storedModel = localStorage.getItem('chatbot_llm_model');
@@ -444,9 +724,20 @@ export default function ChatbotFab() {
     document.addEventListener('mouseup', onMouseUp);
   };
 
-  const toggle = () => setOpen((v) => !v);
+  const toggle = () => {
+    if (open) {
+      if (document.activeElement && panelRef.current?.contains(document.activeElement)) {
+        (document.activeElement as HTMLElement).blur();
+      }
+    }
+    setOpen((v) => !v);
+  };
 
-  const sendMessage = async (textOverride?: string, hidden: boolean = false) => {
+  const sendMessage = async (
+    textOverride?: string,
+    hidden: boolean = false,
+    resumePayload?: Record<string, unknown> | null,
+  ) => {
     const text = typeof textOverride === 'string' ? textOverride : input.trim();
     if (!text || isLoading) return;
 
@@ -484,6 +775,7 @@ export default function ChatbotFab() {
         body: JSON.stringify({
           message: text,
           previous_state: conversationState,
+          resume_payload: resumePayload,
           provider,
           model: selectedModel,
         }),
@@ -499,93 +791,222 @@ export default function ChatbotFab() {
       const decoder = new TextDecoder();
       let accumulatedText = '';
       let newState = null;
+      let sseBuffer = '';
+      let metadataUiActionHandled = false;
+      let hasUiActionEvent = false;
 
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          sseBuffer += decoder.decode(value, { stream: true });
+          const rawEvents = sseBuffer.split('\n\n');
+          sseBuffer = rawEvents.pop() ?? '';
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.slice(6));
+          for (const rawEvent of rawEvents) {
+            const dataLines = rawEvent
+              .split('\n')
+              .filter((line) => line.startsWith('data: '))
+              .map((line) => line.slice(6));
 
-              if (data.type === 'metadata') {
-                // 상태 저장
-                newState = data.state;
-              } else if (data.type === 'text_chunk') {
-                setIsLoading(false);
-                accumulatedText += data.content;
-                setStreamingText(accumulatedText);
-              } else if (data.type === 'status_update') {
-                // 백엔드에서 전달되는 실시간 노드/모델 상태 메시지 업데이트
-                const composedStatus =
-                  typeof data.status === 'string' && data.status.trim().length > 0
-                    ? data.status
-                    : typeof data.node === 'string' && data.node.trim().length > 0
-                      ? `${data.node} 노드를 처리하고 있습니다...`
-                      : typeof data.model === 'string' && data.model.trim().length > 0
-                        ? `모델 응답을 생성하고 있습니다... (${data.model})`
-                        : null;
+            if (dataLines.length === 0) continue;
 
-                if (composedStatus) {
-                  setStatusMessage(composedStatus);
-                }
-              } else if (data.type === 'ui_action') {
-                if (accumulatedText.trim()) {
-                  const completedText = accumulatedText;
-                  setMessages((prev) => [
-                    ...prev,
-                    { role: 'bot', type: 'text', text: completedText, isStreaming: false, showDivider: true },
-                  ]);
-                }
-                accumulatedText = '';
-                setStreamingText('');
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            let data: any;
+            try {
+              data = JSON.parse(dataLines.join('\n'));
+            } catch (parseError) {
+              console.warn('Failed to parse SSE payload:', parseError, dataLines.join('\n'));
+              continue;
+            }
 
-                if (data.ui_action === 'show_order_list') {
+            if (data.type === 'metadata') {
+              // 상태 저장
+              newState = data.state;
+
+              // 백엔드가 metadata로 UI 액션만 전달하는 경우도 처리
+              if (
+                !hasUiActionEvent &&
+                !metadataUiActionHandled &&
+                data.ui_action_required === 'show_product_list'
+              ) {
+                const products = data.state?.search_context?.retrieved_products;
+                if (Array.isArray(products) && products.length > 0) {
+                  metadataUiActionHandled = true;
                   setIsLoading(false);
                   setStatusMessage(null);
                   setMessages((prev) => [
                     ...prev,
                     {
                       role: 'bot',
-                      type: 'order_list',
-                      message: buildOrderListMessage(data.message, data.requires_selection),
-                      orders: data.ui_data,
-                      requiresSelection: data.requires_selection,
-                    },
-                  ]);
-                } else if (data.ui_action === 'show_address_search') {
-                  setIsLoading(false);
-                  setStatusMessage(null);
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      role: 'bot',
-                      type: 'address_search',
-                      message: data.message || '주소 검색 버튼을 눌러주세요.',
+                      type: 'product_list',
+                      message: '비슷한 상품을 찾아드렸습니다.',
+                      ui_data: products,
                     },
                   ]);
                 }
-
-                newState = data.state;
-                if (newState) setConversationState(newState);
-              } else if (data.type === 'done') {
-                if (newState) setConversationState(newState);
-                setStatusMessage(null); // 완료 시 상태 메시지 확실히 제거
-                if (accumulatedText.trim()) {
-                  const completedText = accumulatedText;
-                  setMessages((prev) => [
-                    ...prev,
-                    { role: 'bot', type: 'text', text: completedText, isStreaming: false, showDivider: true },
-                  ]);
-                }
-                setStreamingText('');
-              } else if (data.type === 'error') {
-                throw new Error(data.message);
               }
+            } else if (data.type === 'text_chunk') {
+              setIsLoading(false);
+              accumulatedText += data.content;
+              setStreamingText(accumulatedText);
+            } else if (data.type === 'status_update') {
+              // 백엔드에서 전달되는 실시간 노드/모델 상태 메시지 업데이트
+              const composedStatus =
+                typeof data.status === 'string' && data.status.trim().length > 0
+                  ? data.status
+                  : typeof data.node === 'string' && data.node.trim().length > 0
+                    ? `${data.node} 노드를 처리하고 있습니다...`
+                    : typeof data.model === 'string' && data.model.trim().length > 0
+                      ? `모델 응답을 생성하고 있습니다... (${data.model})`
+                      : null;
+
+              if (composedStatus) {
+                setStatusMessage(composedStatus);
+              }
+            } else if (data.type === 'ui_action') {
+              hasUiActionEvent = true;
+              accumulatedText = '';
+              setStreamingText('');
+
+              if (data.ui_action === 'show_order_list') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'order_list',
+                    message: buildOrderListMessage(data.message, data.requires_selection),
+                    orders: data.ui_data,
+                    requiresSelection: data.requires_selection,
+                    prior_action: data.prior_action,
+                  },
+                ]);
+              } else if (data.ui_action === 'order_list') {
+                // 동적 UI 경로: ui_generator_node 에서 생성한 ui_config 사용
+                const cfg = data.ui_config || {};
+                const requiresSel = cfg.enable_selection ?? data.requires_selection ?? false;
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'order_list',
+                    message: data.message || '',
+                    orders: data.ui_data || [],
+                    requiresSelection: requiresSel,
+                    prior_action: data.prior_action,
+                    ui_config: cfg,
+                  },
+                ]);
+              } else if (data.ui_action === 'show_address_search') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'address_search',
+                    message: data.message || '주소 검색 버튼을 눌러주세요.',
+                  },
+                ]);
+              } else if (data.ui_action === 'show_product_list') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                const products = Array.isArray(data.ui_data) ? data.ui_data : [];
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'product_list',
+                    message: data.message,
+                    ui_data: products,
+                  },
+                ]);
+              } else if (data.ui_action === 'product_list') {
+                // 동적 UI 경로
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'product_list',
+                    message: data.message || '',
+                    ui_data: data.ui_data || [],
+                  },
+                ]);
+              } else if (data.ui_action === 'show_review_form') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'review_form',
+                    message: data.message || '리뷰를 작성해주세요.',
+                    ui_data: data.ui_data, // Contains order_id, product_id, product_name
+                  },
+                ]);
+              } else if (data.ui_action === 'show_used_sale_form') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'used_sale_form',
+                    message: data.message || '중고 판매 등록 정보를 입력해주세요.',
+                    ui_data: data.ui_data,
+                  },
+                ]);
+              } else if (data.ui_action === 'confirm_order_action') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'confirmation',
+                    message: data.message || '진행 여부를 선택해주세요.',
+                    action: data.ui_data?.action ?? null,
+                    responded: false,
+                  },
+                ]);
+              } else if (data.ui_action === 'show_option_list') {
+                setIsLoading(false);
+                setStatusMessage(null);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'option_list',
+                    message: data.message || '교환할 옵션을 선택해주세요. 만약 다른 제품으로 교환을 원하시면 주문취소 후 다시 주문해주세요.',
+                    action: data.prior_action ?? data.action ?? null,
+                    options: Array.isArray(data.ui_data) ? data.ui_data : [],
+                    responded: false,
+                  },
+                ]);
+              }
+
+              newState = data.state;
+              if (newState) setConversationState(newState);
+            } else if (data.type === 'done') {
+              if (newState) setConversationState(newState);
+              setStatusMessage(null); // 완료 시 상태 메시지 확실히 제거
+              if (accumulatedText.trim()) {
+                const completedText = accumulatedText;
+                setMessages((prev) => [
+                  ...prev,
+                  { role: 'bot', type: 'text', text: completedText, isStreaming: false },
+                ]);
+              }
+              setStreamingText('');
+            } else if (data.type === 'error') {
+              throw new Error(data.message);
             }
           }
         }
@@ -607,6 +1028,147 @@ export default function ChatbotFab() {
     }
   };
 
+  const openImagePicker = () => {
+    if (isLoading || isUploadingImage) return;
+    fileInputRef.current?.click();
+  };
+
+  const handleImageSelect = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!API_BASE_URL) {
+      setImageUploadError('API 주소가 설정되지 않았습니다.');
+      return;
+    }
+
+    if (!isLoggedIn) {
+      setImageUploadError('이미지를 업로드하려면 로그인해야 합니다.');
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setImageUploadError('이미지 파일만 업로드할 수 있습니다.');
+      return;
+    }
+
+    setIsUploadingImage(true);
+    setImageUploadError(null);
+    setImageUploadHint(null);
+
+    const previewUrl = URL.createObjectURL(file);
+    const initialPending: PendingImageState = {
+      filename: file.name,
+      previewUrl,
+      objectUrl: previewUrl,
+    };
+    releasePendingImageObjectUrl(pendingImage);
+    setPendingImage(initialPending);
+
+    try {
+      const payload = new FormData();
+      payload.append('file', file);
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/chat/upload-image`, {
+        method: 'POST',
+        credentials: 'include',
+        body: payload,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let message = '이미지 업로드에 실패했습니다.';
+        try {
+          const parsedError = JSON.parse(errorText);
+          message = parsedError.detail || parsedError.error || message;
+        } catch {
+          if (errorText) {
+            message = errorText;
+          }
+        }
+        throw new Error(message);
+      }
+
+      const body = await response.json();
+      const imageUrl = body?.url;
+      if (!imageUrl) {
+        throw new Error('이미지 URL을 받지 못했습니다.');
+      }
+
+      setPendingImage((prev) =>
+        prev
+          ? { ...prev, url: imageUrl }
+          : { ...initialPending, url: imageUrl }
+      );
+      setImageUploadHint('이미지 업로드 완료. 설명을 함께 넣거나 그대로 전송해도 분석이 시작됩니다.');
+    } catch (error) {
+      console.error('이미지 업로드 오류:', error);
+      releasePendingImageObjectUrl(initialPending);
+      setPendingImage(null);
+      setImageUploadError(error instanceof Error ? error.message : '이미지 업로드에 실패했습니다.');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const uploadNotice = imageUploadError
+    ? { text: imageUploadError, isError: true }
+    : isUploadingImage
+      ? { text: '이미지를 업로드 중입니다...', isError: false }
+      : imageUploadHint
+        ? { text: imageUploadHint, isError: false }
+        : null;
+
+  const handleSend = async () => {
+    if (isLoading || isUploadingImage) return;
+    const trimmedInput = input.trim();
+
+    if (!trimmedInput && !pendingImage) {
+      return;
+    }
+
+    if (pendingImage) {
+      const currentPending = pendingImage;
+      const imageUrl = currentPending.url;
+      if (!imageUrl) {
+        return;
+      }
+
+      const additions: ChatMsg[] = [
+        {
+          role: 'user',
+          type: 'image',
+          image_url: imageUrl,
+          filename: currentPending.filename,
+        },
+      ];
+      if (trimmedInput) {
+        additions.push({ role: 'user', type: 'text', text: trimmedInput });
+      }
+
+      setMessages((prev) => [...prev, ...additions]);
+
+      const eventPayload: Record<string, unknown> = {
+        event: 'image_uploaded',
+        image_url: imageUrl,
+        filename: currentPending.filename,
+        description: '첨부한 이미지를 참고하여 관련 정보를 알려주세요.',
+      };
+      if (trimmedInput) {
+        eventPayload.query = trimmedInput;
+      }
+
+      setInput('');
+      clearPendingImage();
+      setImageUploadHint('메시지를 전송했어요. 결과를 기다려주세요.');
+      await sendMessage(JSON.stringify(eventPayload), true);
+      return;
+    }
+
+    await sendMessage();
+  };
+
   const getInferredAction = () => {
     if (
       typeof conversationState?.current_task === 'object' &&
@@ -618,7 +1180,7 @@ export default function ChatbotFab() {
     return null;
   };
 
-  const handleOrderSelect = (selectedOrderIds: string[]) => {
+  const handleOrderSelect = (selectedOrderIds: string[], priorAction?: string | null) => {
     if (selectedOrderIds.length === 0) return;
 
     // State만 업데이트 - 그래프 실행 안 함
@@ -629,19 +1191,63 @@ export default function ChatbotFab() {
       order_id: orderIdString,
     }));
 
-    // 선택 이벤트를 구조화된 JSON으로 전송 (백엔드 deterministic 파싱)
-    const inferredAction = getInferredAction();
-
-    const selectionPayload = {
-      event: 'order_selected',
+    // interrupt resume payload 전송
+    const inferredAction = priorAction || getInferredAction();
+    const normalizedAction = String(inferredAction || '').toLowerCase();
+    const resumePayload: Record<string, unknown> = {
       selected_order_id: selectedOrderIds[0],
       selected_order_ids: selectedOrderIds,
-      action: inferredAction,
-      source: 'order_list_ui',
+      ...(inferredAction ? { action: inferredAction } : {}),
     };
 
-    // 사용자 채팅에는 숨기고 상태 전송만 수행
-    sendMessage(JSON.stringify(selectionPayload), true);
+    // 환불은 주문 선택 직후 승인까지 함께 수집
+    if (normalizedAction === 'refund') {
+      const approved = window.confirm('선택한 주문으로 반품 접수를 진행할까요?');
+      resumePayload.approved = approved;
+      resumePayload.confirmed = approved;
+    }
+
+    // 사용자 채팅에는 숨기고 resume_payload만 전달
+    sendMessage('주문 선택 완료', true, resumePayload);
+  };
+
+  const handleConfirmationResponse = (index: number, approved: boolean, action?: string | null) => {
+    setMessages((prev) =>
+      prev.map((msg, i) => {
+        if (i !== index || msg.type !== 'confirmation') return msg;
+        return {
+          ...msg,
+          responded: true,
+        };
+      }),
+    );
+
+    const resumePayload = {
+      approved,
+      ...(action ? { action } : {}),
+    };
+
+    sendMessage(approved ? '승인 선택' : '거절 선택', true, resumePayload);
+  };
+
+  const handleOptionSelect = (index: number, optionId: number, action?: string | null) => {
+    setMessages((prev) =>
+      prev.map((msg, i) => {
+        if (i !== index || msg.type !== 'option_list') return msg;
+        return {
+          ...msg,
+          responded: true,
+        };
+      }),
+    );
+
+    const resumePayload = {
+      new_option_id: optionId,
+      selected_option_id: optionId,
+      ...(action ? { action } : {}),
+    };
+
+    sendMessage('옵션 선택 완료', true, resumePayload);
   };
 
   const handleAddressSubmit = (payload: AddressSelectionPayload) => {
@@ -664,12 +1270,60 @@ export default function ChatbotFab() {
     sendMessage(JSON.stringify(finalPayload), true);
   };
 
+  const handleReviewSubmit = (payload: { rating: number; content: string; order_id: string; product_id: string }) => {
+    const finalPayload: ReviewSubmissionPayload = {
+      event: 'review_submitted',
+      action: 'create_review',
+      rating: payload.rating,
+      content: payload.content,
+      order_id: payload.order_id,
+      product_id: payload.product_id,
+      source: 'review_form_ui',
+    };
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: 'bot',
+        type: 'text',
+        text: `리뷰 내용을 전달했습니다.\n- 별점: ${payload.rating}점\n- 내용: ${payload.content}`,
+      },
+    ]);
+
+    sendMessage(JSON.stringify(finalPayload), true);
+  };
+
+  const handleUsedSaleSubmit = (payload: {
+    category_id: number;
+    category: string;
+    item_name: string;
+    description: string;
+    condition_id: number;
+    condition: string;
+    expected_price?: number | null;
+  }) => {
+    const finalPayload: UsedSaleSubmissionPayload = {
+      event: 'used_sale_submitted',
+      action: 'register_used_sale',
+      category_id: payload.category_id,
+      category: payload.category,
+      item_name: payload.item_name,
+      description: payload.description,
+      condition_id: payload.condition_id,
+      condition: payload.condition,
+      expected_price: payload.expected_price ?? null,
+      source: 'used_sale_form_ui',
+    };
+
+    sendMessage(JSON.stringify(finalPayload), true);
+  };
+
 
 
   const onKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
       e.preventDefault();
-      sendMessage();
+      handleSend();
     }
   };
 
@@ -712,8 +1366,10 @@ export default function ChatbotFab() {
                       <OrderListUI
                         message={m.message}
                         orders={m.orders}
-                        onSelect={handleOrderSelect}
+                        onSelect={(ids) => handleOrderSelect(ids, m.prior_action)}
                         requiresSelection={m.requiresSelection}
+                        prior_action={m.prior_action}
+                        ui_config={m.ui_config}
                       />
                     </div>
                   </div>
@@ -734,22 +1390,130 @@ export default function ChatbotFab() {
                   </div>
                 </div>
               );
+            } else if (m.type === 'product_list') {
+              return (
+                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
+                  <div className={styles.botMsg}>
+                    <span className={styles.botIcon}>✦</span>
+                    <div className={styles.botText}>
+                      <ProductListUI products={m.ui_data} message={m.message} />
+                    </div>
+                  </div>
+                </div>
+              );
+            } else if (m.type === 'review_form') {
+              return (
+                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
+                  <div className={styles.botMsg}>
+                    <span className={styles.botIcon}>✦</span>
+                    <div className={styles.botText}>
+                      <ReviewFormUI
+                        orderId={m.ui_data?.order_id || ''}
+                        productId={m.ui_data?.product_id || ''}
+                        productName={m.ui_data?.product_name || '상품'}
+                        onSubmit={handleReviewSubmit}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            } else if (m.type === 'used_sale_form') {
+              return (
+                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
+                  <div className={styles.botMsg}>
+                    <span className={styles.botIcon}>✦</span>
+                    <div className={styles.botText}>
+                      <UsedSaleFormUI
+                        message={m.message}
+                        categoryOptions={m.ui_data?.category_options}
+                        conditionOptions={m.ui_data?.condition_options}
+                        categoryPlaceholder={m.ui_data?.category_placeholder}
+                        itemNamePlaceholder={m.ui_data?.item_name_placeholder}
+                        descriptionPlaceholder={m.ui_data?.description_placeholder}
+                        pricePlaceholder={m.ui_data?.price_placeholder}
+                        onSubmit={handleUsedSaleSubmit}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            } else if (m.type === 'confirmation') {
+              return (
+                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
+                  <div className={styles.botMsg}>
+                    <span className={styles.botIcon}>✦</span>
+                    <div className={styles.botText}>
+                      <div className={styles.confirmationContainer}>
+                        <p className={styles.confirmationMessage}>{m.message}</p>
+                        <div className={styles.confirmationActions}>
+                          <button
+                            type="button"
+                            className={styles.confirmationApproveBtn}
+                            onClick={() => handleConfirmationResponse(i, true, m.action)}
+                            disabled={Boolean(m.responded) || isLoading}
+                          >
+                            네, 진행할게요
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.confirmationRejectBtn}
+                            onClick={() => handleConfirmationResponse(i, false, m.action)}
+                            disabled={Boolean(m.responded) || isLoading}
+                          >
+                            아니요
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            } else if (m.type === 'option_list') {
+              return (
+                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
+                  <div className={styles.botMsg}>
+                    <span className={styles.botIcon}>✦</span>
+                    <div className={styles.botText}>
+                      <OptionSelectCard
+                        message={m.message}
+                        options={m.options}
+                        disabled={isLoading}
+                        submitted={m.responded}
+                        onSubmit={(optionId) => handleOptionSelect(i, optionId, m.action)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
             } else if (m.role === 'user') {
+              const isImage = m.type === 'image';
               return (
                 <div key={i} className={`${styles.msgRow} ${styles.userRow}`}>
-                  <div className={styles.bubble}>
-                    {m.type === 'text' && <ReactMarkdown>{m.text}</ReactMarkdown>}
+                  <div className={`${styles.bubble} ${isImage ? styles.imageBubble : ''}`}>
+                    {isImage ? (
+                      <div className={styles.imagePreviewCard}>
+                        <img
+                          src={resolveImageUrl(m.image_url)}
+                          alt={m.filename}
+                          className={styles.imagePreview}
+                        />
+                        <div className={styles.imageFilename}>{m.filename}</div>
+                      </div>
+                    ) : (
+                      <ReactMarkdown>{m.text}</ReactMarkdown>
+                    )}
                   </div>
                 </div>
               );
             } else {
-              const text = m.type === 'text' ? m.text : m.message;
+              const text = m.type === 'text' ? m.text : '';
               return (
                 <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
                   <div className={styles.botMsg}>
                     <span className={styles.botIcon}>✦</span>
                     <div
                       className={`${styles.botText} ${m.type === 'text' && m.isStreaming ? styles.streaming : ''
+                        } ${m.type === 'text' ? styles.botTextRich : ''
                         } ${m.type === 'text' && m.showDivider ? styles.persistentDivider : ''}`}
                     >
                       {m.type === 'text' ? <BotTextContent text={text} isStreaming={Boolean(m.isStreaming)} /> : text}
@@ -793,6 +1557,16 @@ export default function ChatbotFab() {
 
         <div className={styles.bottomControls}>
           <div className={styles.inputBar}>
+            <button
+              type="button"
+              className={styles.uploadBtn}
+              onClick={openImagePicker}
+              disabled={isUploadingImage || isLoading}
+              aria-label="이미지 업로드"
+              title="이미지 업로드"
+            >
+              <span className={styles.uploadBtnIcon}>+</span>
+            </button>
             <textarea
               ref={inputRef}
               className={styles.input}
@@ -806,12 +1580,49 @@ export default function ChatbotFab() {
             <button
               type="button"
               className={styles.sendBtn}
-              onClick={() => sendMessage()}
-              disabled={isLoading}
+              onClick={handleSend}
+              disabled={isLoading || isUploadingImage}
             >
               전송
             </button>
+            <input
+              type="file"
+              accept="image/*"
+              ref={fileInputRef}
+              onChange={handleImageSelect}
+              className={styles.imageInputField}
+            />
           </div>
+          {uploadNotice && (
+            <div
+              className={`${styles.uploadStatus} ${
+                uploadNotice.isError ? styles.uploadStatusError : ''
+              }`}
+            >
+              {uploadNotice.text}
+            </div>
+          )}
+          {pendingImage && (
+            <div className={styles.pendingImagePreview}>
+              <img
+                src={pendingImage.previewUrl || pendingImage.url}
+                alt={pendingImage.filename}
+              />
+              <div>
+                <div>{pendingImage.filename}</div>
+                <button
+                  type="button"
+                  className={styles.pendingImageRemove}
+                  onClick={() => {
+                    clearPendingImage();
+                    setImageUploadHint(null);
+                  }}
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className={styles.modelPickerRow}>
             <button
