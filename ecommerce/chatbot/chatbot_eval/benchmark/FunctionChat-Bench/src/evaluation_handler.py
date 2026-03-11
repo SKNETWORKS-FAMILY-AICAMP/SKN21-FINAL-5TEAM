@@ -58,6 +58,8 @@ class EvaluationHandler:
     It manages the setup, execution, and storage of evaluation results based on evaluation metrics and configurations.
     """
     def __init__(self, evaluation_type):
+        import logging
+        logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
         """
         Initializes the EvaluationHandler with a specific type of evaluation.
 
@@ -111,6 +113,7 @@ class EvaluationHandler:
                         rubric_prompts[output_type] = file.read().strip()
                 except IOError as e:
                     logging.warning(f"Error reading {rubric_file_path}: {e}")
+        logging.info(f"Loaded {len(rubric_prompts)} rubric prompts: {list(rubric_prompts.keys())}")
         return rubric_prompts
 
     def load_api_executor(self, cfg: dict) -> Union[OpenaiModelAzureAPI, OpenaiModelAPI]:
@@ -163,7 +166,15 @@ class EvaluationHandler:
             # internal names for safety
             "cancel": "1_cancel_order_system_prompt.txt",
             "refund": "2_refund_request_system_prompt.txt",
-            "exchange": "3_exchange_request_system_prompt.txt"
+            "exchange": "3_exchange_request_system_prompt.txt",
+            "order_list": "4_order_list_lookup_system_prompt.txt",
+            "order_detail": "5_order_detail_lookup_system_prompt.txt",
+            "search_keyword": "6_product_search_keyword_system_prompt.txt",
+            "recommend": "7_product_recommend_filter_system_prompt.txt",
+            "search_image": "8_product_search_image_system_prompt.txt",
+            "used_sale": "9_used_sale_and_pickup_system_prompt.txt",
+            "review": "10_review_draft_and_submit_system_prompt.txt",
+            "register_gift_card": "11_register_gift_card_system_prompt.txt"
         }
         
         prompt_file = scenario_file_map.get(scenario_name_input)
@@ -206,7 +217,7 @@ class EvaluationHandler:
 
         # Final fallback if still none
         if user_id is None:
-            user_id = 3
+            user_id = 1
         
         # Prompts directory
 
@@ -256,6 +267,7 @@ class EvaluationHandler:
         output_type = inp['type_of_output']
         rubric_prompt = self.rubric_prompts.get(output_type)
         if not rubric_prompt:
+            logging.error(f"Unsupported rubric prompt type: {output_type}. Available: {list(self.rubric_prompts.keys())}")
             raise ValueError(f"Unsupported rubric prompt type: {output_type}")
 
         # Modularize: System (Role+Criteria+Output) / User (Scenario+Dialogue+Submission)
@@ -265,19 +277,14 @@ class EvaluationHandler:
             system_part = rubric_prompt
             user_part = " [Scenario Rule]\n{scenario_rule}\n\n[Dialogue]\n{dialogue}\n\n[Model Response]\n{response}"
 
-        # 1. System Rule Message (Scenario Guidelines)
-        # LangSmith visibility: Dedicated system message for scenario rules
-        scenario_rule_message = {
-            'role': 'system', 
-            'content': f"# Scenario Instructions ({scenario_name})\n{scenario_rule}"
-        }
-
-        # 2. Main Evaluation System Message (Rubric & Criteria)
+        # 1 & 2. Combined System Message (Scenario Rules + Rubric & Criteria)
+        combined_system_content = f"# Scenario Instructions ({scenario_name})\n{scenario_rule}\n\n"
         system_content = system_part.format(criteria=criteria).strip()
-        evaluation_system_message = {'role': 'system', 'content': system_content}
+        combined_system_content += system_content
+        
+        system_message = {'role': 'system', 'content': combined_system_content}
 
         # 3. User Evaluation Content (Dialogue & Response)
-        # Remove scenario_rule from user content to avoid redundancy and improve focus
         user_content = user_part.format(
             scenario_rule="[Refer to System Message for Scenario Rules]",
             dialogue=dialogue_text.strip(),
@@ -286,8 +293,7 @@ class EvaluationHandler:
         user_message = {'role': 'user', 'content': user_content}
 
         return [
-            scenario_rule_message,
-            evaluation_system_message,
+            system_message,
             user_message
         ]
 
@@ -330,12 +336,18 @@ class EvaluationHandler:
         # for key, val in j_p_func_args.items():
         #     if key not in j_g_func_args:
         #         return False
+        # 정답(ground truth)에 명시된 필수 키들에 대해서만 값이 일치하는지 검사합니다.
+        # 모델이 user_id 등 추가적인 옵셔널 파라미터를 정확하게 유추해서 넣은 경우, 오답 처리하지 않도록 합니다.
         for key, val in j_g_func_args.items():
             p_val = j_p_func_args.get(key)
             
+            # 모델이 아예 정답에 있는 키를 예측하지 않았으면 오답
+            if p_val is None:
+                return False
+
             # 1. 기본 정답(Ground Truth)과 비교
             if not compare_value(p_val, val):
-                # 2. 틀렸을 경우, 데이터셋의 acceptable_arguments 리스트 확인
+                # 2. 틀렸을 경우, 데이터셋의 acceptable_arguments 리스트 허용범위 확인
                 acceptable_values = acceptable_arguments.get(key, [])
                 
                 # 리스트 형태인 경우 하나라도 맞으면 통과
@@ -496,7 +508,11 @@ class EvaluationHandler:
 
     def fetch(self, inp, out, debug=False):
         messages = self.get_input_prompt(inp, out)
-        evaluate_response = self.executor.predict({'temperature': self.temperature, 'messages': messages})
+        evaluate_response = self.executor.predict({
+            'temperature': self.temperature, 
+            'messages': messages,
+            'trace': inp.get('trace', True)
+        })
         if debug is True:
             print(f"\nserial_num : {inp['serial_num']}")
             print(f'evaluate_request (messages) : {json.dumps(messages, ensure_ascii=False, indent=2)}')
@@ -569,12 +585,12 @@ class EvaluationHandler:
             for idx, (is_pass, response_formatter) in enumerate(tqdm(outputs, desc="Processing make batch file")):
                 inp = response_formatter.request_model
                 out = response_formatter.response_model
-                if not is_pass:
-                    custom_id = f"{self.evaluation_type}_{idx}"
-                    messages = self.get_input_prompt(inp, out)
-                    reformed_json = openai_utils.get_openai_batch_format(custom_id, self.openai_model, messages, self.max_tokens)
-                    input_prompts.append(json.dumps(messages, ensure_ascii=False))
-                    fp.write(json.dumps(reformed_json, ensure_ascii=False)+'\n')
+                
+                custom_id = f"{self.evaluation_type}_{idx}"
+                messages = self.get_input_prompt(inp, out)
+                reformed_json = openai_utils.get_openai_batch_format(custom_id, self.openai_model, messages, self.max_tokens)
+                input_prompts.append(json.dumps(messages, ensure_ascii=False))
+                fp.write(json.dumps(reformed_json, ensure_ascii=False)+'\n')
         return input_prompts
        
     def _process_rubric_evaluation(self, outputs, is_batch=False):
@@ -595,8 +611,6 @@ class EvaluationHandler:
                 outputs[idx] = (True, response_formatter)
         else:
             def rubric_eval_worker(idx, is_pass, response_formatter):
-                if is_pass:
-                    return idx, (is_pass, response_formatter)
                 
                 inp = response_formatter.request_model
                 out = response_formatter.response_model

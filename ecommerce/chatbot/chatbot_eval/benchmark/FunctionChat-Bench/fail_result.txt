@@ -1,0 +1,180 @@
+Total: 30, Pass: 10, Failed: 20
+Pass rate: 33.3%
+
+=== PASS ===
+  [#5] 주문 내역 조회 (주문번호 있음)
+  [#8] 중고 판매 신청
+  [#10] 상품권 등록
+  [#11] 주문 취소
+  [#15] 주문 내역 조회 (주문번호 있음)
+  [#16] 상품 키워드 검색
+  [#20] 상품권 등록
+  [#21] 주문 취소
+  [#25] 주문 내역 조회 (주문번호 있음)
+  [#28] 중고 판매 신청
+
+=== FAIL ===
+[#1] 주문 취소
+  시스템프롬프트: O
+  질문: 주문번호 ORD-eval_dataset-0001 배송이 너무 느려서 취소하려고 합니다. 처리해주세요.
+  기대: cancel -> {"order_id": "ORD-eval_dataset-0001", "user_id": 1}
+  실제: [텍스트응답] 주문번호 ORD-eval_dataset-0001을 취소하기 위해 취소 사유를 확인해야 합니다. "배송이 너무 느리다"라는 사유로 취소를 진행해도 괜찮으신가요?
+  원인: Model did not call any tool, expected cancel
+
+[#2] 환불 신청
+  시스템프롬프트: O
+  질문: 받은 ORD-eval_dataset-0002 상품이 완전히 파손되어 있어서 환불 신청합니다. 판매자 책임입니다.
+  기대: refund -> {"order_id": "ORD-eval_dataset-0002", "user_id": 1, "reason": "파손", "is_seller_fault": true}
+  실제: refund -> {"order_id":"ORD-eval_dataset-0002","user_id":1,"reason":"상품 파손","is_seller_fault":true}
+  원인: Function arguments mismatch: g({'order_id': 'ORD-eval_dataset-0002', 'user_id': 1, 'reason': '파손', 'is_seller_fault': True}) | p({"order_id":"ORD-eval_dataset-0002","user_id":1,"reason":"상품 파손","is_seller_fault":true})
+
+[#3] 교환 신청
+  시스템프롬프트: O
+  질문: ORD-eval_dataset-0003 주문건, 사이즈가 너무 커서 교환할게요.
+  기대: exchange -> {"order_id": "ORD-eval_dataset-0003", "user_id": 1, "is_seller_fault": false}
+  실제: exchange -> {"order_id":"ORD-eval_dataset-0003","user_id":1,"reason":"사이즈가 너무 커서"}
+  원인: Function arguments mismatch: g({'order_id': 'ORD-eval_dataset-0003', 'user_id': 1, 'is_seller_fault': False}) | p({"order_id":"ORD-eval_dataset-0003","user_id":1,"reason":"사이즈가 너무 커서"})
+
+[#4] 주문 내역 조회 (주문번호 없음)
+  시스템프롬프트: O
+  질문: 방금 주문한 내역의 배송 상태를 알고 싶은데 주문번호는 까먹었어요.
+  기대: get_user_orders -> {"user_id": 1}
+  실제: shipping -> {"user_id":1}
+  원인: Function name mismatch: g(get_user_orders) | p(shipping)
+
+[#6] 상품 키워드 검색
+  시스템프롬프트: O
+  질문: 여름에 입기 좋은 시원한 반팔 티셔츠 찾아줘.
+  기대: search_by_text_clip -> {"query": "반팔 티셔츠"}
+  실제: search_by_text_clip -> {"query":"여름 시원한 반팔 티셔츠","limit":5}
+  원인: Function arguments mismatch: g({'query': '반팔 티셔츠'}) | p({"query":"여름 시원한 반팔 티셔츠","limit":5})
+
+[#7] 의류 추천
+  시스템프롬프트: O
+  질문: 결혼식 하객으로 입고 갈만한 깔끔한 정장 세트 추천해줄래?
+  기대: recommend_clothes -> {"category": "Formal", "usage": "Formal", "user_id": 1}
+  실제: [텍스트응답] 정장 세트를 추천해드리기 위해 몇 가지 정보를 더 여쭤볼게요.
+
+1. 어떤 색상의 정장을 원하시나요? (예: 블랙, 네이비, 그레이 등)
+2. 정장 외에 어떤 용도로도 입으실 계획이 있으신가요? (예: 포멀, 캐주얼
+  원인: Model did not call any tool, expected recommend_clothes
+
+[#9] 리뷰 작성
+  시스템프롬프트: O
+  질문: 주문한 ORD-eval_dataset-0001 상품 너무 마음에 들어요! 별점 5점 줄게요.
+  기대: create_review -> {"order_id": "ORD-eval_dataset-0001", "rating": 5, "user_id": 1}
+  실제: [텍스트응답] 상품에 대한 리뷰 작성을 도와드리겠습니다. 먼저, 상품에 대한 만족도를 확인하고 싶습니다. "ORD-eval_dataset-0001" 상품에 대한 만족도는 어떻게 되시나요? (높음/보통/낮음 중 선택해 주세요.)
+  원인: Model did not call any tool, expected create_review
+
+[#12] 환불 신청
+  시스템프롬프트: O
+  질문: 이거 ORD-eval_dataset-0005 배송받아서 까봤는데 불량품이네요;; 환불해주세요.
+  기대: refund -> {"order_id": "ORD-eval_dataset-0005", "user_id": 2, "reason": "불량", "is_seller_fault": true}
+  실제: refund -> {"order_id":"ORD-eval_dataset-0005","user_id":2,"reason":"불량품"}
+  원인: Function arguments mismatch: g({'order_id': 'ORD-eval_dataset-0005', 'user_id': 2, 'reason': '불량', 'is_seller_fault': True}) | p({"order_id":"ORD-eval_dataset-0005","user_id":2,"reason":"불량품"})
+
+[#13] 교환 신청
+  시스템프롬프트: O
+  질문: 옷이 저한테 안 맞네요 ㅠㅠ ORD-eval_dataset-0006 사이즈 불일치로 교환하고 싶습니다.
+  기대: exchange -> {"order_id": "ORD-eval_dataset-0006", "user_id": 2, "reason": "사이즈 불일치", "is_seller_fault": false}
+  실제: exchange -> {"order_id":"ORD-eval_dataset-0006","user_id":2,"reason":"사이즈 불일치"}
+  원인: Function arguments mismatch: g({'order_id': 'ORD-eval_dataset-0006', 'user_id': 2, 'reason': '사이즈 불일치', 'is_seller_fault': False}) | p({"order_id":"ORD-eval_dataset-0006","user_id":2,"reason":"사이즈 불일치"})
+
+[#14] 주문 내역 조회 (주문번호 없음)
+  시스템프롬프트: O
+  질문: 저 주문내역 확인좀요. 결제는 했는데 주문번호를 안적어놨네요.
+  기대: get_user_orders -> {"user_id": 2}
+  실제: shipping -> {"user_id":2}
+  원인: Function name mismatch: g(get_user_orders) | p(shipping)
+
+[#17] 의류 추천
+  시스템프롬프트: O
+  질문: 이번 주말에 데이트가 있는데 입을만한 예쁜 원피스 추천 좀요.
+  기대: recommend_clothes -> {"category": "Dress", "user_id": 2}
+  실제: [텍스트응답] 원피스 추천을 위해 몇 가지 정보를 더 알려주세요.
+
+1. 원피스의 색상은 어떤 것을 선호하시나요? (예: 블랙, 레드, 블루 등)
+2. 어떤 용도로 입으실 건가요? (예: 캐주얼, 포멀, 파티 등)
+
+이 정보를 주
+  원인: Model did not call any tool, expected recommend_clothes
+
+[#18] 중고 판매 신청
+  시스템프롬프트: O
+  질문: 안 입는 패딩 중고 판매 등록하고 싶어요. 어떻게 하나요?
+  기대: open_used_sale_form -> {}
+  실제: [텍스트응답] 중고 판매 등록을 위해 상품의 상태와 희망 판매가, 카테고리를 알려주셔야 합니다. 
+
+1. 상품 상태는 어떤가요? (최상/상/중/하)
+2. 희망 판매가는 얼마인가요?
+3. 카테고리는 "패딩"으로 설정해도 괜찮으신가요
+  원인: Model did not call any tool, expected open_used_sale_form
+
+[#19] 리뷰 작성
+  시스템프롬프트: O
+  질문: ORD-eval_dataset-0004 받아보니 가성비 대박이네요 ㅋㅋㅋ 리뷰 5점으로 남겨주세요.
+  기대: create_review -> {"order_id": "ORD-eval_dataset-0004", "rating": 5, "user_id": 2}
+  실제: [텍스트응답] 리뷰 작성을 위해 몇 가지 정보를 더 필요로 합니다.
+
+1. 상품명: "ORD-eval_dataset-0004" 맞나요?
+2. 만족도: "높음"으로 설정해도 괜찮나요?
+3. 포함하고 싶은 키워드가 있나요? (예: 가
+  원인: Model did not call any tool, expected create_review
+
+[#22] 환불 신청
+  시스템프롬프트: O
+  질문: 상품 상태가 영 아니네요. 찢어져서 왔습니다. ORD-eval_dataset-0008 환불 처리 부탁드려요.
+  기대: refund -> {"order_id": "ORD-eval_dataset-0008", "user_id": 3, "is_seller_fault": true}
+  실제: refund -> {"order_id":"ORD-eval_dataset-0008","user_id":3,"reason":"상품 손상"}
+  원인: Function arguments mismatch: g({'order_id': 'ORD-eval_dataset-0008', 'user_id': 3, 'is_seller_fault': True}) | p({"order_id":"ORD-eval_dataset-0008","user_id":3,"reason":"상품 손상"})
+
+[#23] 교환 신청
+  시스템프롬프트: O
+  질문: ORD-eval_dataset-0009 교환 신청합니다. 생각보다 너무 작게 나왔네요.
+  기대: exchange -> {"order_id": "ORD-eval_dataset-0009", "user_id": 3, "is_seller_fault": false}
+  실제: exchange -> {"order_id":"ORD-eval_dataset-0009","user_id":3,"reason":"사이즈 문제"}
+  원인: Function arguments mismatch: g({'order_id': 'ORD-eval_dataset-0009', 'user_id': 3, 'is_seller_fault': False}) | p({"order_id":"ORD-eval_dataset-0009","user_id":3,"reason":"사이즈 문제"})
+
+[#24] 주문 내역 조회 (주문번호 없음)
+  시스템프롬프트: O
+  질문: 배송조회 하고싶은데 주문번호 없이도 되나요? 언제 오는지 알고싶어요.
+  기대: get_user_orders -> {"user_id": 3}
+  실제: shipping -> {"user_id":3}
+  원인: Function name mismatch: g(get_user_orders) | p(shipping)
+
+[#26] 상품 키워드 검색
+  시스템프롬프트: O
+  질문: 캐주얼하게 입기 편한 오버핏 맨투맨 있나요?
+  기대: search_by_text_clip -> {"query": "맨투맨"}
+  실제: search_by_text_clip -> {"query":"캐주얼 오버핏 맨투맨","limit":5}
+  원인: Function arguments mismatch: g({'query': '맨투맨'}) | p({"query":"캐주얼 오버핏 맨투맨","limit":5})
+
+[#27] 의류 추천
+  시스템프롬프트: O
+  질문: 운동할 때 입기 좋은 기능성 트레이닝복 상하의 찾아줘.
+  기대: recommend_clothes -> {"category": "Topwear", "usage": "Sports", "user_id": 3}
+  실제: [텍스트응답] 운동할 때 입기 좋은 기능성 트레이닝복 상하의를 추천해드리기 위해 몇 가지 정보를 더 여쭤볼게요.
+
+1. 선호하는 색상은 무엇인가요? (예: 블랙, 레드, 블루 등)
+2. 특별히 원하는 용도나 스타일이 있나요? (예
+  원인: Model did not call any tool, expected recommend_clothes
+
+[#29] 리뷰 작성
+  시스템프롬프트: O
+  질문: 배송도 빠르고 재질도 좋네요~ ORD-eval_dataset-0007 건에 대해 5점 리뷰 작성할게요.
+  기대: create_review -> {"order_id": "ORD-eval_dataset-0007", "rating": 5, "user_id": 3}
+  실제: [텍스트응답] 상품명과 만족도를 확인하기 위해 몇 가지 질문을 드리겠습니다.
+
+1. 상품명은 무엇인가요?
+2. 만족도는 높음, 보통, 낮음 중 어떤가요? (이미 말씀하신 대로 5점으로 작성할 예정입니다.) 
+
+이 정보를 알려주시면
+  원인: Model did not call any tool, expected create_review
+
+[#30] 상품권 등록
+  시스템프롬프트: O
+  질문: 이벤트로 받은 쿠폰 번호 DISCOUNT-7777 인데 기프트카드로 등록해주세요.
+  기대: register_gift_card -> {"code": "DISCOUNT-7777", "user_id": 3}
+  실제: [텍스트응답] 상품권 등록을 위해 쿠폰 번호를 입력해 주시면 등록을 진행하겠습니다. 쿠폰 번호를 다시 한 번 확인해 주세요.
+  원인: Model did not call any tool, expected register_gift_card
+

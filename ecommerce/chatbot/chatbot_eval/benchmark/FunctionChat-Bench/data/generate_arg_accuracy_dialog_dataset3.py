@@ -60,7 +60,7 @@ from ecommerce.platform.backend.app.router.reviews.models import Review
 from ecommerce.platform.backend.app.router.users.crud import get_user_by_email
 from ecommerce.platform.backend.app.router.orders.crud import get_orders_by_user_id
 
-OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialogs2.jsonl"
+OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialogs3.jsonl"
 
 # ─── OpenAI 설정 ──────────────────────────────────────────────────────────────
 from openai import OpenAI
@@ -92,20 +92,25 @@ def load_eval_users() -> list:
         users.append({"email": "test2@example.com", "actions": {}})
     return users
 
-def get_real_orders_with_status(user_email: str) -> tuple[int, list[dict]]:
+def get_real_orders_with_status(user_email: str, target_actions: dict = None) -> tuple[int, list[dict]]:
     """
     user_email 사용자의 실제 주문 목록과 user_id를 ORM 세션에서 가져옵니다.
     각 주문의 order_number, status, shipping_fee, shipping_info(delivered_at) 포함.
+    평가 데이터에 정의된 order_number가 DB에 없을 경우를 대비하여 강제 삽입합니다.
     """
+    user_id_map = {"test@example.com": 1, "test2@example.com": 2, "test3@example.com": 3}
+    user_id = user_id_map.get(user_email, 1)
+
+    result = []
     try:
         from datetime import datetime
         session = SessionLocal()
         user = get_user_by_email(session, user_email)
-        user_id = user.id if user else 1
+        if user:
+            user_id = user.id
 
         # crud 함수로 주문 목록 조회 (limit 50)
         orders, _ = get_orders_by_user_id(session, user_id, limit=50)
-        result = []
         for o in orders:
             delivered_at = None
             if hasattr(o, "shipping_info") and o.shipping_info:
@@ -115,21 +120,36 @@ def get_real_orders_with_status(user_email: str) -> tuple[int, list[dict]]:
                 days_since = (datetime.now() - delivered_at).days
             result.append({
                 "order_id": o.order_number,
-                "status": o.status,
+                "status": str(o.status.value if hasattr(o.status, 'value') else o.status),
                 "shipping_fee": o.shipping_fee or 0.0,
                 "days_since_delivery": days_since,
             })
         session.close()
-        print(f"[INFO] 실제 주문 조회 완료: {[o['order_id'] + '(' + o['status'] + ')' for o in result]}")
-        return user_id, result
+        print(f"[INFO] 실제 주문 조회 완료 (user_id: {user_id}): {[o['order_id'] + '(' + o['status'] + ')' for o in result]}")
     except Exception as e:
         print(f"[WARN] ORM DB 조회 실패: {e}")
-    # Fallback
-    return 1, [
-        {"order_id": "ORD-FALLBACK-0001", "status": "paid",      "shipping_fee": 3000.0, "days_since_delivery": None},
-        {"order_id": "ORD-FALLBACK-0002", "status": "shipped",    "shipping_fee": 3000.0, "days_since_delivery": None},
-        {"order_id": "ORD-FALLBACK-0003", "status": "delivered",  "shipping_fee": 3000.0, "days_since_delivery": 2},
-    ]
+
+    # 평가 데이터를 위해 target_orders를 result에 무조건 삽입
+    target_actions = target_actions or {}
+    for action_type, data in target_actions.items():
+        o_num = data.get("order_number")
+        if o_num and not any(o["order_id"] == o_num for o in result):
+            # 시나리오에 맞는 임의의 status 부여
+            status = "delivered"
+            if action_type == "주문취소":
+                status = "paid"
+            elif action_type == "환불":
+                status = "delivered"
+            elif action_type == "교환":
+                status = "shipped"
+            result.append({
+                "order_id": o_num,
+                "status": status,
+                "shipping_fee": 3000.0,
+                "days_since_delivery": 2 if status == "delivered" else None
+            })
+
+    return user_id, result
 
 
 def classify_order(order: dict) -> dict:
@@ -658,7 +678,7 @@ def main():
         actions = user_info["actions"]
         print(f"\n>>> [{u_idx}/{len(users)}] 유저 '{user_email}' 데이터 생성 시작")
 
-        user_id, all_orders = get_real_orders_with_status(user_email)
+        user_id, all_orders = get_real_orders_with_status(user_email, actions)
         if not all_orders:
             print(f"  [ERROR] 유저 {user_email}의 주문 정보를 가져오지 못했습니다. 건너뜁니다.")
             continue
@@ -668,7 +688,12 @@ def main():
 
             action = scenario.get("action")
             target_eval_type = ACTION_TO_EVAL_TYPE.get(action)
-            target_order_number = actions.get(target_eval_type, {}).get("order_number") if target_eval_type else None
+            
+            # eval_data 에 매핑된 타입이 있다면 그 주문번호를 가져오고, 아니면 첫 번째 평가용 주문을 재사용
+            if target_eval_type and target_eval_type in actions:
+                target_order_number = actions[target_eval_type].get("order_number")
+            else:
+                target_order_number = list(actions.values())[0].get("order_number") if actions else None
 
             order = pick_order_for_scenario(scenario, all_orders, target_order_number)
             if not order:
@@ -739,7 +764,7 @@ def main():
             print(f"    → 완료 (추출된 턴 수: {len(call_turns)}개, possible={scenario['possible']})")
 
     # 5. JSONL 저장
-    OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialogs2.jsonl"
+    OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialogs3.jsonl"
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
         for item in final_flat_results:

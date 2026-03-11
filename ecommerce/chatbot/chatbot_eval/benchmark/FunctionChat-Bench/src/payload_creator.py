@@ -239,7 +239,13 @@ class DialogPayloadCreator(AbstractPayloadCreator):
                     tools = []
                     relevant_tools_list = test_input.get('relevant_tools') or test_input.get('tools', [])
                     for rt in relevant_tools_list:
-                        name = rt.get('name')
+                        if 'function' in rt:
+                            name = rt['function'].get('name')
+                            params = rt['function'].get('parameters', {})
+                        else:
+                            name = rt.get('name')
+                            params = rt.get('parameters', {})
+                            
                         if name in full_tools_lookup:
                             tools.append(full_tools_lookup[name])
                         else:
@@ -247,17 +253,18 @@ class DialogPayloadCreator(AbstractPayloadCreator):
                                 "type": "function",
                                 "function": {
                                     "name": name,
-                                    "parameters": rt.get("parameters", {})
+                                    "parameters": params
                                 }
                             })
                     
                     scenario_name = test_input.get('scenario_name')
+                    scenario_action = test_input.get('expected_tool')  # 'cancel', 'refund' 등 영문 키
                     scenario_id = test_input.get('scenario_id')
                     user_id = test_input.get('user_id', 1)
                     user_email = test_input.get('user_email', 'user@example.com')
                     
-                    # Get branched or default system prompt
-                    current_system_prompt = self._get_branch_prompt(scenario_name, scenario_id, user_id, user_email)
+                    # Get branched or default system prompt (영문 키인 scenario_action 사용!)
+                    current_system_prompt = self._get_branch_prompt(scenario_action, scenario_id, user_id, user_email)
                     
                     messages = [{'role': 'system', 'content': current_system_prompt}] if current_system_prompt else []
                     
