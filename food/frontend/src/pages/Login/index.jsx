@@ -1,15 +1,30 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import layout from "../../styles/layout.module.css";
+import { useAuth } from "../../context/AuthContext";
 
 const Login = () => {
   const [form, setForm] = useState({ email: "", password: "" });
+  const [error, setError] = useState("");
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
   const handleChange = (event) => {
     setForm({ ...form, [event.target.name]: event.target.value });
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    alert(`Submitting ${form.email}`);
+    setError("");
+    const result = await login({
+      email: form.email,
+      password: form.password,
+    });
+    if (!result.success) {
+      setError(result.message ?? "로그인할 수 없습니다.");
+      return;
+    }
+    navigate("/", { replace: true });
   };
 
   return (
@@ -42,6 +57,7 @@ const Login = () => {
               required
             />
           </label>
+          {error && <p style={styles.error}>{error}</p>}
           <button type="submit" style={styles.primaryButton}>
             로그인
           </button>
@@ -125,6 +141,11 @@ const styles = {
     fontSize: "1rem",
     fontWeight: 600,
     cursor: "pointer",
+  },
+  error: {
+    color: "#d32f2f",
+    fontSize: "0.9rem",
+    marginTop: "0.4rem",
   },
 };
 
