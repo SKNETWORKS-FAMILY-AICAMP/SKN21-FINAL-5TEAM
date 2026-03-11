@@ -1,38 +1,59 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 
-const Header = () => (
-  <header style={styles.header}>
-    <div style={styles.left}>
-      <button type="button" style={styles.menuButton}>
-        ☰
-      </button>
-      <div style={styles.brand}>
-        <Link to="/" style={styles.logo}>
-          Yaam
-        </Link>
+const Header = () => {
+  const { isAuthenticated, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
+
+  return (
+    <header style={styles.header}>
+      <div style={styles.left}>
+        <button type="button" style={styles.menuButton}>
+          ☰
+        </button>
+        <div style={styles.brand}>
+          <Link to="/" style={styles.logo}>
+            Yaam
+          </Link>
+        </div>
       </div>
-    </div>
-    <div style={styles.searchWrapper}>
-      <input
-        type="text"
-        placeholder="상품명을 검색하세요"
-        style={styles.searchInput}
-      />
-    </div>
-    <nav style={styles.right}>
-      <Link to="/orders" style={styles.link}>
-        상품목록
-      </Link>
-      <Link to="/mypage" style={styles.link}>
-        마이
-      </Link>
-      <Link to="/login" style={styles.link}>
-        로그인
-      </Link>
-    </nav>
-  </header>
-);
+      <div style={styles.searchWrapper}>
+        <input
+          type="text"
+          placeholder="상품명을 검색하세요"
+          style={styles.searchInput}
+        />
+      </div>
+      <nav style={styles.right}>
+        <Link to="/orders" style={styles.link}>
+          상품목록
+        </Link>
+        <Link to="/mypage" style={styles.link}>
+          마이
+        </Link>
+        {isAuthenticated ? (
+          <button
+            type="button"
+            style={styles.logoutButton}
+            onClick={handleLogout}
+          >
+            로그아웃
+          </button>
+        ) : (
+          <Link to="/login" style={styles.link}>
+            로그인
+          </Link>
+        )}
+      </nav>
+    </header>
+  );
+};
 
 const styles = {
   header: {
@@ -96,6 +117,15 @@ const styles = {
     color: "#111",
     textDecoration: "none",
     fontWeight: 500,
+  },
+  logoutButton: {
+    background: "none",
+    border: "1px solid #2e7d32",
+    borderRadius: "12px",
+    padding: "0.35rem 0.9rem",
+    fontWeight: 500,
+    cursor: "pointer",
+    color: "#2e7d32",
   },
 };
 
