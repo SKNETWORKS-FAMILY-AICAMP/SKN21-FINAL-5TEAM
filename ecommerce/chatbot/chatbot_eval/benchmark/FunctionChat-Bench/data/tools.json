@@ -489,5 +489,40 @@
                 ]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_user_orders",
+            "description": "사용자의 최근 주문 목록을 조회합니다. 주문번호를 모를 때 주문 목록을 띄워주는 용도로 사용됩니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "integer",
+                        "description": "The user ID"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "조회 개수"
+                    },
+                    "days": {
+                        "type": "integer",
+                        "description": "조회 기간(일)"
+                    },
+                    "requires_selection": {
+                        "type": "boolean",
+                        "description": "UI에서 주문 선택이 필요한지 여부"
+                    },
+                    "action_context": {
+                        "type": "string",
+                        "description": "선택 후 진행할 액션 컨텍스트 (e.g. shipping, cancel, refund)"
+                    }
+                },
+                "required": [
+                    "user_id"
+                ]
+            }
+        }
     }
 ]

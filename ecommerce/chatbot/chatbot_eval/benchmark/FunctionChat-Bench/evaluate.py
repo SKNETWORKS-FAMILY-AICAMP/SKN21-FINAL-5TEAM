@@ -60,6 +60,7 @@ def default_eval_options(f):
     f = click.option('--is_batch', help='batch processing(True, False)', cls=DefaultBatchPromptOptions, default=True)(f)
     f = click.option('--output_dir', help='custom output directory name', default=None)(f)
     f = click.option('--num_samples', help='limit the number of test cases', type=int, default=None)(f)
+    f = click.option('--trace_count', help='number of samples to trace in LangSmith', type=int, default=1)(f)
     # openai type
     f = click.option('--api_key', help='api key', cls=DefaultApiKeyPromptOptions, default=None)(f)
     f = click.option('--temperature', help='generate temperature', default=DEFAULT_TEMPERATURE)(f)
@@ -217,6 +218,7 @@ def run_evaluate(
         is_batch=True, # batch processing 옵션
         output_dir=None,
         num_samples=None,
+        trace_count=1,
     ):
     eval_subtype = get_eval_subtype(eval_type, input_path)
     model_name = None
@@ -270,6 +272,10 @@ def run_evaluate(
             api_request_list = api_request_list[:num_samples]
             print(f"[[Limited to {len(api_request_list)} samples]]")
 
+        # LangSmith 트레이싱 제어
+        for i, req in enumerate(api_request_list):
+            req['trace'] = (i < trace_count)
+
         api_response_list = ResponseHandler(
             model, api_key, base_url, model_name,
             gcloud_project_id, gcloud_location
@@ -320,7 +326,7 @@ def dialog(model,
            model_path, tool_parser, serving_wait_timeout,
            reset, sample, debug, only_exact,
            gcloud_project_id, gcloud_location,
-           is_batch, output_dir, num_samples):
+           is_batch, output_dir, num_samples, trace_count):
     eval_type = inspect.stack()[0][3]
     run_evaluate(
       eval_type, f'FunctionChat-{eval_type.capitalize()}',
@@ -334,7 +340,8 @@ def dialog(model,
       system_prompt_path=system_prompt_path,
       is_batch=is_batch,
       output_dir=output_dir,
-      num_samples=num_samples
+      num_samples=num_samples,
+      trace_count=trace_count
     )
 
 
@@ -350,7 +357,7 @@ def singlecall(model, input_path, system_prompt_path,
                reset, sample, debug, only_exact,
                gcloud_project_id, gcloud_location,
                tools_type,
-               is_batch, output_dir, num_samples):
+               is_batch, output_dir, num_samples, trace_count):
     eval_type = inspect.stack()[0][3]
     run_evaluate(
       eval_type, f'FunctionChat-{eval_type.capitalize()}',
@@ -365,23 +372,21 @@ def singlecall(model, input_path, system_prompt_path,
       tools_type=tools_type,
       is_batch=is_batch,
       output_dir=output_dir,
-      num_samples=num_samples
+      num_samples=num_samples,
+      trace_count=trace_count
     )
 
 @cli.command()
 @default_eval_options
 def common(model, input_path,
-           # common
            temperature, api_key,
            # inhouse
            base_url, served_model_name, 
            # inhouse-local
            model_path, tool_parser, serving_wait_timeout,
-           # eval option
            reset, sample, debug, only_exact,
-           # gemini option
            gcloud_project_id, gcloud_location,
-           is_batch, output_dir, num_samples):
+           is_batch, output_dir, num_samples, trace_count):
 
     eval_type = inspect.stack()[0][3]
     run_evaluate(
@@ -395,7 +400,8 @@ def common(model, input_path,
       gcloud_project_id, gcloud_location,
       is_batch=is_batch,
       output_dir=output_dir,
-      num_samples=num_samples
+      num_samples=num_samples,
+      trace_count=trace_count
     )
 
 
