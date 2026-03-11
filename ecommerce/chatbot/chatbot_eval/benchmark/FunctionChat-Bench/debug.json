@@ -1,0 +1,68 @@
+{
+  "serial_num": 8,
+  "messages": [
+    {
+      "role": "user",
+      "content": "[System: User uploaded an image] 이 사진에 있는 가방이랑 비슷한 거 찾아주세요."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "search_by_image",
+        "description": "CLIP/Qdrant를 활용해 업로드된 이미지와 유사한 상품을 추천합니다.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "image_bytes": {
+              "type": "string",
+              "description": "이미지 바이트 데이터 (base64 인코딩 권장)"
+            },
+            "top_k": {
+              "type": "integer",
+              "description": "검색 결과 개수",
+              "default": 5
+            },
+            "query_text": {
+              "type": "string",
+              "description": "(선택) 이미지 검색 시 함께 고려할 텍스트 쿼리",
+              "default": null
+            },
+            "search_mode": {
+              "type": "string",
+              "description": "검색 모드 (similar, opposite 등)",
+              "default": "similar"
+            }
+          },
+          "required": [
+            "image_bytes"
+          ]
+        }
+      }
+    }
+  ],
+  "temperature": 0.0,
+  "tool_choice": "auto",
+  "ground_truth": {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "type": "function",
+        "function": {
+          "name": "search_by_image",
+          "arguments": {
+            "image_bytes": ""
+          }
+        },
+        "id": "call_8"
+      }
+    ]
+  },
+  "acceptable_arguments": "{}",
+  "user_id": 1,
+  "scenario_name": "이미지 검색",
+  "scenario_id": null,
+  "type_of_output": "call"
+}

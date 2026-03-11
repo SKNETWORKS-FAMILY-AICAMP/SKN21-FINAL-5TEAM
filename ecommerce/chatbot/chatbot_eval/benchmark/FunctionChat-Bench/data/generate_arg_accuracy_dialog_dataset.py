@@ -203,7 +203,7 @@ def call_gpt(system_prompt: str, user_prompt: str) -> str:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        temperature=0.7,
+        temperature=0.2,
         max_tokens=3000,
     )
     return response.choices[0].message.content.strip()

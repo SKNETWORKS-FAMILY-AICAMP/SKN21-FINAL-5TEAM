@@ -6,15 +6,20 @@
 
 # Output Format
 1. 제출된 응답이 규칙을 따르는지 한국어로 간단히 설명하세요.
-2. 마지막 줄에 반드시 PASS 또는 FAIL만 출력하세요.
+2. 반드시 아래 JSON 형식으로만 출력하세요.
+{
+  "reasoning": "제출된 응답이 규칙을 따르는지 한국어로 간단히 설명",
+  "result": "PASS" // 또는 "FAIL"
+}
 
 ---
 
 # Scenario Rule
-{scenario_rule}
+[Refer to System Message for Scenario Rules]
 
 # Dialogue
-{dialogue}
+System: "[생략: 상단 Scenario Rule 참고]"
+User: "최근에 주문한 티셔츠(ORD-eval_dataset-0001) 취소할게요. 사유는 단순 변심입니다."
 
 # Model Submission
-{response}
+{"content": null, "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": [{"id": "call_XqESrQTDorrF2o4fBZUcrVPr", "function": {"arguments": "{\"order_id\":\"ORD-eval_dataset-0001\",\"user_id\":1,\"reason\":\"단순 변심\"}", "name": "cancel"}, "type": "function"}]}
