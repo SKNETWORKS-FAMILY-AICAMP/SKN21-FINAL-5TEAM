@@ -107,6 +107,7 @@ def get_file_paths(test_prefix, model_name, eval_type, tools_type=None, output_d
             "predict": f"{base_path}.{model_name}.{tools_type}.output.jsonl",
             "eval": f"{base_path}.{model_name}.{tools_type}.eval.jsonl",
             "eval_log": f"{base_path}.{model_name}.{tools_type}.eval_report.tsv",
+            "eval_reasoning": f"{base_path}.{model_name}.{tools_type}.reasoning.csv",
         }
     else:
         return {
@@ -114,6 +115,7 @@ def get_file_paths(test_prefix, model_name, eval_type, tools_type=None, output_d
             "predict": f"{base_path}.{model_name}.output.jsonl",
             "eval": f"{base_path}.{model_name}.eval.jsonl",
             "eval_log": f"{base_path}.{model_name}.eval_report.tsv",
+            "eval_reasoning": f"{base_path}.{model_name}.reasoning.csv",
         }
 
 
@@ -291,7 +293,7 @@ def run_evaluate(
         
         EvaluationHandler(eval_type).evaluate(
             api_request_list, api_response_list,
-            file_paths['eval'], file_paths['eval_log'],
+            file_paths['eval'], file_paths['eval_log'], file_paths['eval_reasoning'],
             reset, sample, debug, only_exact,
             model_name=model_name,
             llm_judge_name=llm_judge_name,
