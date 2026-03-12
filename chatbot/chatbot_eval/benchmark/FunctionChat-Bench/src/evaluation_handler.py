@@ -615,6 +615,10 @@ class EvaluationHandler:
             except:
                 reasoning_text = reasoning_field
 
+            # 불필요한 'pass', 'fail' 반복 문구 제거 (정밀 비교 결과 정리)
+            if isinstance(reasoning_text, str) and "[정밀 비교 결과]" in reasoning_text:
+                reasoning_text = reasoning_text.split('\n\n')[0].strip()
+
             # Filter: Only write to reasoning CSV if it's a FAIL case
             is_pass_val = response_formatter.report_arguments.get('is_pass')
             if str(is_pass_val).lower() != 'pass':
