@@ -9,7 +9,7 @@
 - 백엔드 실행(루트): `uv run uvicorn ecommerce.backend.app.main:app --reload --host 0.0.0.0 --port 8000`
 >>>>>>> 0292cc4ddd73d5bbaa321534bdb53adc66b09ada
 - 프론트엔드 실행:
-  - `npm run dev --prefix ecommerce/platform/frontend`
+  - `npm run dev --prefix ecommerce/frontend`
 - 통합 실행(도커): `docker compose up -d --build`
 
 ## 커밋 및 PR 가이드라인
