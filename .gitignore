@@ -36,12 +36,19 @@ yarn-error.log*
 backend.log
 logs/
 results/
-ecommerce/chatbot/data/raw/fashion-dataset
-ecommerce/chatbot/data/processed
-ecommerce/chatbot/chatbot_eval/benchmark/FunctionChat-Bench/output/
-ecommerce/chatbot/chatbot_eval/benchmark/KOLD/result.md
-ecommerce/platform/backend/app/static/chatbot_uploads/
-ecommerce/platform/frontend/public/products
+chatbot/data/raw/fashion-dataset
+chatbot/data/processed
+chatbot/chatbot_eval/benchmark/FunctionChat-Bench/output/
+chatbot/chatbot_eval/benchmark/KOLD/result.md
+platform/backend/app/static/chatbot_uploads/
+platform/frontend/public/products
+
+**/public/products/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
 
 # Food workspace artifacts
 food/backend/db.sqlite3
