@@ -1,6 +1,6 @@
 
 from openai import OpenAI
-from chatbot.src.core.config import settings
+from ecommerce.chatbot.src.core.config import settings
 
 class OpenAIClientWrapper:
     _instance: OpenAI | None = None

@@ -13,8 +13,8 @@ from qdrant_client.http import models
 from tqdm import tqdm
 from transformers import CLIPModel, CLIPProcessor
 
-from chatbot.src.core.config import settings
-from chatbot.src.infrastructure.qdrant import get_qdrant_client
+from ecommerce.chatbot.src.core.config import settings
+from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
 
 
 @dataclass

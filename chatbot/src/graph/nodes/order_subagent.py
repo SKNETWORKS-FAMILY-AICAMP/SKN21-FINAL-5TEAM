@@ -27,9 +27,9 @@ Refund SubAgent 노드.
 from langchain_core.messages import SystemMessage
 from langgraph.prebuilt import create_react_agent
 
-from chatbot.src.graph.state import GlobalAgentState
-from chatbot.src.graph.llm_providers import make_chat_llm
-from chatbot.src.tools.order_tools import (
+from ecommerce.chatbot.src.graph.state import GlobalAgentState
+from ecommerce.chatbot.src.graph.llm_providers import make_chat_llm
+from ecommerce.chatbot.src.tools.order_tools import (
     get_shipping_details,
     cancel_order,
     register_return_request,

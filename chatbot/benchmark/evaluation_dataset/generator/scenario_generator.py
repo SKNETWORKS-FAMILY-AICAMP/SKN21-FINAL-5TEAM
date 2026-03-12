@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ecommerce.backend.app.database import SessionLocal
 from ecommerce.backend.app.models import Order, Product, User, ShippingAddress
-from chatbot.src.infrastructure.openai import get_openai_client
+from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 
 
 class ScenarioGenerator:
@@ -334,7 +334,7 @@ class ScenarioGenerator:
         """
         try:
             # nodes_v2.py에서 실제 도구 객체 가져오기
-            from chatbot.src.graph.nodes_v2 import TOOLS
+            from ecommerce.chatbot.src.graph.nodes_v2 import TOOLS
 
             tool_obj = None
             for t in TOOLS:

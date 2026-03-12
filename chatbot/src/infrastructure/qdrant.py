@@ -1,6 +1,6 @@
 
 from qdrant_client import QdrantClient
-from chatbot.src.core.config import settings
+from ecommerce.chatbot.src.core.config import settings
 
 class QdrantClientWrapper:
     _instance: QdrantClient | None = None

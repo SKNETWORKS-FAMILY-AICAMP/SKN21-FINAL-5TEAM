@@ -3,9 +3,9 @@ import json
 import uuid
 from tqdm import tqdm
 from qdrant_client.http import models
-from chatbot.src.infrastructure.qdrant import get_qdrant_client
-from chatbot.src.core.config import settings
-from chatbot.src.data_preprocessing.bge_m3_embedding import (
+from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
+from ecommerce.chatbot.src.core.config import settings
+from ecommerce.chatbot.src.data_preprocessing.bge_m3_embedding import (
     embed_texts,
     get_embedding_dim,
 )

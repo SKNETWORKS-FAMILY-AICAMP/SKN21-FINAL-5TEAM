@@ -27,9 +27,9 @@ from langchain_core.tracers import LangChainTracer
 from langgraph.types import Command
 import orjson
 
-from chatbot.src.graph.workflow import graph_app
-from chatbot.src.schemas.chat import ChatRequest, ReviewDraftRequest
-from chatbot.src.tools.service_tools import generate_review_draft
+from ecommerce.chatbot.src.graph.workflow import graph_app
+from ecommerce.chatbot.src.schemas.chat import ChatRequest, ReviewDraftRequest
+from ecommerce.chatbot.src.tools.service_tools import generate_review_draft
 from ecommerce.backend.app.core.auth import get_current_user
 from ecommerce.backend.app.router.users.models import User
 from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR

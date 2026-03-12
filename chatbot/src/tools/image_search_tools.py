@@ -11,8 +11,8 @@ from typing import List, Optional, Tuple
 from langchain_core.tools import tool
 from PIL import Image
 
-from chatbot.src.core.config import settings
-from chatbot.src.infrastructure.qdrant import get_qdrant_client
+from ecommerce.chatbot.src.core.config import settings
+from ecommerce.chatbot.src.infrastructure.qdrant import get_qdrant_client
 
 try:
     import torch

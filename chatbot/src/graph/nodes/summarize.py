@@ -22,8 +22,8 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage
 
-from chatbot.src.graph.state import GlobalAgentState
-from chatbot.src.infrastructure.kobart_summarizer import summarize_conversation
+from ecommerce.chatbot.src.graph.state import GlobalAgentState
+from ecommerce.chatbot.src.infrastructure.kobart_summarizer import summarize_conversation
 
 logger = logging.getLogger(__name__)
 

@@ -1,12 +1,12 @@
 .venv/
 .git/
 myenv/
-ecommerce/platform/frontend/.venv/
-ecommerce/platform/frontend/node_modules/
-ecommerce/platform/frontend/.next/
+ecommerce/frontend/.venv/
+ecommerce/frontend/node_modules/
+ecommerce/frontend/.next/
 frontend/.npm/
 node_modules/
 logs/
 results/
-ecommerce/chatbot/data/raw/
-ecommerce/chatbot/data/processed/
+chatbot/data/raw/
+chatbot/data/processed/

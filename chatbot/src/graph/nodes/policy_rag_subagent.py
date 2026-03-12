@@ -16,9 +16,9 @@ Policy RAG SubAgent 노드.
 
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
-from chatbot.src.graph.state import GlobalAgentState
-from chatbot.src.graph.llm_providers import make_chat_llm
-from chatbot.src.tools.retrieval_tools import search_knowledge_base
+from ecommerce.chatbot.src.graph.state import GlobalAgentState
+from ecommerce.chatbot.src.graph.llm_providers import make_chat_llm
+from ecommerce.chatbot.src.tools.retrieval_tools import search_knowledge_base
 
 # ── 프롬프트 ──────────────────────────────────────────────
 

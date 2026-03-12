@@ -40,6 +40,7 @@ oauth.register(
 
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
+FRONTEND_REDIRECT_URL = os.getenv("FRONTEND_REDIRECT_URL", "http://localhost:3000")
 
 # =========================
 # Admin - 전체 유저 조회
@@ -395,7 +396,7 @@ async def google_callback(
     # 4️⃣ JWT 발급
     access_token = create_access_token(user.id)
 
-    response = RedirectResponse(url="/")
+    response = RedirectResponse(url=FRONTEND_REDIRECT_URL, status_code=302)
     response.set_cookie(
         key="access_token",
         value=access_token,

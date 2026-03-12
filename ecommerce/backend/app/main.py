@@ -35,7 +35,7 @@ from ecommerce.backend.app.router.user_history.router import (
 import ecommerce.backend.app.router.users.models
 import ecommerce.backend.app.router.user_history.models
 import logging
-from chatbot.src.api.v1.endpoints.chat import router as chatbot_router
+from ecommerce.chatbot.src.api.v1.endpoints.chat import router as chatbot_router
 from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR
 from starlette.middleware.sessions import SessionMiddleware  # 미드웨워 추가
 
@@ -179,7 +179,7 @@ async def lifespan(app: FastAPI):
     if _should_preload_heavy_models_once_per_reload_session():
         # 4. 챗봇 리트리버 모델 미리 로드 (Pre-loading)
         try:
-            from chatbot.src.tools.retrieval_tools import ensure_retrieval_models
+            from ecommerce.chatbot.src.tools.retrieval_tools import ensure_retrieval_models
 
             step_t0 = time.perf_counter()
             ensure_retrieval_models()
@@ -189,7 +189,7 @@ async def lifespan(app: FastAPI):
 
         # 5. Guardrail 모델 미리 로드 (prismdata/guardrail-ko-11class)
         try:
-            from chatbot.src.graph.nodes.guardrail import load_guardrail_model
+            from ecommerce.chatbot.src.graph.nodes.guardrail import load_guardrail_model
 
             step_t0 = time.perf_counter()
             load_guardrail_model()
@@ -199,7 +199,7 @@ async def lifespan(app: FastAPI):
 
         # 6. BGE-M3 임베딩 모델 미리 로드 (BAAI/bge-m3)
         try:
-            from chatbot.src.data_preprocessing.bge_m3_embedding import preload_model as preload_bge_m3
+            from ecommerce.chatbot.src.data_preprocessing.bge_m3_embedding import preload_model as preload_bge_m3
 
             step_t0 = time.perf_counter()
             preload_bge_m3()
@@ -209,7 +209,7 @@ async def lifespan(app: FastAPI):
 
         # 7. KoBART 대화 요약 모델 미리 로드 (EbanLee/kobart-summary-v3)
         try:
-            from chatbot.src.infrastructure.kobart_summarizer import preload_model as preload_kobart
+            from ecommerce.chatbot.src.infrastructure.kobart_summarizer import preload_model as preload_kobart
 
             step_t0 = time.perf_counter()
             preload_kobart()
@@ -219,7 +219,7 @@ async def lifespan(app: FastAPI):
 
         # 8. CLIP 검색 모델 미리 로드 (openai/clip-vit-base-patch32)
         try:
-            from chatbot.src.tools.image_search_tools import preload_clip_resources
+            from ecommerce.chatbot.src.tools.image_search_tools import preload_clip_resources
 
             step_t0 = time.perf_counter()
             preload_clip_resources()

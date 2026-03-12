@@ -15,11 +15,11 @@ FormAction SubAgent 노드.
 from langchain_core.messages import SystemMessage
 from langgraph.prebuilt import create_react_agent
 
-from chatbot.src.graph.state import GlobalAgentState
-from chatbot.src.schemas.planner import TaskIntent
-from chatbot.src.graph.llm_providers import make_chat_llm
-from chatbot.src.tools.service_tools import create_review
-from chatbot.src.tools.used_tools import open_used_sale_form, register_used_sale
+from ecommerce.chatbot.src.graph.state import GlobalAgentState
+from ecommerce.chatbot.src.schemas.planner import TaskIntent
+from ecommerce.chatbot.src.graph.llm_providers import make_chat_llm
+from ecommerce.chatbot.src.tools.service_tools import create_review
+from ecommerce.chatbot.src.tools.used_tools import open_used_sale_form, register_used_sale
 
 # ── 도구 목록 ─────────────────────────────────────────────
 

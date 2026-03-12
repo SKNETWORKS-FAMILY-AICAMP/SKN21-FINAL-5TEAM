@@ -12,7 +12,7 @@ Guardrail 노드.
   - 서비스 관련 클래스로 판별되면 통과, 그 외 → END
 
 서버 시작 시 호출:
-  from chatbot.src.graph.nodes.guardrail import load_guardrail_model
+  from ecommerce.chatbot.src.graph.nodes.guardrail import load_guardrail_model
   load_guardrail_model()
 """
 
@@ -20,7 +20,7 @@ import logging
 from transformers import pipeline, Pipeline
 from langchain_core.messages import AIMessage, HumanMessage
 
-from chatbot.src.graph.state import GlobalAgentState
+from ecommerce.chatbot.src.graph.state import GlobalAgentState
 
 logger = logging.getLogger(__name__)
 

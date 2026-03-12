@@ -6,7 +6,7 @@ from decimal import Decimal
 import httpx
 from langchain_core.tools import tool
 
-from chatbot.src.core.config import settings
+from ecommerce.chatbot.src.core.config import settings
 from ecommerce.backend.app.database import SessionLocal
 from ecommerce.backend.app.router.products.models import (
     Category,

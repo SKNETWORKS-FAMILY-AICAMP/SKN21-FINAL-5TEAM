@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from datetime import datetime, timedelta
 import random
 import httpx
-from chatbot.src.core.config import settings
+from ecommerce.chatbot.src.core.config import settings
 
 
 class BaseAPITool:

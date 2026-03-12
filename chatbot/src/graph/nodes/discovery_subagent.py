@@ -25,15 +25,15 @@ from urllib.request import urlopen
 from langchain_core.messages import SystemMessage, AIMessage
 from langgraph.prebuilt import create_react_agent
 
-from chatbot.src.graph.state import GlobalAgentState
-from chatbot.src.schemas.planner import TaskIntent
-from chatbot.src.graph.llm_providers import make_chat_llm
-from chatbot.src.tools.recommendation_tools import (
+from ecommerce.chatbot.src.graph.state import GlobalAgentState
+from ecommerce.chatbot.src.schemas.planner import TaskIntent
+from ecommerce.chatbot.src.graph.llm_providers import make_chat_llm
+from ecommerce.chatbot.src.tools.recommendation_tools import (
     recommend_clothes,
     search_by_image,
     search_by_text_clip,
 )
-from chatbot.src.infrastructure.openai import get_openai_client
+from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR
 
 # ── 도구 목록 (TEXT 경로) ──────────────────────────────────
