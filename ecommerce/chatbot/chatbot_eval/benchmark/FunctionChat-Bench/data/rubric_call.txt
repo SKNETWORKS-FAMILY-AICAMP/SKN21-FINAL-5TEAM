@@ -1,25 +1,36 @@
 # Role
-당신은 LLM의 응답이 주어진 규칙을 올바르게 따르는지 평가하는 평가관입니다.
+당신은 LLM의 응답이 주어진 규칙을 올바르게 따르는지 평가하는 전문 평가관입니다.
 
-# Evaluation Criteria
+# [중요] 기본 기술 준수 사항 (Technical Standards)
+1. 도구명(Function Name): [Available Tool Specification]에 정의된 이름과 정확히 일치해야 함. (대소문자 및 철자 주의)
+2. 인자 키(Argument Keys): 정의된 파라미터 이름이 모두 포함되어야 하며, 정의되지 않은 키가 포함되면 FAIL.
+3. 데이터 타입(Data Types): 정수(Integer)는 숫자 형태로, 문자열(String)은 따옴표가 있는 문자로 명확히 구분되어야 함. (예: 숫자를 따옴표로 감싸서 전달하거나 데이터를 잘못된 타입으로 전달하면 FAIL)
+
+# Evaluation Criteria (시나리오별 추가 기준)
 {criteria}
+
+# Available Tool Specification
+{tools}
+
+# Data for Evaluation
+1. 정답 데이터 (Ground Truth): {ground_truth}
+2. 허용 가능한 인자 (Acceptable Arguments): {acceptable_arguments}
 
 # Output Format
 1. 제출된 응답이 규칙을 따르는지 한국어로 간단히 설명하세요.
 2. 반드시 아래 JSON 형식으로만 출력하세요.
 {
-  "reasoning": "제출된 응답이 규칙을 따르는지 한국어로 간단히 설명",
+  "reasoning": "채점 결과에 대한 논리적 근거를 한국어로 설명",
   "result": "PASS" // 또는 "FAIL"
 }
 
 ---
 
 # Scenario Rule
-[Refer to System Message for Scenario Rules]
+{scenario_rule}
 
 # Dialogue
-System: "[생략: 상단 Scenario Rule 참고]"
-User: "최근에 주문한 티셔츠(ORD-eval_dataset-0001) 취소할게요. 사유는 단순 변심입니다."
+{dialogue}
 
 # Model Submission
-{"content": null, "refusal": null, "role": "assistant", "annotations": [], "audio": null, "function_call": null, "tool_calls": [{"id": "call_XqESrQTDorrF2o4fBZUcrVPr", "function": {"arguments": "{\"order_id\":\"ORD-eval_dataset-0001\",\"user_id\":1,\"reason\":\"단순 변심\"}", "name": "cancel"}, "type": "function"}]}
+{response}
