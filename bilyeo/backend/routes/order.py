@@ -1,33 +1,19 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from functools import wraps
-import jwt
 
-from config import SECRET_KEY
 from models.order import get_orders_by_user
 
 order_bp = Blueprint("order", __name__)
 
 
 def login_required(f):
-    """JWT 토큰 인증 데코레이터"""
+    """세션 인증 데코레이터"""
     @wraps(f)
     def decorated(*args, **kwargs):
-        token = request.headers.get("Authorization")
-        if not token:
+        if "user_id" not in session:
             return jsonify({"error": "로그인이 필요합니다."}), 401
 
-        # "Bearer <token>" 형식에서 토큰 추출
-        if token.startswith("Bearer "):
-            token = token[7:]
-
-        try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-            request.user_id = payload["user_id"]
-        except jwt.ExpiredSignatureError:
-            return jsonify({"error": "토큰이 만료되었습니다."}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({"error": "유효하지 않은 토큰입니다."}), 401
-
+        request.user_id = session["user_id"]
         return f(*args, **kwargs)
     return decorated
 
