@@ -7,67 +7,63 @@ import React, {
   useState,
 } from "react";
 
-const STORAGE_KEY = "yaam_auth_token";
+import { login as loginApi, logout as logoutApi, fetchMe } from "../api/api";
 
 const AuthContext = createContext({
-  token: undefined,
+  user: null,
   isAuthenticated: false,
+  initializing: true,
   login: () => Promise.resolve({ success: false }),
-  logout: () => {},
+  logout: () => Promise.resolve(),
 });
 
 export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(() => {
-    if (typeof window === "undefined") {
-      return null;
-    }
-    return window.localStorage.getItem(STORAGE_KEY);
-  });
+  const [user, setUser] = useState(null);
+  const [initializing, setInitializing] = useState(true);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    if (token) {
-      window.localStorage.setItem(STORAGE_KEY, token);
-    } else {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
-  }, [token]);
+    let cancelled = false;
 
-  const login = useCallback(async ({ email, password }) => {
-    if (!email || email.toLowerCase() !== "test@example.com") {
-      return {
-        success: false,
-        message: "test@example.com 으로만 로그인 가능합니다.",
-      };
-    }
+    (async () => {
+      const data = await fetchMe();
+      if (cancelled) {
+        return;
+      }
+      if (data.authenticated) {
+        setUser(data.user ?? null);
+      } else {
+        setUser(null);
+      }
+      setInitializing(false);
+    })();
 
-    if (!password || password.length < 4) {
-      return {
-        success: false,
-        message: "비밀번호를 4자 이상 입력해주세요.",
-      };
-    }
-
-    const generatedToken = `yaam-demo-token-${Date.now()}`;
-    setToken(generatedToken);
-
-    return { success: true, token: generatedToken };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const logout = useCallback(() => {
-    setToken(null);
+  const login = useCallback(async ({ email, password }) => {
+    const result = await loginApi({ email, password });
+    if (result.success) {
+      setUser(result.user ?? null);
+    }
+    return result;
+  }, []);
+
+  const logout = useCallback(async () => {
+    await logoutApi();
+    setUser(null);
   }, []);
 
   const value = useMemo(
     () => ({
-      token,
-      isAuthenticated: Boolean(token),
+      user,
+      isAuthenticated: Boolean(user),
+      initializing,
       login,
       logout,
     }),
-    [token, login, logout]
+    [user, initializing, login, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

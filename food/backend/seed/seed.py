@@ -1,10 +1,13 @@
 import csv
-from decimal import Decimal
-from pathlib import Path
 import os
 import sys
+import uuid
+from datetime import timedelta
+from decimal import Decimal
+from pathlib import Path
+
 import django
-import random
+from django.utils import timezone
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
@@ -13,8 +16,9 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "foodshop.settings")
 django.setup()
 
 from django.contrib.auth.models import User
-from products.models import Product
 from orders.models import Order
+from products.models import Product
+from users.models import SessionToken
 
 
 # -------------------------
@@ -84,6 +88,14 @@ def seed_users():
 
         else:
             print(f"user exists : {user['username']}")
+
+        user_obj = User.objects.get(username=user["username"])
+        SessionToken.objects.filter(user=user_obj, is_active=True).update(is_active=False)
+        SessionToken.objects.create(
+            user=user_obj,
+            token=uuid.uuid4().hex,
+            expires_at=timezone.now() + timedelta(days=7),
+        )
 
 
 # -------------------------
