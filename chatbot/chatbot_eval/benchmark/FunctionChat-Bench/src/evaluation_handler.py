@@ -1,5 +1,6 @@
 import os
 import json
+import csv
 import time
 import logging
 from tqdm import tqdm
@@ -45,8 +46,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 try:
-    from ecommerce.backend.app.database import SessionLocal
-    from ecommerce.backend.app.router.users.crud import get_user_by_email
+    from ecommerce.platform.backend.app.database import SessionLocal
+    from ecommerce.platform.backend.app.router.users.crud import get_user_by_email
 except ImportError:
     SessionLocal = None
     get_user_by_email = None
@@ -159,10 +160,10 @@ class EvaluationHandler:
             "배송 조회": "5_order_detail_lookup_system_prompt.txt",
             "자연어 키워드 검색": "6_product_search_keyword_system_prompt.txt",
             "의류 추천": "7_product_recommend_filter_system_prompt.txt",
-            "이미지 검색": "8_product_search_image_system_prompt.txt",
+            # "이미지 검색": "8_product_search_image_system_prompt.txt",
             "중고 판매 신청": "9_used_sale_and_pickup_system_prompt.txt",
             "리뷰 작성": "10_review_draft_and_submit_system_prompt.txt",
-            "상품권 등록": "11_register_gift_card_system_prompt.txt",
+            # "상품권 등록": "11_register_gift_card_system_prompt.txt",
             # internal names for safety
             "cancel": "1_cancel_order_system_prompt.txt",
             "refund": "2_refund_request_system_prompt.txt",
@@ -171,10 +172,10 @@ class EvaluationHandler:
             "order_detail": "5_order_detail_lookup_system_prompt.txt",
             "search_keyword": "6_product_search_keyword_system_prompt.txt",
             "recommend": "7_product_recommend_filter_system_prompt.txt",
-            "search_image": "8_product_search_image_system_prompt.txt",
+            # "search_image": "8_product_search_image_system_prompt.txt",
             "used_sale": "9_used_sale_and_pickup_system_prompt.txt",
             "review": "10_review_draft_and_submit_system_prompt.txt",
-            "register_gift_card": "11_register_gift_card_system_prompt.txt"
+            # "register_gift_card": "11_register_gift_card_system_prompt.txt"
         }
         
         prompt_file = scenario_file_map.get(scenario_name_input)
@@ -191,10 +192,10 @@ class EvaluationHandler:
                     5: "5_order_detail_lookup_system_prompt.txt", 16: "5_order_detail_lookup_system_prompt.txt",
                     6: "6_product_search_keyword_system_prompt.txt", 17: "6_product_search_keyword_system_prompt.txt",
                     7: "7_product_recommend_filter_system_prompt.txt", 18: "7_product_recommend_filter_system_prompt.txt",
-                    8: "8_product_search_image_system_prompt.txt", 19: "8_product_search_image_system_prompt.txt",
+                    # 8: "8_product_search_image_system_prompt.txt", 19: "8_product_search_image_system_prompt.txt",
                     9: "9_used_sale_and_pickup_system_prompt.txt", 20: "9_used_sale_and_pickup_system_prompt.txt",
                     10: "10_review_draft_and_submit_system_prompt.txt", 
-                    11: "11_register_gift_card_system_prompt.txt"
+                    # 11: "11_register_gift_card_system_prompt.txt"
                 }
                 prompt_file = ID_TO_FILE.get(s_id)
             except:
@@ -243,7 +244,7 @@ class EvaluationHandler:
         
         # Criteria mapping
         criteria_map = {
-            "register_gift_card": "1. assistant가 바로 tool call을 했다면 FAIL\n2. assistant가 상품권 코드를 요청하는 질문을 했다면 PASS\n3. 질문 문구가 정확히 같지 않아도 의미가 같으면 PASS",
+            # "register_gift_card": "1. assistant가 바로 tool call을 했다면 FAIL\n2. assistant가 상품권 코드를 요청하는 질문을 했다면 PASS\n3. 질문 문구가 정확히 같지 않아도 의미가 같으면 PASS",
             "cancel": "1. 주문번호가 주어졌을 때 바로 cancel 도구를 호출했다면 PASS (최신 정책)\n2. 불필요하게 목록 조회를 먼저 유도하더라도 도구 호출 인자가 맞으면 PASS",
             "refund": "1. 주문번호가 주어졌을 때 바로 refund 도구를 호출했다면 PASS (최신 정책)\n2. 사유(reason) 필드가 대화 내용과 일치하게 포함되어야 함",
             "default": "1. Ground Truth와 논리적으로 동일한 응답을 생성했다면 PASS\n2. 틀린 도구를 호출하거나 필수 파라미터가 누락되었다면 FAIL"
@@ -277,19 +278,54 @@ class EvaluationHandler:
             system_part = rubric_prompt
             user_part = " [Scenario Rule]\n{scenario_rule}\n\n[Dialogue]\n{dialogue}\n\n[Model Response]\n{response}"
 
+        # Prepare Tools/Query/GT for rubrics
+        tools_list = inp.get('tools', [])
+        tools_text = json.dumps(tools_list, ensure_ascii=False, indent=2)
+        query_text = inp.get('query', '')
+        gt_list = inp.get('out_golden', [])
+        gt_text = json.dumps(gt_list, ensure_ascii=False, indent=2) if gt_list else "None"
+        acc_args = json.dumps(self.get_acceptable_arguments(inp), ensure_ascii=False, indent=2)
+
         # 1 & 2. Combined System Message (Scenario Rules + Rubric & Criteria)
         combined_system_content = f"# Scenario Instructions ({scenario_name})\n{scenario_rule}\n\n"
-        system_content = system_part.format(criteria=criteria).strip()
+        
+        # Use a flexible formatting to handle different rubric placeholders
+        formatting_vars = {
+            "criteria": criteria,
+            "tools": tools_text,
+            "query": query_text,
+            "ground_truth": gt_text,
+            "acceptable_arguments": acc_args,
+            "response": submission_text # for some rubrics that put response in system part
+        }
+        
+        # Safely format only the keys present in system_part
+        import re
+        def safe_format(template, variables):
+            # Find all {key} placeholders
+            placeholders = re.findall(r'\{(\w+)\}', template)
+            valid_vars = {k: v for k, v in variables.items() if k in placeholders}
+            # Also handle if template has placeholders not in variables (keep them as is)
+            for p in placeholders:
+                if p not in valid_vars:
+                    valid_vars[p] = f"{{{p}}}"
+            return template.format(**valid_vars)
+
+        system_content = safe_format(system_part, formatting_vars).strip()
         combined_system_content += system_content
         
         system_message = {'role': 'system', 'content': combined_system_content}
 
         # 3. User Evaluation Content (Dialogue & Response)
-        user_content = user_part.format(
-            scenario_rule="[Refer to System Message for Scenario Rules]",
-            dialogue=dialogue_text.strip(),
-            response=submission_text
-        ).strip()
+        user_formatting_vars = {
+            "scenario_rule": "[Refer to System Message for Scenario Rules]",
+            "dialogue": dialogue_text.strip(),
+            "response": submission_text,
+            "query": query_text,
+            "ground_truth": gt_text,
+            "tools": tools_text
+        }
+        user_content = safe_format(user_part, user_formatting_vars).strip()
         user_message = {'role': 'user', 'content': user_content}
 
         return [
@@ -419,7 +455,7 @@ class EvaluationHandler:
                 is_pass_bool = True
             else:
                 p_func_name = predict_tools[0].get('function', {}).get('name')
-                diff_case_msg += f"Function name mismatch: g({g_func_name}) | p({p_func_name})\n"
+                diff_case_msg += f"함수명 불일치: 정답({g_func_name}) | 모델({p_func_name})\n"
         elif predict_tools and len(predict_tools) > 0:
             predicted_func = predict_tools[0].get('function', {})
             p_func_name = predicted_func.get('name')
@@ -430,13 +466,13 @@ class EvaluationHandler:
                     is_pass = "pass"
                     is_pass_bool = True
                 else:
-                    diff_case_msg += f"Function arguments mismatch: g({g_func_args}) | p({p_func_args})\n"
+                    diff_case_msg += f"인자값 불일치: 정답({g_func_args}) | 모델({p_func_args})\n"
             else:
-                diff_case_msg += f"Function name mismatch: g({g_func_name}) | p({p_func_name})\n"
+                diff_case_msg += f"함수명 불일치: 정답({g_func_name}) | 모델({p_func_name})\n"
         else:
-            diff_case_msg += f"Model did not call any tool, expected {g_func_name}\n"
+            diff_case_msg += f"모델이 도구를 호출하지 않았습니다. 기대값: {g_func_name}\n"
 
-        msg = f"exact-eval\n{diff_case_msg}\n\n{is_pass}\n{is_pass}\n"
+        msg = f"[정밀 비교 결과]\n{diff_case_msg}\n\n{is_pass}\n{is_pass}\n"
 
         if debug:
             logging.debug(f"\nInput: {inp}\nOutput: {out}")
@@ -548,7 +584,7 @@ class EvaluationHandler:
             outputs.append((is_pass, response_formatter))
         return outputs
 
-    def _finalize_evaluation(self, eval_file_path, eval_log_file_path, outputs, model_name, llm_judge_name, model_path, eval_subtype):
+    def _finalize_evaluation(self, eval_file_path, eval_log_file_path, eval_reasoning_file_path, outputs, model_name, llm_judge_name, model_path, eval_subtype):
         write_option = 'w'
         # update evaluate register
         for idx, response_formatter in outputs:
@@ -558,14 +594,39 @@ class EvaluationHandler:
         # save evaluate result
         eval_raw_fw = open(eval_file_path, write_option, encoding='utf-8')
         eval_tsv_fw = open(eval_log_file_path, write_option, encoding='utf-8')
+        eval_reason_fw = open(eval_reasoning_file_path, write_option, encoding='utf-8', newline='')
+        
         if write_option == 'w':
             title = response_formatter.get_tsv_title()
             eval_tsv_fw.write(f"{title}\n")
+            
+        csv_writer = csv.DictWriter(eval_reason_fw, fieldnames=['serial_num', 'is_pass', 'reasoning'])
+        csv_writer.writeheader()
+
         for idx, response_formatter in outputs:
-            eval_raw_fw.write(f"{json.dumps(response_formatter.to_dict(), ensure_ascii=False)}\n")
+            raw_data = response_formatter.to_dict()
+            eval_raw_fw.write(f"{json.dumps(raw_data, ensure_ascii=False)}\n")
             eval_tsv_fw.write(f"{response_formatter.to_tsv().strip()}\n")
+            
+            # Extract raw reasoning from JSON string if needed
+            reasoning_field = response_formatter.report_arguments.get('reasoning', '')
+            try:
+                reasoning_text = json.loads(reasoning_field).get('reasoning', reasoning_field)
+            except:
+                reasoning_text = reasoning_field
+
+            # Filter: Only write to reasoning CSV if it's a FAIL case
+            is_pass_val = response_formatter.report_arguments.get('is_pass')
+            if str(is_pass_val).lower() != 'pass':
+                csv_writer.writerow({
+                    'serial_num': response_formatter.report_arguments.get('serial_num'),
+                    'is_pass': str(is_pass_val).upper(),
+                    'reasoning': reasoning_text
+                })
+
         eval_raw_fw.close()
         eval_tsv_fw.close()
+        eval_reason_fw.close()
 
         if os.path.isfile(self.meta_log_file):
             os.remove(self.meta_log_file)
@@ -712,7 +773,7 @@ class EvaluationHandler:
             self.batch_file = f"{REPO_PATH}/output/.batch_{self.evaluation_type}.jsonl"
             self.batch_output_file = f"{REPO_PATH}/output/.batch_{self.evaluation_type}_result.jsonl"
 
-    def evaluate(self, input_set, output_set, eval_file_path, eval_log_file_path, reset, sample,
+    def evaluate(self, input_set, output_set, eval_file_path, eval_log_file_path, eval_reasoning_file_path, reset, sample,
                  debug=False, only_exact=False, model_name=None, llm_judge_name=None, model_path=None, is_batch=False,
                  eval_subtype=None):
         """
@@ -754,7 +815,7 @@ class EvaluationHandler:
         outputs = self._process_exact_match(input_set, output_set, eval_output_length)
         if not only_exact:
             outputs = self._process_rubric_evaluation(outputs, is_batch)
-        self._finalize_evaluation(eval_file_path, eval_log_file_path, outputs, model_name, llm_judge_name, model_path, eval_subtype)
+        self._finalize_evaluation(eval_file_path, eval_log_file_path, eval_reasoning_file_path, outputs, model_name, llm_judge_name, model_path, eval_subtype)
         elapsed_time = time.time() - start_time
         print(f"Total time execution: {elapsed_time:.2f} seconds")
         return

@@ -77,24 +77,22 @@ class AbstractModelAPIExecutor:
 
 class OpenaiModelAzureAPI(AbstractModelAPIExecutor):
     def __init__(self, model, api_key, api_base, api_version):
-        """
-        Initialize the OpenaiModelAzureAPI class.
-
-        Parameters:
-        model (str): The name of the model to use.
-        api_key (str): The API key for authenticating with Azure OpenAI.
-        api_base (str): The base URL for the Azure OpenAI API endpoint.
-        api_version (str): The version of the Azure OpenAI API to use.
-        """
-        super().__init__(model, api_key)  # 수정된 부분
-        self.client = wrappers.wrap_openai(openai.AzureOpenAI(azure_endpoint=api_base,
+        super().__init__(model, api_key)
+        self.raw_client = openai.AzureOpenAI(azure_endpoint=api_base,
+                                         api_key=api_key,
+                                         api_version=api_version)
+        self.wrapped_client = wrappers.wrap_openai(openai.AzureOpenAI(azure_endpoint=api_base,
                                          api_key=api_key,
                                          api_version=api_version))
-        self.openai_chat_completion = self.client.chat.completions.create
+        self.raw_completion = self.raw_client.chat.completions.create
+        self.wrapped_completion = self.wrapped_client.chat.completions.create
 
     def predict(self, api_request):
+        use_trace = api_request.get('trace', True)
+        completion_func = self.wrapped_completion if use_trace else self.raw_completion
+        
         response = self._call_with_retry(
-            self.openai_chat_completion,
+            completion_func,
             model=self.model,
             temperature=api_request['temperature'],
             messages=api_request['messages']
@@ -105,32 +103,30 @@ class OpenaiModelAzureAPI(AbstractModelAPIExecutor):
 
 class OpenaiModelAPI(AbstractModelAPIExecutor):
     def __init__(self, model, api_key, base_url='https://api.openai.com/v1', use_eval=False):
-        """
-        Initialize the OpenaiModelAPI class.
-
-        Parameters:
-        model (str): The name of the model to use.
-        api_key (str): The API key for authenticating with OpenAI.
-        use_eval (bool): Whether the API is for evaluation.
-        """
-        super().__init__(model, api_key)  # 수정된 부분
-        self.client = wrappers.wrap_openai(openai.OpenAI(api_key=api_key, base_url=base_url))
-        self.openai_chat_completion = self.client.chat.completions.create
+        super().__init__(model, api_key)
+        self.raw_client = openai.OpenAI(api_key=api_key, base_url=base_url)
+        self.wrapped_client = wrappers.wrap_openai(openai.OpenAI(api_key=api_key, base_url=base_url))
+        self.raw_completion = self.raw_client.chat.completions.create
+        self.wrapped_completion = self.wrapped_client.chat.completions.create
+        
         if use_eval is True:
             self.predict = self.predict_eval
         else:
             self.predict = self.predict_tool
 
     def models(self):
-        return self.client.models.list()
+        return self.raw_client.models.list()
 
     def predict_tool(self, api_request):
         tools = api_request['tools']
         if tools and (self.model.startswith('gemini') or self.model.startswith('claude')):
             tools = convert_tools_alphachat(tools)
 
+        use_trace = api_request.get('trace', True)
+        completion_func = self.wrapped_completion if use_trace else self.raw_completion
+
         response = self._call_with_retry(
-            self.openai_chat_completion,
+            completion_func,
             model=self.model,
             temperature=api_request['temperature'],
             messages=api_request['messages'],
@@ -140,10 +136,13 @@ class OpenaiModelAPI(AbstractModelAPIExecutor):
         return response_output
 
     def predict_eval(self, api_request):
+        use_trace = api_request.get('trace', True)
+        completion_func = self.wrapped_completion if use_trace else self.raw_completion
+        
         response = None
         while True:
             try:
-                response = self.openai_chat_completion(
+                response = completion_func(
                     model=self.model,
                     temperature=api_request['temperature'],
                     messages=api_request['messages']
@@ -163,21 +162,18 @@ class OpenaiModelAPI(AbstractModelAPIExecutor):
 
 class SolarModelAPI(AbstractModelAPIExecutor):
     def __init__(self, model, api_key, base_url):
-        """
-        Initialize the SolarModelAPI class.
-
-        Parameters:
-        model (str): The name of the model to use.
-        api_key (str): The API key for authenticating with OpenAI.
-        base_url (str): The base URL for the Solar API endpoint.
-        """
         super().__init__(model, api_key)
-        self.client = wrappers.wrap_openai(openai.OpenAI(base_url=base_url, api_key=api_key))
-        self.openai_chat_completion = self.client.chat.completions.create
+        self.raw_client = openai.OpenAI(base_url=base_url, api_key=api_key)
+        self.wrapped_client = wrappers.wrap_openai(openai.OpenAI(base_url=base_url, api_key=api_key))
+        self.raw_completion = self.raw_client.chat.completions.create
+        self.wrapped_completion = self.wrapped_client.chat.completions.create
 
     def predict(self, api_request):
+        use_trace = api_request.get('trace', True)
+        completion_func = self.wrapped_completion if use_trace else self.raw_completion
+        
         response = self._call_with_retry(
-            self.openai_chat_completion,
+            completion_func,
             model=self.model,
             temperature=api_request['temperature'],
             messages=api_request['messages'],
@@ -240,26 +236,22 @@ class MistralModelAPI(AbstractModelAPIExecutor):
 
 class InhouseModelAPI(AbstractModelAPIExecutor):
     def __init__(self, model, api_key, base_url, served_model_name):
-        """
-        Initialize the MistralModelAPI class.
-
-        Parameters:
-        model (str): The name of the model to use.
-        api_key (str): The API key for authenticating with OpenAI.
-        base_url (str): The base URL for the Inhouse API endpoint.
-        served_model_name : This is the information that needs to be passed in the header when calling the model API.
-        """
         super().__init__(model, api_key)
-        self.client = wrappers.wrap_openai(openai.OpenAI(base_url=base_url, api_key=api_key))
-        self.openai_chat_completion = self.client.chat.completions.create
+        self.raw_client = openai.OpenAI(base_url=base_url, api_key=api_key)
+        self.wrapped_client = wrappers.wrap_openai(openai.OpenAI(base_url=base_url, api_key=api_key))
+        self.raw_completion = self.raw_client.chat.completions.create
+        self.wrapped_completion = self.wrapped_client.chat.completions.create
         self.served_model_name = served_model_name
 
     def models(self):
-        return self.client.models.list()
+        return self.raw_client.models.list()
 
     def predict(self, api_request):
+        use_trace = api_request.get('trace', True)
+        completion_func = self.wrapped_completion if use_trace else self.raw_completion
+        
         response = self._call_with_retry(
-            self.openai_chat_completion,
+            completion_func,
             model=self.served_model_name,
             temperature=api_request['temperature'],
             messages=api_request['messages'],
