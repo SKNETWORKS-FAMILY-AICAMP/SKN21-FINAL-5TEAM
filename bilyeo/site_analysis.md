@@ -1,16 +1,23 @@
-# Site A Analysis
+# Bilyeo Site Analysis
 
-- frontend framework: Next.js
-- backend framework: Express
-- routing structure: /products/[id], /cart, /orders
-- login method: email/password + JWT
-- session storage: httpOnly cookie
-- user identity: user_id from /me
-- product data access: internal REST API /api/products
-- order data access: /api/orders
-- api exists: yes
-- rendering: SSR + CSR mixed
-- widget injection point: global layout footer
-- db core tables: users, products, orders, order_items
-- media storage: S3 + CDN
-- robots/security: bot detection 없음, CSP 제한 약함
+- site id/name: bilyeo / Bilyeo
+- environment: development
+- frontend framework: Vue 3.5.13 (CSR)
+- backend framework: Flask 3.1.0
+- routing structure: /, /login, /product/:id, /mypage
+- page types: home, login, product_detail, mypage
+- login method: email/password + JWT Bearer
+- session storage: sessionStorage
+- token location: Authorization header
+- user identity: login response (`user.user_id`) from /api/auth/login
+- product data access: REST API /api/products (GET)
+- order data access: REST API /api/orders (GET, protected)
+- faq/policy source: DB table 기반 (전용 FAQ/정책 페이지 라우트 없음)
+- api exists: yes (REST)
+- api base url: http://localhost:5000
+- rendering: CSR
+- widget injection point: global layout (available: global_layout, product_detail_page)
+- db type/core tables: Oracle / users, products, /api/orders
+- media storage: DB URL field (base_url 없음)
+- security: bot protection 비활성, robots/CSP/CORS 제한 없음, rate limit 미설정
+- agent integration: 챗봇 UI만 존재, adapter/retrieval/tool API 미준비
