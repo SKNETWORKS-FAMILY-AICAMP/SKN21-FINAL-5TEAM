@@ -18,7 +18,7 @@ from langgraph.prebuilt import create_react_agent
 from ecommerce.chatbot.src.graph.state import GlobalAgentState
 from ecommerce.chatbot.src.schemas.planner import TaskIntent
 from ecommerce.chatbot.src.graph.llm_providers import make_chat_llm
-from ecommerce.chatbot.src.tools.service_tools import create_review, register_gift_card
+from ecommerce.chatbot.src.tools.service_tools import create_review
 from ecommerce.chatbot.src.tools.used_tools import open_used_sale_form, register_used_sale
 
 # ── 도구 목록 ─────────────────────────────────────────────
@@ -27,7 +27,6 @@ FORM_ACTION_TOOLS = [
     open_used_sale_form,
     register_used_sale,
     create_review,
-    register_gift_card,
 ]
 
 # ── 시스템 프롬프트 ───────────────────────────────────────
