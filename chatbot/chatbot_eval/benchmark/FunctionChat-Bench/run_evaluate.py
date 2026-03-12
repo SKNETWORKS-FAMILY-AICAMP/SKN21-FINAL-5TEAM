@@ -11,9 +11,13 @@ from dotenv import load_dotenv
 CUR_DIR = Path(__file__).resolve().parent
 BENCH_DIR = CUR_DIR
 RESULTS_DIR = CUR_DIR
-ENV_PATH = CUR_DIR.parents[4] / ".env"
+ENV_PATH = CUR_DIR.parents[3] / ".env"
 
 # .env 로드
+if not ENV_PATH.exists():
+    # Fallback: 한 단계 더 상위 확인 (모듈 위치에 따른 유연성)
+    ENV_PATH = CUR_DIR.parents[4] / ".env"
+
 load_dotenv(ENV_PATH)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 arg_accuracy_dataset = None
