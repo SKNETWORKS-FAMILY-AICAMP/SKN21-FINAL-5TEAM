@@ -4,24 +4,16 @@ const api = axios.create({
   baseURL: '/api',
   headers: {
     'Content-Type': 'application/json'
-  }
-})
-
-// 요청 인터셉터: 토큰 자동 추가
-api.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
+  },
+  withCredentials: true
 })
 
 // 응답 인터셉터: 401 에러 시 로그인 페이지로 이동
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && error.response.status === 401) {
-      sessionStorage.removeItem('token')
+    const url = error.config?.url || ''
+    if (error.response && error.response.status === 401 && !url.includes('/auth/login')) {
       sessionStorage.removeItem('user')
       window.location.href = '/login'
     }

@@ -5,11 +5,21 @@
 사용법: python product_crawling.py
 
 사전 설치:
-  pip install curl_cffi
+  pip install curl_cffi boto3
 """
 import sys
 import os
 import time
+import uuid
+import json
+import boto3
+from datetime import datetime
+from dotenv import load_dotenv
+from pathlib import Path
+
+# bilyeo/.env 파일 로드
+env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(env_path)
 
 # backend 디렉토리를 path에 추가
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "backend"))
@@ -18,6 +28,223 @@ from models import get_connection
 
 from curl_cffi import requests as curl_requests
 from html.parser import HTMLParser
+
+
+# ===== 이미지 저장 설정 =====
+
+IMAGE_SAVE_DIR = r"C:\Users\Playdata\Desktop\images"
+
+# ===== Cloudflare R2 설정 =====
+
+R2_ENDPOINT = os.getenv("R2_ENDPOINT")
+R2_BUCKET = os.getenv("R2_BUCKET")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
+R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL")
+
+# ===== R2 무료 한도 (월별) =====
+CLASS_A_LIMIT = 1_000_000   # Class A (쓰기: PutObject, ListObjects 등)
+CLASS_B_LIMIT = 10_000_000  # Class B (읽기: GetObject 등)
+STORAGE_LIMIT_GB = 10       # 저장 용량 10GB
+
+# 사용량 파일 경로
+USAGE_FILE = os.path.join(os.path.dirname(__file__), "image_usage.json")
+
+
+def _load_usage() -> dict:
+    """image_usage.json에서 누적 사용량을 로드합니다. 월이 바뀌면 base 기본값으로 초기화합니다."""
+    current_month = datetime.now().strftime("%Y-%m")
+    try:
+        with open(USAGE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        base = data.get("base", {"class_a": 0, "class_b": 0, "storage_bytes": 0})
+        current = data.get("current", {})
+        # 월이 바뀌면 base 기본값으로 초기화
+        if current.get("month") != current_month:
+            data["current"] = {
+                "month": current_month,
+                "class_a": base["class_a"],
+                "class_b": base["class_b"],
+                "storage_bytes": base["storage_bytes"],
+            }
+            _save_usage(data)
+        return data
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {
+            "base": {"class_a": 0, "class_b": 0, "storage_bytes": 0},
+            "current": {
+                "month": current_month,
+                "class_a": 0,
+                "class_b": 0,
+                "storage_bytes": 0,
+            },
+        }
+        _save_usage(data)
+        return data
+
+
+def _save_usage(data: dict):
+    """image_usage.json에 사용량을 저장합니다."""
+    with open(USAGE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+def _check_class_a_limit(operation_count: int = 1) -> bool:
+    """Class A 한도를 초과하는지 확인합니다."""
+    usage = _load_usage()
+    current = usage["current"]
+    if current["class_a"] + operation_count > CLASS_A_LIMIT:
+        print(f"  [R2 제한] Class A 한도 초과! ({current['class_a']:,}/{CLASS_A_LIMIT:,})")
+        return False
+    return True
+
+
+def _check_class_b_limit(operation_count: int = 1) -> bool:
+    """Class B 한도를 초과하는지 확인합니다."""
+    usage = _load_usage()
+    current = usage["current"]
+    if current["class_b"] + operation_count > CLASS_B_LIMIT:
+        print(f"  [R2 제한] Class B 한도 초과! ({current['class_b']:,}/{CLASS_B_LIMIT:,})")
+        return False
+    return True
+
+
+def _increment_class_a(count: int = 1):
+    usage = _load_usage()
+    usage["current"]["class_a"] += count
+    _save_usage(usage)
+
+
+def _increment_class_b(count: int = 1):
+    usage = _load_usage()
+    usage["current"]["class_b"] += count
+    _save_usage(usage)
+
+
+def get_r2_client():
+    """Cloudflare R2 S3 클라이언트를 생성합니다."""
+    return boto3.client(
+        "s3",
+        endpoint_url=R2_ENDPOINT,
+        aws_access_key_id=R2_ACCESS_KEY_ID,
+        aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+        region_name="auto",
+    )
+
+
+def _check_storage_limit(file_size: int) -> bool:
+    """저장 용량 한도를 초과하는지 확인합니다."""
+    usage = _load_usage()
+    current = usage["current"]
+    limit_bytes = STORAGE_LIMIT_GB * 1024 * 1024 * 1024
+    if current["storage_bytes"] + file_size > limit_bytes:
+        used_gb = current["storage_bytes"] / (1024 * 1024 * 1024)
+        print(f"  [R2 제한] 저장 용량 한도 초과! ({used_gb:.2f} GB/{STORAGE_LIMIT_GB} GB)")
+        return False
+    return True
+
+
+def _increment_storage(file_size: int):
+    usage = _load_usage()
+    usage["current"]["storage_bytes"] += file_size
+    _save_usage(usage)
+
+
+def upload_image_to_r2(session: "curl_requests.Session", image_url: str, filename: str) -> bool:
+    """이미지를 다운로드하여 R2에 업로드합니다. (Class A 1회 소모)"""
+    if not _check_class_a_limit():
+        return False
+    try:
+        resp = session.get(image_url, timeout=15)
+        if resp.status_code != 200:
+            print(f"  [이미지] 다운로드 실패 (코드: {resp.status_code}): {image_url}")
+            return False
+
+        file_size = len(resp.content)
+        if not _check_storage_limit(file_size):
+            return False
+
+        r2 = get_r2_client()
+        r2.put_object(
+            Bucket=R2_BUCKET,
+            Key=f"images/{filename}",
+            Body=resp.content,
+            ContentType="image/jpeg",
+        )
+        _increment_class_a()
+        _increment_storage(file_size)
+        return True
+    except Exception as e:
+        print(f"  [R2 업로드] 에러: {e}")
+        return False
+
+
+def check_r2_storage_usage():
+    """R2 버킷의 업로드/다운로드량을 확인합니다. (Class A: ListObjects 소모)"""
+    if not _check_class_a_limit():
+        return 0, 0
+
+    r2 = get_r2_client()
+
+    # 버킷 내 객체 목록 조회
+    total_size = 0
+    total_count = 0
+    page_count = 0
+    paginator = r2.get_paginator("list_objects_v2")
+
+    for page in paginator.paginate(Bucket=R2_BUCKET, Prefix="images/"):
+        page_count += 1
+        for obj in page.get("Contents", []):
+            total_size += obj["Size"]
+            total_count += 1
+
+    _increment_class_a(page_count)  # ListObjects 페이지 수만큼 Class A 소모
+
+    size_mb = total_size / (1024 * 1024)
+
+    usage = _load_usage()
+    current = usage["current"]
+    used_gb = current["storage_bytes"] / (1024 * 1024 * 1024)
+
+    print(f"\n===== R2 스토리지 사용량 =====")
+    print(f"  버킷 파일 수: {total_count}개")
+    print(f"  버킷 용량: {size_mb:.2f} MB")
+    print(f"  버킷: {R2_BUCKET}")
+    print(f"--- {current['month']} 월별 누적 ---")
+    print(f"  Class A (쓰기): {current['class_a']:,} / {CLASS_A_LIMIT:,}")
+    print(f"  Class B (읽기): {current['class_b']:,} / {CLASS_B_LIMIT:,}")
+    print(f"  누적 용량: {used_gb:.2f} GB / {STORAGE_LIMIT_GB} GB ({used_gb / STORAGE_LIMIT_GB * 100:.1f}%)")
+    print(f"==============================")
+    return total_count, total_size
+
+
+def download_image(session: "curl_requests.Session", image_url: str, filename: str) -> bool:
+    """이미지를 다운로드하여 로컬에 저장합니다."""
+    os.makedirs(IMAGE_SAVE_DIR, exist_ok=True)
+    filepath = os.path.join(IMAGE_SAVE_DIR, filename)
+    if os.path.exists(filepath):
+        return True
+    try:
+        resp = session.get(image_url, timeout=15)
+        if resp.status_code == 200:
+            with open(filepath, "wb") as f:
+                f.write(resp.content)
+            return True
+        print(f"  [이미지] 다운로드 실패 (코드: {resp.status_code}): {image_url}")
+    except Exception as e:
+        print(f"  [이미지] 다운로드 에러: {e}")
+    return False
+
+
+def make_image_filename(image_url: str) -> str:
+    """UUID로 고유한 파일명을 생성합니다."""
+    # URL에서 확장자 추출
+    ext = ".jpg"
+    for candidate in [".png", ".jpg", ".jpeg", ".gif", ".webp"]:
+        if candidate in image_url.lower():
+            ext = candidate
+            break
+    return f"{uuid.uuid4()}{ext}"
 
 
 # ===== HTTP 세션 =====
@@ -216,6 +443,27 @@ def crawl_oliveyoung() -> list[dict]:
             product["category"] = subcategory
         all_products.extend(collected)
         print(f"  최종 수집: {len(collected)}건")
+
+    # 이미지를 R2에 업로드 및 URL 변환
+    print(f"\n[R2 업로드] 버킷: {R2_BUCKET}")
+    print(f"[R2 업로드] 퍼블릭 URL: {R2_PUBLIC_URL}")
+
+    upload_count = 0
+    for product in all_products:
+        original_url = product.get("image_url", "")
+        if not original_url:
+            continue
+        filename = make_image_filename(original_url)
+        if upload_image_to_r2(session, original_url, filename):
+            # DB에 저장할 image_url을 R2 퍼블릭 URL로 설정
+            product["image_url"] = f"{R2_PUBLIC_URL}/images/{filename}"
+            upload_count += 1
+        time.sleep(0.3)
+
+    print(f"[R2 업로드] 완료: {upload_count}건")
+
+    # R2 스토리지 사용량 확인
+    check_r2_storage_usage()
 
     print(f"\n올리브영 스킨케어 상품 수집 완료: 총 {len(all_products)}건")
     return all_products

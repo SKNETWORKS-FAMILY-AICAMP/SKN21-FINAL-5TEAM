@@ -1,9 +1,6 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from werkzeug.security import check_password_hash
-import jwt
-import datetime
 
-from config import SECRET_KEY, JWT_EXPIRATION
 from models.user import find_user_by_email
 
 auth_bp = Blueprint("auth", __name__)
@@ -27,23 +24,23 @@ def login():
     if not check_password_hash(user["password"], password):
         return jsonify({"error": "비밀번호가 일치하지 않습니다."}), 401
 
-    # JWT 토큰 생성
-    token = jwt.encode(
-        {
-            "user_id": user["user_id"],
-            "email": user["email"],
-            "exp": datetime.datetime.utcnow() + datetime.timedelta(seconds=JWT_EXPIRATION)
-        },
-        SECRET_KEY,
-        algorithm="HS256"
-    )
+    # 세션에 사용자 정보 저장
+    session["user_id"] = user["user_id"]
+    session["email"] = user["email"]
+    session["name"] = user["name"]
 
     return jsonify({
         "message": "로그인 성공",
-        "token": token,
         "user": {
             "user_id": user["user_id"],
             "email": user["email"],
             "name": user["name"]
         }
     }), 200
+
+
+@auth_bp.route("/logout", methods=["POST"])
+def logout():
+    """로그아웃 API"""
+    session.clear()
+    return jsonify({"message": "로그아웃 성공"}), 200

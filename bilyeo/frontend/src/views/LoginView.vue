@@ -40,7 +40,7 @@ export default {
       this.loading = true
       try {
         const res = await authAPI.login(this.email, this.password)
-        authStore.login(res.data.token, res.data.user)
+        authStore.login(res.data.user)
         this.$router.push('/')
       } catch (err) {
         this.errorMsg = err.response?.data?.error || '로그인에 실패했습니다.'
