@@ -19,7 +19,7 @@ const router = createRouter({
 // 인증 가드
 router.beforeEach((to, from, next) => {
   if (to.meta.requiresAuth) {
-    const token = sessionStorage.getItem('token')
+    const token = sessionStorage.getItem('user')
     if (!token) {
       next({ name: 'Login' })
       return

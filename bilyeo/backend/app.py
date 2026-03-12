@@ -1,3 +1,4 @@
+import os
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from routes.order import order_bp
 
 def create_app():
     app = Flask(__name__)
+    app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-production")
     CORS(app)
 
     # 블루프린트 등록
