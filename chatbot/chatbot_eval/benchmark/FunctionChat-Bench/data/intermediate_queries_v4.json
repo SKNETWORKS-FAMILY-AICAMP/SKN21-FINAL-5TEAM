@@ -1,0 +1,557 @@
+[
+  {
+    "scenario": {
+      "id": 1,
+      "name": "주문 취소",
+      "action": "cancel",
+      "tools": [
+        "cancel",
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0001",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0001의 주문을 취소하고 싶은데, 아직 준비 중이라 가능할까요?"
+  },
+  {
+    "scenario": {
+      "id": 2,
+      "name": "환불 신청",
+      "action": "refund",
+      "tools": [
+        "refund",
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0002",
+      "status": "delivered",
+      "shipping_fee": 0.0,
+      "days_since_delivery": null
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0002로 구입한 바이브 티 블랙이 목 부분이 너무 드러나서 환불하고 싶어요."
+  },
+  {
+    "scenario": {
+      "id": 3,
+      "name": "교환 신청",
+      "action": "exchange",
+      "tools": [
+        "exchange",
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0003",
+      "status": "delivered",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0003로 받은 옷이 사이즈가 안 맞아서 교환하고 싶은데 어떻게 해야 하나요?"
+  },
+  {
+    "scenario": {
+      "id": 4,
+      "name": "주문 내역 조회 (주문번호 없음)",
+      "action": "shipping_no_id",
+      "tools": [
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0001",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "제 주문 상태가 PREPARING인데, 이게 정상인지 궁금합니다."
+  },
+  {
+    "scenario": {
+      "id": 5,
+      "name": "주문 내역 조회 (주문번호 있음)",
+      "action": "shipping_with_id",
+      "tools": [
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0001",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "제 주문번호 ORD-eval_dataset-0001의 상태가 PREPARING인데, 배송비 입금했어요 확인해 주실 수 있나요?"
+  },
+  {
+    "scenario": {
+      "id": 6,
+      "name": "상품 키워드 검색",
+      "action": "search_by_text_clip",
+      "tools": [
+        "search_by_text_clip"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0001",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "진분홍 색상이 재입고될 예정인지 궁금한데, 주문번호는 ORD-eval_dataset-0001입니다."
+  },
+  {
+    "scenario": {
+      "id": 7,
+      "name": "의류 추천",
+      "action": "recommend_clothes",
+      "tools": [
+        "recommend_clothes"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0001",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "265사이즈 신발을 주문했는데 뒤꿈치가 계속 아파서 한 치수 작은 걸로 주문하고 싶은데, 주문번호는 ORD-eval_dataset-0001입니다. 이 신발은 왜 이렇게 발에 상처를 만들까요?"
+  },
+  {
+    "scenario": {
+      "id": 8,
+      "name": "중고 판매 신청",
+      "action": "used_sale",
+      "tools": [
+        "open_used_sale_form",
+        "register_used_sale"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0001",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "중고 판매를 신청하고 싶은데, 주문번호는 ORD-eval_dataset-0001입니다. 이 상태에서 가능한가요?"
+  },
+  {
+    "scenario": {
+      "id": 9,
+      "name": "리뷰 작성",
+      "action": "review",
+      "tools": [
+        "generate_review_draft",
+        "create_review"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0001",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0001에 대한 리뷰를 작성하고 싶은데, 헐렁한 사이즈 때문에 어떻게 해야 할지 궁금해요."
+  },
+  {
+    "scenario": {
+      "id": 1,
+      "name": "주문 취소",
+      "action": "cancel",
+      "tools": [
+        "cancel",
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0004",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0004로 주문한 상품을 취소하고 싶어요."
+  },
+  {
+    "scenario": {
+      "id": 2,
+      "name": "환불 신청",
+      "action": "refund",
+      "tools": [
+        "refund",
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0005",
+      "status": "delivered",
+      "shipping_fee": 0.0,
+      "days_since_delivery": null
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0005로 받은 의류를 환불하고 싶어요."
+  },
+  {
+    "scenario": {
+      "id": 3,
+      "name": "교환 신청",
+      "action": "exchange",
+      "tools": [
+        "exchange",
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0006",
+      "status": "delivered",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0006로 받은 옷 사이즈가 맞지 않아서 교환하고 싶어요."
+  },
+  {
+    "scenario": {
+      "id": 4,
+      "name": "주문 내역 조회 (주문번호 없음)",
+      "action": "shipping_no_id",
+      "tools": [
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0004",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "제 주문 상태가 PREPARING인데, 주문 내역을 확인할 수 있을까요?"
+  },
+  {
+    "scenario": {
+      "id": 5,
+      "name": "주문 내역 조회 (주문번호 있음)",
+      "action": "shipping_with_id",
+      "tools": [
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0004",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "제 주문번호 ORD-eval_dataset-0004의 상태가 PREPARING인데, 언제쯤 배송될 수 있을까요?"
+  },
+  {
+    "scenario": {
+      "id": 6,
+      "name": "상품 키워드 검색",
+      "action": "search_by_text_clip",
+      "tools": [
+        "search_by_text_clip"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0004",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "산남동으로 배송하려고 하는데, 주문번호 ORD-eval_dataset-0004의 배송비가 얼마인지 알고 싶어요."
+  },
+  {
+    "scenario": {
+      "id": 7,
+      "name": "의류 추천",
+      "action": "recommend_clothes",
+      "tools": [
+        "recommend_clothes"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0004",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0004로 의류를 주문했는데, 무료 배송은 얼마 이상 구매해야 가능한가요?"
+  },
+  {
+    "scenario": {
+      "id": 8,
+      "name": "중고 판매 신청",
+      "action": "used_sale",
+      "tools": [
+        "open_used_sale_form",
+        "register_used_sale"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0004",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "이 상품을 중고로 판매하고 싶은데, 주문번호는 ORD-eval_dataset-0004입니다. 가능한가요?"
+  },
+  {
+    "scenario": {
+      "id": 9,
+      "name": "리뷰 작성",
+      "action": "review",
+      "tools": [
+        "generate_review_draft",
+        "create_review"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0004",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0004에 대한 리뷰를 작성하고 싶은데, 제품이 정상적인 것 같아요."
+  },
+  {
+    "scenario": {
+      "id": 1,
+      "name": "주문 취소",
+      "action": "cancel",
+      "tools": [
+        "cancel",
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0007",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0007로 주문한 상품을 취소하고 싶은데, 아직 준비 중이라 가능하다고 들었어요."
+  },
+  {
+    "scenario": {
+      "id": 2,
+      "name": "환불 신청",
+      "action": "refund",
+      "tools": [
+        "refund",
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0008",
+      "status": "delivered",
+      "shipping_fee": 0.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0008에 대해 환불 신청하고 싶은데, 제품이 불량이라서요."
+  },
+  {
+    "scenario": {
+      "id": 3,
+      "name": "교환 신청",
+      "action": "exchange",
+      "tools": [
+        "exchange",
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0009",
+      "status": "delivered",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "사이즈가 맞지 않아서 교환하고 싶은데, 주문번호 ORD-eval_dataset-0009로 진행할 수 있을까요?"
+  },
+  {
+    "scenario": {
+      "id": 4,
+      "name": "주문 내역 조회 (주문번호 없음)",
+      "action": "shipping_no_id",
+      "tools": [
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0007",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "제 주문 상태가 어떻게 되나요?"
+  },
+  {
+    "scenario": {
+      "id": 5,
+      "name": "주문 내역 조회 (주문번호 있음)",
+      "action": "shipping_with_id",
+      "tools": [
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0007",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0007의 상태가 PREPARING인데, 언제쯤 배송될지 확인할 수 있을까요?"
+  },
+  {
+    "scenario": {
+      "id": 6,
+      "name": "상품 키워드 검색",
+      "action": "search_by_text_clip",
+      "tools": [
+        "search_by_text_clip"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0007",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "방금 주문한 상품의 상태가 PREPARING인데, 왜 안에 새 그림이 없나요? 주문번호는 ORD-eval_dataset-0007입니다."
+  },
+  {
+    "scenario": {
+      "id": 7,
+      "name": "의류 추천",
+      "action": "recommend_clothes",
+      "tools": [
+        "recommend_clothes"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0007",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0007로 퀵체인지 스프링바를 주문했는데, 다른 스타일의 의류를 추천해주실 수 있나요?"
+  },
+  {
+    "scenario": {
+      "id": 8,
+      "name": "중고 판매 신청",
+      "action": "used_sale",
+      "tools": [
+        "open_used_sale_form",
+        "register_used_sale"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0007",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "중고 판매 신청을 하려고 하는데, 주문번호 ORD-eval_dataset-0007로 진행할 수 있을까요?"
+  },
+  {
+    "scenario": {
+      "id": 9,
+      "name": "리뷰 작성",
+      "action": "review",
+      "tools": [
+        "generate_review_draft",
+        "create_review"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0007",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0007에 대한 리뷰를 작성하고 싶은데, 아직 준비 중인 상태인가요?"
+  }
+]
