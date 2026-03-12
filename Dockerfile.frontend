@@ -6,13 +6,13 @@ ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 # 의존성 먼저 복사 (캐시 활용)
-COPY ecommerce/platform/frontend/package.json ecommerce/platform/frontend/package-lock.json* ./
+COPY ecommerce/frontend/package.json ecommerce/frontend/package-lock.json* ./
 
 # 의존성 설치
 RUN npm install
 
 # 프론트엔드 소스 복사
-COPY ecommerce/platform/frontend/ ./
+COPY ecommerce/frontend/ ./
 
 # 빌드
 RUN npm run build

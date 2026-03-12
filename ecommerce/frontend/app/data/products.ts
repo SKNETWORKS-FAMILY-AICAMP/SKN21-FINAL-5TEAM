@@ -1,4 +1,4 @@
-// ecommerce/platform/frontend/app/data/products.ts
+// ecommerce/frontend/app/data/products.ts
 
 export type Product = {
   id: number;
