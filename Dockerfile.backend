@@ -18,4 +18,8 @@ COPY . .
 
 EXPOSE 8000
 
+<<<<<<< HEAD
 CMD ["uvicorn", "ecommerce.platform.backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+=======
+CMD ["uvicorn", "ecommerce.backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+>>>>>>> 0292cc4ddd73d5bbaa321534bdb53adc66b09ada
