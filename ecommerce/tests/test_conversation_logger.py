@@ -2,7 +2,7 @@ import unittest
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from ecommerce.chatbot.src.infrastructure.conversation_logger import safe_serialize
+from chatbot.src.infrastructure.conversation_logger import safe_serialize
 
 
 class TestConversationLoggerSerialization(unittest.TestCase):
