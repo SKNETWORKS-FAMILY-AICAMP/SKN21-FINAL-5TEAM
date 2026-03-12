@@ -38,7 +38,7 @@ class GlobalAgentState(TypedDict):
     # 5. User Identity State (인증된 사용자 정보)
     # ---------------------------------------------------------
     user_info: Dict[str, Any]
-    # 예: {"id": 1, "name": "홍길동", "email": "user@example.com"}
+    # 예: {"id": 1, "name": "홍길동", "email": "user@example.com", "site_id": "site-a"}
 
     # ---------------------------------------------------------
     # 6. LLM Routing State (Provider / Model 선택)

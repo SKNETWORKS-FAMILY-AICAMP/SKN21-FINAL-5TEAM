@@ -14,7 +14,6 @@ COPY bilyeo/backend/requirements.txt /app/requirements.txt
 RUN uv pip install --system --no-cache -r /app/requirements.txt
 
 COPY bilyeo /app/bilyeo
-COPY .env /app/.env
 
 WORKDIR /app/bilyeo/backend
 

@@ -38,6 +38,8 @@ class ChatRequest(BaseModel):
         None, description="LLM provider (openai|huggingface|vllm)"
     )
     model: str | None = Field(None, description="Model name or model id")
+    # 어느 사이트(어댑터)로부터 호출되었는지 식별 (예: "site-a", "site-b", "site-c")
+    site_id: str | None = Field(None, description="Adapter site ID (site-a|site-b|site-c)")
     model_config = ConfigDict(extra="ignore")
 
     @field_validator("message")
