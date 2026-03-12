@@ -121,7 +121,7 @@ tool_minimum = {
 cd /Users/junseok/Projects/SKN21-FINAL-5TEAM
 
 # 모델 임포트 추가 (필요시)
-# ecommerce/platform/backend/app/main.py에 추가:
+# ecommerce/backend/app/main.py에 추가:
 # from ecommerce.backend.app.router.chatbot_logs.models import *
 
 # Alembic 마이그레이션 (또는 직접 테이블 생성)

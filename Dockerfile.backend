@@ -10,8 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 백엔드 의존성 설치 (torch/torchvision 포함)
-COPY ecommerce/platform/backend/requirements.txt /app/ecommerce/platform/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/ecommerce/platform/backend/requirements.txt
+COPY ecommerce/backend/requirements.txt /app/ecommerce/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/ecommerce/backend/requirements.txt
 
 # 소스 코드 복사
 COPY . .
