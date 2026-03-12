@@ -369,6 +369,7 @@ def _build_current_state(
             "id": current_user.id,
             "name": current_user.name,
             "email": current_user.email,
+            "site_id": request.site_id,
         },
         "llm_provider": provider,
         "llm_model": model,

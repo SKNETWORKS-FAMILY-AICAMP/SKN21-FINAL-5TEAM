@@ -8,6 +8,8 @@ services:
       MYSQL_DATABASE: ecommerce
       MYSQL_USER: ecom_user
       MYSQL_PASSWORD: "ecopchatbot!"
+    env_file:
+      - .env
     ports:
       - "127.0.0.1:3307:3306"
     volumes:
@@ -23,6 +25,8 @@ services:
     image: qdrant/qdrant:latest
     container_name: adapter-lab-qdrant
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "127.0.0.1:6333:6333"
     volumes:
@@ -34,6 +38,8 @@ services:
       dockerfile: docker/AWS/Dockerfile.backend
     container_name: adapter-lab-ecommerce
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       DB_HOST: mysql
       DB_PORT: 3306
@@ -52,6 +58,8 @@ services:
       dockerfile: docker/SaaS/bilyeo.backend.Dockerfile
     container_name: adapter-lab-bilyeo
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "127.0.0.1:5000:5000"
 
@@ -61,6 +69,8 @@ services:
       dockerfile: docker/SaaS/food.backend.Dockerfile
     container_name: adapter-lab-food
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "127.0.0.1:8002:8002"
 
@@ -122,7 +132,7 @@ services:
       - ./food:/workspace/food:ro
       - ./pyproject.toml:/workspace/pyproject.toml:ro
     command: ["bash", "-lc", "sleep infinity"]
-
+  
 volumes:
   adapter_mysql_data:
   adapter_qdrant_data:

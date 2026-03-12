@@ -42,3 +42,9 @@ dependencies = [
     "curl-cffi>=0.14.0",
     "vite>=1.5.2",
 ]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.2",
+]
