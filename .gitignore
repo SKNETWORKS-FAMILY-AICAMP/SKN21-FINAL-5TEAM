@@ -41,6 +41,9 @@ chatbot/data/raw/fashion-dataset
 chatbot/data/processed
 chatbot/chatbot_eval/benchmark/FunctionChat-Bench/output/
 chatbot/chatbot_eval/benchmark/KOLD/result.md
+chatbot/src/vector_store/image_index.faiss
+chatbot/benchmark/datasets/operational_eval_dataset_50.jsonl
+ecommerce/chatbot/chatbot_eval/benchmark/FunctionChat-Bench/output/
 platform/backend/app/static/chatbot_uploads/
 platform/frontend/public/products
 **/public/products/
