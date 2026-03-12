@@ -10,16 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 백엔드 의존성 설치 (torch/torchvision 포함)
-COPY ecommerce/backend/requirements.txt /app/ecommerce/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/ecommerce/backend/requirements.txt
+COPY ecommerce/platform/backend/requirements.txt /app/ecommerce/platform/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/ecommerce/platform/backend/requirements.txt
 
 # 소스 코드 복사
 COPY . .
 
 EXPOSE 8000
 
-<<<<<<< HEAD
-CMD ["uvicorn", "ecommerce.platform.backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
-=======
 CMD ["uvicorn", "ecommerce.backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
->>>>>>> 0292cc4ddd73d5bbaa321534bdb53adc66b09ada

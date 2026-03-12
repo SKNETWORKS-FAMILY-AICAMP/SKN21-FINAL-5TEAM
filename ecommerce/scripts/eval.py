@@ -6,45 +6,17 @@ import os
 import sys
 
 # -------------------------------------------------
-<<<<<<< HEAD
-# 프로젝트 루트를 PYTHONPATH에 추가 (ecommerce 패키지 인식을 위해)
-# -------------------------------------------------
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(os.path.dirname(CURRENT_DIR))
-sys.path.insert(0, PROJECT_ROOT)
-=======
 # 프로젝트 루트를 PYTHONPATH에 추가 (직접 실행용)
 # -------------------------------------------------
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
 sys.path.append(PROJECT_ROOT)
->>>>>>> 0292cc4ddd73d5bbaa321534bdb53adc66b09ada
 
 import logging
 from datetime import datetime
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
-<<<<<<< HEAD
-import ecommerce.platform.backend.app.router.users.models
-import ecommerce.platform.backend.app.router.products.models
-import ecommerce.platform.backend.app.router.orders.models
-import ecommerce.platform.backend.app.router.shipping.models
-import ecommerce.platform.backend.app.router.carts.models
-import ecommerce.platform.backend.app.router.points.models
-import ecommerce.platform.backend.app.router.reviews.models
-import ecommerce.platform.backend.app.router.user_history.models
-import ecommerce.platform.backend.app.router.payments.models
-import ecommerce.platform.backend.app.router.inventories.models
-import ecommerce.platform.backend.app.router.chatbot_logs.models
-
-from ecommerce.platform.backend.app.router.users.models import User, UserStatus, UserGender
-from ecommerce.platform.backend.app.router.users.crud import hash_password
-from ecommerce.platform.backend.app.router.products.models import ProductOption, ProductType, Category, Product
-from ecommerce.platform.backend.app.router.orders.models import Order, OrderItem
-from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
-from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
-=======
 import ecommerce.backend.app.router.users.models
 import ecommerce.backend.app.router.products.models
 import ecommerce.backend.app.router.orders.models
@@ -63,7 +35,6 @@ from ecommerce.backend.app.router.products.models import ProductOption, ProductT
 from ecommerce.backend.app.router.orders.models import Order, OrderItem
 from ecommerce.backend.app.router.orders.schemas import OrderStatus
 from ecommerce.backend.app.router.shipping.models import ShippingAddress
->>>>>>> 0292cc4ddd73d5bbaa321534bdb53adc66b09ada
 
 logging.basicConfig(
     level=logging.INFO,
@@ -192,11 +163,7 @@ def create_eval_orders(db: Session):
 
 
 if __name__ == "__main__":
-<<<<<<< HEAD
-    from ecommerce.platform.backend.app.database import SessionLocal
-=======
     from ecommerce.backend.app.database import SessionLocal
->>>>>>> 0292cc4ddd73d5bbaa321534bdb53adc66b09ada
 
     db = SessionLocal()
 
