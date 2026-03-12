@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
-from ecommerce.platform.backend.app.database import get_db
-from ecommerce.platform.backend.app.router.shipping import crud, schemas
-from ecommerce.platform.backend.app.router.orders.models import Order
-from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
+from ecommerce.backend.app.database import get_db
+from ecommerce.backend.app.router.shipping import crud, schemas
+from ecommerce.backend.app.router.orders.models import Order
+from ecommerce.backend.app.router.orders.schemas import OrderStatus
 
 router = APIRouter(
     tags=["shipping"]

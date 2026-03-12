@@ -5,10 +5,10 @@ from flashrank import Ranker, RerankRequest
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.models import User
-from ecommerce.platform.backend.app.router.products import crud as product_crud
-from ecommerce.platform.backend.app.router.products import schemas as product_schemas
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.models import User
+from ecommerce.backend.app.router.products import crud as product_crud
+from ecommerce.backend.app.router.products import schemas as product_schemas
 from chatbot.src.tools.image_search_tools import (
     search_similar_products_multimodal,
     search_similar_products_from_text,

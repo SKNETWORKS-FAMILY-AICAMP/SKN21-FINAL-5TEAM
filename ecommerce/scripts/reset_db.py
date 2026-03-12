@@ -11,10 +11,10 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
-from ecommerce.platform.backend.app.database import engine, Base
+from ecommerce.backend.app.database import engine, Base
 
 # 중앙 집중식 모델 import (모든 모델을 자동으로 로드)
-from ecommerce.platform.backend.app import init_models
+from ecommerce.backend.app import init_models
 
 # 모든 모델 로드
 init_models()

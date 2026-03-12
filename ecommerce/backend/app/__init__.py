@@ -13,9 +13,9 @@ def init_models():
     Deprecated: app.models 패키지를 직접 import하세요
     
     예시:
-        from ecommerce.platform.backend.app.models import User, Product
+        from ecommerce.backend.app.models import User, Product
     """
-    from ecommerce.platform.backend.app.models import (
+    from ecommerce.backend.app.models import (
         Payment, PointHistory, Review, UserHistory,
         ShippingAddress, ShippingInfo,
         Product, ProductOption, Category, ProductImage,

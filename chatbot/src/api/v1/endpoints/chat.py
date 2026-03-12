@@ -30,9 +30,9 @@ import orjson
 from chatbot.src.graph.workflow import graph_app
 from chatbot.src.schemas.chat import ChatRequest, ReviewDraftRequest
 from chatbot.src.tools.service_tools import generate_review_draft
-from ecommerce.platform.backend.app.core.auth import get_current_user
-from ecommerce.platform.backend.app.router.users.models import User
-from ecommerce.platform.backend.app.uploads import CHATBOT_UPLOAD_DIR
+from ecommerce.backend.app.core.auth import get_current_user
+from ecommerce.backend.app.router.users.models import User
+from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR
 
 class OrjsonResponse(JSONResponse):
     """orjson 기반 고성능 JSON 응답 클래스."""

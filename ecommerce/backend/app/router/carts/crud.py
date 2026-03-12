@@ -5,9 +5,9 @@ from decimal import Decimal
 from typing import List, Optional, Dict
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_
-from ecommerce.platform.backend.app.router.carts import models, schemas
+from ecommerce.backend.app.router.carts import models, schemas
 
-from ecommerce.platform.backend.app.router.products.models import (
+from ecommerce.backend.app.router.products.models import (
     ProductOption, Product, UsedProductOption, UsedProduct, UsedProductCondition, ProductType
 )
 

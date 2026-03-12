@@ -14,12 +14,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 from sqlalchemy import event
 
-from ecommerce.platform.backend.app.database import Base
-from ecommerce.platform.backend.app.router.carts.models import Cart, CartItem
+from ecommerce.backend.app.database import Base
+from ecommerce.backend.app.router.carts.models import Cart, CartItem
 
 if TYPE_CHECKING:
-    from ecommerce.platform.backend.app.router.users.models import User
-    from ecommerce.platform.backend.app.router.orders.models import Order
+    from ecommerce.backend.app.router.users.models import User
+    from ecommerce.backend.app.router.orders.models import Order
 
 
 # ==================================================
@@ -142,8 +142,8 @@ def log_cart_item_history(mapper, connection, target):
     """
     CartItem이 새로 생성될 때 UserHistory에 CART_ADD 기록을 삽입합니다.
     """
-    from ecommerce.platform.backend.app.router.users.models import User
-    from ecommerce.platform.backend.app.router.products.models import (
+    from ecommerce.backend.app.router.users.models import User
+    from ecommerce.backend.app.router.products.models import (
         ProductOption, Product, UsedProductOption, UsedProduct
     )
 

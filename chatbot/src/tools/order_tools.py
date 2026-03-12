@@ -8,26 +8,26 @@ from sqlalchemy.orm import Session, joinedload
 from datetime import datetime
 from langgraph.types import interrupt
 
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.models import (
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.models import (
     Order,
     User,
     ProductOption,
     UsedProductOption,
 )
-from ecommerce.platform.backend.app.router.orders.schemas import (
+from ecommerce.backend.app.router.orders.schemas import (
     OrderStatus,
     ProductType,
 )
-from ecommerce.platform.backend.app.router.inventories.models import (
+from ecommerce.backend.app.router.inventories.models import (
     InventoryTransaction,
     TransactionType,
     ProductType as InvProductType,
 )
-from ecommerce.platform.backend.app.router.user_history.crud import (
+from ecommerce.backend.app.router.user_history.crud import (
     track_order_action,
 )
-from ecommerce.platform.backend.app.router.user_history.schemas import (
+from ecommerce.backend.app.router.user_history.schemas import (
     ActionType as HistoryActionType,
 )
 
@@ -424,7 +424,7 @@ def _require_new_option_id(
 
 def _resolve_default_pickup_address(db: Session, user_id: int, order: Order) -> str:
     """사용자의 기본 배송지(우선) 또는 주문 배송지로 반품/교환 수거지를 결정합니다."""
-    from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
+    from ecommerce.backend.app.router.shipping.models import ShippingAddress
 
     # 1) 사용자 기본 배송지 우선
     default_address = (

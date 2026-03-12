@@ -5,10 +5,10 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List
-from ecommerce.platform.backend.app.database import get_db
-from ecommerce.platform.backend.app.router.carts import crud, schemas
-from ecommerce.platform.backend.app.router.user_history import crud as history_crud, schemas as history_schemas
-from ecommerce.platform.backend.app.router.users.models import User
+from ecommerce.backend.app.database import get_db
+from ecommerce.backend.app.router.carts import crud, schemas
+from ecommerce.backend.app.router.user_history import crud as history_crud, schemas as history_schemas
+from ecommerce.backend.app.router.users.models import User
 
 logger = logging.getLogger(__name__)
 

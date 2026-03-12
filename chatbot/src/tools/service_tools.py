@@ -9,8 +9,8 @@ from langchain_core.tools import tool
 
 import json
 
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.models import (
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.models import (
     Review,
     Order,
     OrderItem,

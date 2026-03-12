@@ -9,15 +9,15 @@ import uuid
 # Import all models to ensure SQLAlchemy mappers are properly initialized
 # This prevents "failed to locate a name" errors with circular relationships
 try:
-    import ecommerce.platform.backend.app.router.users.models
-    import ecommerce.platform.backend.app.router.shipping.models
-    import ecommerce.platform.backend.app.router.orders.models
-    import ecommerce.platform.backend.app.router.products.models
-    import ecommerce.platform.backend.app.router.carts.models
-    import ecommerce.platform.backend.app.router.payments.models
-    import ecommerce.platform.backend.app.router.points.models
-    import ecommerce.platform.backend.app.router.reviews.models
-    import ecommerce.platform.backend.app.router.user_history.models
+    import ecommerce.backend.app.router.users.models
+    import ecommerce.backend.app.router.shipping.models
+    import ecommerce.backend.app.router.orders.models
+    import ecommerce.backend.app.router.products.models
+    import ecommerce.backend.app.router.carts.models
+    import ecommerce.backend.app.router.payments.models
+    import ecommerce.backend.app.router.points.models
+    import ecommerce.backend.app.router.reviews.models
+    import ecommerce.backend.app.router.user_history.models
 except ImportError:
     pass # Ignore if some modules are not found/needed
 

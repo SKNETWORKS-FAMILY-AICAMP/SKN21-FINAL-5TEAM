@@ -7,8 +7,8 @@ from fastapi import Request, Depends, HTTPException, status
 from jose import jwt, JWTError
 from sqlalchemy.orm import Session
 
-from ecommerce.platform.backend.app.database import get_db
-from ecommerce.platform.backend.app.router.users.models import User
+from ecommerce.backend.app.database import get_db
+from ecommerce.backend.app.router.users.models import User
 
 # =========================
 # JWT 설정

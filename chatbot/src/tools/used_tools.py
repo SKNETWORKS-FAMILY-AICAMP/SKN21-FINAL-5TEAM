@@ -7,8 +7,8 @@ import httpx
 from langchain_core.tools import tool
 
 from chatbot.src.core.config import settings
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.router.products.models import (
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.router.products.models import (
     Category,
     UsedProductCondition,
     UsedProduct,

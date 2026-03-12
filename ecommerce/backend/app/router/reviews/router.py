@@ -7,13 +7,13 @@ from sqlalchemy.orm import Session
 from typing import List
 import logging
 
-from ecommerce.platform.backend.app.database import get_db
-from ecommerce.platform.backend.app.router.reviews import crud, schemas
+from ecommerce.backend.app.database import get_db
+from ecommerce.backend.app.router.reviews import crud, schemas
 
 from decimal import Decimal
-from ecommerce.platform.backend.app.router.points import crud as point_crud
-from ecommerce.platform.backend.app.router.user_history import crud as history_crud
-from ecommerce.platform.backend.app.router.products.models import ProductOption, UsedProductOption
+from ecommerce.backend.app.router.points import crud as point_crud
+from ecommerce.backend.app.router.user_history import crud as history_crud
+from ecommerce.backend.app.router.products.models import ProductOption, UsedProductOption
 
 # 로깅 설정
 logger = logging.getLogger(__name__)

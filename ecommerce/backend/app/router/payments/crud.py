@@ -7,10 +7,10 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
-from ecommerce.platform.backend.app.router.payments import models, schemas
-from ecommerce.platform.backend.app.router.orders.models import Order
+from ecommerce.backend.app.router.payments import models, schemas
+from ecommerce.backend.app.router.orders.models import Order
 # Orders 스키마에서 OrderStatus import
-from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
+from ecommerce.backend.app.router.orders.schemas import OrderStatus
 
 
 # ============================================

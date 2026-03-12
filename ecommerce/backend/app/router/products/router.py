@@ -8,8 +8,8 @@ from typing import List, Optional
 from decimal import Decimal
 import logging
 
-from ecommerce.platform.backend.app.database import get_db
-from ecommerce.platform.backend.app.router.products import crud, schemas, models
+from ecommerce.backend.app.database import get_db
+from ecommerce.backend.app.router.products import crud, schemas, models
 
 # 로깅 설정
 logger = logging.getLogger(__name__)

@@ -46,19 +46,19 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 
 # models, crud, db 등 명시적 import (실제 경로에 맞게 조정)
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.router.users.models import User
-from ecommerce.platform.backend.app.router.orders.models import Order
-from ecommerce.platform.backend.app.router.shipping.models import ShippingInfo
-from ecommerce.platform.backend.app.router.points.models import PointHistory
-from ecommerce.platform.backend.app.router.user_history.models import UserHistory
-from ecommerce.platform.backend.app.router.carts.models import Cart
-from ecommerce.platform.backend.app.router.payments.models import Payment
-from ecommerce.platform.backend.app.router.products.models import Product
-from ecommerce.platform.backend.app.router.reviews.models import Review
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.router.users.models import User
+from ecommerce.backend.app.router.orders.models import Order
+from ecommerce.backend.app.router.shipping.models import ShippingInfo
+from ecommerce.backend.app.router.points.models import PointHistory
+from ecommerce.backend.app.router.user_history.models import UserHistory
+from ecommerce.backend.app.router.carts.models import Cart
+from ecommerce.backend.app.router.payments.models import Payment
+from ecommerce.backend.app.router.products.models import Product
+from ecommerce.backend.app.router.reviews.models import Review
 # ... 필요한 모든 관계 모델 import (추가 필요시 아래에 계속 추가)
-from ecommerce.platform.backend.app.router.users.crud import get_user_by_email
-from ecommerce.platform.backend.app.router.orders.crud import get_orders_by_user_id
+from ecommerce.backend.app.router.users.crud import get_user_by_email
+from ecommerce.backend.app.router.orders.crud import get_orders_by_user_id
 
 OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialogs3.jsonl"
 

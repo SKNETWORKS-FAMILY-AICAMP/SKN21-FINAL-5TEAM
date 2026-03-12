@@ -17,24 +17,24 @@ from datetime import datetime
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
-import ecommerce.platform.backend.app.router.users.models
-import ecommerce.platform.backend.app.router.products.models
-import ecommerce.platform.backend.app.router.orders.models
-import ecommerce.platform.backend.app.router.shipping.models
-import ecommerce.platform.backend.app.router.carts.models
-import ecommerce.platform.backend.app.router.points.models
-import ecommerce.platform.backend.app.router.reviews.models
-import ecommerce.platform.backend.app.router.user_history.models
-import ecommerce.platform.backend.app.router.payments.models
-import ecommerce.platform.backend.app.router.inventories.models
-import ecommerce.platform.backend.app.router.chatbot_logs.models
+import ecommerce.backend.app.router.users.models
+import ecommerce.backend.app.router.products.models
+import ecommerce.backend.app.router.orders.models
+import ecommerce.backend.app.router.shipping.models
+import ecommerce.backend.app.router.carts.models
+import ecommerce.backend.app.router.points.models
+import ecommerce.backend.app.router.reviews.models
+import ecommerce.backend.app.router.user_history.models
+import ecommerce.backend.app.router.payments.models
+import ecommerce.backend.app.router.inventories.models
+import ecommerce.backend.app.router.chatbot_logs.models
 
-from ecommerce.platform.backend.app.router.users.models import User, UserStatus, UserGender
-from ecommerce.platform.backend.app.router.users.crud import hash_password
-from ecommerce.platform.backend.app.router.products.models import ProductOption, ProductType, Category, Product
-from ecommerce.platform.backend.app.router.orders.models import Order, OrderItem
-from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
-from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
+from ecommerce.backend.app.router.users.models import User, UserStatus, UserGender
+from ecommerce.backend.app.router.users.crud import hash_password
+from ecommerce.backend.app.router.products.models import ProductOption, ProductType, Category, Product
+from ecommerce.backend.app.router.orders.models import Order, OrderItem
+from ecommerce.backend.app.router.orders.schemas import OrderStatus
+from ecommerce.backend.app.router.shipping.models import ShippingAddress
 
 logging.basicConfig(
     level=logging.INFO,
@@ -163,7 +163,7 @@ def create_eval_orders(db: Session):
 
 
 if __name__ == "__main__":
-    from ecommerce.platform.backend.app.database import SessionLocal
+    from ecommerce.backend.app.database import SessionLocal
 
     db = SessionLocal()
 

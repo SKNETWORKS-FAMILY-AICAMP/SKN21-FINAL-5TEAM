@@ -12,18 +12,18 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from ecommerce.platform.backend.app.database import Base
+from ecommerce.backend.app.database import Base
 
 if TYPE_CHECKING:
-    from ecommerce.platform.backend.app.router.users.models import User
-    from ecommerce.platform.backend.app.router.shipping.models import ShippingInfo,ShippingAddress
-    from ecommerce.platform.backend.app.router.payments.models import Payment
-    from ecommerce.platform.backend.app.router.points.models import PointHistory
-    from ecommerce.platform.backend.app.router.reviews.models import Review
-    from ecommerce.platform.backend.app.router.user_history.models import UserHistory
+    from ecommerce.backend.app.router.users.models import User
+    from ecommerce.backend.app.router.shipping.models import ShippingInfo,ShippingAddress
+    from ecommerce.backend.app.router.payments.models import Payment
+    from ecommerce.backend.app.router.points.models import PointHistory
+    from ecommerce.backend.app.router.reviews.models import Review
+    from ecommerce.backend.app.router.user_history.models import UserHistory
 
 # Enum imports
-from ecommerce.platform.backend.app.router.orders import schemas
+from ecommerce.backend.app.router.orders import schemas
 
 
 # ============================================

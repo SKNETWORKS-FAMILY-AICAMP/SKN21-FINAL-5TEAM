@@ -8,7 +8,7 @@ from typing import Optional, List
 from pydantic import BaseModel, Field, ConfigDict
 
 # Enum을 models에서 import
-from ecommerce.platform.backend.app.router.products.models import ProductType, UsedProductStatus
+from ecommerce.backend.app.router.products.models import ProductType, UsedProductStatus
 
 
 # ============================================

@@ -13,16 +13,16 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from ecommerce.platform.backend.app.database import Base
+from ecommerce.backend.app.database import Base
 
 if TYPE_CHECKING:
-    from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
-    from ecommerce.platform.backend.app.router.carts.models import Cart
-    from ecommerce.platform.backend.app.router.orders.models import Order
-    from ecommerce.platform.backend.app.router.products.models import UsedProduct
-    from ecommerce.platform.backend.app.router.points.models import PointHistory, IssuedVoucher
-    from ecommerce.platform.backend.app.router.reviews.models import Review
-    from ecommerce.platform.backend.app.router.user_history.models import UserHistory
+    from ecommerce.backend.app.router.shipping.models import ShippingAddress
+    from ecommerce.backend.app.router.carts.models import Cart
+    from ecommerce.backend.app.router.orders.models import Order
+    from ecommerce.backend.app.router.products.models import UsedProduct
+    from ecommerce.backend.app.router.points.models import PointHistory, IssuedVoucher
+    from ecommerce.backend.app.router.reviews.models import Review
+    from ecommerce.backend.app.router.user_history.models import UserHistory
 
 
 # ==================================================

@@ -10,7 +10,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
-from ecommerce.platform.backend.app.router.points import models, schemas
+from ecommerce.backend.app.router.points import models, schemas
 
 
 # ============================================

@@ -142,22 +142,22 @@ print("[1] eval_data.jsonl 및 DB 데이터 로드 중...")
 user_rows = load_eval_data(EVAL_DATA_PATH)
 print(f"  • eval_data 로드: {len(user_rows)}명의 사용자")
 
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.router.users.crud import get_user_by_email
-from ecommerce.platform.backend.app.router.orders.crud import (
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.router.users.crud import get_user_by_email
+from ecommerce.backend.app.router.orders.crud import (
     get_order_by_order_number,
     get_orders_by_user_id,
     enrich_order_with_product_names,
 )
 # User/Order 모델의 relationship 참조를 해결하기 위해 관련 모델 전부 import
-import ecommerce.platform.backend.app.router.shipping.models
-import ecommerce.platform.backend.app.router.carts.models
-import ecommerce.platform.backend.app.router.orders.models
-import ecommerce.platform.backend.app.router.products.models
-import ecommerce.platform.backend.app.router.points.models
-import ecommerce.platform.backend.app.router.reviews.models
-import ecommerce.platform.backend.app.router.user_history.models
-import ecommerce.platform.backend.app.router.payments.models
+import ecommerce.backend.app.router.shipping.models
+import ecommerce.backend.app.router.carts.models
+import ecommerce.backend.app.router.orders.models
+import ecommerce.backend.app.router.products.models
+import ecommerce.backend.app.router.points.models
+import ecommerce.backend.app.router.reviews.models
+import ecommerce.backend.app.router.user_history.models
+import ecommerce.backend.app.router.payments.models
 
 db = SessionLocal()
 try:

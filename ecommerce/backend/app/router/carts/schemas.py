@@ -7,7 +7,7 @@ from typing import Optional, List
 
 from pydantic import BaseModel, Field, ConfigDict
 
-from ecommerce.platform.backend.app.router.products.models import ProductType, UsedProductStatus
+from ecommerce.backend.app.router.products.models import ProductType, UsedProductStatus
 
 
 # ============================================

@@ -23,31 +23,31 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
-import ecommerce.platform.backend.app.router.users.models
-import ecommerce.platform.backend.app.router.products.models
-import ecommerce.platform.backend.app.router.orders.models
-import ecommerce.platform.backend.app.router.shipping.models
-import ecommerce.platform.backend.app.router.points.models
-import ecommerce.platform.backend.app.router.carts.models
-import ecommerce.platform.backend.app.router.reviews.models
-import ecommerce.platform.backend.app.router.payments.models
-import ecommerce.platform.backend.app.router.inventories.models
-import ecommerce.platform.backend.app.router.user_history.models
+import ecommerce.backend.app.router.users.models
+import ecommerce.backend.app.router.products.models
+import ecommerce.backend.app.router.orders.models
+import ecommerce.backend.app.router.shipping.models
+import ecommerce.backend.app.router.points.models
+import ecommerce.backend.app.router.carts.models
+import ecommerce.backend.app.router.reviews.models
+import ecommerce.backend.app.router.payments.models
+import ecommerce.backend.app.router.inventories.models
+import ecommerce.backend.app.router.user_history.models
 
 # -------------------------------------------------
 # 실제 사용할 클래스 import
 # -------------------------------------------------
-from ecommerce.platform.backend.app.router.users.models import User, UserStatus, UserRole, UserGender
-from ecommerce.platform.backend.app.router.products.models import (
+from ecommerce.backend.app.router.users.models import User, UserStatus, UserRole, UserGender
+from ecommerce.backend.app.router.products.models import (
     Category, Product, ProductOption, ProductType,
     UsedProduct, UsedProductOption, UsedProductCondition, UsedProductStatus,
     ProductImage
 )
-from ecommerce.platform.backend.app.router.orders.models import Order, OrderItem
-from ecommerce.platform.backend.app.router.orders.schemas import OrderStatus
-from ecommerce.platform.backend.app.router.shipping.models import ShippingAddress
-from ecommerce.platform.backend.app.router.users.crud import hash_password
-from ecommerce.platform.backend.app.router.points.models import IssuedVoucher
+from ecommerce.backend.app.router.orders.models import Order, OrderItem
+from ecommerce.backend.app.router.orders.schemas import OrderStatus
+from ecommerce.backend.app.router.shipping.models import ShippingAddress
+from ecommerce.backend.app.router.users.crud import hash_password
+from ecommerce.backend.app.router.points.models import IssuedVoucher
 
 # Configure logging so we can see INFO and ERROR messages
 logging.basicConfig(
@@ -509,7 +509,7 @@ def create_orders(db: Session):
     db.flush()
 
 if __name__ == "__main__":
-    from ecommerce.platform.backend.app.database import SessionLocal
+    from ecommerce.backend.app.database import SessionLocal
 
     db = SessionLocal()
 

@@ -11,8 +11,8 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.models import Order, Product, User, ShippingAddress
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.models import Order, Product, User, ShippingAddress
 from chatbot.src.infrastructure.openai import get_openai_client
 
 

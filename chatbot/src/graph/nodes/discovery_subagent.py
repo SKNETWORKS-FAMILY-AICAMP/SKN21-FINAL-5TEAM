@@ -34,7 +34,7 @@ from chatbot.src.tools.recommendation_tools import (
     search_by_text_clip,
 )
 from chatbot.src.infrastructure.openai import get_openai_client
-from ecommerce.platform.backend.app.uploads import CHATBOT_UPLOAD_DIR
+from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR
 
 # ── 도구 목록 (TEXT 경로) ──────────────────────────────────
 

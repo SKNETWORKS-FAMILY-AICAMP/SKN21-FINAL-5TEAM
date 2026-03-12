@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, desc
 import json
 
-from ecommerce.platform.backend.app.router.user_history import models, schemas
+from ecommerce.backend.app.router.user_history import models, schemas
 
 
 # ============================================
@@ -196,14 +196,14 @@ def track_cart_action(
     """
     # user_name이 None이면 DB에서 조회
     if user_name is None:
-        from ecommerce.platform.backend.app.router.users.models import User
+        from ecommerce.backend.app.router.users.models import User
         user = db.query(User).filter(User.id == user_id).first()
         if user:
             user_name = user.name
 
     # cart_item_name이 None이면 DB에서 조회
     if cart_item_name is None:
-        from ecommerce.platform.backend.app.router.products.models import (
+        from ecommerce.backend.app.router.products.models import (
             ProductOption, Product, UsedProductOption, UsedProduct
         )
         opt_type = product_option_type.value if hasattr(product_option_type, "value") else product_option_type

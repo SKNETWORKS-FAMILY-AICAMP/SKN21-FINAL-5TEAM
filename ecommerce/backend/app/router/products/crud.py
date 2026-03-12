@@ -8,7 +8,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_, func
 
-from ecommerce.platform.backend.app.router.products import models, schemas
+from ecommerce.backend.app.router.products import models, schemas
 
 # mapping.py
 
@@ -522,7 +522,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_
 
-from ecommerce.platform.backend.app.router.products import models, schemas
+from ecommerce.backend.app.router.products import models, schemas
 
 
 # ============================================

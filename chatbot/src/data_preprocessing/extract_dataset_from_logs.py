@@ -9,8 +9,8 @@ from collections import Counter, defaultdict
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
 
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.router.chatbot_logs.models import (
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.router.chatbot_logs.models import (
     ConversationSession,
     ConversationMessage,
     ToolCallLog,
@@ -19,7 +19,7 @@ from ecommerce.platform.backend.app.router.chatbot_logs.models import (
     DatasetType,
     MessageRole
 )
-from ecommerce.platform.backend.app.router.chatbot_logs.service import LogService
+from ecommerce.backend.app.router.chatbot_logs.service import LogService
 
 
 class DatasetExtractor:

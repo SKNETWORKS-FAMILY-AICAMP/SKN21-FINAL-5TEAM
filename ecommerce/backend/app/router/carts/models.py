@@ -12,12 +12,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from ecommerce.platform.backend.app.database import Base
-from ecommerce.platform.backend.app.router.products.models import ProductType
+from ecommerce.backend.app.database import Base
+from ecommerce.backend.app.router.products.models import ProductType
 
 if TYPE_CHECKING:
-    from ecommerce.platform.backend.app.router.users.models import User
-    from ecommerce.platform.backend.app.router.products.models import ProductOption, UsedProductOption
+    from ecommerce.backend.app.router.users.models import User
+    from ecommerce.backend.app.router.products.models import ProductOption, UsedProductOption
 
 # ==================================================
 # Cart Models

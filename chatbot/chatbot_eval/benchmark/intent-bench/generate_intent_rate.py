@@ -45,19 +45,19 @@ load_dotenv(_PROJECT_ROOT / ".env")
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from sqlalchemy.sql.expression import func
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.router.products.models import ProductImage  # noqa: E402
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.router.products.models import ProductImage  # noqa: E402
 
 # ProductImage import 시 products/models.py 전체가 로드되며,
 # 모델 간 relationship 해석을 위해 관련 모델 모듈을 모두 import
-import ecommerce.platform.backend.app.router.users.models  # noqa: F401
-import ecommerce.platform.backend.app.router.carts.models  # noqa: F401
-import ecommerce.platform.backend.app.router.orders.models  # noqa: F401
-import ecommerce.platform.backend.app.router.shipping.models  # noqa: F401
-import ecommerce.platform.backend.app.router.points.models  # noqa: F401
-import ecommerce.platform.backend.app.router.reviews.models  # noqa: F401
-import ecommerce.platform.backend.app.router.user_history.models  # noqa: F401
-import ecommerce.platform.backend.app.router.payments.models  # noqa: F401
+import ecommerce.backend.app.router.users.models  # noqa: F401
+import ecommerce.backend.app.router.carts.models  # noqa: F401
+import ecommerce.backend.app.router.orders.models  # noqa: F401
+import ecommerce.backend.app.router.shipping.models  # noqa: F401
+import ecommerce.backend.app.router.points.models  # noqa: F401
+import ecommerce.backend.app.router.reviews.models  # noqa: F401
+import ecommerce.backend.app.router.user_history.models  # noqa: F401
+import ecommerce.backend.app.router.payments.models  # noqa: F401
 
 
 def fetch_image_urls(limit: int = 50) -> list[str]:

@@ -6,8 +6,8 @@ from typing import Optional, List
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_
 
-from ecommerce.platform.backend.app.router.reviews import models, schemas
-from ecommerce.platform.backend.app.router.orders.models import OrderItem, Order
+from ecommerce.backend.app.router.reviews import models, schemas
+from ecommerce.backend.app.router.orders.models import OrderItem, Order
 
 
 # ============================================

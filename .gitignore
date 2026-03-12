@@ -36,6 +36,7 @@ yarn-error.log*
 backend.log
 logs/
 results/
+chatbot/data/raw/
 chatbot/data/raw/fashion-dataset
 chatbot/data/processed
 chatbot/chatbot_eval/benchmark/FunctionChat-Bench/output/

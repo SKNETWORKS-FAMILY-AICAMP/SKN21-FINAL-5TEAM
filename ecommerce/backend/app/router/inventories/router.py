@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from typing import List , Optional
 import logging
 
-from ecommerce.platform.backend.app.database import get_db
-from ecommerce.platform.backend.app.router.inventories import crud, schemas
+from ecommerce.backend.app.database import get_db
+from ecommerce.backend.app.router.inventories import crud, schemas
 
 # 로깅 설정
 logger = logging.getLogger(__name__)

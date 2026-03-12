@@ -8,10 +8,10 @@ from datetime import datetime
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, desc
 
-from ecommerce.platform.backend.app.router.orders import models, schemas
-from ecommerce.platform.backend.app.router.carts.models import Cart, CartItem
-from ecommerce.platform.backend.app.router.products.models import ProductOption, UsedProductOption
-from ecommerce.platform.backend.app.router.inventories.models import InventoryTransaction, TransactionType, ProductType as InvProductType
+from ecommerce.backend.app.router.orders import models, schemas
+from ecommerce.backend.app.router.carts.models import Cart, CartItem
+from ecommerce.backend.app.router.products.models import ProductOption, UsedProductOption
+from ecommerce.backend.app.router.inventories.models import InventoryTransaction, TransactionType, ProductType as InvProductType
 
 
 # ============================================
@@ -599,7 +599,7 @@ def get_product_info_for_item(db: Session, item: models.OrderItem) -> dict:
     try:
         if item.product_option_type == schemas.ProductType.NEW:
             # 신상품 조회
-            from ecommerce.platform.backend.app.router.products.models import Product
+            from ecommerce.backend.app.router.products.models import Product
 
             option = db.query(ProductOption).filter(
                 ProductOption.id == item.product_option_id
@@ -617,7 +617,7 @@ def get_product_info_for_item(db: Session, item: models.OrderItem) -> dict:
 
         elif item.product_option_type == schemas.ProductType.USED:
             # 중고상품 조회
-            from ecommerce.platform.backend.app.router.products.models import UsedProduct
+            from ecommerce.backend.app.router.products.models import UsedProduct
 
             option = db.query(UsedProductOption).filter(
                 UsedProductOption.id == item.product_option_id

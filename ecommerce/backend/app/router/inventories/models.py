@@ -13,7 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
-from ecommerce.platform.backend.app.database import Base
+from ecommerce.backend.app.database import Base
 
 
 # ==================================================

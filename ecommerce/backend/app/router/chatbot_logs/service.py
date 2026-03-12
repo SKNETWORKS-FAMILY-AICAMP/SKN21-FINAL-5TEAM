@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
 
-from ecommerce.platform.backend.app.router.chatbot_logs.models import (
+from ecommerce.backend.app.router.chatbot_logs.models import (
     ConversationSession,
     ConversationMessage,
     ToolCallLog,

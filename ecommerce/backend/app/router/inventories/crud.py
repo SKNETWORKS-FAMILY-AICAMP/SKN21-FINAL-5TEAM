@@ -6,8 +6,8 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
-from ecommerce.platform.backend.app.router.inventories import models, schemas
-from ecommerce.platform.backend.app.router.products.models import ProductOption, UsedProductOption
+from ecommerce.backend.app.router.inventories import models, schemas
+from ecommerce.backend.app.router.products.models import ProductOption, UsedProductOption
 
 
 # ============================================

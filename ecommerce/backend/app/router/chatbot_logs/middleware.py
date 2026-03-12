@@ -7,9 +7,9 @@ import uuid
 from typing import Dict, Any, Optional
 from contextlib import contextmanager
 
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.router.chatbot_logs.service import LogService
-from ecommerce.platform.backend.app.router.chatbot_logs.models import (
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.router.chatbot_logs.service import LogService
+from ecommerce.backend.app.router.chatbot_logs.models import (
     MessageRole,
     ConversationStatus
 )

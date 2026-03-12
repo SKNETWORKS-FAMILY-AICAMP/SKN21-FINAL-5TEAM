@@ -252,7 +252,7 @@ class DatasetBuilder:
 
 def main():
     """실행 예시"""
-    from ecommerce.platform.backend.app.database import SessionLocal
+    from ecommerce.backend.app.database import SessionLocal
     
     db = SessionLocal()
     

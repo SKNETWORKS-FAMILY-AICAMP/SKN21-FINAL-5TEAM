@@ -9,8 +9,8 @@ from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict, field_validator, computed_field
 
 # Type checking required imports moved here to resolve PydanticUserError
-from ecommerce.platform.backend.app.router.payments.schemas import PaymentResponse
-from ecommerce.platform.backend.app.router.shipping.schemas import ShippingInfoResponse
+from ecommerce.backend.app.router.payments.schemas import PaymentResponse
+from ecommerce.backend.app.router.shipping.schemas import ShippingInfoResponse
 
 
 # ==================================================

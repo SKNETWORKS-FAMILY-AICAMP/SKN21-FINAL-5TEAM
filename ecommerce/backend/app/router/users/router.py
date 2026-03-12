@@ -4,12 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlalchemy.orm import Session
 from fastapi.responses import JSONResponse
 
-from ecommerce.platform.backend.app.core.auth import create_access_token
-from ecommerce.platform.backend.app.database import get_db
-from ecommerce.platform.backend.app.router.users.models import UserStatus
-from ecommerce.platform.backend.app.router.users import crud, schemas
-from ecommerce.platform.backend.app.router.users.models import User, UserRole
-from ecommerce.platform.backend.app.core.auth import (
+from ecommerce.backend.app.core.auth import create_access_token
+from ecommerce.backend.app.database import get_db
+from ecommerce.backend.app.router.users.models import UserStatus
+from ecommerce.backend.app.router.users import crud, schemas
+from ecommerce.backend.app.router.users.models import User, UserRole
+from ecommerce.backend.app.core.auth import (
     get_current_user,
     get_current_user_optional,
 )
@@ -17,7 +17,7 @@ from ecommerce.platform.backend.app.core.auth import (
 import os
 from authlib.integrations.starlette_client import OAuth
 from fastapi.responses import RedirectResponse
-from ecommerce.platform.backend.app.router.user_history import (
+from ecommerce.backend.app.router.user_history import (
     crud as user_history_crud,
     schemas as user_history_schemas,
 )

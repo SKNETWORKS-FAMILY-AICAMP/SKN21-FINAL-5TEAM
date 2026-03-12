@@ -579,22 +579,22 @@ for type_key in eval_data:
         if email:
             all_emails.add(email)
 
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.router.users.crud import get_user_by_email
-from ecommerce.platform.backend.app.router.orders.crud import (
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.router.users.crud import get_user_by_email
+from ecommerce.backend.app.router.orders.crud import (
     get_order_by_order_number,
     get_orders_by_user_id,
     enrich_order_with_product_names,
 )
 # User/Order 모델의 relationship 참조를 해결하기 위해 관련 모델 전부 import
-import ecommerce.platform.backend.app.router.shipping.models  # noqa: F401
-import ecommerce.platform.backend.app.router.carts.models  # noqa: F401
-import ecommerce.platform.backend.app.router.orders.models  # noqa: F401
-import ecommerce.platform.backend.app.router.products.models  # noqa: F401
-import ecommerce.platform.backend.app.router.points.models  # noqa: F401
-import ecommerce.platform.backend.app.router.reviews.models  # noqa: F401
-import ecommerce.platform.backend.app.router.user_history.models  # noqa: F401
-import ecommerce.platform.backend.app.router.payments.models  # noqa: F401
+import ecommerce.backend.app.router.shipping.models  # noqa: F401
+import ecommerce.backend.app.router.carts.models  # noqa: F401
+import ecommerce.backend.app.router.orders.models  # noqa: F401
+import ecommerce.backend.app.router.products.models  # noqa: F401
+import ecommerce.backend.app.router.points.models  # noqa: F401
+import ecommerce.backend.app.router.reviews.models  # noqa: F401
+import ecommerce.backend.app.router.user_history.models  # noqa: F401
+import ecommerce.backend.app.router.payments.models  # noqa: F401
 
 db = SessionLocal()
 try:

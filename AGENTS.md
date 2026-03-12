@@ -3,7 +3,7 @@
 ## 빌드, 테스트, 개발 명령어
 
 - 의존성 설치(루트): `uv sync`
-- 백엔드 실행(루트): `uv run uvicorn ecommerce.platform.backend.app.main:app --reload --host 0.0.0.0 --port 8000`
+- 백엔드 실행(루트): `uv run uvicorn ecommerce.backend.app.main:app --reload --host 0.0.0.0 --port 8000`
 - 프론트엔드 실행:
   - `npm run dev --prefix ecommerce/platform/frontend`
 - 통합 실행(도커): `docker compose up -d --build`

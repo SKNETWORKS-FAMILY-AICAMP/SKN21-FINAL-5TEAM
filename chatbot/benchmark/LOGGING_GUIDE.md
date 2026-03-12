@@ -122,12 +122,12 @@ cd /Users/junseok/Projects/SKN21-FINAL-5TEAM
 
 # 모델 임포트 추가 (필요시)
 # ecommerce/platform/backend/app/main.py에 추가:
-# from ecommerce.platform.backend.app.router.chatbot_logs.models import *
+# from ecommerce.backend.app.router.chatbot_logs.models import *
 
 # Alembic 마이그레이션 (또는 직접 테이블 생성)
 python -c "
-from ecommerce.platform.backend.app.database import engine, Base
-from ecommerce.platform.backend.app.router.chatbot_logs.models import *
+from ecommerce.backend.app.database import engine, Base
+from ecommerce.backend.app.router.chatbot_logs.models import *
 Base.metadata.create_all(bind=engine)
 print('✅ 로그 테이블 생성 완료')
 "
@@ -138,7 +138,7 @@ print('✅ 로그 테이블 생성 완료')
 ```python
 # ecommerce/chatbot/src/api/v1/endpoints/chat.py 수정
 
-from ecommerce.platform.backend.app.router.chatbot_logs.middleware import log_chat_interaction
+from ecommerce.backend.app.router.chatbot_logs.middleware import log_chat_interaction
 
 @router.post("/chat")
 async def chat_endpoint(request: ChatRequest, current_user: User = Depends(get_current_user)):
@@ -182,8 +182,8 @@ async def chat_endpoint(request: ChatRequest, current_user: User = Depends(get_c
 
 # 현재 로그 상태 확인
 python -c "
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.router.chatbot_logs.service import LogService
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.router.chatbot_logs.service import LogService
 
 db = SessionLocal()
 service = LogService(db)
@@ -276,8 +276,8 @@ with open('ecommerce/chatbot/data/extracted_datasets/training_20260220_143022.js
 ### **품질 분포 확인**
 
 ```python
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.router.chatbot_logs.service import LogService
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.router.chatbot_logs.service import LogService
 
 db = SessionLocal()
 service = LogService(db)

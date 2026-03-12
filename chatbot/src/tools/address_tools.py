@@ -1,7 +1,7 @@
 from langchain_core.tools import tool
 
-from ecommerce.platform.backend.app.database import SessionLocal
-from ecommerce.platform.backend.app.models import ShippingAddress, User
+from ecommerce.backend.app.database import SessionLocal
+from ecommerce.backend.app.models import ShippingAddress, User
 
 @tool
 def open_address_search() -> dict:

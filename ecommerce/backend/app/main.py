@@ -6,37 +6,37 @@ from pathlib import Path
 import os
 import tempfile
 import time
-from ecommerce.platform.backend.app.database import engine, Base, create_db_scheme
+from ecommerce.backend.app.database import engine, Base, create_db_scheme
 from sqlalchemy import inspect, text
-from ecommerce.platform.backend.app.router.carts.router import router as carts_router
-from ecommerce.platform.backend.app.router.users.router import router as users_router
-from ecommerce.platform.backend.app.router.shipping.router import (
+from ecommerce.backend.app.router.carts.router import router as carts_router
+from ecommerce.backend.app.router.users.router import router as users_router
+from ecommerce.backend.app.router.shipping.router import (
     router as shipping_router,
 )
-from ecommerce.platform.backend.app.router.orders.router import router as orders_router
-from ecommerce.platform.backend.app.router.payments.router import (
+from ecommerce.backend.app.router.orders.router import router as orders_router
+from ecommerce.backend.app.router.payments.router import (
     router as payments_router,
 )
-from ecommerce.platform.backend.app.router.inventories.router import (
+from ecommerce.backend.app.router.inventories.router import (
     router as inventories_router,
 )
-from ecommerce.platform.backend.app.router.points.router import router as points_router
-from ecommerce.platform.backend.app.router.reviews.router import (
+from ecommerce.backend.app.router.points.router import router as points_router
+from ecommerce.backend.app.router.reviews.router import (
     router as reviews_router,
 )
-from ecommerce.platform.backend.app.router.products.router import (
+from ecommerce.backend.app.router.products.router import (
     router as products_router,
 )
-from ecommerce.platform.backend.app.router.user_history.router import (
+from ecommerce.backend.app.router.user_history.router import (
     router as user_history_router,
 )
 
 # Import models to register them with Base.metadata
-import ecommerce.platform.backend.app.router.users.models
-import ecommerce.platform.backend.app.router.user_history.models
+import ecommerce.backend.app.router.users.models
+import ecommerce.backend.app.router.user_history.models
 import logging
 from chatbot.src.api.v1.endpoints.chat import router as chatbot_router
-from ecommerce.platform.backend.app.uploads import CHATBOT_UPLOAD_DIR
+from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR
 from starlette.middleware.sessions import SessionMiddleware  # 미드웨워 추가
 
 
@@ -165,7 +165,7 @@ async def lifespan(app: FastAPI):
     logging.info(f"[startup] 컬럼 마이그레이션 완료: {time.perf_counter() - step_t0:.2f}s")
 
     # 3. 초기 데이터 적재 (Seed)
-    from ecommerce.platform.backend.app.database import SessionLocal
+    from ecommerce.backend.app.database import SessionLocal
     from ecommerce.scripts.seed import init_db
 
     db = SessionLocal()
@@ -305,7 +305,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "ecommerce.platform.backend.app.main:app",
+        "ecommerce.backend.app.main:app",
         host="0.0.0.0",
         port=8000,
         reload=True,
