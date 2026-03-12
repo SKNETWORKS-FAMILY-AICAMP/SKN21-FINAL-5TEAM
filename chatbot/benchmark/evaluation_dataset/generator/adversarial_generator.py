@@ -6,7 +6,7 @@ Adversarial Generator
 import json
 from typing import List, Dict, Any
 
-from ecommerce.chatbot.src.infrastructure.openai import get_openai_client
+from chatbot.src.infrastructure.openai import get_openai_client
 
 
 class AdversarialGenerator:

@@ -33,27 +33,27 @@ LangGraph 멀티-에이전트 그래프 정의.
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import InMemorySaver
 
-from ecommerce.chatbot.src.graph.state import GlobalAgentState
+from chatbot.src.graph.state import GlobalAgentState
 
 # ── 노드 임포트 ──────────────────────────────────────────
-from ecommerce.chatbot.src.graph.nodes.guardrail import (
+from chatbot.src.graph.nodes.guardrail import (
     guardrail_node,
     route_after_guardrail,
 )
-from ecommerce.chatbot.src.graph.nodes.planner import (
+from chatbot.src.graph.nodes.planner import (
     planner_node,
     route_after_planner,
 )
-from ecommerce.chatbot.src.graph.nodes.supervisor import (
+from chatbot.src.graph.nodes.supervisor import (
     supervisor_node,
     route_after_supervisor,
 )
-from ecommerce.chatbot.src.graph.nodes.order_subagent import order_subagent_node
-from ecommerce.chatbot.src.graph.nodes.discovery_subagent import discovery_subagent_node
-from ecommerce.chatbot.src.graph.nodes.policy_rag_subagent import policy_rag_subagent_node
-from ecommerce.chatbot.src.graph.nodes.form_action_subagent import form_action_subagent_node
-from ecommerce.chatbot.src.graph.nodes.final_generator import final_generator_node
-from ecommerce.chatbot.src.graph.nodes.summarize import summarize_node
+from chatbot.src.graph.nodes.order_subagent import order_subagent_node
+from chatbot.src.graph.nodes.discovery_subagent import discovery_subagent_node
+from chatbot.src.graph.nodes.policy_rag_subagent import policy_rag_subagent_node
+from chatbot.src.graph.nodes.form_action_subagent import form_action_subagent_node
+from chatbot.src.graph.nodes.final_generator import final_generator_node
+from chatbot.src.graph.nodes.summarize import summarize_node
 
 
 # ── 그래프 빌드 ──────────────────────────────────────────

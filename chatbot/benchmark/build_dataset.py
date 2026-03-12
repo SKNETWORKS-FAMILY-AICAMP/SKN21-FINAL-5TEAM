@@ -16,7 +16,7 @@ from chatbot.benchmark.quality_tools.quality_checker import QualityChecker
 def _discover_all_tools() -> List[str]:
     """nodes_v2.py에서 TOOLS 목록을 직접 import"""
     try:
-        from ecommerce.chatbot.src.graph.nodes_v2 import TOOLS
+        from chatbot.src.graph.nodes_v2 import TOOLS
         tool_names = [tool.name for tool in TOOLS if hasattr(tool, 'name')]
         print(f"     → nodes_v2.py에서 {len(tool_names)}개 도구 발견")
         return sorted(tool_names)

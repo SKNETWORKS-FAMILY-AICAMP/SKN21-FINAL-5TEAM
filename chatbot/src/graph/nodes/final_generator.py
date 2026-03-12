@@ -14,8 +14,8 @@ Final Generator 노드.
 
 from langchain_core.messages import SystemMessage, AIMessage
 
-from ecommerce.chatbot.src.graph.state import GlobalAgentState
-from ecommerce.chatbot.src.graph.llm_providers import make_chat_llm
+from chatbot.src.graph.state import GlobalAgentState
+from chatbot.src.graph.llm_providers import make_chat_llm
 
 # ── 프롬프트 ──────────────────────────────────────────────
 

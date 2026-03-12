@@ -9,7 +9,7 @@ from ecommerce.backend.app.database import SessionLocal
 from ecommerce.backend.app.models import User
 from ecommerce.backend.app.router.products import crud as product_crud
 from ecommerce.backend.app.router.products import schemas as product_schemas
-from ecommerce.chatbot.src.tools.image_search_tools import (
+from chatbot.src.tools.image_search_tools import (
     search_similar_products_multimodal,
     search_similar_products_from_text,
 )

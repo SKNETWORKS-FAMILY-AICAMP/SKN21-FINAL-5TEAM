@@ -11,8 +11,8 @@ Supervisor Router 노드.
   - 큐(pending_tasks) 기반 순차 처리: 복합 요청도 한 번에 하나씩 처리.
 """
 
-from ecommerce.chatbot.src.graph.state import GlobalAgentState
-from ecommerce.chatbot.src.schemas.planner import TaskIntent
+from chatbot.src.graph.state import GlobalAgentState
+from chatbot.src.schemas.planner import TaskIntent
 
 # TaskIntent → SubAgent 노드 이름 매핑
 _INTENT_TO_NODE: dict[str, str] = {

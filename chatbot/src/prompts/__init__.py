@@ -1,4 +1,4 @@
-from ecommerce.chatbot.src.prompts.agent_prompts import (
+from chatbot.src.prompts.agent_prompts import (
 	TOOL_USAGE_INSTRUCTIONS,
 	CONTEXT_SUMMARY_SYSTEM_PROMPT,
 	APPROVAL_CHECK_PROMPT_TEMPLATE,

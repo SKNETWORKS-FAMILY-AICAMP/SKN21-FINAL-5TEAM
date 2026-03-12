@@ -9,7 +9,7 @@ from datetime import datetime
 from tqdm import tqdm
 
 from chatbot.benchmark.evaluator.metrics import EvaluationMetrics
-from ecommerce.chatbot.src.graph.workflow import graph_app
+from chatbot.src.graph.workflow import graph_app
 
 
 class ChatbotEvaluator:

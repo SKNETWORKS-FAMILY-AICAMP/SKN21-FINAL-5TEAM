@@ -1,6 +1,10 @@
+FROM ghcr.io/astral-sh/uv:0.8.17 AS uv
+
 FROM python:3.11-slim
 
 WORKDIR /app
+
+COPY --from=uv /uv /usr/local/bin/uv
 
 # 시스템 의존성 (PyMySQL, cryptography 빌드용)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -9,9 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenblas-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 백엔드 의존성 설치 (torch/torchvision 포함)
-COPY ecommerce/platform/backend/requirements.txt /app/ecommerce/platform/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/ecommerce/platform/backend/requirements.txt
+# 백엔드 의존성 설치
+COPY ecommerce/backend/requirements.txt /app/ecommerce/backend/requirements.txt
+RUN uv pip install --system --no-cache -r /app/ecommerce/backend/requirements.txt
 
 # 소스 코드 복사
 COPY . .

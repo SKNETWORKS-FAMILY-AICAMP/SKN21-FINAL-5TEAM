@@ -19,6 +19,11 @@ DB_HOST = os.getenv("DB_HOST")
 DB_PORT = os.getenv("DB_PORT", "3306")
 DB_NAME = os.getenv("DB_NAME")
 
+# Docker 환경에서 .env의 localhost/127.0.0.1 값으로 인해
+# 컨테이너 내부 MySQL 연결이 실패하는 케이스를 방지
+if os.path.exists("/.dockerenv") and (not DB_HOST or DB_HOST in {"127.0.0.1", "localhost"}):
+    DB_HOST = "mysql"
+
 # MySQL 접속 URL
 DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 

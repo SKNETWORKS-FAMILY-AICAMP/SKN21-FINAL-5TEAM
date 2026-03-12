@@ -15,9 +15,9 @@ from typing import cast
 from langchain_core.messages import SystemMessage
 from pydantic import ValidationError
 
-from ecommerce.chatbot.src.graph.state import GlobalAgentState
-from ecommerce.chatbot.src.schemas.planner import PlannerOutput, TaskIntent
-from ecommerce.chatbot.src.graph.llm_providers import make_chat_llm
+from chatbot.src.graph.state import GlobalAgentState
+from chatbot.src.schemas.planner import PlannerOutput, TaskIntent
+from chatbot.src.graph.llm_providers import make_chat_llm
 
 # ── 프롬프트 ──────────────────────────────────────────────
 

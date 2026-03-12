@@ -17,7 +17,7 @@ from ecommerce.backend.app.models import (
     Product,
     ProductOption,
 )
-from ecommerce.chatbot.src.tools.base import BaseAPITool
+from chatbot.src.tools.base import BaseAPITool
 
 
 # Helper to get DB session
