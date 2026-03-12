@@ -1,16 +1,24 @@
-# Site A Analysis
+# Food Site Analysis
 
-- frontend framework: Next.js
-- backend framework: Express
-- routing structure: /products/[id], /cart, /orders
-- login method: email/password + JWT
-- session storage: httpOnly cookie
-- user identity: user_id from /me
-- product data access: internal REST API /api/products
-- order data access: /api/orders
-- api exists: yes
-- rendering: SSR + CSR mixed
-- widget injection point: global layout footer
-- db core tables: users, products, orders, order_items
-- media storage: S3 + CDN
-- robots/security: bot detection 없음, CSP 제한 약함
+- site id/name: food / YAAM Food Shop
+- environment: development
+- frontend framework: React 18 (CRA, CSR)
+- backend framework: Django REST Framework (Django 4.2 계열)
+- routing structure: /, /login, /mypage, /orders (+ backend API: /api/products/, /api/orders/, /api/users/login/)
+- page types: home, login, orders, mypage, chatbot
+- login method: email/password + session cookie
+- session storage: httpOnly cookie (`session_token`)
+- token location: cookie
+- user identity: /api/users/me/ 의 user.id
+- product data access: /api/products/ (GET)
+- order data access: /api/orders/ (GET)
+- faq/policy source: 없음
+- api exists: yes (REST)
+- api base url: http://localhost:8000
+- public apis: /api/products/, /api/orders/, /api/orders/{order_id}/, /api/orders/{order_id}/actions/, /api/users/login/
+- protected apis: /api/users/me/, /api/users/logout/
+- db type/core tables: SQLite3 / auth_user, products_product, orders_order, users_sessiontoken
+- widget injection point: global_layout (available: global_layout, orders_page)
+- media source: Django media (http://localhost:8000/media/)
+- security: bot protection 비활성, robots/CSP/CORS 제한 없음, rate limit 미설정
+- agent integration: 외부 retrieval 없음, 주문/결제 액션(get_order_status/pay_order/cancel_order/refund_order) 중심의 프론트 내장 챗봇 연동
