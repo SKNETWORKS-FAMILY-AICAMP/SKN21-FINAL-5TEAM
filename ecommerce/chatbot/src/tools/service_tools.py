@@ -30,25 +30,6 @@ def get_db():
 
 
 @tool
-def register_gift_card(code: str, user_id: int = 1) -> dict:
-    """
-    상품권 코드를 등록합니다.
-    (현재 DB 모델 미구현으로 Mock 동작 유지)
-
-    Args:
-        code: 상품권 코드
-        user_id: 사용자 ID (기본값 1)
-
-    Returns:
-        성공 여부, 메시지, 잔액, 유효기간
-    """
-    # TODO: Implement real DB logic when GiftCard/Voucher model is available.
-    api = BaseAPITool(use_mock=True)
-    data = {"code": code, "user_id": user_id}
-    return api._call_api("/gift-card/register", method="POST", data=data)
-
-
-@tool
 def get_reviews(product_id: str = None, limit: int = 10) -> dict:
     """
     리뷰를 조회합니다.

@@ -1,0 +1,149 @@
+{
+  "site_id": "bilyeo",
+  "site_name": "Bilyeo",
+  "environment": "development",
+
+  "frontend_framework": {
+    "name": "vue",
+    "version": "3.5.13",
+    "rendering_mode": "csr"
+  },
+  "backend_framework": {
+    "name": "flask",
+    "version": "3.1.0"
+  },
+
+  "routing_structure": {
+    "type": "file_based",
+    "patterns": [
+      "/",
+      "/login",
+      "/product/:id",
+      "/mypage"
+    ]
+  },
+  "page_types": [
+    "home",
+    "login",
+    "product_detail",
+    "mypage"
+  ],
+
+  "auth": {
+    "auth_type": "jwt_bearer",
+    "login_methods": ["email_password"],
+    "session_storage": "session_storage",
+    "token_location": "authorization_header",
+    "refresh_strategy": "unknown",
+    "user_identity_method": {
+      "type": "login_response",
+      "endpoint": "/api/auth/login",
+      "id_field": "user.user_id"
+    }
+  },
+
+  "data_sources": {
+    "main_product_source": {
+      "type": "rest_api",
+      "endpoint": "/api/products",
+      "method": "GET"
+    },
+    "order_data_source": {
+      "type": "rest_api",
+      "endpoint": "/api/orders",
+      "method": "GET"
+    },
+    "faq_policy_source": {
+      "type": "db_table",
+      "paths": []
+    },
+    "media_source": {
+      "type": "db_url_field",
+      "base_url": null
+    }
+  },
+
+  "api": {
+    "api_exists": true,
+    "api_style": "rest",
+    "base_url": "http://localhost:5000",
+    "public_apis": [
+      "/api/products",
+      "/api/products/categories",
+      "/api/products/{product_id}",
+      "/api/auth/login"
+    ],
+    "protected_apis": [
+      "/api/orders"
+    ]
+  },
+
+  "database": {
+    "db_type": "oracle",
+    "rdb_core_tables": [
+      "users",
+      "products",
+      "/api/orders"
+    ]
+  },
+
+  "widget": {
+    "widget_injection_point": "global_layout",
+    "available_locations": [
+      "global_layout",
+      "product_detail_page"
+    ],
+    "floating_button_supported": true,
+    "page_context_extractable": true
+  },
+
+  "security": {
+    "robots_txt_restrictions": [],
+    "csp_restrictions": [],
+    "cors_restrictions": [],
+    "bot_protection": {
+      "enabled": false,
+      "type": null
+    },
+    "rate_limit_notes": "not_configured"
+  },
+
+  "product_domain": {
+    "product_id_field": "product_id",
+    "variant_id_field": null,
+    "category_id_field": "category",
+    "price_field": "price",
+    "stock_field": "stock",
+    "image_fields": ["image_url"]
+  },
+
+  "agent_integration": {
+    "adapter_ready": false,
+    "retrieval_ready": false,
+    "tool_api_ready": false,
+    "login_required_for_chat": false,
+    "login_required_tools": [],
+    "public_tools": []
+  },
+
+  "retrieval_indexing": {
+    "index_targets": [
+      "products",
+      "faq"
+    ],
+    "image_vectorization_possible": false,
+    "chunking_strategy": {
+      "product": "entity_level",
+      "faq": "qa_level",
+      "policy": "none",
+      "review": "none"
+    }
+  },
+
+  "notes": [
+    "Vue + Flask + Oracle 구조",
+    "인증은 JWT Bearer 토큰을 sessionStorage에 저장",
+    "FAQ 테이블은 존재하지만 전용 FAQ/정책 페이지 라우트는 없음",
+    "챗봇은 UI만 존재하며 백엔드 연동은 미구현"
+  ]
+}
