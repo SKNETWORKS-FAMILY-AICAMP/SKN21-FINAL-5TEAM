@@ -22,10 +22,10 @@ from paths import DATA_DIR, PROJECT_ROOT, RAW_DIR, FASHION_CSV, CLOTHES_CSV, TOO
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from ecommerce.backend.app.database import SessionLocal
-import ecommerce.backend.app.models  # SQLAlchemy 모델 레지스트리 선 로드 (mapper 초기화용)
-from ecommerce.backend.app.router.users.crud import get_user_by_email
-from ecommerce.backend.app.router.orders.crud import get_orders_by_user_id
+from ecommerce.platform.backend.app.database import SessionLocal
+import ecommerce.platform.backend.app.models  # SQLAlchemy 모델 레지스트리 선 로드 (mapper 초기화용)
+from ecommerce.platform.backend.app.router.users.crud import get_user_by_email
+from ecommerce.platform.backend.app.router.orders.crud import get_orders_by_user_id
 from openai import OpenAI
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
