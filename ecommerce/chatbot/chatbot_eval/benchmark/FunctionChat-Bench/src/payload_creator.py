@@ -10,6 +10,13 @@ from src.formatter import (
     SingleCallRequestFormatter,
 )
 
+import sys
+data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+if data_dir not in sys.path:
+    sys.path.append(data_dir)
+
+
+
 
 def validate_params(kwargs):
     expected_types = {
@@ -195,11 +202,13 @@ class DialogPayloadCreator(AbstractPayloadCreator):
                 try:
                     with open(path, "r", encoding="utf-8") as f:
                         content = f.read().strip()
-                        return content.replace("{user_id}", str(user_id)).replace("{user_email}", str(user_email))
+                        base_prompt = content.replace("{user_id}", str(user_id)).replace("{user_email}", str(user_email))
+                        return base_prompt
                 except Exception as e:
                     print(f"[WARN] Failed to load branch prompt {path}: {e}")
         
-        return self.system_prompt  # Fallback
+        # Fallback
+        return self.system_prompt
 
     @type_check(validate_params)
     def create_payload(self, **kwargs):
