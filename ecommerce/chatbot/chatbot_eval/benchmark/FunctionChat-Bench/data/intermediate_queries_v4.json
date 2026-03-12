@@ -18,7 +18,7 @@
     },
     "user_id": 1,
     "user_email": "test@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0001에 대한 취소를 요청하고 싶은데, 지금 취소가 가능한가요?"
+    "user_query": "주문번호 ORD-eval_dataset-0001의 주문을 취소하고 싶은데, 아직 준비 중이라 가능할까요?"
   },
   {
     "scenario": {
@@ -39,7 +39,7 @@
     },
     "user_id": 1,
     "user_email": "test@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0002에 대한 환불을 신청하고 싶은데, 어떻게 진행하면 될까요?"
+    "user_query": "주문번호 ORD-eval_dataset-0002로 구입한 바이브 티 블랙이 목 부분이 너무 드러나서 환불하고 싶어요."
   },
   {
     "scenario": {
@@ -60,7 +60,7 @@
     },
     "user_id": 1,
     "user_email": "test@example.com",
-    "user_query": "기모청바지를 주문했는데 사이즈가 맞지 않아서 교환하고 싶어요, 주문번호는 ORD-eval_dataset-0003입니다."
+    "user_query": "주문번호 ORD-eval_dataset-0003로 받은 옷이 사이즈가 안 맞아서 교환하고 싶은데 어떻게 해야 하나요?"
   },
   {
     "scenario": {
@@ -80,7 +80,7 @@
     },
     "user_id": 1,
     "user_email": "test@example.com",
-    "user_query": "제 주문 상태가 어떻게 되나요?"
+    "user_query": "제 주문 상태가 PREPARING인데, 이게 정상인지 궁금합니다."
   },
   {
     "scenario": {
@@ -100,7 +100,7 @@
     },
     "user_id": 1,
     "user_email": "test@example.com",
-    "user_query": "제 주문번호 ORD-eval_dataset-0001의 상태가 PREPARING인데, 해외 배송 요청하려면 배송비는 얼마인가요?"
+    "user_query": "제 주문번호 ORD-eval_dataset-0001의 상태가 PREPARING인데, 배송비 입금했어요 확인해 주실 수 있나요?"
   },
   {
     "scenario": {
@@ -120,7 +120,7 @@
     },
     "user_id": 1,
     "user_email": "test@example.com",
-    "user_query": "지갑을 주문했는데, 잔기스가 많아서 불량인 것 같은데요. 주문번호는 ORD-eval_dataset-0001입니다."
+    "user_query": "진분홍 색상이 재입고될 예정인지 궁금한데, 주문번호는 ORD-eval_dataset-0001입니다."
   },
   {
     "scenario": {
@@ -140,7 +140,7 @@
     },
     "user_id": 1,
     "user_email": "test@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0001로 스트랩을 추가했는데, 스프링바 교체 툴이 뭔지 궁금해요."
+    "user_query": "265사이즈 신발을 주문했는데 뒤꿈치가 계속 아파서 한 치수 작은 걸로 주문하고 싶은데, 주문번호는 ORD-eval_dataset-0001입니다. 이 신발은 왜 이렇게 발에 상처를 만들까요?"
   },
   {
     "scenario": {
@@ -161,7 +161,7 @@
     },
     "user_id": 1,
     "user_email": "test@example.com",
-    "user_query": "중고 판매 신청을 하고 싶은데, 주문번호 ORD-eval_dataset-0001로 진행할 수 있나요?"
+    "user_query": "중고 판매를 신청하고 싶은데, 주문번호는 ORD-eval_dataset-0001입니다. 이 상태에서 가능한가요?"
   },
   {
     "scenario": {
@@ -182,27 +182,7 @@
     },
     "user_id": 1,
     "user_email": "test@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0001에 대한 리뷰를 작성하고 싶은데, 현재 상태가 PREPARING이라도 가능한가요?"
-  },
-  {
-    "scenario": {
-      "id": 10,
-      "name": "상품권 등록",
-      "action": "register_gift_card",
-      "tools": [
-        "register_gift_card"
-      ],
-      "possible": true
-    },
-    "order": {
-      "order_id": "ORD-eval_dataset-0001",
-      "status": "preparing",
-      "shipping_fee": 3000.0,
-      "days_since_delivery": null
-    },
-    "user_id": 1,
-    "user_email": "test@example.com",
-    "user_query": "상품권 등록하려고 하는데, 주문번호 ORD-eval_dataset-0001로 진행할 수 있을까요?"
+    "user_query": "주문번호 ORD-eval_dataset-0001에 대한 리뷰를 작성하고 싶은데, 헐렁한 사이즈 때문에 어떻게 해야 할지 궁금해요."
   },
   {
     "scenario": {
@@ -223,7 +203,7 @@
     },
     "user_id": 2,
     "user_email": "test2@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0004의 주문을 취소하고 싶은데, 어떻게 해야 하나요?"
+    "user_query": "주문번호 ORD-eval_dataset-0004로 주문한 상품을 취소하고 싶어요."
   },
   {
     "scenario": {
@@ -244,7 +224,7 @@
     },
     "user_id": 2,
     "user_email": "test2@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0005로 구매한 상품을 환불하고 싶은데, 절차가 어떻게 되나요?"
+    "user_query": "주문번호 ORD-eval_dataset-0005로 받은 의류를 환불하고 싶어요."
   },
   {
     "scenario": {
@@ -265,7 +245,7 @@
     },
     "user_id": 2,
     "user_email": "test2@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0006로 받은 귀걸이가 사이즈가 맞지 않아서 교환하고 싶어요."
+    "user_query": "주문번호 ORD-eval_dataset-0006로 받은 옷 사이즈가 맞지 않아서 교환하고 싶어요."
   },
   {
     "scenario": {
@@ -285,7 +265,7 @@
     },
     "user_id": 2,
     "user_email": "test2@example.com",
-    "user_query": "제 주문 상태가 PREPARING인데, 이게 정상인가요?"
+    "user_query": "제 주문 상태가 PREPARING인데, 주문 내역을 확인할 수 있을까요?"
   },
   {
     "scenario": {
@@ -305,7 +285,7 @@
     },
     "user_id": 2,
     "user_email": "test2@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0004의 상태가 준비 중인데, 배송비가 또 필요하다고 하네요. 왜 그런 건가요?"
+    "user_query": "제 주문번호 ORD-eval_dataset-0004의 상태가 PREPARING인데, 언제쯤 배송될 수 있을까요?"
   },
   {
     "scenario": {
@@ -325,7 +305,7 @@
     },
     "user_id": 2,
     "user_email": "test2@example.com",
-    "user_query": "배송료는 배송신청할 때 옷이랑 같이 결제하나요? 주문번호는 ORD-eval_dataset-0004입니다."
+    "user_query": "산남동으로 배송하려고 하는데, 주문번호 ORD-eval_dataset-0004의 배송비가 얼마인지 알고 싶어요."
   },
   {
     "scenario": {
@@ -345,7 +325,7 @@
     },
     "user_id": 2,
     "user_email": "test2@example.com",
-    "user_query": "이번에 주문한 옷의 사이즈가 맞지 않아서 교환하고 싶은데, 주문번호는 ORD-eval_dataset-0004입니다."
+    "user_query": "주문번호 ORD-eval_dataset-0004로 의류를 주문했는데, 무료 배송은 얼마 이상 구매해야 가능한가요?"
   },
   {
     "scenario": {
@@ -366,7 +346,7 @@
     },
     "user_id": 2,
     "user_email": "test2@example.com",
-    "user_query": "제가 주문한 바이브 티 블랙의 목 부분이 이상한데, 이거 불량인지 확인해보고 싶어요. 주문번호는 ORD-eval_dataset-0004입니다."
+    "user_query": "이 상품을 중고로 판매하고 싶은데, 주문번호는 ORD-eval_dataset-0004입니다. 가능한가요?"
   },
   {
     "scenario": {
@@ -387,27 +367,7 @@
     },
     "user_id": 2,
     "user_email": "test2@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0004에 대한 리뷰를 작성하고 싶은데, 아직 준비 중인 상태라서 가능한가요?"
-  },
-  {
-    "scenario": {
-      "id": 10,
-      "name": "상품권 등록",
-      "action": "register_gift_card",
-      "tools": [
-        "register_gift_card"
-      ],
-      "possible": true
-    },
-    "order": {
-      "order_id": "ORD-eval_dataset-0004",
-      "status": "preparing",
-      "shipping_fee": 3000.0,
-      "days_since_delivery": null
-    },
-    "user_id": 2,
-    "user_email": "test2@example.com",
-    "user_query": "상품권을 등록하고 싶은데, 주문번호는 ORD-eval_dataset-0004입니다. 가능한가요?"
+    "user_query": "주문번호 ORD-eval_dataset-0004에 대한 리뷰를 작성하고 싶은데, 제품이 정상적인 것 같아요."
   },
   {
     "scenario": {
@@ -428,7 +388,7 @@
     },
     "user_id": 3,
     "user_email": "test3@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0007의 주문을 취소하고 싶은데, 어떻게 해야 하나요?"
+    "user_query": "주문번호 ORD-eval_dataset-0007로 주문한 상품을 취소하고 싶은데, 아직 준비 중이라 가능하다고 들었어요."
   },
   {
     "scenario": {
@@ -449,7 +409,7 @@
     },
     "user_id": 3,
     "user_email": "test3@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0008로 구매한 상품을 환불하고 싶은데, 절차가 어떻게 되나요?"
+    "user_query": "주문번호 ORD-eval_dataset-0008에 대해 환불 신청하고 싶은데, 제품이 불량이라서요."
   },
   {
     "scenario": {
@@ -470,7 +430,7 @@
     },
     "user_id": 3,
     "user_email": "test3@example.com",
-    "user_query": "사이즈가 맞지 않아서 교환하고 싶은데, 주문번호는 ORD-eval_dataset-0009입니다."
+    "user_query": "사이즈가 맞지 않아서 교환하고 싶은데, 주문번호 ORD-eval_dataset-0009로 진행할 수 있을까요?"
   },
   {
     "scenario": {
@@ -490,7 +450,7 @@
     },
     "user_id": 3,
     "user_email": "test3@example.com",
-    "user_query": "제 주문 상태가 PREPARING인데, 배송비 2500원이 붙는다는 거죠?"
+    "user_query": "제 주문 상태가 어떻게 되나요?"
   },
   {
     "scenario": {
@@ -510,7 +470,7 @@
     },
     "user_id": 3,
     "user_email": "test3@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0007의 옷이 너무 작아서 환불하고 싶은데 어떻게 해야 하나요?"
+    "user_query": "주문번호 ORD-eval_dataset-0007의 상태가 PREPARING인데, 언제쯤 배송될지 확인할 수 있을까요?"
   },
   {
     "scenario": {
@@ -530,7 +490,7 @@
     },
     "user_id": 3,
     "user_email": "test3@example.com",
-    "user_query": "진분홍 색상 재입고는 언제쯤 되나요? 주문번호는 ORD-eval_dataset-0007입니다."
+    "user_query": "방금 주문한 상품의 상태가 PREPARING인데, 왜 안에 새 그림이 없나요? 주문번호는 ORD-eval_dataset-0007입니다."
   },
   {
     "scenario": {
@@ -550,7 +510,7 @@
     },
     "user_id": 3,
     "user_email": "test3@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0007로 주문한 옷이 사이즈가 안 맞아서 교환하고 싶은데, 어떻게 해야 하나요?"
+    "user_query": "주문번호 ORD-eval_dataset-0007로 퀵체인지 스프링바를 주문했는데, 다른 스타일의 의류를 추천해주실 수 있나요?"
   },
   {
     "scenario": {
@@ -571,7 +531,7 @@
     },
     "user_id": 3,
     "user_email": "test3@example.com",
-    "user_query": "중고 판매 신청을 하고 싶은데, 주문번호 ORD-eval_dataset-0007로 진행할 수 있을까요?"
+    "user_query": "중고 판매 신청을 하려고 하는데, 주문번호 ORD-eval_dataset-0007로 진행할 수 있을까요?"
   },
   {
     "scenario": {
@@ -592,26 +552,6 @@
     },
     "user_id": 3,
     "user_email": "test3@example.com",
-    "user_query": "주문번호 ORD-eval_dataset-0007에 대한 리뷰를 작성하고 싶은데, 현재 상태가 PREPARING이라서 가능한가요?"
-  },
-  {
-    "scenario": {
-      "id": 10,
-      "name": "상품권 등록",
-      "action": "register_gift_card",
-      "tools": [
-        "register_gift_card"
-      ],
-      "possible": true
-    },
-    "order": {
-      "order_id": "ORD-eval_dataset-0007",
-      "status": "preparing",
-      "shipping_fee": 3000.0,
-      "days_since_delivery": null
-    },
-    "user_id": 3,
-    "user_email": "test3@example.com",
-    "user_query": "상품권을 등록하고 싶은데, 주문번호는 ORD-eval_dataset-0007입니다."
+    "user_query": "주문번호 ORD-eval_dataset-0007에 대한 리뷰를 작성하고 싶은데, 아직 준비 중인 상태인가요?"
   }
 ]
