@@ -10,7 +10,7 @@ PROJECT_ROOT = current_dir.parent.parent.parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
-from ecommerce.chatbot.src.graph.nodes.guardrail import guardrail_node, load_guardrail_model
+from chatbot.src.graph.nodes.guardrail import guardrail_node, load_guardrail_model
 from langchain_core.messages import HumanMessage
 
 # --------------------------------------------------
@@ -76,7 +76,7 @@ def simple_guardrail(text: str) -> tuple[bool, str, float]:
     is_blocked = not result.get("guardrail_passed", True)
     
     # 로깅을 위해 모델 접근 (결과값만 가져옴)
-    from ecommerce.chatbot.src.graph.nodes.guardrail import _GUARDRAIL_PIPELINE
+    from chatbot.src.graph.nodes.guardrail import _GUARDRAIL_PIPELINE
     label, score = "unknown", 0.0
     if _GUARDRAIL_PIPELINE:
         res = _GUARDRAIL_PIPELINE(text)

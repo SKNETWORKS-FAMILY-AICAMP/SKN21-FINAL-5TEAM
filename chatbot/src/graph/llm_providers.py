@@ -6,7 +6,7 @@
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
-from ecommerce.chatbot.src.core.config import settings
+from chatbot.src.core.config import settings
 
 # ── LLM factory ───────────────────────────────────────────
 

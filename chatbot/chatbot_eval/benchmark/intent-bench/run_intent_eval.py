@@ -43,8 +43,8 @@ load_dotenv(_PROJECT_ROOT / ".env")
 from langchain_core.messages import HumanMessage  # noqa: E402
 
 from chatbot.benchmark.evaluator.metrics import EvaluationMetrics  # noqa: E402
-from ecommerce.chatbot.src.graph.nodes.planner import planner_node  # noqa: E402
-from ecommerce.chatbot.src.schemas.planner import TaskIntent  # noqa: E402
+from chatbot.src.graph.nodes.planner import planner_node  # noqa: E402
+from chatbot.src.schemas.planner import TaskIntent  # noqa: E402
 
 
 # ── 데이터셋 로드 ─────────────────────────────────────────

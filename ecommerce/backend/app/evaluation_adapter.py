@@ -23,7 +23,7 @@ except ImportError:
 
 # LangChain / LangGraph imports
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage, BaseMessage
-from ecommerce.chatbot.src.graph.workflow import graph_app
+from chatbot.src.graph.workflow import graph_app
 
 app = FastAPI(title="Chatbot Evaluation Adapter")
 
