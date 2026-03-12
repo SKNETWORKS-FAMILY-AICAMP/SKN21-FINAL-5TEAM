@@ -1,16 +1,24 @@
-# Site A Analysis
+# Ecommerce Site Analysis
 
-- frontend framework: Next.js
-- backend framework: Express
-- routing structure: /products/[id], /cart, /orders
-- login method: email/password + JWT
+- site id/name: ecommerce / Moyeo Shop
+- environment: development
+- frontend framework: Next.js 16.1.6 (SSR + CSR mixed)
+- backend framework: FastAPI
+- routing structure: /, /products, /used, /cart, /payment, /order, /mypage, /shipping, /auth/login, /auth/signup, /admin/shipping
+- page types: home, product_list, used_product_list, cart, payment, orders, mypage, shipping, auth, admin, chatbot
+- login method: email/password + JWT cookie
 - session storage: httpOnly cookie
-- user identity: user_id from /me
-- product data access: internal REST API /api/products
-- order data access: /api/orders
-- api exists: yes
-- rendering: SSR + CSR mixed
-- widget injection point: global layout footer
-- db core tables: users, products, orders, order_items
-- media storage: S3 + CDN
-- robots/security: bot detection 없음, CSP 제한 약함
+- token location: cookie
+- user identity: /users/me 의 id 필드
+- product data access: /products/new (GET)
+- order data access: /orders/{user_id}/orders (GET)
+- faq/policy source: RAG knowledge base
+- api exists: yes (REST)
+- api base url: http://localhost:8000
+- public apis: /products/new, /products/categories, /products/new/{product_id}, /users/check-email, /users/register, /api/v1/chat/stream
+- protected apis: /users/me, /carts/{user_id}, /orders/{user_id}/orders, /shipping?user_id={user_id}, /points/users/{user_id}/balance
+- db type/core tables: MySQL / users, products, productoptions, usedproducts, usedproductoptions, categories, carts, cartitems, orders, orderitems, shippingaddresses, shippinginfos, payments, reviews, points, userhistory
+- widget injection point: global_layout (available: global_layout, product_list_page, order_page)
+- media source: API/static base http://localhost:8000
+- security: bot protection 비활성, robots/CSP/CORS 제한 없음, rate limit 명시 설정 없음
+- agent integration: adapter/retrieval/tool API 준비됨, 챗봇 스트리밍 엔드포인트(/api/v1/chat/stream) 운영, 일부 주문/결제 도구는 로그인 필요

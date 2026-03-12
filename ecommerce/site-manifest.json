@@ -1,0 +1,200 @@
+{
+  "site_id": "ecommerce",
+  "site_name": "Moyeo Shop",
+  "environment": "development",
+
+  "frontend_framework": {
+    "name": "nextjs",
+    "version": "16.1.6",
+    "rendering_mode": "ssr_csr_mixed"
+  },
+  "backend_framework": {
+    "name": "fastapi",
+    "version": "unknown"
+  },
+
+  "routing_structure": {
+    "type": "file_based",
+    "patterns": [
+      "/",
+      "/products",
+      "/used",
+      "/cart",
+      "/payment",
+      "/order",
+      "/mypage",
+      "/shipping",
+      "/auth/login",
+      "/auth/signup",
+      "/admin/shipping"
+    ]
+  },
+  "page_types": [
+    "home",
+    "product_list",
+    "used_product_list",
+    "cart",
+    "payment",
+    "orders",
+    "mypage",
+    "shipping",
+    "auth",
+    "admin",
+    "chatbot"
+  ],
+
+  "auth": {
+    "auth_type": "jwt_cookie",
+    "login_methods": ["email_password"],
+    "session_storage": "http_only_cookie",
+    "token_location": "cookie",
+    "refresh_strategy": "unknown",
+    "user_identity_method": {
+      "type": "api_me",
+      "endpoint": "/users/me",
+      "id_field": "id"
+    }
+  },
+
+  "data_sources": {
+    "main_product_source": {
+      "type": "rest_api",
+      "endpoint": "/products/new",
+      "method": "GET"
+    },
+    "order_data_source": {
+      "type": "rest_api",
+      "endpoint": "/orders/{user_id}/orders",
+      "method": "GET"
+    },
+    "faq_policy_source": {
+      "type": "rag_knowledge_base",
+      "paths": []
+    },
+    "media_source": {
+      "type": "api_or_static",
+      "base_url": "http://localhost:8000"
+    }
+  },
+
+  "api": {
+    "api_exists": true,
+    "api_style": "rest",
+    "base_url": "http://localhost:8000",
+    "public_apis": [
+      "/products/new",
+      "/products/categories",
+      "/products/new/{product_id}",
+      "/users/check-email",
+      "/users/register",
+      "/api/v1/chat/stream"
+    ],
+    "protected_apis": [
+      "/users/me",
+      "/carts/{user_id}",
+      "/orders/{user_id}/orders",
+      "/shipping?user_id={user_id}",
+      "/points/users/{user_id}/balance"
+    ]
+  },
+
+  "database": {
+    "db_type": "mysql",
+    "rdb_core_tables": [
+      "users",
+      "products",
+      "productoptions",
+      "usedproducts",
+      "usedproductoptions",
+      "categories",
+      "carts",
+      "cartitems",
+      "orders",
+      "orderitems",
+      "shippingaddresses",
+      "shippinginfos",
+      "payments",
+      "reviews",
+      "points",
+      "userhistory"
+    ]
+  },
+
+  "widget": {
+    "widget_injection_point": "global_layout",
+    "available_locations": [
+      "global_layout",
+      "product_list_page",
+      "order_page"
+    ],
+    "floating_button_supported": true,
+    "page_context_extractable": true
+  },
+
+  "security": {
+    "robots_txt_restrictions": [],
+    "csp_restrictions": [],
+    "cors_restrictions": [],
+    "bot_protection": {
+      "enabled": false,
+      "type": null
+    },
+    "rate_limit_notes": "not_explicitly_configured"
+  },
+
+  "product_domain": {
+    "product_id_field": "id",
+    "variant_id_field": "id",
+    "category_id_field": "category_id",
+    "price_field": "price",
+    "stock_field": "quantity",
+    "image_fields": ["image_url"]
+  },
+
+  "agent_integration": {
+    "adapter_ready": true,
+    "retrieval_ready": true,
+    "tool_api_ready": true,
+    "login_required_for_chat": false,
+    "login_required_tools": [
+      "cancel",
+      "refund",
+      "exchange",
+      "change_option",
+      "shipping",
+      "update_payment",
+      "register_gift_card"
+    ],
+    "public_tools": [
+      "recommend_clothes",
+      "search_by_image",
+      "search_by_text_clip",
+      "search_knowledge_base",
+      "open_used_sale_form"
+    ]
+  },
+
+  "retrieval_indexing": {
+    "index_targets": [
+      "products",
+      "used_products",
+      "faq",
+      "policy",
+      "reviews"
+    ],
+    "image_vectorization_possible": true,
+    "chunking_strategy": {
+      "product": "entity_level",
+      "faq": "qa_level",
+      "policy": "section_level",
+      "review": "entity_level"
+    }
+  },
+
+  "notes": [
+    "Next.js App Router + FastAPI + MySQL 구조",
+    "JWT access_token은 HttpOnly 쿠키로 관리",
+    "챗봇은 /api/v1/chat/stream SSE 기반이며 글로벌 레이아웃에 FAB로 삽입",
+    "주문/결제/배송/포인트 API는 사용자 컨텍스트(로그인) 필요"
+  ]
+}
