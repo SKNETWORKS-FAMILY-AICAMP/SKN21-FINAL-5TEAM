@@ -1,7 +1,7 @@
 """
 generate_queries_v4.py
 [목적]
-기존 generate_arg_accuracy_dialog_dataset3.py 분리 1단계: 사용자 질문(Query)만 먼저 생성하여 중간 파일(intermediate_queries_v4.json)에 저장합니다.
+기존 generate_arg_accuracy_dialog_dataset.py 분리 1단계: 사용자 질문(Query)만 먼저 생성하여 중간 파일(intermediate_queries_v4.json)에 저장합니다.
 생성된 질문은 사용자가 직접 검토/수정할 수 있습니다.
 """
 
@@ -30,7 +30,7 @@ from openai import OpenAI
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL = "gpt-4o-mini"
-OUTPUT_PATH = DATA_DIR / "intermediate_queries_v4.json"
+OUTPUT_PATH = DATA_DIR / "intermediate_queries_v5.json"
 
 def load_eval_users() -> list:
     path = PROJECT_ROOT / "ecommerce/chatbot/chatbot_eval/benchmark/eval_data.jsonl"
@@ -125,7 +125,7 @@ SCENARIOS = [
     # {"id": 8, "name": "이미지 검색", "action": "search_by_image", "possible": True, "required_status": [], "tools": ["search_by_image"], "rag_policy": "optional", "ux_flow": "direct"},
     {"id": 8, "name": "중고 판매 신청", "action": "used_sale", "possible": True, "required_status": [], "tools": ["open_used_sale_form", "register_used_sale"], "rag_policy": "optional", "ux_flow": "direct"},
     {"id": 9, "name": "리뷰 작성", "action": "review", "possible": True, "required_status": ["delivered"], "tools": ["generate_review_draft", "create_review"], "rag_policy": "optional", "ux_flow": "direct"},
-    {"id": 10, "name": "상품권 등록", "action": "register_gift_card", "possible": True, "required_status": [], "tools": ["register_gift_card"], "rag_policy": "optional", "ux_flow": "direct"},
+    # {"id": 10, "name": "상품권 등록", "action": "register_gift_card", "possible": True, "required_status": [], "tools": ["register_gift_card"], "rag_policy": "optional", "ux_flow": "direct"},
 ]
 
 def get_query_system_prompt() -> str:
@@ -180,7 +180,7 @@ def generate_query(scenario, product_info, order, user_email):
         user_query = user_query.replace("{{ORDER_ID}}", order["order_id"]).replace("{ORDER_ID}", order["order_id"])
         
         # 특정 시나리오 외에는 주문번호가 무조건 명시적으로 포함되도록 강제
-        if order["order_id"] not in user_query and scenario["action"] not in ["search_by_text_clip", "recommend_clothes", "used_sale", "shipping_no_id", "register_gift_card"]:
+        if order["order_id"] not in user_query and scenario["action"] not in ["search_by_text_clip", "recommend_clothes", "used_sale", "shipping_no_id"]:
             user_query += f" (주문번호: {order['order_id']})"
             
         return user_query
@@ -235,7 +235,7 @@ def main():
             
             user_query = generate_query(scenario, product_info, order, user_email)
             if not user_query: continue
-            print(f"  ({s_idx}/10) '{scenario['name']}' -> 완료 (주문: {order['order_id']}, 가능: {scenario['possible']})")
+            print(f"  ({s_idx}/{len(SCENARIOS)}) '{scenario['name']}' -> 완료 (주문: {order['order_id']}, 가능: {scenario['possible']})")
             
             queries_data.append({
                 "scenario": {

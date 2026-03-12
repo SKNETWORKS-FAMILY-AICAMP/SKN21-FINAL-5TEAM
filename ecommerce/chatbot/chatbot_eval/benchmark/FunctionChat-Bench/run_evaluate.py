@@ -104,7 +104,7 @@ def count_lines(path):
         return sum(1 for _ in f)
 
 
-def run_evaluation(mode):
+def run_evaluation(mode, model="gpt-4o-mini", trace_count=1):
     """Argument Accuracy 평가를 실행합니다."""
     print("🚀 FunctionChat-Bench 평가 파이프라인 시작 (Argument Accuracy)...")
     print(f"   벤치마크 디렉토리: {BENCH_DIR}")
@@ -117,6 +117,8 @@ def run_evaluation(mode):
         arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs2.jsonl"
     elif mode == 3:
         arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs3.jsonl"
+    elif mode == 4:
+        arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs4.jsonl"
     arg_acc_count = count_lines(arg_accuracy_dataset)
 
     # 0. 데이터셋 검증
@@ -132,19 +134,21 @@ def run_evaluation(mode):
         "evaluate.py",
         "dialog",
         "--model",
-        "gpt-4o-mini",
+        model,
         "--input_path",
         f"data/{arg_accuracy_dataset.name}",
         "--temperature",
         "0.0",
         "--api_key",
         OPENAI_API_KEY,
-        "--num_samples",
-        str(arg_acc_count),
+        "--trace_count",
+        str(trace_count),
         "--is_batch",
         "False",
         "--reset",
         "True",
+        "--only_exact",
+        "False",
     ]
     results["arg_accuracy"] = run_single_benchmark(
         "Dialog — Argument Accuracy", cmd_single
@@ -163,7 +167,7 @@ def run_evaluation(mode):
     return results
 
 
-def generate_markdown_report(results):
+def generate_markdown_report(results, model="gpt-4o-mini", trace_count=1):
     """평가 결과를 Markdown 보고서로 생성합니다."""
     global arg_accuracy_dataset
     # 경로 구조: output/arg_acc/{model_name}/...
@@ -171,8 +175,8 @@ def generate_markdown_report(results):
         BENCH_DIR
         / "output"
         / "arg_acc"
-        / "gpt-4o-mini"
-        / "FunctionChat-gpt-4o-mini.eval_score.json"
+        / model
+        / f"FunctionChat-{model}.eval_score.json"
     )
 
     # 데이터셋 경로 및 카운트
@@ -189,7 +193,8 @@ def generate_markdown_report(results):
     md_content = f"""# 🤖 챗봇 성능 평가 보고서 (Argument Accuracy)
 - **생성 일시**: {timestamp}
 - **평가 프레임워크**: FunctionChat-Bench
-- **대상 모델**: gpt-4o-mini
+- **대상 모델**: {model}
+- **LangSmith 트레이스 수**: {trace_count}개
 - **실행 결과**: {passed}/{total} 벤치마크 성공
  
 ## 📖 평가 벤치마크 설명
@@ -198,7 +203,7 @@ def generate_markdown_report(results):
 ### 1. Argument Accuracy (Dialog)
 - **평가 목적**: 챗봇이 멀티턴 대화에서 필요한 인자(Argument)를 얼마나 정확하게 추출하고 올바른 Tool을 호출하는지 측정합니다.
 - **핵심 지표**: 필수 인자 추출 정확도, Tool 선택 정확성, enum 값 범위 준수 여부를 검증합니다.
-- **데이터셋**: `{arg_accuracy_dataset}` ({arg_acc_count}개 다이얼로그)
+- **데이터셋**: `{arg_accuracy_dataset}` (총 {arg_acc_count}개 전체 평가)
 
 """
 
@@ -248,22 +253,41 @@ if __name__ == "__main__":
 
     # 명령행 인자에서 모드(1, 2, 3) 파싱
     if len(sys.argv) < 2:
-        print("⚠️ 사용법: python run_evaluate.py [1|2|3]")
+        print("⚠️ 사용법: python run_evaluate.py [1|2|3|4] [trace_count] [model_name]")
         print("   1: my_eval_arg_accuracy_dialogs.jsonl")
         print("   2: my_eval_arg_accuracy_dialogs2.jsonl")
         print("   3: my_eval_arg_accuracy_dialogs3.jsonl")
+        print("   4: my_eval_arg_accuracy_dialogs4.jsonl")
+        print("   trace_count: LangSmith에 트레이싱할 샘플 수 (기본값: 1)")
+        print("   model_name: 평가할 모델 이름 (기본값: gpt-4o-mini)")
         sys.exit(1)
     
     try:
         mode = int(sys.argv[1])
     except ValueError:
-        print("❌ 모드는 숫자(1, 2, 3)여야 합니다.")
+        print("❌ 모드는 숫자(1, 2, 3, 4)여야 합니다.")
         sys.exit(1)
 
-    if mode not in [1, 2, 3]:
-        print("❌ 올바른 모드(1, 2, 3)를 입력해주세요.")
+    if mode not in [1, 2, 3, 4]:
+        print("❌ 올바른 모드(1, 2, 3, 4)를 입력해주세요.")
         sys.exit(1)
 
-    results = run_evaluation(mode)
+    # 파라미터 파싱 logic
+    trace_count = 1
+    model = "gpt-4o-mini"
+    
+    if len(sys.argv) > 2:
+        if sys.argv[2].isdigit():
+            trace_count = int(sys.argv[2])
+            if len(sys.argv) > 3:
+                model = sys.argv[3]
+        else:
+            # 2번째 인자가 숫자가 아니면 모델명으로 간주
+            model = sys.argv[2]
+            if len(sys.argv) > 3 and sys.argv[3].isdigit():
+                # 순서가 바뀌어서 들어온 경우 대응 (옵션)
+                trace_count = int(sys.argv[3])
+
+    results = run_evaluation(mode, model, trace_count)
     if results:
-        generate_markdown_report(results)
+        generate_markdown_report(results, model, trace_count)
