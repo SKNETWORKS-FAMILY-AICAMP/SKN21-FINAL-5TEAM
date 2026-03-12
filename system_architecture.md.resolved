@@ -1,0 +1,90 @@
+# 챗봇 시스템 아키텍처 (Chatbot System Architecture)
+
+이 문서는 MOYEO 챗봇의 아키텍처를 개략적으로 설명하며, 데이터 흐름(Data Flow), 에이전트 워크플로우(LangGraph), 그리고 주요 상호작용 시나리오에 초점을 맞춥니다.
+
+## 1. 고수준 데이터 흐름 (High-Level Data Flow)
+
+이 시스템은 특화된 Agent/Graph 컴포넌트를 포함한 표준 Client-Server 아키텍처를 따릅니다.
+
+```mermaid
+graph LR
+    User[User] -->|Input/UI Action| FE[Frontend (chatbotfab.tsx)]
+    FE -->|API Request (Stream)| BE[Backend API (chat.py)]
+    BE -->|Invoke| Graph[LangGraph Agent (workflow.py)]
+    Graph -->|LLM & Tools| Tools[Tools & DB]
+    Graph -->|State/Response| BE
+    BE -->|Stream Chunks| FE
+```
+
+### 주요 컴포넌트 (Key Components)
+- **Frontend ([chatbotfab.tsx](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/platform/frontend/app/chatbot/chatbotfab.tsx))**: 사용자 입력을 처리하고, UI 버블(텍스트, 주문 목록, 주소 검색)을 렌더링하며, 로컬 상태(로딩, 열기/닫기 등)를 관리합니다.
+- **Backend API ([chat.py](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/schemas/chat.py))**: 채팅을 위한 Endpoint입니다. 세션 상태를 관리하고 SSE(Server-Sent Events)를 사용하여 응답을 스트리밍합니다.
+- **LangGraph Agent (`workflow.py`, [nodes_v2.py](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/graph/nodes_v2.py))**: 챗봇의 두뇌입니다. LLM, Tools, 그리고 상태 전이(State Transitions)를 조율합니다.
+
+## 2. 에이전트 워크플로우 (LangGraph)
+
+에이전트 로직은 [nodes_v2.py](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/graph/nodes_v2.py)에 정의되어 있습니다. 방향성 그래프(Directed Graph)를 사용하여 다음 단계를 결정합니다.
+
+```mermaid
+stateDiagram-v2
+    [*] --> AgentNode
+    
+    state "Agent Node (LLM)" as AgentNode
+    state "Tools Node" as ToolsNode
+    state "Smart Validation" as ValidationNode
+    state "Human Approval" as ApprovalNode
+    
+    AgentNode --> should_continue
+    
+    state should_continue <<choice>>
+    should_continue --> End : No Tool Call (Text Answer)
+    should_continue --> ValidationNode : Tool Call Detected
+    
+    ValidationNode --> ToolRouting
+    
+    state ToolRouting <<choice>>
+    ToolRouting --> ApprovalNode : Sensitive Action (Refund/Return)
+    ToolRouting --> ToolsNode : Safe Action (Search/Inquiry)
+    
+    ApprovalNode --> ToolsNode : Approved
+    ApprovalNode --> End : Pending Approval (Ask User)
+    
+    ToolsNode --> AgentNode : Tool Output (Loop back)
+```
+
+### 주요 노드 ([nodes_v2.py](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/graph/nodes_v2.py))
+1.  **[agent_node](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/graph/nodes_v2.py#61-114)**: 진입점(Entry Point)입니다. System Prompt(User Prompt + Tools 포함)를 구성하고 LLM을 호출합니다.
+2.  **[smart_validation_node](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/graph/nodes_v2.py#164-256)**: Tool 호출을 가로챕니다(Intercept).
+    *   누락된 파라미터(예: `order_id`)를 확인합니다.
+    *   선택이 필요한 경우 [get_user_orders](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/tools/order_tools.py#650-728)로 리디렉션합니다.
+    *   **컨텍스트 유지 핵심**: 주문 선택 후 작업을 재개하기 위해 `action_context`(예: 사용자가 "환불"을 원했음)를 캡처합니다.
+3.  **[human_approval_node](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/graph/nodes_v2.py#258-373)**: 민감한 도구([cancel_order](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/tools/order_tools.py#298-339), [register_return_request](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/tools/order_tools.py#382-430)) 실행 전에 개입하여 사용자의 승인을 요청합니다.
+4.  **`tool_node`**: [order_tools.py](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/tools/order_tools.py), [address_tools.py](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/tools/address_tools.py) 등에 정의된 실제 Python 함수를 실행합니다.
+
+## 3. 주요 시나리오 및 상태 흐름 (Key Scenarios & State Flow)
+
+### 시나리오 A: 주문 선택 흐름 ("반품하고 싶어")
+1.  **User**: "반품하고 싶어"
+2.  **Agent**: 의도(Intent) 감지 -> [get_user_orders(requires_selection=True, action_context='refund')](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/tools/order_tools.py#650-728) 호출.
+3.  **Frontend**: 주문 목록(Order List) UI 표시. 사용자가 주문 클릭.
+4.  **Frontend**: 숨겨진 메시지 `주문 ORD-001를 선택했어` 전송.
+5.  **Agent**: 주문 ID 수신. `prior_action` 상태('refund') 확인.
+6.  **Agent**: 이전 컨텍스트에 따라 [check_refund_eligibility](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/tools/order_tools.py#340-380) 또는 [register_return_request](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/tools/order_tools.py#382-430) 호출.
+
+### 시나리오 B: 주소 입력 흐름 ("수거지 입력")
+1.  **Agent**: 주소 필요 -> [open_address_search](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/tools/address_tools.py#3-17) 툴 호출 (System Prompt에 의해 강제됨).
+2.  **Frontend**: "주소 입력하기" 버튼 표시.
+3.  **User**: 버튼 클릭 -> Daum 우편번호 팝업 -> 주소 선택.
+4.  **Frontend**: 입력창에 주소 자동 채움 -> 사용자가 상세 주소(예: "101호") 추가 -> 전송.
+5.  **Agent**: 전체 주소 수신 -> [register_return_request(pickup_address=...)](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/tools/order_tools.py#382-430) 호출.
+
+## 4. 코드에서 확인하는 방법 (How to Verify in Code)
+
+특정 요청이 어떻게 처리되는지 정확히 이해하려면 다음 파일들을 확인하세요:
+
+| Layer | File/Component | What to Look For |
+|-------|----------------|------------------|
+| **Logic** | [nodes_v2.py](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/graph/nodes_v2.py) | [smart_validation_node](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/graph/nodes_v2.py#164-256) (파라미터 누락 처리), [agent_node](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/graph/nodes_v2.py#61-114) (System Prompt 규칙). |
+| **Tools** | `*tools.py` | 함수 정의 및 Docstrings (이것들이 LLM을 위한 "API"입니다). |
+| **State** | `state.py` | `AgentState` 정의 (유지되는 데이터: [messages](file:///Users/junseok/Projects/SKN21-FINAL-5TEAM/ecommerce/chatbot/src/api/v1/endpoints/chat.py#17-28), `prior_action`, `user_id`). |
+| **Logs** | Terminal / LangSmith | 흐름을 추적하려면 `---DECISION: CALL TOOL---`, `---SMART VALIDATION---` 로그를 확인하세요. |

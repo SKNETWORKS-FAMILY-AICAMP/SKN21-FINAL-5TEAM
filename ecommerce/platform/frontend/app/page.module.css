@@ -1,0 +1,178 @@
+/* ===== 전체 레이아웃 ===== */
+.main {
+  padding: 32px 0;
+}
+
+.section {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+/* ===== 섹션 헤더 ===== */
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.sectionTitle {
+  font-size: 26px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.sectionSubTitle {
+  font-size: 16px;
+  color: #444;
+  margin: 4px 0 0;
+}
+
+.moreButton {
+  border: 1px solid #aaa;
+  background: transparent;
+  color: #111;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 18px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+  margin-bottom: 10px;
+}
+
+.moreButton:hover {
+  border-color: #111;
+  color: #111;
+}
+
+/* ===== 상품 그리드 ===== */
+.productGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* ===== 상품 카드 ===== */
+.productCard {
+  position: relative;        /* overlay 기준 */
+  border: 1px solid #eee;
+  background: #fff;
+  cursor: pointer;
+  overflow: hidden;          /* overlay 잘리도록 */
+  display: flex;
+  flex-direction: column;
+  border-radius: 6px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.productCard:hover {
+  transform: translateY;
+  box-shadow: 0 8px 24px rgba(23, 23, 23, 0.08);
+}
+
+.cardBody {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  flex: 1 1 auto;
+}
+
+/* 상품 이미지 */
+.productImage {
+  position: relative;
+  width: 100%;
+  height: 240px;
+  background: #f5f5f5;
+  overflow: hidden;
+}
+
+/* 상품 정보 */
+.productInfo {
+  padding-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 72px;
+}
+
+.productName {
+  margin: 0;
+  font-size: 14px;
+  line-height: 18px;
+  height: 36px;          /* 정확히 두 줄 높이 */
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
+}
+
+.productPrice {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+  margin-top: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===== hover 오버레이 ===== */
+.hoverOverlay {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 10;
+}
+
+/* hover 시 노출 */
+.productCard:hover .hoverOverlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ===== hover 버튼 공통 ===== */
+.hoverButton {
+  width: 140px;
+  height: 40px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-size: 13px;
+  font-weight: 500;
+
+  border: none;
+  cursor: pointer;
+}
+
+/* 흰색 버튼 (사이즈 선택, 장바구니) */
+.hoverButton {
+  background-color: #ffffff;
+  color: #000000;
+}
+
+/* 검정 버튼 (바로 구매) */
+.primary {
+  background-color: #000000;
+  color: #ffffff;
+}
