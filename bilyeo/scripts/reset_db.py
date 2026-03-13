@@ -15,6 +15,7 @@ from models import get_connection, init_db
 
 # FK 의존 관계를 고려한 DROP 순서 (자식 테이블부터 삭제)
 DROP_ORDER = [
+    "product_info",
     "faq",
     "shipping",
     "payments",
