@@ -9,6 +9,8 @@ import ReviewFormUI from './ReviewFormUI';
 import UsedSaleFormUI from './UsedSaleFormUI';
 import { useAuth } from '../authcontext';
 
+const INITIAL_BOT_MESSAGE: TextMessage = { role: 'bot', type: 'text', text: '안녕하세요. MOYEO 챗봇입니다.' };
+
 type TextMessage = { role: 'user' | 'bot'; type: 'text'; text: string; isStreaming?: boolean; showDivider?: boolean };
 type OrderListMessage = {
   role: 'bot';
@@ -597,9 +599,7 @@ export default function ChatbotFab() {
   const { isLoggedIn } = useAuth();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<ChatMsg[]>([
-    { role: 'bot', type: 'text', text: '안녕하세요. MOYEO 챗봇입니다.' },
-  ]);
+  const [messages, setMessages] = useState<ChatMsg[]>([INITIAL_BOT_MESSAGE]);
   const [conversationState, setConversationState] = useState<Record<string, unknown> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -616,6 +616,8 @@ export default function ChatbotFab() {
   const [selectedModel, setSelectedModel] = useState<string>(OPENAI_MODELS[0]);
   const [isModelModalOpen, setIsModelModalOpen] = useState(false);
   const [pendingImage, setPendingImage] = useState<PendingImageState | null>(null);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   const releasePendingImageObjectUrl = (candidate: PendingImageState | null) => {
     if (candidate?.objectUrl) {
@@ -626,6 +628,16 @@ export default function ChatbotFab() {
   const clearPendingImage = () => {
     releasePendingImageObjectUrl(pendingImage);
     setPendingImage(null);
+  };
+
+  const resetConversationSession = () => {
+    clearPendingImage();
+    setMessages([INITIAL_BOT_MESSAGE]);
+    setConversationState(null);
+    setStatusMessage(null);
+    setStreamingText('');
+    setFeedbackError(null);
+    setInput('');
   };
 
   useEffect(() => {
@@ -763,6 +775,7 @@ export default function ChatbotFab() {
     setIsLoading(true);
     setStatusMessage(null); // 초기화
     setStreamingText('');
+    setFeedbackError(null);
 
     try {
       const provider = resolveProviderByModel(selectedModel);
@@ -1327,6 +1340,48 @@ export default function ChatbotFab() {
     }
   };
 
+  const handleFeedback = async (feedbackLabel: 'good' | 'bad') => {
+    const conversationId = typeof conversationState?.conversation_id === 'string'
+      ? conversationState.conversation_id
+      : null;
+
+    if (!conversationId || isSubmittingFeedback) {
+      return;
+    }
+
+    setIsSubmittingFeedback(true);
+    setFeedbackError(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/chat/feedback`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          feedback_label: feedbackLabel,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || '피드백 저장에 실패했습니다.');
+      }
+
+      const result = await response.json();
+      if (result?.reset_required) {
+        resetConversationSession();
+      }
+    } catch (error) {
+      console.error('Feedback API error:', error);
+      setFeedbackError(error instanceof Error ? error.message : '피드백 저장에 실패했습니다.');
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  };
+
   return (
     <>
       {/* 우측 하단 원형 버튼 */}
@@ -1556,6 +1611,30 @@ export default function ChatbotFab() {
         </div>
 
         <div className={styles.bottomControls}>
+          {conversationState?.conversation_id && messages.length > 1 && !isLoading ? (
+            <div className={styles.feedbackBar}>
+              <div className={styles.feedbackLabel}>이번 상담이 도움이 되었나요?</div>
+              <div className={styles.feedbackActions}>
+                <button
+                  type="button"
+                  className={styles.feedbackBtn}
+                  onClick={() => handleFeedback('good')}
+                  disabled={isSubmittingFeedback}
+                >
+                  👍 Good
+                </button>
+                <button
+                  type="button"
+                  className={styles.feedbackBtn}
+                  onClick={() => handleFeedback('bad')}
+                  disabled={isSubmittingFeedback}
+                >
+                  👎 Bad
+                </button>
+              </div>
+              {feedbackError ? <div className={styles.feedbackError}>{feedbackError}</div> : null}
+            </div>
+          ) : null}
           <div className={styles.inputBar}>
             <button
               type="button"
