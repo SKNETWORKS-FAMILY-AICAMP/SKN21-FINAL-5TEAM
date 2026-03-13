@@ -533,6 +533,60 @@
   padding-bottom: 8px;
 }
 
+.feedbackBar {
+  margin: 0 12px 8px;
+  padding: 12px 14px;
+  border: 1px solid #e5e8ee;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fbfcfe 0%, #f3f6fa 100%);
+}
+
+.feedbackLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.feedbackActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.feedbackBtn {
+  min-width: 92px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid #d5dbe5;
+  background: #fff;
+  color: #1f2937;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.08s ease;
+}
+
+.feedbackBtn:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.feedbackBtn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.feedbackBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.feedbackError {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #c51d34;
+}
+
 .modelPickerBtn {
   height: 24px;
   border: none;
@@ -1015,4 +1069,3 @@
     transform: rotate(360deg);
   }
 }
-

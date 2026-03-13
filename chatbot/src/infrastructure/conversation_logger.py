@@ -5,7 +5,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 
@@ -13,6 +13,15 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMe
 MAX_TEXT_LEN = 2000
 MAX_LIST_PREVIEW_ITEMS = 5
 MAX_MESSAGE_PREVIEW_ITEMS = 3
+DEFAULT_SESSION_STATE_FIELDS = (
+    "conversation_summary",
+    "order_context",
+    "search_context",
+    "completed_tasks",
+    "ui_action_required",
+    "llm_provider",
+    "llm_model",
+)
 
 COMPACT_LIST_KEYS = {
     "documents",
@@ -24,6 +33,132 @@ COMPACT_LIST_KEYS = {
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _select_session_state(
+    state: Optional[Dict[str, Any]],
+    selected_fields: Sequence[str],
+) -> Dict[str, Any]:
+    if not isinstance(state, dict):
+        return {}
+
+    selected: Dict[str, Any] = {}
+    for field in selected_fields:
+        if field in state:
+            selected[field] = state[field]
+
+    user_info = state.get("user_info")
+    if isinstance(user_info, dict):
+        site_id = user_info.get("site_id")
+        if site_id is not None:
+            selected["site_id"] = site_id
+
+    return selected
+
+
+def _build_training_pairs(messages: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    pairs: List[Dict[str, Any]] = []
+    pending_user: str | None = None
+
+    for item in messages:
+        if not isinstance(item, dict):
+            continue
+
+        role = item.get("role")
+        content = str(item.get("content") or "")
+        if role == "user":
+            pending_user = content
+            continue
+
+        if role == "assistant" and pending_user is not None:
+            pairs.append(
+                {
+                    "turn_index": len(pairs),
+                    "input": pending_user,
+                    "output": content,
+                }
+            )
+            pending_user = None
+
+    return pairs
+
+
+class SessionConversationLogger:
+    def __init__(
+        self,
+        conversation_id: str,
+        user_id: Optional[int],
+        base_dir: Optional[str] = None,
+        selected_state_fields: Optional[Sequence[str]] = None,
+    ):
+        self.conversation_id = conversation_id
+        self.user_id = user_id
+        self.base_dir = base_dir or os.getenv("CHATBOT_SESSION_LOG_DIR", "logs/chat_sessions")
+        self.selected_state_fields = tuple(selected_state_fields or DEFAULT_SESSION_STATE_FIELDS)
+
+    @property
+    def file_path(self) -> Path:
+        return Path(self.base_dir) / f"{self.conversation_id}.json"
+
+    def read_session(self) -> Dict[str, Any]:
+        path = self.file_path
+        if path.exists():
+            with path.open("r", encoding="utf-8") as f:
+                return json.load(f)
+        return self._new_payload()
+
+    def append_turn(
+        self,
+        user_message: str,
+        assistant_message: str,
+        state: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        payload = self.read_session()
+        payload["status"] = payload.get("status") or "in_progress"
+        payload["messages"].extend(
+            [
+                {"role": "user", "content": user_message, "at": _now_iso()},
+                {"role": "assistant", "content": assistant_message, "at": _now_iso()},
+            ]
+        )
+        payload["selected_state"] = _select_session_state(state, self.selected_state_fields)
+        payload["training_pairs"] = _build_training_pairs(payload["messages"])
+        payload["updated_at"] = _now_iso()
+        self._write_session(payload)
+        return payload
+
+    def finalize_feedback(self, feedback_label: str) -> Dict[str, Any]:
+        payload = self.read_session()
+        payload["status"] = "completed"
+        payload["feedback_label"] = feedback_label
+        payload["ended_at"] = _now_iso()
+        payload["reset_required"] = True
+        payload["training_pairs"] = _build_training_pairs(payload.get("messages", []))
+        payload["updated_at"] = payload["ended_at"]
+        self._write_session(payload)
+        return payload
+
+    def _new_payload(self) -> Dict[str, Any]:
+        now = _now_iso()
+        return {
+            "conversation_id": self.conversation_id,
+            "user_id": self.user_id,
+            "status": "in_progress",
+            "feedback_label": None,
+            "messages": [],
+            "selected_state": {},
+            "training_pairs": [],
+            "started_at": now,
+            "ended_at": None,
+            "updated_at": now,
+            "reset_required": False,
+        }
+
+    def _write_session(self, payload: Dict[str, Any]) -> None:
+        path = self.file_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
 
 
 def _truncate_text(text: str, max_len: int = MAX_TEXT_LEN) -> str:

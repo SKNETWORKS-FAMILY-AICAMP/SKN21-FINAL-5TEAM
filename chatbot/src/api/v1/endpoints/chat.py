@@ -28,7 +28,8 @@ from langgraph.types import Command
 import orjson
 
 from chatbot.src.graph.workflow import graph_app
-from chatbot.src.schemas.chat import ChatRequest, ReviewDraftRequest
+from chatbot.src.infrastructure.conversation_logger import SessionConversationLogger
+from chatbot.src.schemas.chat import ChatRequest, FeedbackRequest, ReviewDraftRequest
 from chatbot.src.tools.service_tools import generate_review_draft
 from ecommerce.backend.app.core.auth import get_current_user
 from ecommerce.backend.app.router.users.models import User
@@ -237,6 +238,51 @@ def _get_fallback_text(final_state: dict) -> str | None:
             content = getattr(msg, "content", "")
             return str(content).strip() or None
     return None
+
+
+def _get_session_logger(current_user: User, conversation_id: str) -> SessionConversationLogger:
+    return SessionConversationLogger(
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+    )
+
+
+def _resolve_assistant_log_text(
+    final_state: dict | None,
+    streamed_text_parts: list[str],
+    latest_ui_message: str | None,
+) -> str | None:
+    streamed_text = "".join(streamed_text_parts).strip()
+    if streamed_text:
+        return streamed_text
+
+    if latest_ui_message and latest_ui_message.strip():
+        return latest_ui_message.strip()
+
+    if isinstance(final_state, dict):
+        fallback = _get_fallback_text(final_state)
+        if fallback:
+            return fallback
+
+    return None
+
+
+def _append_session_turn_log(
+    *,
+    current_user: User,
+    conversation_id: str,
+    user_message: str,
+    assistant_message: str | None,
+    state: dict | None,
+) -> None:
+    if not assistant_message:
+        return
+
+    _get_session_logger(current_user, conversation_id).append_turn(
+        user_message=user_message,
+        assistant_message=assistant_message,
+        state=state,
+    )
 
 
 def _to_sse(payload: dict) -> bytes:
@@ -591,6 +637,8 @@ async def chat_streaming_endpoint(
             has_streamed_text = False
             streamed_ui_actions: set[str] = set()
             suppress_text_stream = False
+            streamed_text_parts: list[str] = []
+            latest_ui_message: str | None = None
 
             async for event in graph_app.astream_events(stream_input, version="v2", config=stream_config):
                 text_payload = _get_text_chunk_payload(event)
@@ -598,6 +646,7 @@ async def chat_streaming_endpoint(
                     if suppress_text_stream:
                         continue
                     has_streamed_text = True
+                    streamed_text_parts.append(str(text_payload["content"]))
                     yield _to_sse(text_payload)
                     continue
 
@@ -614,6 +663,9 @@ async def chat_streaming_endpoint(
                 tool_ui_payload = _get_tool_ui_payload(event)
                 if tool_ui_payload:
                     streamed_ui_actions.add(tool_ui_payload["ui_action"])
+                    ui_message = str(tool_ui_payload.get("message") or "").strip()
+                    if ui_message:
+                        latest_ui_message = ui_message
                     # UI 액션이 나온 턴은 텍스트를 함께 흘리지 않음
                     suppress_text_stream = True
                     yield _to_sse(tool_ui_payload)
@@ -651,9 +703,14 @@ async def chat_streaming_endpoint(
                         continue
 
                     if payload.get("ui_action"):
-                        yield _to_sse(_build_ui_action_payload(payload))
+                        ui_payload = _build_ui_action_payload(payload)
+                        ui_message = str(ui_payload.get("message") or "").strip()
+                        if ui_message:
+                            latest_ui_message = ui_message
+                        yield _to_sse(ui_payload)
                     else:
                         message = payload.get("message", "진행 여부를 확인해주세요.")
+                        latest_ui_message = str(message).strip() or latest_ui_message
                         yield _to_sse(
                             {
                                 "type": "ui_action",
@@ -679,6 +736,13 @@ async def chat_streaming_endpoint(
                         "ui_action_required": first_ui_action,
                         "state": persisted_state,
                     }
+                )
+                _append_session_turn_log(
+                    current_user=current_user,
+                    conversation_id=conversation_id,
+                    user_message=request.message,
+                    assistant_message=latest_ui_message,
+                    state=persisted_state,
                 )
                 yield _to_sse({"type": "done"})
                 return
@@ -707,9 +771,22 @@ async def chat_streaming_endpoint(
                         print(f"[chat.stream] emit ui_action={ui_req}, ui_len={ui_len}")
                     except Exception:
                         pass
+                    latest_ui_message = str(final_state.get("generation") or "").strip() or latest_ui_message
                     yield _to_sse({"type": "ui_action", "ui_action": ui_req, "ui_data": ui_data})
 
-                yield _to_sse(_build_metadata(final_state))
+                metadata_payload = _build_metadata(final_state)
+                yield _to_sse(metadata_payload)
+                _append_session_turn_log(
+                    current_user=current_user,
+                    conversation_id=conversation_id,
+                    user_message=request.message,
+                    assistant_message=_resolve_assistant_log_text(
+                        final_state=final_state,
+                        streamed_text_parts=streamed_text_parts,
+                        latest_ui_message=latest_ui_message,
+                    ),
+                    state=metadata_payload.get("state"),
+                )
 
             yield _to_sse({"type": "done"})
 
@@ -722,6 +799,27 @@ async def chat_streaming_endpoint(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )
+
+
+@router.post("/feedback")
+async def submit_chat_feedback(
+    request: FeedbackRequest,
+    current_user: User = Depends(get_current_user),
+):
+    session_logger = _get_session_logger(current_user, request.conversation_id)
+
+    if not session_logger.file_path.exists():
+        raise HTTPException(status_code=404, detail="대화 로그를 찾을 수 없습니다.")
+
+    finalized = session_logger.finalize_feedback(request.feedback_label)
+    return {
+        "conversation_id": finalized["conversation_id"],
+        "status": finalized["status"],
+        "feedback_label": finalized["feedback_label"],
+        "reset_required": finalized["reset_required"],
+        "state": None,
+        "messages": [],
+    }
 
 
 # ── 리뷰 초안 엔드포인트 ──────────────────────────────────────────────────────

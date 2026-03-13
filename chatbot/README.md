@@ -12,81 +12,56 @@
   - `GET /health`
   - `POST /api/chat`
 - `src/`: 그래프 워크플로우/툴/코어 설정
+  - `adapters/`: 다중 사이트 연동을 위한 어댑터 계층 (Python 리팩토링 완료)
+  - `tools/`: 챗봇 도구 (기본 도구 + 어댑터 기반 도구)
 - `benchmark/`: 합성 데이터셋 생성/품질 체크/평가기
 - `chatbot_eval/`: 외부 벤치마크 실행 코드
 - `data/`: 원천/가공 데이터
 
-## 3. 실행 순서 (권장)
+## 3. 어댑터 아키텍처 (Multi-Site 지원)
 
-1. 저장소 루트에서 Python 의존성 설치 (`uv sync`)
-2. 챗봇 FastAPI 서버 실행 (포트 `8100`)
-3. 헬스체크 (`/health`)
-4. 채팅 API 호출 (`/api/chat`)
+기존 TypeScript 기반 어댑터를 Python Pydantic 모델 기반으로 리팩토링하여 다중 사이트(Ecommerce, Food, Bilyeo)에 대한 공통 인터페이스를 제공합니다.
 
-## 4. 실행 명령어
+### 3-1. 통합 Site ID 매핑
+| Site ID | 서비스명 | 백엔드 포트 | 모듈 |
+|---|---|---|---|
+| `site-a` | Food | 8002 | `src/adapters/site_a` |
+| `site-b` | Bilyeo | 5000 | `src/adapters/site_b` |
+| `site-c` | Ecommerce | 8000 | `src/adapters/site_c` |
 
-### 4-1. 로컬 직접 실행
+### 3-2. 주요 기능 (Adapter tools)
+다음 도구들은 `site_id`를 기반으로 적절한 어댑터를 통해 각 서비스 백엔드 API를 호출합니다:
+- `cancel`: 주문 취소
+- `refund`: 반품/환불 접수
+- `shipping`: 배송 현황 조회
+- `get_order_status_adapter`: 주문 상세 상태 조회
+- `search_products_adapter`: 상품 통합 검색
 
-```bash
-cd /Users/junseok/Projects/SKN21-FINAL-5TEAM
-uv sync
-uv run uvicorn chatbot.server_fastapi:app --reload --host 0.0.0.0 --port 8100
-```
+## 4. 실행 순서 (권장)
+... (기존 내용 유지)
 
-### 4-2. Docker 실행 (선택)
+## 5. 실행 명령어
+...
 
-```bash
-cd /Users/junseok/Projects/SKN21-FINAL-5TEAM
-docker compose -f docker-compose.adapter-lab.yml up -d --build
-```
+## 6. API 사용 예시 (Multi-Site)
 
-## 5. API 사용 예시
-
-### 5-1. 단일 턴 요청
-
-```json
-{
-  "message": "배송 상태 확인해줘",
-  "provider": "openai",
-  "user_id": 1,
-  "user_name": "테스트 사용자"
-}
-```
-
-### 5-2. 멀티턴 요청
-
-이전 응답의 `conversation_id`, `state`를 다음 요청에 그대로 전달:
+요청 시 `site_id`를 전달하여 특정 사이트의 어댑터를 사용할 수 있습니다.
 
 ```json
 {
-  "message": "그 주문 취소도 해줘",
-  "conversation_id": "이전 응답의 conversation_id",
-  "previous_state": {"...": "이전 응답 state 전체"}
+  "message": "치킨 주문 취소해줘",
+  "site_id": "site-a",
+  "user_id": 1
 }
 ```
 
-## 6. 벤치마크/평가 실행 순서
+## 7. 벤치마크/평가 실행 순서
+... (기존 내용 유지)
 
-1. 데이터셋 생성
-2. 품질 체크
-3. 평가 실행
-
-```bash
-cd /Users/junseok/Projects/SKN21-FINAL-5TEAM
-uv run python -m chatbot.benchmark.build_dataset
-
-uv run python -m chatbot.benchmark.quality_tools.quality_checker \
-  --dataset ecommerce/chatbot/benchmark/datasets/functional_YYYYMMDD_HHMMSS.jsonl \
-  --output ecommerce/chatbot/benchmark/datasets/functional_quality_report.json
-
-uv run python -m chatbot.benchmark.evaluator.evaluator \
-  --dataset ecommerce/chatbot/benchmark/datasets/functional_YYYYMMDD_HHMMSS.jsonl \
-  --output ecommerce/chatbot/benchmark/datasets/evaluation_results.json
-```
-
-## 7. 참고 문서
+## 8. 참고 문서
 
 - `FASTAPI_SERVER_RUNBOOK.md`
 - `benchmark/EVALUATION_GUIDE.md`
 - `benchmark/DATASET_GENERATION_GUIDE.md`
-- `benchmark/LOGGING_GUIDE.md`
+- `src/adapters/README.md` (어댑터 상세 아키텍처)
+

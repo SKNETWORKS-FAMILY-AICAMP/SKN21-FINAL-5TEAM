@@ -49,3 +49,20 @@ class ChatRequest(BaseModel):
         if not value:
             raise ValueError("message must not be empty")
         return value
+
+
+class FeedbackRequest(BaseModel):
+    conversation_id: str = Field(..., min_length=1, description="Conversation identifier")
+    feedback_label: Literal["good", "bad"] = Field(
+        ...,
+        description="Session-level feedback label (good|bad)",
+    )
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("conversation_id")
+    @classmethod
+    def _validate_conversation_id(cls, v: str) -> str:
+        value = v.strip()
+        if not value:
+            raise ValueError("conversation_id must not be empty")
+        return value
