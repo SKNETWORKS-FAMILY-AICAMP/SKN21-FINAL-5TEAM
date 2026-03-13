@@ -118,6 +118,27 @@ def init_db():
         )
     """)
 
+    # product_info 테이블
+    _create_table(cursor, """
+        CREATE TABLE product_info (
+            info_id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            product_id NUMBER NOT NULL REFERENCES products(product_id),
+            volume_weight VARCHAR2(500),
+            main_spec VARCHAR2(500),
+            expiry VARCHAR2(500),
+            usage_method CLOB,
+            manufacturer CLOB,
+            country_of_origin VARCHAR2(200),
+            ingredients CLOB,
+            functional_cosmetic VARCHAR2(500),
+            precautions CLOB,
+            quality_standard VARCHAR2(500),
+            consumer_hotline VARCHAR2(200),
+            review CLOB,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     conn.commit()
     cursor.close()
     conn.close()
