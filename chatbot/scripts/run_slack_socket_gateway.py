@@ -84,10 +84,12 @@ def main() -> int:
     args = parser.parse_args()
 
     load_gateway_env()
-    bot_token = os.getenv("SLACK_BOT_TOKEN")
+    bot_token = os.getenv("SLACK_COORDINATOR_BOT_TOKEN") or os.getenv("SLACK_BOT_TOKEN")
     app_token = os.getenv("SLACK_APP_TOKEN")
     if not bot_token or not app_token:
-        raise SystemExit("SLACK_BOT_TOKEN and SLACK_APP_TOKEN are required")
+        raise SystemExit(
+            "SLACK_COORDINATOR_BOT_TOKEN (or SLACK_BOT_TOKEN) and SLACK_APP_TOKEN are required"
+        )
 
     return run_gateway(
         channel=args.channel,

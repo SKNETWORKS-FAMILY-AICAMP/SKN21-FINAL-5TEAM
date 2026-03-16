@@ -73,3 +73,44 @@ def test_generate_frontend_mount_patch_uses_default_app_file_when_no_mount_detec
 
     content = patch_path.read_text(encoding="utf-8")
     assert "--- a/frontend/src/App.js" in content
+
+
+def test_generate_frontend_mount_patch_uses_source_file_context_when_available(tmp_path: Path):
+    source_root = tmp_path / "shop"
+    run_root = tmp_path / "generated" / "shop" / "shop-run-001"
+    run_root.mkdir(parents=True)
+
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() {\n  return <main>Home</main>;\n}\n",
+        encoding="utf-8",
+    )
+
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "shop-run-001",
+                "site": "shop",
+                "source_root": str(source_root),
+                "created_at": "2026-03-15T12:00:00+09:00",
+                "agent_version": "test-v1",
+                "analysis": {
+                    "frontend_mount_points": ["frontend/src/App.js"],
+                },
+                "generated_files": [],
+                "patch_targets": [],
+                "docker": {},
+                "tests": {},
+                "status": "generated",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    patch_path = generate_frontend_mount_patch(run_root)
+
+    content = patch_path.read_text(encoding="utf-8")
+    assert "@@ -" in content
+    assert 'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";' in content
+    assert "+  <SharedChatbotWidget />" in content

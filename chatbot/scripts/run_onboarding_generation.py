@@ -5,6 +5,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -43,12 +44,32 @@ def build_parser() -> argparse.ArgumentParser:
 def build_slack_bridge_from_env(
     *, channel: str, web_client_factory=None
 ) -> SlackWebBridge | None:
-    bot_token = os.getenv("SLACK_BOT_TOKEN")
-    if not bot_token:
+    coordinator_token = os.getenv("SLACK_COORDINATOR_BOT_TOKEN") or os.getenv("SLACK_BOT_TOKEN")
+    if not coordinator_token:
         return None
 
     web_factory = web_client_factory or _default_web_client_factory
-    return SlackWebBridge(channel=channel, web_client=web_factory(bot_token))
+    role_web_clients: dict[str, object] = {}
+    role_env_names = {
+        "Analyzer": "SLACK_ANALYZER_BOT_TOKEN",
+        "Planner": "SLACK_PLANNER_BOT_TOKEN",
+        "Generator": "SLACK_GENERATOR_BOT_TOKEN",
+        "Validator": "SLACK_VALIDATOR_BOT_TOKEN",
+        "Diagnostician": "SLACK_DIAGNOSTICIAN_BOT_TOKEN",
+    }
+    for role, env_name in role_env_names.items():
+        token = os.getenv(env_name)
+        if token:
+            role_web_clients[role] = web_factory(token)
+    return SlackWebBridge(
+        channel=channel,
+        web_client=web_factory(coordinator_token),
+        role_web_clients=role_web_clients,
+    )
+
+
+def load_generation_env(*, project_root: str | Path = ROOT) -> None:
+    load_dotenv(Path(project_root) / ".env", override=False)
 
 
 def parse_approvals(items: list[str]) -> dict[str, str]:
@@ -64,6 +85,7 @@ def parse_approvals(items: list[str]) -> dict[str, str]:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    load_generation_env()
     effective_run_id = args.resume_run_id or args.run_id
     if not effective_run_id:
         parser.error("one of --run-id or --resume-run-id is required")
