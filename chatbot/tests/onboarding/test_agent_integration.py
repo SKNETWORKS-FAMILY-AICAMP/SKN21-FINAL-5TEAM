@@ -947,6 +947,10 @@ def test_run_onboarding_generation_writes_unified_diff_draft(tmp_path: Path):
     assert patch_path.exists()
     assert "--- a/" in content
     assert "+++ b/" in content
+    assert "+++ b/backend/users/views.py" in content
+    assert "def onboarding_chat_auth_token(request):" in content
+    assert "+++ b/backend/products/urls.py" in content
+    assert "api/chat/auth-token" in content
 
 
 def test_run_onboarding_generation_writes_merge_simulation_artifact(tmp_path: Path):

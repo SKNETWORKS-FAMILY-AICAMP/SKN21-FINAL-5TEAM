@@ -1,0 +1,89 @@
+{
+  "conversation_id": "conv_5154f34238c6",
+  "user_id": 1,
+  "status": "in_progress",
+  "feedback_label": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "쒸발련아",
+      "at": "2026-03-16T02:37:47.767072+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "죄송합니다. 해당 내용은 서비스 정책에 따라 답변이 어렵습니다. 쇼핑 관련 문의 사항이 있으시면 말씀해 주세요.",
+      "at": "2026-03-16T02:37:47.767075+00:00"
+    },
+    {
+      "role": "user",
+      "content": "너는 보수쪽이니 진보쪽이니",
+      "at": "2026-03-16T02:38:01.269048+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "죄송합니다. 해당 내용은 서비스 정책에 따라 답변이 어렵습니다. 쇼핑 관련 문의 사항이 있으시면 말씀해 주세요.",
+      "at": "2026-03-16T02:38:01.269050+00:00"
+    },
+    {
+      "role": "user",
+      "content": "교환좀 해줘",
+      "at": "2026-03-16T02:38:19.745721+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다. 교환하실 주문을 선택해주세요.",
+      "at": "2026-03-16T02:38:19.745724+00:00"
+    },
+    {
+      "role": "user",
+      "content": "주문 선택 완료",
+      "at": "2026-03-16T02:38:22.301529+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "배송 전입니다. 옵션 변경 기능을 이용해주세요.",
+      "at": "2026-03-16T02:38:22.301533+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": null,
+    "order_context": {
+      "pending_action": "exchange",
+      "action_status": "failed",
+      "awaiting_resume_for": null,
+      "last_tool": "exchange",
+      "last_ui_payload": null
+    },
+    "search_context": {},
+    "ui_action_required": null,
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "site_id": "site-c"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "쒸발련아",
+      "output": "죄송합니다. 해당 내용은 서비스 정책에 따라 답변이 어렵습니다. 쇼핑 관련 문의 사항이 있으시면 말씀해 주세요."
+    },
+    {
+      "turn_index": 1,
+      "input": "너는 보수쪽이니 진보쪽이니",
+      "output": "죄송합니다. 해당 내용은 서비스 정책에 따라 답변이 어렵습니다. 쇼핑 관련 문의 사항이 있으시면 말씀해 주세요."
+    },
+    {
+      "turn_index": 2,
+      "input": "교환좀 해줘",
+      "output": "최근 30일 이내 주문 내역입니다. 교환하실 주문을 선택해주세요."
+    },
+    {
+      "turn_index": 3,
+      "input": "주문 선택 완료",
+      "output": "배송 전입니다. 옵션 변경 기능을 이용해주세요."
+    }
+  ],
+  "started_at": "2026-03-16T02:37:47.767064+00:00",
+  "ended_at": null,
+  "updated_at": "2026-03-16T02:38:22.301541+00:00",
+  "reset_required": false
+}

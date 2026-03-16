@@ -1,0 +1,92 @@
+{
+  "conversation_id": "conv_2405baa6596a",
+  "user_id": 1,
+  "status": "in_progress",
+  "feedback_label": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "교환좀 해줘",
+      "at": "2026-03-16T02:45:35.584986+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다. 교환하실 주문을 선택해주세요.",
+      "at": "2026-03-16T02:45:35.584989+00:00"
+    },
+    {
+      "role": "user",
+      "content": "주문 선택 완료",
+      "at": "2026-03-16T02:45:37.745966+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "교환할 옵션을 선택해주세요.",
+      "at": "2026-03-16T02:45:37.746044+00:00"
+    },
+    {
+      "role": "user",
+      "content": "옵션 선택 완료",
+      "at": "2026-03-16T02:45:40.756912+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "선택한 옵션으로 변경을 진행할까요? (사이즈: 28, 색상: Nude, 수량: 1)",
+      "at": "2026-03-16T02:45:40.756921+00:00"
+    },
+    {
+      "role": "user",
+      "content": "승인 선택",
+      "at": "2026-03-16T02:45:42.144198+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "주문 옵션이 ID 12622(으)로 변경되었습니다.",
+      "at": "2026-03-16T02:45:42.144202+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": null,
+    "order_context": {
+      "pending_action": "exchange",
+      "action_status": "completed",
+      "awaiting_resume_for": null,
+      "last_tool": "exchange",
+      "last_ui_payload": null,
+      "target_order_id": "ORD-20260305-124604-780",
+      "new_option_id": 12622,
+      "last_action_status": "updated"
+    },
+    "search_context": {},
+    "ui_action_required": null,
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "site_id": "site-c"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "교환좀 해줘",
+      "output": "최근 30일 이내 주문 내역입니다. 교환하실 주문을 선택해주세요."
+    },
+    {
+      "turn_index": 1,
+      "input": "주문 선택 완료",
+      "output": "교환할 옵션을 선택해주세요."
+    },
+    {
+      "turn_index": 2,
+      "input": "옵션 선택 완료",
+      "output": "선택한 옵션으로 변경을 진행할까요? (사이즈: 28, 색상: Nude, 수량: 1)"
+    },
+    {
+      "turn_index": 3,
+      "input": "승인 선택",
+      "output": "주문 옵션이 ID 12622(으)로 변경되었습니다."
+    }
+  ],
+  "started_at": "2026-03-16T02:45:35.584980+00:00",
+  "ended_at": null,
+  "updated_at": "2026-03-16T02:45:42.144207+00:00",
+  "reset_required": false
+}

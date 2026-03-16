@@ -262,6 +262,7 @@ def run_onboarding_generation(
     write_unified_diff_draft(
         source_root=source_root,
         generated_run_root=run_root,
+        proposal_path=run_root / "reports" / "patch-proposal.json",
         output_path=run_root / "patches" / "proposed.patch",
     )
 
