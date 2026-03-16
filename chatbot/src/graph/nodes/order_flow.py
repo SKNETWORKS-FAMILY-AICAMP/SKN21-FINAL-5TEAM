@@ -133,7 +133,7 @@ def order_list_subagent_node(state: GlobalAgentState) -> dict:
     order_context["pending_action"] = "list_orders"
     order_context["action_status"] = "waiting_user"
     order_context["awaiting_resume_for"] = None
-    order_context["last_tool"] = "order_list"
+    order_context["last_tool"] = "get_user_orders"
 
     completed_tasks = list(state.get("completed_tasks", []))
     if TaskIntent.ORDER_CS not in completed_tasks:
