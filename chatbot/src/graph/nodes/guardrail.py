@@ -85,8 +85,8 @@ def guardrail_node(state: GlobalAgentState) -> dict:
     if not user_text:
         return {"guardrail_passed": True}
 
-    if _is_order_list_intent(user_text):
-        logger.debug("[Guardrail] 주문 조회 의도 — 차단 없이 통과합니다.")
+    if _is_safe_service_intent(user_text):
+        logger.debug("[Guardrail] 안전한 서비스 의도 — 차단 없이 통과합니다.")
         return {"guardrail_passed": True}
 
     try:
@@ -143,6 +143,12 @@ def _get_last_user_message(messages: list) -> str | None:
             content = getattr(msg, "content", "")
             return str(content).strip() if content else None
     return None
+
+
+def _is_safe_service_intent(text: str | None) -> bool:
+    return _is_order_list_intent(text) or _is_review_write_intent(text)
+
+
 def _is_order_list_intent(text: str | None) -> bool:
     if not text:
         return False
@@ -150,4 +156,17 @@ def _is_order_list_intent(text: str | None) -> bool:
     return (
         "주문" in normalized
         and any(token in normalized for token in ("목록", "내역", "조회", "보여", "내 주문", "주문 내역"))
+    )
+
+
+def _is_review_write_intent(text: str | None) -> bool:
+    if not text:
+        return False
+
+    normalized = text.lower().replace(" ", "")
+    review_tokens = ("리뷰", "후기")
+    write_tokens = ("작성", "쓰기", "쓰고", "등록", "남기", "적고", "적을")
+
+    return any(token in normalized for token in review_tokens) and any(
+        token in normalized for token in write_tokens
     )

@@ -12,7 +12,7 @@ FormAction SubAgent 노드.
   - LLM은 도구를 선택하고 호출하는 역할만 수행합니다.
 """
 
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.prebuilt import create_react_agent
 
 from chatbot.src.graph.state import GlobalAgentState
@@ -91,7 +91,7 @@ def form_action_subagent_node(state: GlobalAgentState) -> dict:
     }
 
     update: dict = {
-        "messages": result_messages,
+        "messages": _get_persistable_messages(result_messages),
         "completed_tasks": state.get("completed_tasks", []) + [task],
         "agent_results": updated_agent_results,
     }
@@ -110,8 +110,15 @@ def _build_task_instruction(task: str | None, state: GlobalAgentState) -> str:
     if task == TaskIntent.WRITE_REVIEW:
         order_id = state.get("order_context", {}).get("target_order_id")
         if order_id:
-            return f"사용자가 주문 {order_id}에 대한 리뷰를 작성하려 합니다. `create_review`를 즉시 호출하세요."
-        return "사용자가 리뷰를 작성하려 합니다. 주문 번호를 확인 후 `create_review`를 호출하세요."
+            return (
+                f"사용자가 주문 {order_id}에 대한 리뷰를 작성하려 합니다. "
+                "`create_review(order_id=<주문번호>, rating=0, content=\"UI_REQUEST\")`를 즉시 호출하세요."
+            )
+        return (
+            "사용자가 리뷰를 작성하려 합니다. 주문번호를 텍스트로 묻지 말고 "
+            "`create_review(order_id=\"\", rating=0, content=\"UI_REQUEST\")`를 즉시 호출하세요. "
+            "도구가 리뷰 작성 가능한 주문 목록 UI를 먼저 띄웁니다."
+        )
     if task == TaskIntent.REGISTER_GIFT_CARD:
         return "사용자가 상품권을 등록하려 합니다. 코드를 확인하고 `register_gift_card`를 호출하세요."
     return ""
@@ -119,11 +126,27 @@ def _build_task_instruction(task: str | None, state: GlobalAgentState) -> str:
 
 def _get_last_ai_content(messages: list) -> str:
     """마지막 AIMessage 의 텍스트 내용 반환"""
-    from langchain_core.messages import AIMessage
     for msg in reversed(messages):
         if isinstance(msg, AIMessage) and isinstance(msg.content, str) and msg.content.strip():
             return msg.content.strip()
     return ""
+
+
+def _get_persistable_messages(messages: list) -> list[AIMessage]:
+    """
+    다음 턴 상태에는 툴 호출/응답 메시지를 남기지 않습니다.
+    OpenAI는 선행 tool_call 없는 ToolMessage가 history에 섞이면 400을 반환하므로,
+    사용자에게 보여줄 최종 AI 텍스트만 보존합니다.
+    """
+    persisted: list[AIMessage] = []
+    for msg in messages:
+        if not isinstance(msg, AIMessage):
+            continue
+        if getattr(msg, "tool_calls", None):
+            continue
+        if isinstance(msg.content, str) and msg.content.strip():
+            persisted.append(msg)
+    return persisted[-1:]
 
 
 def _extract_ui_action(messages: list) -> str | None:
