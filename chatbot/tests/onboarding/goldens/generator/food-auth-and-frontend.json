@@ -1,0 +1,58 @@
+{
+  "id": "food-auth-and-frontend",
+  "site": "food",
+  "input": {
+    "analysis": {
+      "framework": {
+        "backend": "django",
+        "frontend": "react"
+      },
+      "auth": {
+        "auth_style": "session_cookie",
+        "signals": [
+          "session_token",
+          "request.COOKIES",
+          "SessionToken"
+        ]
+      },
+      "product_api": [
+        "/api/products/"
+      ],
+      "order_api": [
+        "/api/orders/",
+        "/api/orders/actions/"
+      ],
+      "frontend_mount_points": [
+        "frontend/src/App.js"
+      ],
+      "backend_entrypoints": [
+        "backend/users/views.py"
+      ],
+      "route_prefixes": [
+        "/api"
+      ]
+    },
+    "recommended_outputs": [
+      "chat_auth",
+      "order_adapter",
+      "product_adapter",
+      "frontend_patch"
+    ]
+  },
+  "expected": {
+    "proposed_files": [
+      "files/backend/chat_auth.py",
+      "files/backend/order_adapter_client.py",
+      "files/backend/product_adapter_client.py"
+    ],
+    "proposed_patches": [
+      "patches/frontend_widget_mount.patch"
+    ]
+  },
+  "forbidden": [
+    "food/backend/",
+    "food/frontend/",
+    "runtime/"
+  ],
+  "notes": "food baseline should propose auth, order, product, and frontend overlay artifacts"
+}

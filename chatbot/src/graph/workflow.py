@@ -16,7 +16,7 @@ LangGraph 멀티-에이전트 그래프 정의.
     ▼                      │
   final_generator          │
     │                      ▼
-    ▼         ┌─ order_subagent
+    ▼         ┌─ order_entry -> order_intent_router -> cancel/refund/exchange/shipping
    END        ├─ discovery_subagent
               ├─ policy_rag_subagent
               └─ form_action_subagent
@@ -48,7 +48,16 @@ from chatbot.src.graph.nodes.supervisor import (
     supervisor_node,
     route_after_supervisor,
 )
-from chatbot.src.graph.nodes.order_subagent import order_subagent_node
+from chatbot.src.graph.nodes.order_flow import (
+    order_entry_node,
+    order_intent_router_node,
+    route_after_order_intent_router,
+    route_after_order_action,
+    cancel_subagent_node,
+    refund_subagent_node,
+    exchange_subagent_node,
+    shipping_subagent_node,
+)
 from chatbot.src.graph.nodes.discovery_subagent import discovery_subagent_node
 from chatbot.src.graph.nodes.policy_rag_subagent import policy_rag_subagent_node
 from chatbot.src.graph.nodes.form_action_subagent import form_action_subagent_node
@@ -65,7 +74,12 @@ def build_graph() -> StateGraph:
     builder.add_node("guardrail",              guardrail_node)
     builder.add_node("planner",                planner_node)
     builder.add_node("supervisor",             supervisor_node)
-    builder.add_node("order_subagent",        order_subagent_node)
+    builder.add_node("order_entry",            order_entry_node)
+    builder.add_node("order_intent_router",    order_intent_router_node)
+    builder.add_node("cancel_subagent",        cancel_subagent_node)
+    builder.add_node("refund_subagent",        refund_subagent_node)
+    builder.add_node("exchange_subagent",      exchange_subagent_node)
+    builder.add_node("shipping_subagent",      shipping_subagent_node)
     builder.add_node("discovery_subagent",     discovery_subagent_node)
     builder.add_node("policy_rag_subagent",    policy_rag_subagent_node)
     builder.add_node("form_action_subagent",   form_action_subagent_node)
@@ -100,7 +114,7 @@ def build_graph() -> StateGraph:
         "supervisor",
         route_after_supervisor,
         {
-            "order_subagent":       "order_subagent",
+            "order_entry":           "order_entry",
             "discovery_subagent":    "discovery_subagent",
             "policy_rag_subagent":   "policy_rag_subagent",
             "form_action_subagent":  "form_action_subagent",
@@ -108,11 +122,37 @@ def build_graph() -> StateGraph:
         },
     )
 
-    # ── SubAgent → supervisor (loop) ─────────────────
-    # 각 SubAgent는 처리 완료 후 항상 supervisor 로 돌아가
-    # supervisor가 pending_tasks 소진 여부를 판단해 final_generator로 전환한다.
+    # ── ORDER_CS 세부 라우팅 ─────────────────────────────
+    builder.add_edge("order_entry", "order_intent_router")
+    builder.add_conditional_edges(
+        "order_intent_router",
+        route_after_order_intent_router,
+        {
+            "cancel_subagent": "cancel_subagent",
+            "refund_subagent": "refund_subagent",
+            "exchange_subagent": "exchange_subagent",
+            "shipping_subagent": "shipping_subagent",
+            "final_generator": "final_generator",
+        },
+    )
+
+    for order_node in (
+        "cancel_subagent",
+        "refund_subagent",
+        "exchange_subagent",
+        "shipping_subagent",
+    ):
+        builder.add_conditional_edges(
+            order_node,
+            route_after_order_action,
+            {
+                "supervisor": "supervisor",
+                "final_generator": "final_generator",
+            },
+        )
+
+    # ── 나머지 SubAgent → supervisor (loop) ───────────────
     for subagent in (
-        "order_subagent",
         "discovery_subagent",
         "policy_rag_subagent",
         "form_action_subagent",

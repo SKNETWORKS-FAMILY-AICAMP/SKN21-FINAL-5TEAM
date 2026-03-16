@@ -1,0 +1,58 @@
+{
+  "id": "django-template-only",
+  "site": "legacy-django-shop",
+  "input": {
+    "analysis": {
+      "framework": {
+        "backend": "django",
+        "frontend": "template"
+      },
+      "auth": {
+        "auth_style": "session_cookie",
+        "signals": [
+          "request.user",
+          "login_required",
+          "SessionMiddleware"
+        ]
+      },
+      "product_api": [
+        "/shop/products/",
+        "/shop/products/{id}/"
+      ],
+      "order_api": [
+        "/shop/orders/"
+      ],
+      "frontend_mount_points": [
+        "templates/base.html"
+      ],
+      "backend_entrypoints": [
+        "backend/shop/views.py"
+      ],
+      "route_prefixes": [
+        "/shop"
+      ]
+    },
+    "recommended_outputs": [
+      "chat_auth",
+      "order_adapter",
+      "product_adapter",
+      "frontend_patch"
+    ]
+  },
+  "expected": {
+    "proposed_files": [
+      "files/backend/chat_auth.py",
+      "files/backend/order_adapter_client.py",
+      "files/backend/product_adapter_client.py"
+    ],
+    "proposed_patches": [
+      "patches/frontend_widget_mount.patch"
+    ]
+  },
+  "forbidden": [
+    "legacy-django-shop/backend/",
+    "legacy-django-shop/templates/",
+    "runtime/"
+  ],
+  "notes": "template frontend site should still receive the same overlay proposal skeleton at MVP stage"
+}

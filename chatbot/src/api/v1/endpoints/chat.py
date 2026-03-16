@@ -49,7 +49,12 @@ NODE_STATUS_MESSAGES: dict[str, str] = {
     "guardrail":            "입력 내용을 검토하고 있습니다...",
     "planner":              "요청을 분석하고 있습니다...",
     "supervisor":           "작업을 배분하고 있습니다...",
-    "order_subagent":       "주문/환불 정보를 처리하고 있습니다...",
+    "order_entry":          "주문 요청을 준비하고 있습니다...",
+    "order_intent_router":  "주문 요청 유형을 확인하고 있습니다...",
+    "cancel_subagent":      "주문 취소를 처리하고 있습니다...",
+    "refund_subagent":      "반품 신청을 처리하고 있습니다...",
+    "exchange_subagent":    "교환 요청을 처리하고 있습니다...",
+    "shipping_subagent":    "배송 정보를 확인하고 있습니다...",
     "discovery_subagent":   "상품을 검색하고 있습니다...",
     "policy_rag_subagent":  "정책 문서를 조회하고 있습니다...",
     "form_action_subagent": "요청을 처리하고 있습니다...",
@@ -308,6 +313,22 @@ def _build_ui_action_payload(tool_output: dict) -> dict:
         "prior_action": tool_output.get("prior_action"),
         "message": tool_output.get("message", ""),
     }
+
+
+def _get_state_ui_payload(final_state: dict, ui_action: str) -> dict | None:
+    order_context = final_state.get("order_context", {})
+    if not isinstance(order_context, dict):
+        return None
+
+    payload = order_context.get("last_ui_payload")
+    if not isinstance(payload, dict):
+        return None
+
+    payload_action = str(payload.get("ui_action") or "").strip()
+    if payload_action != ui_action:
+        return None
+
+    return _build_ui_action_payload(payload)
 
 
 def _extract_interrupt_payloads(final_state: dict | None) -> list[dict]:
@@ -759,20 +780,27 @@ async def chat_streaming_endpoint(
 
                 # ui_action_required 가 on_tool_end 에서 미전송된 경우 보강 시그널
                 if ui_req and ui_req not in streamed_ui_actions:
-                    ui_data = None
-                    if ui_req == "show_product_list":
-                        ui_data = (
-                            final_state.get("search_context", {}).get("retrieved_products", [])
-                            if isinstance(final_state.get("search_context"), dict)
-                            else []
-                        )
-                    try:
-                        ui_len = len(ui_data) if isinstance(ui_data, list) else "n/a"
-                        print(f"[chat.stream] emit ui_action={ui_req}, ui_len={ui_len}")
-                    except Exception:
-                        pass
-                    latest_ui_message = str(final_state.get("generation") or "").strip() or latest_ui_message
-                    yield _to_sse({"type": "ui_action", "ui_action": ui_req, "ui_data": ui_data})
+                    state_ui_payload = _get_state_ui_payload(final_state, ui_req)
+                    if state_ui_payload:
+                        ui_msg = str(state_ui_payload.get("message") or "").strip()
+                        if ui_msg:
+                            latest_ui_message = ui_msg
+                        yield _to_sse(state_ui_payload)
+                    else:
+                        ui_data = None
+                        if ui_req == "show_product_list":
+                            ui_data = (
+                                final_state.get("search_context", {}).get("retrieved_products", [])
+                                if isinstance(final_state.get("search_context"), dict)
+                                else []
+                            )
+                        try:
+                            ui_len = len(ui_data) if isinstance(ui_data, list) else "n/a"
+                            print(f"[chat.stream] emit ui_action={ui_req}, ui_len={ui_len}")
+                        except Exception:
+                            pass
+                        latest_ui_message = str(final_state.get("generation") or "").strip() or latest_ui_message
+                        yield _to_sse({"type": "ui_action", "ui_action": ui_req, "ui_data": ui_data})
 
                 metadata_payload = _build_metadata(final_state)
                 yield _to_sse(metadata_payload)

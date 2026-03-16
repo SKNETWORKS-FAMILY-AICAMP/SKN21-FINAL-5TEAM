@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation Viewer - AI Chatbot Project</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-bg: #0f172a;
+            --accent-color: #38bdf8;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans KR', 'Montserrat', sans-serif;
+            background-color: var(--primary-bg);
+            color: var(--text-main);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Slide Container */
+        .presentation-frame {
+            width: 1280px;
+            height: 720px;
+            aspect-ratio: 16 / 9;
+            max-width: 95vw;
+            max-height: calc(95vw * 9 / 16);
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            position: relative;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        }
+
+        @media (max-height: 800px) {
+            .presentation-frame {
+                height: 85vh;
+                width: calc(85vh * 16 / 9);
+            }
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            transition: opacity 0.3s ease;
+        }
+
+        /* Navigation Controls */
+        .controls {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 12px 24px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 50px;
+            z-index: 100;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+
+        .controls:hover {
+            opacity: 1;
+        }
+
+        .nav-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            font-size: 1.2rem;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .nav-btn:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--accent-color);
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .slide-info {
+            font-weight: 600;
+            min-width: 80px;
+            text-align: center;
+            font-family: 'Montserrat', sans-serif;
+            letter-spacing: 1px;
+        }
+
+        /* Progress Bar */
+        .progress-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            z-index: 1000;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--accent-color);
+            width: 0%;
+            transition: width 0.3s ease;
+            box-shadow: 0 0 10px var(--accent-color);
+        }
+
+        /* Slide List Drawer */
+        .slide-list-trigger {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            color: var(--text-main);
+            padding: 10px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            z-index: 100;
+            transition: all 0.2s ease;
+        }
+
+        .slide-list-trigger:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .drawer {
+            position: fixed;
+            top: 0;
+            right: -300px;
+            width: 300px;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(20px);
+            border-left: 1px solid var(--glass-border);
+            z-index: 1000;
+            padding: 40px 20px;
+            transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            overflow-y: auto;
+        }
+
+        .drawer.active {
+            right: 0;
+        }
+
+        .drawer-header {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .close-drawer {
+            cursor: pointer;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+
+        .close-drawer:hover {
+            opacity: 1;
+        }
+
+        .slide-item {
+            padding: 12px 15px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+            color: var(--text-dim);
+        }
+
+        .slide-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+        }
+
+        .slide-item.active {
+            background: var(--accent-color);
+            color: #fff;
+            font-weight: 600;
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .presentation-frame {
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        /* Keyboard Hint */
+        .keyboard-hint {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="progress-container">
+        <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <button class="slide-list-trigger" id="openDrawer">
+        <i class="fas fa-list"></i> Slides
+    </button>
+
+    <div class="drawer" id="drawer">
+        <div class="drawer-header">
+            <span>Slide Deck</span>
+            <i class="fas fa-times close-drawer" id="closeDrawer"></i>
+        </div>
+        <div id="slideList">
+            <!-- Slide items will be injected here -->
+        </div>
+    </div>
+
+    <main class="presentation-frame">
+        <iframe id="slideFrame" src="slides/1.html"></iframe>
+    </main>
+
+    <div class="controls" id="controls">
+        <button class="nav-btn" id="prevBtn" title="Previous (Left Arrow)">
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        <div class="slide-info">
+            <span id="currentNum">1</span> / <span id="totalNum">20</span>
+        </div>
+        <button class="nav-btn" id="nextBtn" title="Next (Right Arrow)">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+        <button class="nav-btn" id="fullscreenBtn" title="Toggle Fullscreen (F)">
+            <i class="fas fa-expand"></i>
+        </button>
+    </div>
+
+    <div class="keyboard-hint">
+        Use Arrow Keys or Space to navigate
+    </div>
+
+    <script>
+        const totalSlides = 20;
+        let currentSlide = 1;
+
+        const slideFrame = document.getElementById('slideFrame');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const currentNum = document.getElementById('currentNum');
+        const totalNum = document.getElementById('totalNum');
+        const progressBar = document.getElementById('progressBar');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const openDrawer = document.getElementById('openDrawer');
+        const closeDrawer = document.getElementById('closeDrawer');
+        const drawer = document.getElementById('drawer');
+        const slideList = document.getElementById('slideList');
+
+        // Initialize slide list
+        function initSlideList() {
+            for (let i = 1; i <= totalSlides; i++) {
+                const item = document.createElement('div');
+                item.className = `slide-item ${i === 1 ? 'active' : ''}`;
+                item.dataset.slide = i;
+                item.innerHTML = `Slide ${i}`;
+                item.onclick = () => jumpToSlide(i);
+                slideList.appendChild(item);
+            }
+        }
+
+        function updateUI() {
+            // Update frame source
+            slideFrame.style.opacity = '0';
+            setTimeout(() => {
+                slideFrame.src = `slides/${currentSlide}.html`;
+                slideFrame.onload = () => {
+                    slideFrame.style.opacity = '1';
+                };
+            }, 150);
+
+            // Update text and buttons
+            currentNum.textContent = currentSlide;
+            prevBtn.disabled = currentSlide === 1;
+            nextBtn.disabled = currentSlide === totalSlides;
+
+            // Update progress bar
+            const progress = (currentSlide / totalSlides) * 100;
+            progressBar.style.width = `${progress}%`;
+
+            // Update drawer items
+            document.querySelectorAll('.slide-item').forEach(item => {
+                item.classList.toggle('active', parseInt(item.dataset.slide) === currentSlide);
+            });
+        }
+
+        function jumpToSlide(num) {
+            currentSlide = Math.max(1, Math.min(totalSlides, num));
+            updateUI();
+            drawer.classList.remove('active');
+        }
+
+        function nextSlide() {
+            if (currentSlide < totalSlides) {
+                currentSlide++;
+                updateUI();
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlide > 1) {
+                currentSlide--;
+                updateUI();
+            }
+        }
+
+        // Event Listeners
+        prevBtn.onclick = prevSlide;
+        nextBtn.onclick = nextSlide;
+
+        fullscreenBtn.onclick = () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+                fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                    fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+                }
+            }
+        };
+
+        openDrawer.onclick = () => drawer.classList.add('active');
+        closeDrawer.onclick = () => drawer.classList.remove('active');
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            switch(e.key) {
+                case 'ArrowRight':
+                case 'ArrowDown':
+                case ' ':
+                case 'Enter':
+                    nextSlide();
+                    break;
+                case 'ArrowLeft':
+                case 'ArrowUp':
+                case 'Backspace':
+                    prevSlide();
+                    break;
+                case 'f':
+                case 'F':
+                    fullscreenBtn.click();
+                    break;
+                case 'l':
+                case 'L':
+                case 'Escape':
+                    if (drawer.classList.contains('active')) {
+                        drawer.classList.remove('active');
+                    } else if (e.key === 'l' || e.key === 'L') {
+                        drawer.classList.add('active');
+                    }
+                    break;
+            }
+        });
+
+        // Initialize
+        initSlideList();
+        updateUI();
+    </script>
+</body>
+</html>

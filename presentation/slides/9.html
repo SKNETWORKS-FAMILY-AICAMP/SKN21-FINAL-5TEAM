@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>백엔드 프레임워크</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet"/>
+<style>body {
+    margin: 0;
+    padding: 0;
+    font-family: "Noto Sans KR", sans-serif;
+    background-color: #fff
+    }
+.slide-container {
+    width: 1280px;
+    height: 720px;
+    display: flex;
+    position: relative;
+    background-color: #fff;
+    overflow: hidden
+    }
+.left-content {
+    width: 40%;
+    height: 100%;
+    padding: 60px 50px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    z-index: 10
+    }
+.right-content {
+    width: 60%;
+    height: 100%;
+    padding: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 10
+    }
+.heading-medium {
+    font-family: "Montserrat", sans-serif;
+    font-weight: 700;
+    font-size: 22px;
+    color: #999;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 3px
+    }
+.heading-large {
+    font-family: "Montserrat", "Noto Sans KR", sans-serif;
+    font-weight: 900;
+    font-size: 56px;
+    line-height: 1.1;
+    color: #000;
+    margin-bottom: 30px
+    }
+.accent-bar {
+    width: 80px;
+    height: 6px;
+    background-color: #000;
+    margin-bottom: 30px
+    }
+.body-text {
+    font-family: "Noto Sans KR", sans-serif;
+    font-size: 18px;
+    color: #666;
+    line-height: 1.8
+    }
+.tech-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 25px;
+    width: 100%;
+    max-width: 700px
+    }
+.tech-card {
+    background-color: #f8f8f8;
+    border-radius: 8px;
+    padding: 30px;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden
+    }
+.tech-card:hover {
+    background-color: #000;
+    transform: translatey(-5px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2)
+    }
+.tech-card:hover .tech-title,
+.tech-card:hover .tech-desc {
+    color: #fff
+    }
+.tech-card:hover .tech-icon {
+    color: #fff
+    }
+.tech-icon {
+    font-size: 42px;
+    color: #000;
+    margin-bottom: 20px;
+    display: block
+    }
+.tech-title {
+    font-family: "Montserrat", sans-serif;
+    font-weight: 700;
+    font-size: 24px;
+    color: #000;
+    margin-bottom: 10px;
+    letter-spacing: 1px
+    }
+.tech-desc {
+    font-family: "Noto Sans KR", sans-serif;
+    font-size: 14px;
+    color: #666;
+    line-height: 1.5
+    }
+.circle-decoration {
+    position: absolute;
+    border-radius: 50%;
+    z-index: 0
+    }
+.circle-1 {
+    width: 200px;
+    height: 200px;
+    border: 20px solid #f5f5f5;
+    top: -60px;
+    left: -60px;
+    opacity: 0.5
+    }
+.circle-2 {
+    width: 150px;
+    height: 150px;
+    border: 15px solid #f5f5f5;
+    bottom: 80px;
+    right: -40px;
+    opacity: 0.3
+    }
+.pattern-dots {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: radial-gradient(#000 1px, transparent 1px);
+    background-size: 25px 25px;
+    opacity: 0.02;
+    z-index: 0
+    }</style>
+</head>
+<body>
+<div class="slide-container">
+<div class="pattern-dots"></div>
+<div class="circle-decoration circle-1"></div>
+<div class="circle-decoration circle-2"></div>
+
+<!-- Left Content -->
+<div class="left-content">
+<div style="position: relative;
+z-index: 2">
+<p class="heading-medium">BACKEND</p>
+<h1 class="heading-large">백엔드<br/>프레임워크</h1>
+<div class="accent-bar"></div>
+<p class="body-text">
+서버 사이드 구축을 위한 기술 스택과 데이터베이스 솔루션을 소개합니다.
+</p>
+</div>
+</div>
+
+<!-- Right Content -->
+<div class="right-content">
+<div class="tech-grid">
+<!-- Node.js -->
+<div class="tech-card">
+<i class="fab fa-node-js tech-icon"></i>
+<h3 class="tech-title">Node.js</h3>
+<p class="tech-desc">이벤트 기반 비동기 처리로 높은 성능과 확장성 제공</p>
+</div>
+
+<!-- Express.js -->
+<div class="tech-card">
+<i class="fas fa-server tech-icon"></i>
+<h3 class="tech-title">Express.js</h3>
+<p class="tech-desc">경량화된 웹 프레임워크로 빠른 API 개발 환경 구축</p>
+</div>
+
+<!-- PostgreSQL -->
+<div class="tech-card">
+<i class="fas fa-database tech-icon"></i>
+<h3 class="tech-title">PostgreSQL</h3>
+<p class="tech-desc">관계형 데이터베이스로 안정적이고 확장 가능한 데이터 관리</p>
+</div>
+
+<!-- Redis -->
+<div class="tech-card">
+<i class="fas fa-bolt tech-icon"></i>
+<h3 class="tech-title">Redis</h3>
+<p class="tech-desc">인메모리 데이터 스토어로 캐싱 및 세션 관리 최적화</p>
+</div>
+
+<!-- Python -->
+<div class="tech-card">
+<i class="fab fa-python tech-icon"></i>
+<h3 class="tech-title">Python</h3>
+<p class="tech-desc">AI/ML 모델 연동을 위한 백엔드 서비스 구현</p>
+</div>
+
+<!-- Docker -->
+<div class="tech-card">
+<i class="fab fa-docker tech-icon"></i>
+<h3 class="tech-title">Docker</h3>
+<p class="tech-desc">컨테이너화로 일관된 배포 환경과 마이크로서비스 아키텍처 지원</p>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

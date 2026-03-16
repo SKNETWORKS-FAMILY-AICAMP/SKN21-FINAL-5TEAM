@@ -1,0 +1,69 @@
+{
+  "summary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0
+  },
+  "results": [
+    {
+      "id": "bilyeo-basic",
+      "site": "bilyeo",
+      "passed": true,
+      "missing_files": [],
+      "extra_files": [],
+      "missing_patches": [],
+      "extra_patches": [],
+      "forbidden_hits": [],
+      "actual": {
+        "proposed_files": [
+          "files/backend/chat_auth.py",
+          "files/backend/order_adapter_client.py",
+          "files/backend/product_adapter_client.py"
+        ],
+        "proposed_patches": [
+          "patches/frontend_widget_mount.patch"
+        ]
+      }
+    },
+    {
+      "id": "ecommerce-basic",
+      "site": "ecommerce",
+      "passed": true,
+      "missing_files": [],
+      "extra_files": [],
+      "missing_patches": [],
+      "extra_patches": [],
+      "forbidden_hits": [],
+      "actual": {
+        "proposed_files": [
+          "files/backend/chat_auth.py",
+          "files/backend/order_adapter_client.py",
+          "files/backend/product_adapter_client.py"
+        ],
+        "proposed_patches": [
+          "patches/frontend_widget_mount.patch"
+        ]
+      }
+    },
+    {
+      "id": "food-auth-and-frontend",
+      "site": "food",
+      "passed": true,
+      "missing_files": [],
+      "extra_files": [],
+      "missing_patches": [],
+      "extra_patches": [],
+      "forbidden_hits": [],
+      "actual": {
+        "proposed_files": [
+          "files/backend/chat_auth.py",
+          "files/backend/order_adapter_client.py",
+          "files/backend/product_adapter_client.py"
+        ],
+        "proposed_patches": [
+          "patches/frontend_widget_mount.patch"
+        ]
+      }
+    }
+  ]
+}
