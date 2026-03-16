@@ -24,7 +24,9 @@ from dotenv import load_dotenv
 
 BENCH_DIR = Path(__file__).resolve().parent
 DATASET_PATH = BENCH_DIR / "intent_eval_dataset.jsonl"        # ← 학습용: "intent_train_dataset.jsonl"으로 변경
-RESULT_PATH = BENCH_DIR / "result_intent_rate.json"
+_RESULT_DIR = BENCH_DIR.parent / "result" / "intent-bench"
+_RESULT_DIR.mkdir(parents=True, exist_ok=True)
+RESULT_PATH = _RESULT_DIR / "result_intent_rate.json"
 
 
 def _find_project_root(start: Path, marker: str = ".env") -> Path:

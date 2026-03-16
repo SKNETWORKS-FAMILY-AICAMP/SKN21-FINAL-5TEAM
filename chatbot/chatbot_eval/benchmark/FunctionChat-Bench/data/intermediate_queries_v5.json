@@ -1,0 +1,102 @@
+[
+  {
+    "scenario": {
+      "id": 1,
+      "name": "배송 조회",
+      "action": "shipping",
+      "tools": [
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0005",
+      "status": "delivered",
+      "shipping_fee": 0.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test2@example.com",
+    "user_query": "제 주문번호 ORD-eval_dataset-0005의 배송 상태가 궁금해요."
+  },
+  {
+    "scenario": {
+      "id": 2,
+      "name": "교환 신청",
+      "action": "exchange",
+      "tools": [
+        "exchange"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0005",
+      "status": "delivered",
+      "shipping_fee": 0.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test2@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0005로 받은 상품 사이즈가 맞지 않아서 교환하고 싶어요."
+  },
+  {
+    "scenario": {
+      "id": 3,
+      "name": "환불/반품 신청",
+      "action": "refund",
+      "tools": [
+        "refund"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0005",
+      "status": "delivered",
+      "shipping_fee": 0.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test2@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0005로 받은 상품이 마음에 들지 않아서 환불하고 싶어요."
+  },
+  {
+    "scenario": {
+      "id": 4,
+      "name": "주문 취소",
+      "action": "cancel",
+      "tools": [
+        "cancel"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0004",
+      "status": "preparing",
+      "shipping_fee": 3000.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test2@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0004의 주문을 취소하고 싶어요."
+  },
+  {
+    "scenario": {
+      "id": 5,
+      "name": "주문 내역 조회",
+      "action": "get_user_orders",
+      "tools": [
+        "get_user_orders"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0005",
+      "status": "delivered",
+      "shipping_fee": 0.0,
+      "days_since_delivery": null
+    },
+    "user_id": 3,
+    "user_email": "test2@example.com",
+    "user_query": "제 주문 내역을 확인하고 싶은데, 주문번호는 ORD-eval_dataset-0005입니다."
+  }
+]

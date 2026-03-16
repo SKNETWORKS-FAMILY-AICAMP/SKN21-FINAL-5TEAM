@@ -22,18 +22,18 @@ from paths import DATA_DIR, PROJECT_ROOT, RAW_DIR, FASHION_CSV, CLOTHES_CSV, TOO
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from ecommerce.platform.backend.app.database import SessionLocal
-import ecommerce.platform.backend.app.models  # SQLAlchemy 모델 레지스트리 선 로드 (mapper 초기화용)
-from ecommerce.platform.backend.app.router.users.crud import get_user_by_email
-from ecommerce.platform.backend.app.router.orders.crud import get_orders_by_user_id
+from ecommerce.backend.app.database import SessionLocal
+import ecommerce.backend.app.models  # SQLAlchemy 모델 레지스트리 선 로드 (mapper 초기화용)
+from ecommerce.backend.app.router.users.crud import get_user_by_email
+from ecommerce.backend.app.router.orders.crud import get_orders_by_user_id
 from openai import OpenAI
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL = "gpt-4o-mini"
-OUTPUT_PATH = DATA_DIR / "intermediate_queries_v5.json"
+OUTPUT_PATH = DATA_DIR / "intermediate_queries_v4.json"
 
 def load_eval_users() -> list:
-    path = PROJECT_ROOT / "ecommerce/chatbot/chatbot_eval/benchmark/eval_data.jsonl"
+    path = PROJECT_ROOT / "chatbot/chatbot_eval/benchmark/eval_data.jsonl"
     users = []
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -115,17 +115,11 @@ def pick_product_info(samples: list[dict]) -> dict:
     return {k: str(v).strip() for k, v in row.items() if str(v).strip() and str(v).strip() != "nan"}
 
 SCENARIOS = [
-    {"id": 1, "name": "주문 취소", "action": "cancel", "possible": True, "required_status": ["preparing", "paid"], "tools": ["cancel", "shipping"], "rag_policy": "optional", "ux_flow": "direct"},
-    {"id": 2, "name": "환불 신청", "action": "refund", "possible": True, "required_status": ["delivered", "shipped"], "tools": ["refund", "shipping"], "rag_policy": "required", "ux_flow": "direct"},
-    {"id": 3, "name": "교환 신청", "action": "exchange", "possible": True, "required_status": ["delivered", "shipped"], "tools": ["exchange", "shipping"], "rag_policy": "optional", "ux_flow": "direct"},
-    {"id": 4, "name": "주문 내역 조회 (주문번호 없음)", "action": "shipping_no_id", "possible": True, "required_status": [], "tools": ["shipping"], "rag_policy": "forbidden", "ux_flow": "direct"},
-    {"id": 5, "name": "주문 내역 조회 (주문번호 있음)", "action": "shipping_with_id", "possible": True, "required_status": [], "tools": ["shipping"], "rag_policy": "forbidden", "ux_flow": "direct"},
-    {"id": 6, "name": "상품 키워드 검색", "action": "search_by_text_clip", "possible": True, "required_status": [], "tools": ["search_by_text_clip"], "rag_policy": "optional", "ux_flow": "direct"},
-    {"id": 7, "name": "의류 추천", "action": "recommend_clothes", "possible": True, "required_status": [], "tools": ["recommend_clothes"], "rag_policy": "optional", "ux_flow": "direct"},
-    # {"id": 8, "name": "이미지 검색", "action": "search_by_image", "possible": True, "required_status": [], "tools": ["search_by_image"], "rag_policy": "optional", "ux_flow": "direct"},
-    {"id": 8, "name": "중고 판매 신청", "action": "used_sale", "possible": True, "required_status": [], "tools": ["open_used_sale_form", "register_used_sale"], "rag_policy": "optional", "ux_flow": "direct"},
-    {"id": 9, "name": "리뷰 작성", "action": "review", "possible": True, "required_status": ["delivered"], "tools": ["generate_review_draft", "create_review"], "rag_policy": "optional", "ux_flow": "direct"},
-    # {"id": 10, "name": "상품권 등록", "action": "register_gift_card", "possible": True, "required_status": [], "tools": ["register_gift_card"], "rag_policy": "optional", "ux_flow": "direct"},
+    {"id": 1, "name": "배송 조회", "action": "shipping", "possible": True, "required_status": ["shipped", "delivered"], "tools": ["shipping"], "rag_policy": "forbidden", "ux_flow": "direct"},
+    {"id": 2, "name": "교환 신청", "action": "exchange", "possible": True, "required_status": ["shipped", "delivered"], "tools": ["exchange"], "rag_policy": "optional", "ux_flow": "direct"},
+    {"id": 3, "name": "환불/반품 신청", "action": "refund", "possible": True, "required_status": ["shipped", "delivered"], "tools": ["refund"], "rag_policy": "required", "ux_flow": "direct"},
+    {"id": 4, "name": "주문 취소", "action": "cancel", "possible": True, "required_status": ["paid", "preparing"], "tools": ["cancel"], "rag_policy": "optional", "ux_flow": "direct"},
+    {"id": 5, "name": "주문 내역 조회", "action": "get_user_orders", "possible": True, "required_status": [], "tools": ["get_user_orders"], "rag_policy": "forbidden", "ux_flow": "direct"},
 ]
 
 def get_query_system_prompt() -> str:
@@ -180,7 +174,7 @@ def generate_query(scenario, product_info, order, user_email):
         user_query = user_query.replace("{{ORDER_ID}}", order["order_id"]).replace("{ORDER_ID}", order["order_id"])
         
         # 특정 시나리오 외에는 주문번호가 무조건 명시적으로 포함되도록 강제
-        if order["order_id"] not in user_query and scenario["action"] not in ["search_by_text_clip", "recommend_clothes", "used_sale", "shipping_no_id"]:
+        if order["order_id"] not in user_query and scenario["action"] not in ["get_user_orders"]:
             user_query += f" (주문번호: {order['order_id']})"
             
         return user_query
@@ -199,7 +193,7 @@ def main():
     all_samples = fashion_samples + clothes_samples
     users = load_eval_users()
     
-    ACTION_TO_EVAL_TYPE = {"cancel": "주문취소", "refund": "환불", "exchange": "교환", "query": "주문조회"}
+    ACTION_TO_EVAL_TYPE = {"cancel": "주문취소", "refund": "환불", "exchange": "교환", "shipping": "배송조회", "get_user_orders": "주문조회"}
     
     queries_data = []
     

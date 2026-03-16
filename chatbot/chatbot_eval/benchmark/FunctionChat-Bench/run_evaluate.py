@@ -108,13 +108,13 @@ def count_lines(path):
         return sum(1 for _ in f)
 
 
-def run_evaluation(mode, model="gpt-4o-mini", trace_count=1):
+def run_evaluation(mode=1, model="inhouse", trace_count=1):
     """Argument Accuracy 평가를 실행합니다."""
     print("🚀 FunctionChat-Bench 평가 파이프라인 시작 (Argument Accuracy)...")
     print(f"   벤치마크 디렉토리: {BENCH_DIR}")
     print(f"   결과 저장 디렉토리: {RESULTS_DIR}")
     global  arg_accuracy_dataset
-    # 데이터셋 경로
+    # 데이터셋 경로 선택
     if mode == 1:
         arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs.jsonl"
     elif mode == 2:
@@ -123,6 +123,9 @@ def run_evaluation(mode, model="gpt-4o-mini", trace_count=1):
         arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs3.jsonl"
     elif mode == 4:
         arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs4.jsonl"
+    else:
+        arg_accuracy_dataset = BENCH_DIR / "data" / "my_eval_arg_accuracy_dialogs.jsonl"
+
     arg_acc_count = count_lines(arg_accuracy_dataset)
 
     # 0. 데이터셋 검증
@@ -139,12 +142,25 @@ def run_evaluation(mode, model="gpt-4o-mini", trace_count=1):
         "dialog",
         "--model",
         model,
+    ]
+
+    # inhouse 모델인 경우 전용 옵션 추가
+    if model == "inhouse":
+        cmd_single.extend([
+            "--served_model_name", "inhouse",
+            "--base_url", "http://localhost:8081/v1",
+            "--api_key", "inhouse"
+        ])
+    else:
+        cmd_single.extend([
+            "--api_key", OPENAI_API_KEY,
+        ])
+
+    cmd_single.extend([
         "--input_path",
         f"data/{arg_accuracy_dataset.name}",
         "--temperature",
         "0.0",
-        "--api_key",
-        OPENAI_API_KEY,
         "--trace_count",
         str(trace_count),
         "--is_batch",
@@ -153,7 +169,7 @@ def run_evaluation(mode, model="gpt-4o-mini", trace_count=1):
         "True",
         "--only_exact",
         "False",
-    ]
+    ])
     results["arg_accuracy"] = run_single_benchmark(
         "Dialog — Argument Accuracy", cmd_single
     )
@@ -181,6 +197,13 @@ def generate_markdown_report(results, model="gpt-4o-mini", trace_count=1):
         / "arg_acc"
         / model
         / f"FunctionChat-{model}.eval_score.json"
+    )
+    eval_report_tsv = (
+        BENCH_DIR
+        / "output"
+        / "arg_acc"
+        / model
+        / f"FunctionChat-Dialog.{model}.eval_report.tsv"
     )
 
     # 데이터셋 경로 및 카운트
@@ -211,7 +234,7 @@ def generate_markdown_report(results, model="gpt-4o-mini", trace_count=1):
 
 """
 
-    # ── Argument Accuracy (Dialog) 결과 ──
+    # ── Argument Accuracy (Dialog) 결과 요약 ──
     if not results.get("arg_accuracy"):
         md_content += "## 📊 Argument Accuracy (Dialog)\n- ❌ 평가 실행에 실패했습니다.\n\n"
     elif single_score_file.exists():
@@ -221,7 +244,7 @@ def generate_markdown_report(results, model="gpt-4o-mini", trace_count=1):
             if data and "dialog_score" in data:
                 sc = data.get("dialog_score", {})
                 call_rate = sc.get("call pass rate", 0) * 100
-                md_content += f"""## 📊 Argument Accuracy (Dialog) 결과
+                md_content += f"""## 📊 Argument Accuracy (Dialog) 요약
 | 지표 | 결과 |
 | :--- | :--- |
 | **전체 테스트 케이스** | {sc.get("total_cnt", 0)}개 |
@@ -237,6 +260,78 @@ def generate_markdown_report(results, model="gpt-4o-mini", trace_count=1):
     else:
         md_content += "## 📊 Argument Accuracy (Dialog)\n- 결과 파일을 찾을 수 없습니다.\n\n"
 
+    # ── 상세 실행 로그 (Tool Calls 포함) ──
+    if eval_report_tsv.exists():
+        md_content += "## 📝 상세 실행 로그 (Tool Calls)\n"
+        md_content += "| 번호 | 결과 | 질의 | 기대되는 도구 (Expected) | 기대되는 인자 | 호출된 도구 (Model) | 모델 인자 (Arguments) |\n"
+        md_content += "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n"
+        
+        try:
+            with open(eval_report_tsv, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                if len(lines) > 1:
+                    header = lines[0].strip().split('\t')
+                    # 헤더 인덱스 찾기
+                    try:
+                        idx_num = header.index("#serial_num")
+                        idx_pass = header.index("is_pass")
+                        idx_query = header.index("query")
+                        idx_output = header.index("model_output")
+                        idx_ground_truth = header.index("ground_truth")
+                    except ValueError:
+                        idx_num, idx_pass, idx_query, idx_output, idx_ground_truth = 0, 1, 7, 5, 3 # Fallback
+
+                    for line in lines[1:]:
+                        parts = line.strip().split('\t')
+                        if len(parts) <= max(idx_num, idx_pass, idx_query, idx_output, idx_ground_truth):
+                            continue
+                        
+                        num = parts[idx_num]
+                        is_pass = "✅ PASS" if parts[idx_pass].lower() == "pass" else "❌ FAIL"
+                        
+                        # Query 추출 (마지막 유저 메시지)
+                        try:
+                            query_json = json.loads(parts[idx_query])
+                            query_text = query_json[-1]["content"] if isinstance(query_json, list) else str(query_json)
+                        except:
+                            query_text = parts[idx_query][:30] + "..."
+                        
+                        # Expected (Ground Truth) 추출
+                        exp_name = "-"
+                        exp_args = "-"
+                        try:
+                            gt_json = json.loads(parts[idx_ground_truth])
+                            gt_tcs = gt_json.get("tool_calls")
+                            if gt_tcs and isinstance(gt_tcs, list) and len(gt_tcs) > 0:
+                                tc = gt_tcs[0]
+                                if "function" in tc:
+                                    fn = tc["function"]
+                                    exp_name = f"`{fn.get('name', '-')}`"
+                                    exp_args = f"`{json.dumps(fn.get('arguments', {}), ensure_ascii=False)}`"
+                        except:
+                            pass
+
+                        # Model Output 추출
+                        tool_name = "-"
+                        tool_args = "-"
+                        try:
+                            output_json = json.loads(parts[idx_output])
+                            tcs = output_json.get("tool_calls")
+                            if tcs and isinstance(tcs, list) and len(tcs) > 0:
+                                tc = tcs[0]
+                                if "function" in tc:
+                                    fn = tc["function"]
+                                    tool_name = f"`{fn.get('name', '-')}`"
+                                    raw_args = fn.get('arguments', '{}')
+                                    tool_args = f"`{raw_args}`"
+                        except:
+                            pass
+                            
+                        md_content += f"| {num} | {is_pass} | {query_text} | {exp_name} | {exp_args} | {tool_name} | {tool_args} |\n"
+            md_content += "\n"
+        except Exception as e:
+            md_content += f"\n> 상세 로그 로드 중 오류 발생: {e}\n\n"
+
     md_content += """---
 *본 보고서는 `run_evaluate.py`에 의해 자동으로 생성되었습니다.*
 """
@@ -251,47 +346,33 @@ def generate_markdown_report(results, model="gpt-4o-mini", trace_count=1):
 
 
 if __name__ == "__main__":
-    if not OPENAI_API_KEY:
-        print("❌ OPENAI_API_KEY가 설정되지 않았습니다. .env 파일을 확인해주세요.")
-        sys.exit(1)
-
-    # 명령행 인자에서 모드(1, 2, 3) 파싱
-    if len(sys.argv) < 2:
-        print("⚠️ 사용법: python run_evaluate.py [1|2|3|4] [trace_count] [model_name]")
-        print("   1: my_eval_arg_accuracy_dialogs.jsonl")
-        print("   2: my_eval_arg_accuracy_dialogs2.jsonl")
-        print("   3: my_eval_arg_accuracy_dialogs3.jsonl")
-        print("   4: my_eval_arg_accuracy_dialogs4.jsonl")
-        print("   trace_count: LangSmith에 트레이싱할 샘플 수 (기본값: 1)")
-        print("   model_name: 평가할 모델 이름 (기본값: gpt-4o-mini)")
-        sys.exit(1)
-    
-    try:
-        mode = int(sys.argv[1])
-    except ValueError:
-        print("❌ 모드는 숫자(1, 2, 3, 4)여야 합니다.")
-        sys.exit(1)
-
-    if mode not in [1, 2, 3, 4]:
-        print("❌ 올바른 모드(1, 2, 3, 4)를 입력해주세요.")
-        sys.exit(1)
-
-    # 파라미터 파싱 logic
+    # 기본값 설정
+    mode = 1
     trace_count = 1
-    model = "gpt-4o-mini"
+    model = "inhouse"
     
-    if len(sys.argv) > 2:
-        if sys.argv[2].isdigit():
-            trace_count = int(sys.argv[2])
-            if len(sys.argv) > 3:
-                model = sys.argv[3]
+    # 인자 파싱 (모드, 트레이스, 모델 순)
+    if len(sys.argv) > 1:
+        # 첫 번째 인자: 모드 (숫자)
+        if sys.argv[1].isdigit():
+            mode = int(sys.argv[1])
+            
+            # 두 번째 인자: 트레이스 카운트 (숫자) 또는 모델명
+            if len(sys.argv) > 2:
+                if sys.argv[2].isdigit():
+                    trace_count = int(sys.argv[2])
+                    # 세 번째 인자: 모델명
+                    if len(sys.argv) > 3:
+                        model = sys.argv[3]
+                else:
+                    model = sys.argv[2]
         else:
-            # 2번째 인자가 숫자가 아니면 모델명으로 간주
-            model = sys.argv[2]
-            if len(sys.argv) > 3 and sys.argv[3].isdigit():
-                # 순서가 바뀌어서 들어온 경우 대응 (옵션)
-                trace_count = int(sys.argv[3])
+            # 첫 번째 인자가 숫자가 아니면 모델명으로 간주
+            model = sys.argv[1]
 
+    dataset_name = f"my_eval_arg_accuracy_dialogs{str(mode) if mode > 1 else ''}.jsonl"
+    print(f"📊 실행 설정: Mode={mode}, Dataset={dataset_name}, Model={model}, TraceCount={trace_count}")
+    
     results = run_evaluation(mode, model, trace_count)
     if results:
         generate_markdown_report(results, model, trace_count)

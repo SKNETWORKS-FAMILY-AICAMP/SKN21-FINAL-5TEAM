@@ -15,6 +15,11 @@
                         "type": "integer",
                         "description": "요청자 사용자 ID",
                         "default": 1
+                    },
+                    "access_token": {
+                        "type": "string",
+                        "description": "인증 토큰",
+                        "default": null
                     }
                 },
                 "required": []
@@ -25,7 +30,7 @@
         "type": "function",
         "function": {
             "name": "cancel",
-            "description": "주문을 즉시 취소합니다. 배송 시작 전 단계(결제 완료, 상품 준비중)에서만 사용 가능합니다. 취소 사유가 반드시 포함되어야 합니다.",
+            "description": "주문을 즉시 취소합니다. 배송 시작 전 단계(결제 완료, 상품 준비중)에서만 사용 가능합니다. 취소 사유가 포함될 수 있습니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -38,6 +43,11 @@
                         "description": "요청자 사용자 ID",
                         "default": 1
                     },
+                    "access_token": {
+                        "type": "string",
+                        "description": "인증 토큰",
+                        "default": null
+                    },
                     "reason": {
                         "type": "string",
                         "description": "취소 사유",
@@ -45,7 +55,7 @@
                     },
                     "confirmed": {
                         "type": "boolean",
-                        "description": "사용자 확인 여부 (True일 경우에만 실제 DB 반영)",
+                        "description": "사용자 확인 여부 (True일 경우에만 실제 처리)",
                         "default": null
                     }
                 },
@@ -70,24 +80,19 @@
                         "description": "요청자 사용자 ID",
                         "default": 1
                     },
+                    "access_token": {
+                        "type": "string",
+                        "description": "인증 토큰",
+                        "default": null
+                    },
                     "reason": {
                         "type": "string",
                         "description": "반품 사유",
                         "default": "단순 변심"
                     },
-                    "is_seller_fault": {
-                        "type": "boolean",
-                        "description": "판매자 귀책 여부 (True면 반품 배송비 0원)",
-                        "default": false
-                    },
-                    "pickup_address": {
-                        "type": "string",
-                        "description": "(선택) 반품 수거지 주소. 입력되지 않은 경우 주문 시 배송지를 사용합니다.",
-                        "default": null
-                    },
                     "confirmed": {
                         "type": "boolean",
-                        "description": "사용자 확인 여부. None이면 checkpoint로 승인 요청을 발생시킵니다.",
+                        "description": "사용자 확인 여부 (True일 경우에만 실제 처리)",
                         "default": null
                     }
                 },
@@ -149,19 +154,14 @@
                         "description": "교환 사유",
                         "default": "단순 변심"
                     },
-                    "is_seller_fault": {
-                        "type": "boolean",
-                        "description": "판매자 귀책 여부",
-                        "default": false
-                    },
-                    "new_option_id": {
-                        "type": "integer",
-                        "description": "(선택) 교환할 새로운 옵션 ID",
-                        "default": null
-                    },
                     "pickup_address": {
                         "type": "string",
                         "description": "(선택) 반품 수거지 주소. 입력되지 않은 경우 주문 시 배송지를 사용합니다.",
+                        "default": null
+                    },
+                    "new_option_id": {
+                        "type": "integer",
+                        "description": "교환할 새로운 옵션 ID",
                         "default": null
                     },
                     "confirmed": {
