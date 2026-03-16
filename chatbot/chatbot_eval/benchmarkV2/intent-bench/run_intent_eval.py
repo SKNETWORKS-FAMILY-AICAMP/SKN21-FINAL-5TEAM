@@ -1,32 +1,42 @@
 """
-Intent 분류 평가 실행기.
+Supervisor 라우팅 평가 실행기.
 
-intent_dataset.jsonl을 로드하여 planner_node를 직접 호출하고,
-분류 정확도를 측정하여 result_intent_rate.json으로 저장합니다.
+supervisor_eval_dataset.jsonl을 로드하여 planner_node를 호출하고,
+supervisor의 _INTENT_TO_NODE 매핑으로 라우팅 결과를 시뮬레이션하여
+4개 subagent(order_intent_router, discovery_subagent, policy_rag_subagent,
+form_action_subagent)로 정확하게 라우팅되는지 평가합니다.
+
+단일 의도만 평가하며, result.json에는 details 없이 메트릭만 누적 저장합니다.
 """
 
 import argparse
 import json
 import sys
 import time
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 # ── 경로 설정 ──────────────────────────────────────────────
-# [변경 포인트] 아래 DATASET_PATH를 변경하여 평가할 데이터셋을 전환할 수 있습니다.
-# - 평가 데이터셋 사용 시: "intent_eval_dataset.jsonl"
-# - 학습 데이터셋 사용 시: "intent_train_dataset.jsonl"
-# 또는 CLI에서 --dataset 인자로 지정 가능:
-#   python run_intent_eval.py --dataset intent_train_dataset.jsonl
 
 BENCH_DIR = Path(__file__).resolve().parent
-DATASET_PATH = BENCH_DIR / "intent_eval_dataset.jsonl"        # ← 학습용: "intent_train_dataset.jsonl"으로 변경
-_RESULT_DIR = BENCH_DIR.parent / "result" / "intent-bench"
-_RESULT_DIR.mkdir(parents=True, exist_ok=True)
-RESULT_PATH = _RESULT_DIR / "result_intent_rate.json"
+DATASET_PATH = BENCH_DIR / "supervisor_eval_dataset.jsonl"
+_RESULT_BASE_DIR = BENCH_DIR.parent / "result"
+
+# TaskIntent → 평가용 노드 이름 매핑
+# supervisor.py의 _INTENT_TO_NODE 기반, order_entry → order_intent_router로 표기
+INTENT_TO_NODE: dict[str, str] = {
+    "ORDER_CS":             "order_intent_router",
+    "SEARCH_SIMILAR_TEXT":  "discovery_subagent",
+    "SEARCH_SIMILAR_IMAGE": "discovery_subagent",
+    "POLICY_RAG":           "policy_rag_subagent",
+    "REGISTER_USED_ITEM":   "form_action_subagent",
+    "WRITE_REVIEW":         "form_action_subagent",
+    "REGISTER_GIFT_CARD":   "form_action_subagent",
+    "GENERAL_CHAT":         "final_generator",
+}
 
 
 def _find_project_root(start: Path, marker: str = ".env") -> Path:
@@ -44,7 +54,6 @@ load_dotenv(_PROJECT_ROOT / ".env")
 
 from langchain_core.messages import HumanMessage  # noqa: E402
 
-from chatbot.benchmark.evaluator.metrics import EvaluationMetrics  # noqa: E402
 from chatbot.src.graph.nodes.planner import planner_node  # noqa: E402
 from chatbot.src.schemas.planner import TaskIntent  # noqa: E402
 
@@ -63,15 +72,15 @@ def load_dataset(path: Path) -> list[dict]:
     return samples
 
 
-# ── Planner 호출 ──────────────────────────────────────────
+# ── Planner 호출 → 노드 라우팅 시뮬레이션 ─────────────────
 
 
-def call_planner(
+def predict_nodes(
     user_input: str,
     provider: str = "openai",
     model: str = "gpt-4o-mini",
 ) -> list[str]:
-    """planner_node를 최소 GlobalAgentState로 호출하여 predicted intents 반환."""
+    """planner_node 호출 → intent → INTENT_TO_NODE 매핑으로 예측 노드 반환."""
     state = {
         "messages": [HumanMessage(content=user_input)],
         "llm_provider": provider,
@@ -79,59 +88,39 @@ def call_planner(
         "conversation_summary": None,
     }
     result = planner_node(state)
-    predicted = result.get("pending_tasks", [])
+    predicted_intents = result.get("pending_tasks", [])
 
-    # TaskIntent enum일 수 있으므로 문자열로 통일
-    return [
-        t.value if isinstance(t, TaskIntent) else str(t)
-        for t in predicted
-    ]
-
-
-# ── 평가 메트릭 계산 ──────────────────────────────────────
+    nodes = []
+    for intent in predicted_intents:
+        intent_str = intent.value if isinstance(intent, TaskIntent) else str(intent)
+        node = INTENT_TO_NODE.get(intent_str, "final_generator")
+        nodes.append(node)
+    return nodes
 
 
-def evaluate_single_sample(
-    predicted: list[str], expected: list[str],
-) -> dict:
-    """단일 샘플 평가 결과 반환."""
-    # Exact match (순서 무관)
-    exact_match = set(predicted) == set(expected)
-
-    # Set 기반 precision/recall/f1
-    pred_set = set(predicted)
-    exp_set = set(expected)
-    tp = len(pred_set & exp_set)
-    fp = len(pred_set - exp_set)
-    fn = len(exp_set - pred_set)
-
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-
-    return {
-        "exact_match": exact_match,
-        "precision": precision,
-        "recall": recall,
-        "f1": f1,
-    }
+# ── 샘플별 평가 ──────────────────────────────────────────
 
 
-def build_confusion_matrix(
-    details: list[dict],
-) -> dict[str, dict[str, int]]:
-    """단일 의도 샘플에서 confusion matrix 생성."""
+def evaluate_sample(
+    sample: dict,
+    predicted_nodes: list[str],
+) -> bool:
+    """예측 노드가 기대 노드와 일치하는지 반환."""
+    exp_node = sample["expected_node"]
+    pred_node = predicted_nodes[0] if predicted_nodes else "NONE"
+    return pred_node == exp_node
+
+
+# ── Confusion Matrix ────────────────────────────────────
+
+
+def build_confusion(details: list[dict]) -> dict[str, dict[str, int]]:
+    """confusion matrix 생성."""
     matrix: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-
     for d in details:
-        if d["category"] != "single":
-            continue
-        expected = d["expected"][0]
-        # 예측이 단일이면 첫 번째, 아니면 첫 번째 사용
-        predicted = d["predicted"][0] if d["predicted"] else "NONE"
+        expected = d["expected_node"]
+        predicted = d["predicted_node"]
         matrix[expected][predicted] += 1
-
-    # defaultdict → 일반 dict 변환
     return {k: dict(v) for k, v in matrix.items()}
 
 
@@ -140,63 +129,61 @@ def build_confusion_matrix(
 
 def run_evaluation(
     dataset_path: Path = DATASET_PATH,
-    result_path: Path = RESULT_PATH,
+    result_path: Path | None = None,
     provider: str = "openai",
     model: str = "gpt-4o-mini",
     num_samples: int | None = None,
 ) -> dict:
     """전체 평가 실행."""
+    if result_path is None:
+        result_dir = _RESULT_BASE_DIR / "supervisor_eval"
+        result_dir.mkdir(parents=True, exist_ok=True)
+        result_path = result_dir / "result.json"
+
     samples = load_dataset(dataset_path)
     if num_samples:
         samples = samples[:num_samples]
 
-    print(f"=== Intent 분류 평가 시작 ===")
+    print("=== Supervisor 라우팅 평가 시작 ===")
     print(f"  모델: {provider}/{model}")
     print(f"  샘플 수: {len(samples)}")
     print()
 
     details: list[dict] = []
-    # F1 계산용: 단일 의도만
-    all_predicted_single: list[str] = []
-    all_expected_single: list[str] = []
+    all_pred_nodes: list[str] = []
+    all_exp_nodes: list[str] = []
 
     start_time = time.time()
 
     for i, sample in enumerate(samples):
         user_input = sample["input"]
-        expected = sample["expected_intents"]
-        category = sample.get("category", "single")
 
+        # planner → supervisor 라우팅 시뮬레이션
         try:
-            predicted = call_planner(user_input, provider, model)
+            predicted_nodes = predict_nodes(user_input, provider, model)
         except Exception as e:
             print(f"  [{i+1}/{len(samples)}] 오류: {e}")
-            predicted = ["GENERAL_CHAT"]
+            predicted_nodes = ["final_generator"]
 
-        eval_result = evaluate_single_sample(predicted, expected)
+        correct = evaluate_sample(sample, predicted_nodes)
 
-        detail = {
+        pred_node = predicted_nodes[0] if predicted_nodes else "NONE"
+        all_pred_nodes.append(pred_node)
+        all_exp_nodes.append(sample["expected_node"])
+
+        details.append({
             "input": user_input,
-            "expected": expected,
-            "predicted": predicted,
-            "category": category,
-            "correct": eval_result["exact_match"],
-            "precision": eval_result["precision"],
-            "recall": eval_result["recall"],
-            "f1": eval_result["f1"],
-        }
-        details.append(detail)
+            "predicted_node": pred_node,
+            "expected_node": sample["expected_node"],
+            "correct": correct,
+        })
 
-        # 단일 의도용 F1 집계
-        if category == "single":
-            all_predicted_single.append(predicted[0] if predicted else "NONE")
-            all_expected_single.append(expected[0])
-
-        status = "O" if eval_result["exact_match"] else "X"
+        # 콘솔 출력
+        status = "O" if correct else "X"
         print(
             f"  [{i+1}/{len(samples)}] {status}  "
-            f"예상: {expected}  예측: {predicted}  "
-            f"입력: {user_input[:40]}..."
+            f"기대: {sample['expected_node']}  예측: {pred_node}  "
+            f"입력: {user_input[:50]}..."
         )
 
     elapsed = time.time() - start_time
@@ -204,26 +191,38 @@ def run_evaluation(
     # ── 통계 계산 ──────────────────────────────────────────
 
     total = len(details)
-    correct = sum(1 for d in details if d["correct"])
+    correct_total = sum(1 for d in details if d["correct"])
 
-    # 카테고리별 분리
-    single_details = [d for d in details if d["category"] == "single"]
-    multi_details = [d for d in details if d["category"] == "multi"]
-
-    single_correct = sum(1 for d in single_details if d["correct"])
-    multi_correct = sum(1 for d in multi_details if d["correct"])
-
-    # 기존 metrics.py의 intent_f1_score 활용
-    per_intent_f1 = {}
+    # 노드별 F1 (단일 샘플 기준)
+    per_node_f1: dict = {}
     macro_f1 = 0.0
-    if all_predicted_single and all_expected_single:
-        per_intent_f1 = EvaluationMetrics.intent_f1_score(
-            all_predicted_single, all_expected_single,
-        )
-        macro_f1 = per_intent_f1.get("macro_avg", {}).get("f1", 0.0)
+    if all_pred_nodes and all_exp_nodes:
+        all_labels = sorted(set(all_pred_nodes + all_exp_nodes))
+        for label in all_labels:
+            tp = sum(1 for p, e in zip(all_pred_nodes, all_exp_nodes) if p == label and e == label)
+            fp = sum(1 for p, e in zip(all_pred_nodes, all_exp_nodes) if p == label and e != label)
+            fn = sum(1 for p, e in zip(all_pred_nodes, all_exp_nodes) if p != label and e == label)
+            support = tp + fn
+            prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+            rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+            per_node_f1[label] = {
+                "precision": round(prec, 4),
+                "recall": round(rec, 4),
+                "f1": round(f1, 4),
+                "support": support,
+            }
+
+        node_f1s = [v["f1"] for v in per_node_f1.values()]
+        macro_f1 = sum(node_f1s) / len(node_f1s)
+        per_node_f1["macro_avg"] = {
+            "precision": round(sum(v["precision"] for v in per_node_f1.values() if "support" in v) / len(node_f1s), 4),
+            "recall": round(sum(v["recall"] for v in per_node_f1.values() if "support" in v) / len(node_f1s), 4),
+            "f1": round(macro_f1, 4),
+        }
 
     # Confusion matrix
-    confusion = build_confusion_matrix(details)
+    confusion = build_confusion(details)
 
     # ── 결과 조립 ──────────────────────────────────────────
 
@@ -233,81 +232,86 @@ def run_evaluation(
         "elapsed_seconds": round(elapsed, 2),
         "total_samples": total,
         "metrics": {
-            "overall_accuracy": round(correct / total, 4) if total else 0.0,
-            "single_intent_accuracy": (
-                round(single_correct / len(single_details), 4)
-                if single_details else 0.0
-            ),
-            "multi_intent_exact_match": (
-                round(multi_correct / len(multi_details), 4)
-                if multi_details else 0.0
-            ),
-            "per_intent_f1": per_intent_f1,
+            "accuracy": round(correct_total / total, 4) if total else 0.0,
+            "per_node_f1": per_node_f1,
             "macro_f1": round(macro_f1, 4),
             "confusion_matrix": confusion,
         },
         "summary": {
             "total": total,
-            "correct": correct,
-            "single_total": len(single_details),
-            "single_correct": single_correct,
-            "multi_total": len(multi_details),
-            "multi_correct": multi_correct,
+            "correct": correct_total,
         },
-        "details": details,
     }
 
-    # 저장
+    # 결과 누적 저장 (메트릭만)
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    history: list[dict] = []
+    if result_path.exists():
+        with open(result_path, encoding="utf-8") as f:
+            history = json.load(f)
+    history.append(result)
     with open(result_path, "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+    # 상세 예측 데이터 누적 저장 (result_data.json)
+    result_data_path = result_path.parent / "result_data.json"
+    result_data = {
+        "model": f"{provider}/{model}",
+        "timestamp": result["timestamp"],
+        "total_samples": total,
+        "details": details,
+    }
+    data_history: list[dict] = []
+    if result_data_path.exists():
+        with open(result_data_path, encoding="utf-8") as f:
+            data_history = json.load(f)
+    data_history.append(result_data)
+    with open(result_data_path, "w", encoding="utf-8") as f:
+        json.dump(data_history, f, ensure_ascii=False, indent=2)
 
     # ── 결과 출력 ──────────────────────────────────────────
 
-    print(f"\n{'='*50}")
-    print(f"=== 평가 결과 ===")
-    print(f"{'='*50}")
+    print(f"\n{'='*55}")
+    print("=== Supervisor 라우팅 평가 결과 ===")
+    print(f"{'='*55}")
     print(f"  모델: {provider}/{model}")
     print(f"  소요 시간: {elapsed:.1f}초")
-    print(f"  전체 정확도: {result['metrics']['overall_accuracy']:.2%} ({correct}/{total})")
-    print(f"  단일 의도 정확도: {result['metrics']['single_intent_accuracy']:.2%} ({single_correct}/{len(single_details)})")
-    print(f"  복합 의도 Exact Match: {result['metrics']['multi_intent_exact_match']:.2%} ({multi_correct}/{len(multi_details)})")
-    print(f"  Macro F1: {macro_f1:.4f}")
+    print(f"\n  [라우팅 정확도]")
+    print(f"    정확도: {result['metrics']['accuracy']:.2%} ({correct_total}/{total})")
+    print(f"    Macro F1: {macro_f1:.4f}")
 
-    if per_intent_f1:
-        print(f"\n  [Intent별 F1]")
-        for intent, scores in sorted(per_intent_f1.items()):
-            if intent == "macro_avg":
+    if per_node_f1:
+        print(f"\n  [노드별 F1]")
+        for node, scores in sorted(per_node_f1.items()):
+            if node == "macro_avg":
                 continue
-            if isinstance(scores, dict):
-                print(
-                    f"    {intent}: "
-                    f"P={scores.get('precision', 0):.3f} "
-                    f"R={scores.get('recall', 0):.3f} "
-                    f"F1={scores.get('f1', 0):.3f} "
-                    f"(n={scores.get('support', 0)})"
-                )
+            print(
+                f"    {node}: "
+                f"P={scores['precision']:.3f} "
+                f"R={scores['recall']:.3f} "
+                f"F1={scores['f1']:.3f} "
+                f"(n={scores.get('support', '-')})"
+            )
 
     if confusion:
         print(f"\n  [Confusion Matrix]")
-        all_intents = sorted(set(
+        all_nodes = sorted(set(
             list(confusion.keys()) +
             [p for row in confusion.values() for p in row.keys()]
         ))
-        # 헤더
-        header = f"{'실제\\예측':>25s}"
-        for intent in all_intents:
-            short = intent[:8]
-            header += f" {short:>8s}"
+        header = f"{'실제\\예측':>22s}"
+        for n in all_nodes:
+            header += f" {n[:14]:>14s}"
         print(f"    {header}")
-        # 행
-        for actual in all_intents:
-            row = f"{actual:>25s}"
-            for pred in all_intents:
+        for actual in all_nodes:
+            row = f"{actual[:14]:>22s}"
+            for pred in all_nodes:
                 count = confusion.get(actual, {}).get(pred, 0)
-                row += f" {count:>8d}"
+                row += f" {count:>14d}"
             print(f"    {row}")
 
     print(f"\n  결과 저장: {result_path}")
+    print(f"  상세 데이터 저장: {result_data_path}")
 
     return result
 
@@ -316,7 +320,7 @@ def run_evaluation(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Intent 분류 평가 실행")
+    parser = argparse.ArgumentParser(description="Supervisor 라우팅 평가 실행")
     parser.add_argument(
         "--provider", type=str, default="openai",
         help="LLM provider (기본: openai)",
@@ -327,11 +331,11 @@ def main():
     )
     parser.add_argument(
         "--dataset", type=str, default=None,
-        help="평가 데이터셋 경로 (기본: intent_dataset.jsonl)",
+        help="평가 데이터셋 경로 (기본: supervisor_eval_dataset.jsonl)",
     )
     parser.add_argument(
         "--output", type=str, default=None,
-        help="결과 저장 경로 (기본: result_intent_rate.json)",
+        help="결과 저장 경로",
     )
     parser.add_argument(
         "--num-samples", type=int, default=None,
@@ -340,7 +344,7 @@ def main():
     args = parser.parse_args()
 
     dataset_path = Path(args.dataset) if args.dataset else DATASET_PATH
-    result_path = Path(args.output) if args.output else RESULT_PATH
+    result_path = Path(args.output) if args.output else None
 
     if not dataset_path.exists():
         print(f"[오류] {dataset_path} 파일을 찾을 수 없습니다.")
