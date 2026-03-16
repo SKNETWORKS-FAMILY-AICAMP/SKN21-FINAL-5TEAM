@@ -37,6 +37,21 @@ QUERY_TRANSFORM_PROMPT = """당신은 검색 쿼리 최적화 전문가입니다
 
 입력: "배송이 너무 오래 걸리는데 언제쯤 오나요?"
 출력: "배송 소요 기간 일정"
+
+입력: "결제 후 며칠 안에 취소 가능해요?"
+출력: "주문 취소 가능 여부 상품준비중 취소 방법"
+
+입력: "환불받으면 돈은 언제 들어와요?"
+출력: "주문 취소 환불 금액 입금 시점"
+
+입력: "색상만 바꾸고 싶은데 교환 신청은 어떻게 해요?"
+출력: "상품 교환 신청 방법 절차"
+
+입력: "결제수단은 어떤 것들 쓸 수 있어요?"
+출력: "결제수단 결제 방법 종류"
+
+입력: "AS는 어디로 문의해야 하나요?"
+출력: "구매한 상품 A/S 필요 문의 방법"
 """
 
 POLICY_RAG_ANSWER_PROMPT = """당신은 MOYEO 쇼핑몰 CS 상담원입니다.
@@ -50,6 +65,50 @@ POLICY_RAG_ANSWER_PROMPT = """당신은 MOYEO 쇼핑몰 CS 상담원입니다.
 [참고 문서]
 {context}
 """
+
+
+def run_policy_rag_pipeline(
+    messages: list,
+    provider: str = "openai",
+    model: str = "gpt-4o-mini",
+) -> dict:
+    """실서비스와 동일한 Policy RAG 파이프라인을 실행하고 중간 산출물을 반환합니다."""
+    llm = make_chat_llm(provider=provider, model=model, temperature=0)
+
+    user_query = _get_last_user_message(messages)
+    if not user_query:
+        raise ValueError("사용자 질문을 찾을 수 없습니다.")
+
+    transform_response = llm.invoke([
+        SystemMessage(content=QUERY_TRANSFORM_PROMPT),
+        HumanMessage(content=user_query),
+    ])
+    optimized_query = str(transform_response.content).strip()
+
+    retrieval_result = search_knowledge_base.invoke({"query": optimized_query})
+    documents: list[str] = retrieval_result.get("documents", [])
+    used_fallback = False
+
+    if not documents:
+        retrieval_result = search_knowledge_base.invoke({"query": user_query})
+        documents = retrieval_result.get("documents", [])
+        used_fallback = True
+
+    context = "\n\n".join(documents) if documents else "관련 정책 문서를 찾을 수 없습니다."
+
+    answer_response = llm.invoke([
+        SystemMessage(content=POLICY_RAG_ANSWER_PROMPT.format(context=context)),
+        *messages,
+    ])
+    answer_content = str(answer_response.content)
+
+    return {
+        "user_query": user_query,
+        "optimized_query": optimized_query,
+        "retrieval_result": retrieval_result,
+        "used_fallback": used_fallback,
+        "answer_content": answer_content,
+    }
 
 
 # ── 노드 함수 ─────────────────────────────────────────────
@@ -66,38 +125,19 @@ def policy_rag_subagent_node(state: GlobalAgentState) -> dict:
     model = state.get("llm_model", "gpt-4o-mini")
     task = state.get("current_active_task")
 
-    llm = make_chat_llm(provider=provider, model=model, temperature=0)
-
-    # 사용자의 가장 최근 Human 메시지 추출
-    user_query = _get_last_user_message(state["messages"])
-    if not user_query:
+    if not _get_last_user_message(state["messages"]):
         return _error_response(state, task, "사용자 질문을 찾을 수 없습니다.")
 
-    # ── Step 1. Query Transformation ──────────────────────
-    transform_response = llm.invoke([
-        SystemMessage(content=QUERY_TRANSFORM_PROMPT),
-        HumanMessage(content=user_query),
-    ])
-    optimized_query = str(transform_response.content).strip()
+    try:
+        pipeline_result = run_policy_rag_pipeline(
+            messages=state["messages"],
+            provider=provider,
+            model=model,
+        )
+    except Exception as exc:
+        return _error_response(state, task, str(exc))
 
-    # ── Step 2. Retrieve ──────────────────────────────────
-    retrieval_result = search_knowledge_base.invoke({"query": optimized_query})
-    documents: list[str] = retrieval_result.get("documents", [])
-
-    if not documents:
-        # 검색 결과 없음 → 원본 쿼리로 재시도
-        retrieval_result = search_knowledge_base.invoke({"query": user_query})
-        documents = retrieval_result.get("documents", [])
-
-    # ── Step 3. Generate ──────────────────────────────────
-    context = "\n\n".join(documents) if documents else "관련 정책 문서를 찾을 수 없습니다."
-
-    answer_response = llm.invoke([
-        SystemMessage(content=POLICY_RAG_ANSWER_PROMPT.format(context=context)),
-        *state["messages"],
-    ])
-
-    answer_content = str(answer_response.content)
+    answer_content = pipeline_result["answer_content"]
     answer_message = AIMessage(content=answer_content)
 
     return {
