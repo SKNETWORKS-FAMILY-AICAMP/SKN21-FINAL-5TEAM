@@ -151,6 +151,7 @@ type UsedSaleSubmissionPayload = {
   source: 'used_sale_form_ui';
 };
 
+
 const resolveImageUrl = (source?: string | { _url?: string; url?: string } | null): string => {
   if (!source) return '';
   if (typeof source === 'string') return source;
@@ -187,6 +188,7 @@ declare global {
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const CHATBOT_SITE_ID = 'site-c';
 const ORDER_LIST_BASE_MESSAGE = '최근 30일간의 주문 목록입니다.';
 
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.2'] as const;
@@ -791,6 +793,7 @@ export default function ChatbotFab() {
           resume_payload: resumePayload,
           provider,
           model: selectedModel,
+          site_id: CHATBOT_SITE_ID,
         }),
       });
 

@@ -22,7 +22,13 @@ class GlobalAgentState(TypedDict):
     # ---------------------------------------------------------
     # 도메인별 페이로드 격리 → Sub-agent 간 Instruction Pollution 방지
     order_context: Dict[str, Any]
-    # 예: {"target_order_id": "ORD-123", "selected_items": ["ITEM-A"], "refund_reason": None}
+    # 예:
+    # {
+    #   "target_order_id": "ORD-123",
+    #   "pending_action": "refund",
+    #   "action_status": "waiting_user",
+    #   "awaiting_resume_for": "order_selection",
+    # }
 
     search_context: Dict[str, Any]
     # 예: {"search_query": "파티용 하의", "image_url": "https://...", "retrieved_products": []}

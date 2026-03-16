@@ -12,7 +12,7 @@ Planner 노드.
 
 from typing import cast
 
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import ValidationError
 
 from chatbot.src.graph.state import GlobalAgentState
@@ -71,8 +71,12 @@ def planner_node(state: GlobalAgentState) -> dict:
     )
     system_content = PLANNER_SYSTEM_PROMPT + summary_prefix
 
-    # 시스템 프롬프트 + 현재까지의 대화 이력 전달
-    input_messages = [SystemMessage(content=system_content)] + list(state["messages"])
+    # Planner는 현재 턴의 실행 계획만 생성해야 하므로
+    # 누적 대화 전체가 아니라 마지막 사용자 메시지만 읽습니다.
+    latest_user_message = _get_last_user_message(state.get("messages", []))
+    input_messages = [SystemMessage(content=system_content)]
+    if latest_user_message:
+        input_messages.append(HumanMessage(content=latest_user_message))
 
     try:
         result = cast(PlannerOutput, structured_llm.invoke(input_messages))
@@ -99,3 +103,12 @@ def route_after_planner(state: GlobalAgentState) -> str:
         return "final_generator"
 
     return "supervisor"
+
+
+def _get_last_user_message(messages: list) -> str | None:
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            content = str(msg.content).strip()
+            if content:
+                return content
+    return None

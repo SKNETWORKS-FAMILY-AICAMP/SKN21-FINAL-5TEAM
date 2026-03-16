@@ -306,6 +306,52 @@ def _require_order_id(
             return selected_order_id
 
 
+def _resolve_order_id_or_payload(
+    *,
+    user_id: int,
+    order_id: str | None,
+    action_context: str,
+    limit: int = 5,
+    days: int = 30,
+) -> tuple[str | None, dict | None]:
+    """주문번호를 해결하거나, 선택용 UI payload를 반환합니다."""
+    provided = (order_id or "").strip()
+    if provided:
+        return provided, None
+
+    order_list_payload = get_user_orders(
+        user_id=user_id,
+        limit=limit,
+        days=days,
+        requires_selection=True,
+        action_context=action_context,
+    )
+
+    if order_list_payload.get("total_orders", 0) == 0:
+        return None, {
+            "ui_action": "show_order_list",
+            "message": order_list_payload.get("message", "주문 내역이 없습니다."),
+            "ui_data": order_list_payload.get("ui_data", []),
+            "requires_selection": False,
+            "prior_action": action_context,
+        }
+
+    while True:
+        resume_value = interrupt(
+            {
+                "ui_action": "show_order_list",
+                "action": "select_order",
+                "message": order_list_payload.get("message", "주문을 선택해주세요."),
+                "ui_data": order_list_payload.get("ui_data", []),
+                "requires_selection": True,
+                "prior_action": action_context,
+            }
+        )
+        selected_order_id = _extract_order_id_from_resume(resume_value)
+        if selected_order_id:
+            return selected_order_id, None
+
+
 def _build_exchange_option_candidates(db: Session, order: Order) -> list[dict]:
     """주문과 동일 상품군의 교환 가능 옵션 목록(UI 표시용)을 구성합니다."""
     if not order.items:
@@ -596,12 +642,14 @@ def cancel_order(
     """
     db = SessionLocal()
     try:
-        resolved_order_id = _require_order_id(
+        resolved_order_id, selection_payload = _resolve_order_id_or_payload(
             user_id=user_id,
             order_id=order_id,
             action_context="cancel",
         )
         if not resolved_order_id:
+            if selection_payload:
+                return selection_payload
             return {
                 "success": False,
                 "needs_order_id": True,
@@ -983,12 +1031,14 @@ def change_product_option(
     """
     db = SessionLocal()
     try:
-        resolved_order_id = _require_order_id(
+        resolved_order_id, selection_payload = _resolve_order_id_or_payload(
             user_id=user_id,
             order_id=order_id,
             action_context="exchange",
         )
         if not resolved_order_id:
+            if selection_payload:
+                return selection_payload
             return {
                 "success": False,
                 "needs_order_id": True,
@@ -1171,12 +1221,14 @@ def register_exchange_request(
                 "needs_order_id": True,
             }
 
-        resolved_order_id = _require_order_id(
+        resolved_order_id, selection_payload = _resolve_order_id_or_payload(
             user_id=user_id,
             order_id=order_id,
             action_context="exchange",
         )
         if not resolved_order_id:
+            if selection_payload:
+                return selection_payload
             return {
                 "success": False,
                 "needs_order_id": True,
@@ -1303,12 +1355,14 @@ def get_shipping_details(order_id: str | None = None, user_id: int = 1) -> dict:
     """
     db = SessionLocal()
     try:
-        resolved_order_id = _require_order_id(
+        resolved_order_id, selection_payload = _resolve_order_id_or_payload(
             user_id=user_id,
             order_id=order_id,
             action_context="shipping",
         )
         if not resolved_order_id:
+            if selection_payload:
+                return selection_payload
             return {
                 "success": False,
                 "needs_order_id": True,
@@ -1542,4 +1596,3 @@ def get_user_orders(
         return {"error": f"주문 목록 조회 실패: {str(e)}"}
     finally:
         db.close()
-

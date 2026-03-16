@@ -29,6 +29,7 @@ from chatbot.src.adapters.setup import get_adapter
 from chatbot.src.tools.order_tools import (
     _is_langgraph_interrupt_error,
     _require_order_id,
+    _resolve_order_id_or_payload,
     _require_human_confirmation,
     _extract_order_id_from_resume,
     _extract_optional_confirmation_from_resume,
@@ -95,12 +96,14 @@ def cancel_order_via_adapter(
         취소 처리 결과
     """
     try:
-        resolved_order_id = _require_order_id(
+        resolved_order_id, selection_payload = _resolve_order_id_or_payload(
             user_id=user_id,
             order_id=order_id,
             action_context="cancel",
         )
         if not resolved_order_id:
+            if selection_payload:
+                return selection_payload
             return {
                 "success": False,
                 "needs_order_id": True,
@@ -309,12 +312,14 @@ def get_shipping_via_adapter(
         배송 상태, 택배사 정보, 송장번호 등
     """
     try:
-        resolved_order_id = _require_order_id(
+        resolved_order_id, selection_payload = _resolve_order_id_or_payload(
             user_id=user_id,
             order_id=order_id,
             action_context="shipping",
         )
         if not resolved_order_id:
+            if selection_payload:
+                return selection_payload
             return {
                 "success": False,
                 "needs_order_id": True,

@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>예상 성과</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet"/>
+<style>body {
+    margin: 0;
+    padding: 0;
+    font-family: "Noto Sans KR", sans-serif;
+    background-color: #fff
+    }
+.slide-container {
+    width: 1280px;
+    height: 720px;
+    display: flex;
+    position: relative;
+    background-color: #fff;
+    overflow: hidden
+    }
+.left-content {
+    width: 35%;
+    height: 100%;
+    padding: 60px 50px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    z-index: 10
+    }
+.right-content {
+    width: 65%;
+    height: 100%;
+    padding: 60px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    z-index: 10
+    }
+.heading-medium {
+    font-family: "Montserrat", sans-serif;
+    font-weight: 700;
+    font-size: 22px;
+    color: #999;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 3px
+    }
+.heading-large {
+    font-family: "Montserrat", "Noto Sans KR", sans-serif;
+    font-weight: 900;
+    font-size: 56px;
+    line-height: 1.1;
+    color: #000;
+    margin-bottom: 30px
+    }
+.accent-bar {
+    width: 80px;
+    height: 6px;
+    background-color: #000;
+    margin-bottom: 30px
+    }
+.body-text {
+    font-family: "Noto Sans KR", sans-serif;
+    font-size: 18px;
+    color: #666;
+    line-height: 1.8
+    }
+.chart-section {
+    margin-bottom: 30px
+    }
+.chart-title {
+    font-family: "Noto Sans KR", sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    color: #000;
+    margin-bottom: 20px
+    }
+.bar-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 25px;
+    height: 180px;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 10px;
+    margin-bottom: 15px
+    }
+.bar-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center
+    }
+.bar {
+    width: 100%;
+    background-color: #000;
+    transition: all 0.3s ease;
+    position: relative
+    }
+.bar-label {
+    font-family: "Noto Sans KR", sans-serif;
+    font-size: 14px;
+    color: #333;
+    margin-top: 10px;
+    text-align: center
+    }
+.bar-value {
+    font-family: "Montserrat", sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+    color: #000;
+    margin-bottom: 5px
+    }
+.line-chart-container {
+    height: 140px;
+    border-bottom: 2px solid #e0e0e0;
+    position: relative;
+    margin-bottom: 15px
+    }
+.line-chart-point {
+    position: absolute;
+    bottom: 0;
+    width: 12px;
+    height: 12px;
+    background-color: #000;
+    border-radius: 50%
+    }
+.line-chart-line {
+    position: absolute;
+    height: 2px;
+    background-color: #000;
+    transform-origin: left center
+    }
+.line-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px
+    }
+.line-label {
+    font-family: "Noto Sans KR", sans-serif;
+    font-size: 14px;
+    color: #333;
+    text-align: center
+    }
+.circle-decoration {
+    position: absolute;
+    border-radius: 50%;
+    z-index: 0
+    }
+.circle-1 {
+    width: 200px;
+    height: 200px;
+    border: 20px solid #f5f5f5;
+    bottom: -80px;
+    left: -80px;
+    opacity: 0.5
+    }
+.circle-2 {
+    width: 150px;
+    height: 150px;
+    border: 15px solid #f5f5f5;
+    top: 60px;
+    right: -60px;
+    opacity: 0.3
+    }
+.pattern-dots {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: radial-gradient(#000 1px, transparent 1px);
+    background-size: 25px 25px;
+    opacity: 0.02;
+    z-index: 0
+    }</style>
+</head>
+<body>
+<div class="slide-container">
+<div class="pattern-dots"></div>
+<div class="circle-decoration circle-1"></div>
+<div class="circle-decoration circle-2"></div>
+
+<!-- Left Content -->
+<div class="left-content">
+<div style="position: relative;
+z-index: 2">
+<p class="heading-medium">EXPECTED RESULTS</p>
+<h1 class="heading-large">예상 성과</h1>
+<div class="accent-bar"></div>
+<p class="body-text">
+AI 챗봇 웹사이트 구축 후 예상되는 정량적 성과와 비용 절감 효과를 시각화합니다.
+</p>
+</div>
+</div>
+
+<!-- Right Content -->
+<div class="right-content">
+<div style="position: relative;
+z-index: 2">
+<!-- Bar Chart Section -->
+<div class="chart-section">
+<h3 class="chart-title">고객 서비스 개선 효과</h3>
+<div class="bar-chart">
+<div class="bar-group">
+<div class="bar-value">85%</div>
+<div class="bar" style="height: 85%"></div>
+<div class="bar-label">응답 속도<br/>개선</div>
+</div>
+<div class="bar-group">
+<div class="bar-value">70%</div>
+<div class="bar" style="height: 70%"></div>
+<div class="bar-label">운영 비용<br/>절감</div>
+</div>
+<div class="bar-group">
+<div class="bar-value">95%</div>
+<div class="bar" style="height: 95%"></div>
+<div class="bar-label">24시간<br/>서비스</div>
+</div>
+<div class="bar-group">
+<div class="bar-value">40%</div>
+<div class="bar" style="height: 40%"></div>
+<div class="bar-label">고객 만족도<br/>향상</div>
+</div>
+</div>
+</div>
+
+<!-- Line Chart Section -->
+<div class="chart-section">
+<h3 class="chart-title">운영 비용 절감 추이</h3>
+<div class="line-chart-container">
+<div class="line-chart-point" style="left: 0;
+bottom: 20%"></div>
+<div class="line-chart-point" style="left: 25%;
+bottom: 35%"></div>
+<div class="line-chart-point" style="left: 50%;
+bottom: 55%"></div>
+<div class="line-chart-point" style="left: 75%;
+bottom: 75%"></div>
+<div class="line-chart-point" style="left: 100%;
+bottom: 85%"></div>
+<svg width="100%" height="100%" style="position: absolute;
+top: 0;
+left: 0">
+<polyline points="0,140 175,112 350,84 525,56 700,28" stroke="#000" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+</div>
+<div class="line-labels">
+<div class="line-label">개발 전<br/>₩5,000만</div>
+<div class="line-label">3개월 후<br/>₩3,500만</div>
+<div class="line-label">6개월 후<br/>₩2,500만</div>
+<div class="line-label">9개월 후<br/>₩1,800만</div>
+<div class="line-label">12개월 후<br/>₩1,500만</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,58 @@
+{
+  "id": "ecommerce-basic",
+  "site": "ecommerce",
+  "input": {
+    "analysis": {
+      "framework": {
+        "backend": "fastapi",
+        "frontend": "react"
+      },
+      "auth": {
+        "auth_style": "token_cookie",
+        "signals": [
+          "access_token",
+          "request.cookies.get",
+          "APIRouter("
+        ]
+      },
+      "product_api": [
+        "/api/products/new",
+        "/api/products/{product_id}"
+      ],
+      "order_api": [
+        "/api/orders/{user_id}/orders"
+      ],
+      "frontend_mount_points": [
+        "frontend/app/chatbot/chatbotfab.tsx"
+      ],
+      "backend_entrypoints": [
+        "backend/app/main.py"
+      ],
+      "route_prefixes": [
+        "/api"
+      ]
+    },
+    "recommended_outputs": [
+      "chat_auth",
+      "order_adapter",
+      "product_adapter",
+      "frontend_patch"
+    ]
+  },
+  "expected": {
+    "proposed_files": [
+      "files/backend/chat_auth.py",
+      "files/backend/order_adapter_client.py",
+      "files/backend/product_adapter_client.py"
+    ],
+    "proposed_patches": [
+      "patches/frontend_widget_mount.patch"
+    ]
+  },
+  "forbidden": [
+    "ecommerce/backend/",
+    "ecommerce/frontend/",
+    "runtime/"
+  ],
+  "notes": "ecommerce baseline should propose all core overlay artifacts"
+}

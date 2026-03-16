@@ -1,0 +1,58 @@
+{
+  "id": "bilyeo-basic",
+  "site": "bilyeo",
+  "input": {
+    "analysis": {
+      "framework": {
+        "backend": "flask",
+        "frontend": "vue"
+      },
+      "auth": {
+        "auth_style": "session",
+        "signals": [
+          "session[",
+          "Blueprint(",
+          "login_required"
+        ]
+      },
+      "product_api": [
+        "/api/items",
+        "/api/items/search"
+      ],
+      "order_api": [
+        "/api/orders"
+      ],
+      "frontend_mount_points": [
+        "frontend/src/components/ChatBot.vue"
+      ],
+      "backend_entrypoints": [
+        "backend/routes/auth.py"
+      ],
+      "route_prefixes": [
+        "/api"
+      ]
+    },
+    "recommended_outputs": [
+      "chat_auth",
+      "order_adapter",
+      "product_adapter",
+      "frontend_patch"
+    ]
+  },
+  "expected": {
+    "proposed_files": [
+      "files/backend/chat_auth.py",
+      "files/backend/order_adapter_client.py",
+      "files/backend/product_adapter_client.py"
+    ],
+    "proposed_patches": [
+      "patches/frontend_widget_mount.patch"
+    ]
+  },
+  "forbidden": [
+    "bilyeo/backend/",
+    "bilyeo/frontend/",
+    "runtime/"
+  ],
+  "notes": "bilyeo baseline should propose all core overlay artifacts"
+}
