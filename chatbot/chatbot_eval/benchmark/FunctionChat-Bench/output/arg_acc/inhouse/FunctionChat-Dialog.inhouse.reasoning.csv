@@ -1,0 +1,43 @@
+serial_num,is_pass,reasoning
+2,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0002', 'user_id': 1, 'reason': '파손'}) | 모델({""order_id"": ""ORD-eval_dataset-0002"", ""user_id"": 1})"
+6,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'query': '반팔 티셔츠'}) | 모델({""query"": ""\uc5ec\ub984\uc5d0 \uc785\uae30 \uc88b\uc740 \uc2dc\uc6d0\ud55c \ubc18\ud314 \ud2f0\uc154\uce20 .""})"
+7,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'category': 'Formal', 'usage': 'Formal', 'user_id': 1}) | 모델({""category"": ""Formal"", ""user_id"": 1})"
+9,FAIL,"[정밀 비교 결과]
+모델이 도구를 호출하지 않았습니다. 기대값: create_review"
+10,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0004', 'user_id': 2, 'reason': '배송 지연'}) | 모델({""order_id"": ""ORD-eval_dataset-0004"", ""user_id"": 1})"
+11,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0005', 'user_id': 2, 'reason': '불량'}) | 모델({""order_id"": ""ORD-eval_dataset-0005"", ""user_id"": 1})"
+12,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0006', 'user_id': 2, 'reason': '사이즈 불일치'}) | 모델({""order_id"": ""ORD-eval_dataset-0006"", ""user_id"": 1})"
+13,FAIL,"[정밀 비교 결과]
+함수명 불일치: 정답(shipping) | 모델(refund)"
+14,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0004', 'user_id': 2}) | 모델({""order_id"": ""ORD-eval_dataset-0004"", ""user_id"": 1})"
+15,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'query': '와이드 팬츠'}) | 모델({""query"": ""\uc694\uc998 \uc720\ud589\ud558\ub294 \uc640\uc774\ub4dc \ud32c\uce20 \uac80\uc0c9 \uc880 \ud574\uc904\ub798\uc694?""})"
+16,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'category': 'Dress', 'user_id': 2}) | 모델({""category"": ""Dress"", ""user_id"": 1})"
+17,FAIL,"[정밀 비교 결과]
+함수명 불일치: 정답(open_used_sale_form) | 모델(search_knowledge_base)"
+18,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0004', 'rating': 5, 'user_id': 2}) | 모델({""rating"": 5, ""order_id"": ""ORD-eval_dataset-0004"", ""user_id"": 1})"
+19,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0007', 'user_id': 3}) | 모델({""order_id"": ""ORD-eval_dataset-0007"", ""user_id"": 1})"
+20,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0008', 'user_id': 3}) | 모델({""order_id"": ""ORD-eval_dataset-0008"", ""user_id"": 1})"
+21,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0009', 'user_id': 3}) | 모델({""order_id"": ""ORD-eval_dataset-0009"", ""user_id"": 1})"
+22,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'user_id': 3}) | 모델({""user_id"": 1})"
+23,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0007', 'user_id': 3}) | 모델({""order_id"": ""ORD-eval_dataset-0007"", ""user_id"": 1})"
+24,FAIL,"[정밀 비교 결과]
+모델이 도구를 호출하지 않았습니다. 기대값: search_by_text_clip"
+25,FAIL,"[정밀 비교 결과]
+함수명 불일치: 정답(recommend_clothes) | 모델(search_by_text_clip)"
+27,FAIL,"[정밀 비교 결과]
+인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0007', 'rating': 5, 'user_id': 3}) | 모델({""rating"": 5, ""order_id"": ""ORD-eval_dataset-0007"", ""user_id"": 1})"
