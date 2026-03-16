@@ -127,10 +127,16 @@ class SessionConversationLogger:
         self._write_session(payload)
         return payload
 
-    def finalize_feedback(self, feedback_label: str) -> Dict[str, Any]:
+    def record_feedback(self, feedback_label: str) -> Dict[str, Any]:
         payload = self.read_session()
-        payload["status"] = "completed"
         payload["feedback_label"] = feedback_label
+        payload["updated_at"] = _now_iso()
+        self._write_session(payload)
+        return payload
+
+    def finalize_feedback(self, feedback_label: str) -> Dict[str, Any]:
+        payload = self.record_feedback(feedback_label)
+        payload["status"] = "completed"
         payload["ended_at"] = _now_iso()
         payload["reset_required"] = True
         payload["training_pairs"] = _build_training_pairs(payload.get("messages", []))
