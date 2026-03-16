@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from chatbot.src.onboarding.approval_store import ApprovalStore
 from chatbot.scripts.run_onboarding_generation import build_parser
 from chatbot.scripts.run_onboarding_generation import build_slack_bridge_from_env
+from chatbot.scripts.run_onboarding_generation import load_generation_env
 from chatbot.scripts.run_slack_socket_gateway import (
     build_parser as build_gateway_parser,
     load_gateway_env,
@@ -439,7 +440,10 @@ def test_cli_can_build_slack_web_bridge_from_env(monkeypatch):
             captured["post"] = kwargs
             return {"ok": True, "ts": "1710000000.100"}
 
-    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("SLACK_COORDINATOR_BOT_TOKEN", "xoxb-coordinator")
+    monkeypatch.setenv("SLACK_ANALYZER_BOT_TOKEN", "xoxb-analyzer")
+    monkeypatch.setenv("SLACK_GENERATOR_BOT_TOKEN", "xoxb-generator")
 
     bridge = build_slack_bridge_from_env(
         channel="#onboarding-runs",
@@ -448,7 +452,29 @@ def test_cli_can_build_slack_web_bridge_from_env(monkeypatch):
 
     assert isinstance(bridge, SlackWebBridge)
     assert bridge.channel == "#onboarding-runs"
-    assert bridge.web_client.token == "xoxb-test"
+    assert bridge.web_client.token == "xoxb-coordinator"
+    assert bridge.role_web_clients["Analyzer"].token == "xoxb-analyzer"
+    assert bridge.role_web_clients["Generator"].token == "xoxb-generator"
+
+
+def test_cli_can_fallback_to_legacy_slack_bot_token(monkeypatch):
+    class FakeWebClient:
+        def __init__(self, token: str):
+            self.token = token
+
+        def chat_postMessage(self, **kwargs):
+            return {"ok": True, "ts": "1710000000.100"}
+
+    monkeypatch.delenv("SLACK_COORDINATOR_BOT_TOKEN", raising=False)
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-legacy")
+
+    bridge = build_slack_bridge_from_env(
+        channel="#onboarding-runs",
+        web_client_factory=lambda token: FakeWebClient(token),
+    )
+
+    assert isinstance(bridge, SlackWebBridge)
+    assert bridge.web_client.token == "xoxb-legacy"
 
 
 def test_run_gateway_registers_socket_handler(tmp_path: Path):
@@ -644,3 +670,22 @@ def test_load_gateway_env_reads_root_dotenv(tmp_path: Path, monkeypatch):
 
     assert os.getenv("SLACK_BOT_TOKEN") == "xoxb-from-dotenv"
     assert os.getenv("SLACK_APP_TOKEN") == "xapp-from-dotenv"
+
+
+def test_load_generation_env_reads_root_dotenv(tmp_path: Path, monkeypatch):
+    root = tmp_path / "repo"
+    root.mkdir(parents=True)
+    (root / ".env").write_text(
+        "SLACK_COORDINATOR_BOT_TOKEN=xoxb-coordinator\nSLACK_ANALYZER_BOT_TOKEN=xoxb-analyzer\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.delenv("SLACK_COORDINATOR_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("SLACK_ANALYZER_BOT_TOKEN", raising=False)
+
+    load_generation_env(project_root=root)
+
+    import os
+
+    assert os.getenv("SLACK_COORDINATOR_BOT_TOKEN") == "xoxb-coordinator"
+    assert os.getenv("SLACK_ANALYZER_BOT_TOKEN") == "xoxb-analyzer"

@@ -11,6 +11,7 @@ from .approval_store import ApprovalStore
 from .backend_evaluator import evaluate_backend_workspace
 from .codebase_mapper import write_codebase_map
 from .exporter import export_runtime_patch
+from .frontend_evaluator import evaluate_frontend_workspace
 from .overlay_generator import generate_overlay_scaffold
 from .patch_planner import write_patch_proposal, write_unified_diff_draft
 from .role_runner import RoleRunner, build_llm_role_runner
@@ -315,13 +316,26 @@ def run_onboarding_generation(
         generated_run_root=run_root,
         runtime_root=runtime_root,
     )
-    simulate_runtime_merge(
+    merge_simulation_path = simulate_runtime_merge(
         manifest=manifest,
         generated_run_root=run_root,
         runtime_workspace=runtime_workspace,
         report_root=run_root / "reports",
     )
+    merge_simulation = json.loads(merge_simulation_path.read_text(encoding="utf-8"))
+    if not merge_simulation.get("passed", True):
+        agent.state = RunState.HUMAN_REVIEW_REQUIRED
+        return _build_run_result(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            agent=agent,
+            bridge=bridge,
+        )
     evaluate_backend_workspace(
+        runtime_workspace=runtime_workspace,
+        report_root=run_root / "reports",
+    )
+    evaluate_frontend_workspace(
         runtime_workspace=runtime_workspace,
         report_root=run_root / "reports",
     )
@@ -633,13 +647,37 @@ def _build_run_result(
         "patch_proposal_path": str(run_root / "reports" / "patch-proposal.json"),
         "merge_simulation_path": str(run_root / "reports" / "merge-simulation.json"),
         "backend_evaluation_path": str(run_root / "reports" / "backend-evaluation.json"),
+        "frontend_evaluation_path": str(run_root / "reports" / "frontend-evaluation.json"),
         "proposed_patch_path": str(run_root / "patches" / "proposed.patch"),
         "export_metadata_path": str(run_root / "reports" / "export-metadata.json"),
         "slack_message_count": len(bridge.messages) if bridge is not None else 0,
         "current_state": agent.state.value,
         "pending_approval": agent.pending_approval,
     }
+    if bridge is not None:
+        bridge.post_run_summary(
+            run_id=agent.run_id,
+            current_state=agent.state.value,
+            pending_approval=agent.pending_approval,
+            artifacts=_existing_summary_artifacts(run_root),
+        )
+        result["slack_message_count"] = len(bridge.messages)
     return result
+
+
+def _existing_summary_artifacts(run_root: Path) -> dict[str, Path]:
+    candidates = {
+        "proposed_patch": run_root / "patches" / "proposed.patch",
+        "merge_simulation": run_root / "reports" / "merge-simulation.json",
+        "backend_evaluation": run_root / "reports" / "backend-evaluation.json",
+        "frontend_evaluation": run_root / "reports" / "frontend-evaluation.json",
+        "export_metadata": run_root / "reports" / "export-metadata.json",
+    }
+    return {
+        key: path
+        for key, path in candidates.items()
+        if path.exists()
+    }
 
 
 def _build_analysis_evidence(analysis: dict[str, Any]) -> list[str]:

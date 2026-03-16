@@ -57,7 +57,7 @@ def apply_overlay_patches(
             raise OverlayPatchApplyError(f"Patch file not found: {patch_path}")
 
         result = subprocess.run(
-            ["git", "apply", str(patch_path)],
+            ["git", "apply", "--inaccurate-eof", str(patch_path.resolve())],
             cwd=workspace,
             capture_output=True,
             text=True,
@@ -82,6 +82,33 @@ def simulate_runtime_merge(
     reports = Path(report_root)
     reports.mkdir(parents=True, exist_ok=True)
 
+    patch_artifacts = sorted(set(list(manifest.patch_targets) + _discover_simulation_patch_artifacts(generated_root)))
+    skipped_patch_artifacts = _filter_redundant_patch_artifacts(patch_artifacts)
+    patch_artifacts = [path for path in patch_artifacts if path not in skipped_patch_artifacts]
+    applied_patch_artifacts: list[str] = []
+    failed_patch_artifacts: list[dict[str, str]] = []
+
+    for relative_patch_path in patch_artifacts:
+        patch_path = generated_root / relative_patch_path
+        if not patch_path.exists():
+            failed_patch_artifacts.append(
+                {
+                    "path": relative_patch_path,
+                    "error": "patch file not found",
+                }
+            )
+            continue
+        error = _apply_patch_file(patch_path=patch_path, workspace=workspace)
+        if error is None:
+            applied_patch_artifacts.append(relative_patch_path)
+            continue
+        failed_patch_artifacts.append(
+            {
+                "path": relative_patch_path,
+                "error": error,
+            }
+        )
+
     payload = {
         "run_id": manifest.run_id,
         "site": manifest.site,
@@ -93,8 +120,49 @@ def simulate_runtime_merge(
         )
         if (generated_root / "files").exists()
         else [],
-        "applied_patch_artifacts": sorted(manifest.patch_targets),
+        "applied_patch_artifacts": applied_patch_artifacts,
+        "skipped_patch_artifacts": skipped_patch_artifacts,
+        "failed_patch_artifacts": failed_patch_artifacts,
+        "passed": len(failed_patch_artifacts) == 0,
     }
     output_path = reports / "merge-simulation.json"
     output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return output_path
+
+
+def _discover_simulation_patch_artifacts(generated_root: Path) -> list[str]:
+    patches_root = generated_root / "patches"
+    if not patches_root.exists():
+        return []
+    return sorted(
+        path.relative_to(generated_root).as_posix()
+        for path in patches_root.rglob("*.patch")
+        if path.is_file()
+    )
+
+
+def _apply_patch_file(*, patch_path: Path, workspace: Path) -> str | None:
+    attempts = [
+        ["git", "apply", "--inaccurate-eof", str(patch_path.resolve())],
+        ["patch", "-p1", "-N", "-i", str(patch_path.resolve())],
+    ]
+    errors: list[str] = []
+    for command in attempts:
+        result = subprocess.run(
+            command,
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return None
+        errors.append((result.stderr or result.stdout or "unknown error").strip())
+    return "\n".join(error for error in errors if error) or "unknown error"
+
+
+def _filter_redundant_patch_artifacts(patch_artifacts: list[str]) -> list[str]:
+    skipped: list[str] = []
+    if "patches/proposed.patch" in patch_artifacts and "patches/frontend_widget_mount.patch" in patch_artifacts:
+        skipped.append("patches/frontend_widget_mount.patch")
+    return skipped

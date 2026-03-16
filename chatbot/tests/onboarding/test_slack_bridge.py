@@ -163,6 +163,24 @@ def test_slack_bridge_can_record_export_approval_decision():
     assert payload["message"]["decision"] == "approve"
 
 
+def test_slack_bridge_can_record_run_summary():
+    bridge = InMemorySlackBridge(channel="#onboarding-runs")
+
+    payload = bridge.post_run_summary(
+        run_id="food-run-001",
+        current_state="completed",
+        pending_approval=None,
+        artifacts={
+            "proposed_patch": "/tmp/generated/food/proposed.patch",
+            "merge_simulation": "/tmp/generated/food/merge-simulation.json",
+        },
+    )
+
+    assert payload["thread_key"] == "food-run-001"
+    assert payload["message"]["kind"] == "run_summary"
+    assert payload["message"]["current_state"] == "completed"
+
+
 def test_slack_web_bridge_stores_thread_ts_from_root_message():
     class FakeWebClient:
         def __init__(self):
@@ -173,7 +191,7 @@ def test_slack_web_bridge_stores_thread_ts_from_root_message():
             return {"ok": True, "ts": "1710000000.100"}
 
     client = FakeWebClient()
-    bridge = SlackWebBridge(channel="#onboarding-runs", web_client=client)
+    bridge = SlackWebBridge(channel="#onboarding-runs", web_client=client, conversation_mode="thread")
 
     bridge.post_run_root(
         run_id="food-run-001",
@@ -240,6 +258,88 @@ def test_slack_web_bridge_posts_block_kit_approval_message():
     assert blocks[-1]["elements"][0]["type"] == "button"
     assert blocks[-1]["elements"][0]["text"]["text"] == "Approve"
     assert payload["message"]["approval_type"] == "apply"
+    assert client.calls[-1]["username"] == "Approval Gate"
+
+
+def test_slack_web_bridge_posts_agent_persona_blocks():
+    class FakeWebClient:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def chat_postMessage(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"ok": True, "ts": "1710000000.100"}
+
+    client = FakeWebClient()
+    bridge = SlackWebBridge(channel="#onboarding-runs", web_client=client)
+    bridge.post_run_root(
+        run_id="food-run-001",
+        site="food",
+        source_root="/workspace/food",
+        goal="generate onboarding overlay",
+        current_state=RunState.QUEUED,
+        approval_status="not_requested",
+    )
+    event = RunEvent(
+        event_type="analysis.completed",
+        run_id="food-run-001",
+        state=RunState.ANALYZING,
+        payload={"phase": "analysis"},
+        created_at="2026-03-15T23:00:00+09:00",
+    )
+    message = AgentMessage(
+        role="Analyzer",
+        claim="Detected session auth",
+        evidence=["session token cookie is read in login flow"],
+        confidence=0.91,
+        risk="medium",
+        next_action="forward auth capability to planner",
+        blocking_issue="none",
+    )
+
+    bridge.post_agent_message(event=event, message=message)
+
+    blocks = client.calls[-1]["blocks"]
+    assert "요약" in blocks[0]["text"]["text"]
+    assert "상세 근거" in blocks[2]["text"]["text"]
+    assert "분석 결과를 공유합니다." in blocks[0]["text"]["text"]
+    assert client.calls[-1]["username"] == "Onboarding Analyzer"
+
+
+def test_slack_web_bridge_posts_run_summary_blocks():
+    class FakeWebClient:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def chat_postMessage(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"ok": True, "ts": "1710000000.100"}
+
+    client = FakeWebClient()
+    bridge = SlackWebBridge(channel="#onboarding-runs", web_client=client)
+    bridge.post_run_root(
+        run_id="food-run-001",
+        site="food",
+        source_root="/workspace/food",
+        goal="generate onboarding overlay",
+        current_state=RunState.QUEUED,
+        approval_status="not_requested",
+    )
+
+    bridge.post_run_summary(
+        run_id="food-run-001",
+        current_state="completed",
+        pending_approval=None,
+        artifacts={
+            "proposed_patch": "/tmp/generated/food/proposed.patch",
+            "merge_simulation": "/tmp/generated/food/merge-simulation.json",
+        },
+    )
+
+    blocks = client.calls[-1]["blocks"]
+    assert blocks[1]["text"]["text"] == "실행 요약"
+    assert "proposed.patch" in blocks[-1]["fields"][0]["text"]
+    assert client.calls[-1]["username"] == "Run Reporter"
 
 
 def test_slack_web_bridge_includes_generator_targets_in_message_text():
@@ -285,3 +385,45 @@ def test_slack_web_bridge_includes_generator_targets_in_message_text():
     bridge.post_agent_message(event=event, message=message)
 
     assert "chat_auth.py" in client.calls[-1]["text"]
+    assert "생성 결과를 공유합니다." in client.calls[-1]["text"]
+
+
+def test_slack_web_bridge_defaults_to_channel_conversation_without_thread_ts():
+    class FakeWebClient:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def chat_postMessage(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"ok": True, "ts": "1710000000.100"}
+
+    client = FakeWebClient()
+    bridge = SlackWebBridge(channel="#onboarding-runs", web_client=client)
+    bridge.post_run_root(
+        run_id="food-run-001",
+        site="food",
+        source_root="/workspace/food",
+        goal="generate onboarding overlay",
+        current_state=RunState.QUEUED,
+        approval_status="not_requested",
+    )
+    event = RunEvent(
+        event_type="analysis.completed",
+        run_id="food-run-001",
+        state=RunState.ANALYZING,
+        payload={"phase": "analysis"},
+        created_at="2026-03-15T23:00:00+09:00",
+    )
+    message = AgentMessage(
+        role="Analyzer",
+        claim="Detected session auth",
+        evidence=["session token cookie is read in login flow"],
+        confidence=0.91,
+        risk="medium",
+        next_action="forward auth capability to planner",
+        blocking_issue="none",
+    )
+
+    bridge.post_agent_message(event=event, message=message)
+
+    assert "thread_ts" not in client.calls[-1]

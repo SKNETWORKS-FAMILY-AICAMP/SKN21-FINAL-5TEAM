@@ -103,3 +103,65 @@ def test_simulate_runtime_merge_writes_report(tmp_path: Path):
     assert payload["workspace_root"] == str(workspace)
     assert "app/generated.txt" in payload["applied_generated_files"]
     assert "patches/config.patch" in payload["applied_patch_artifacts"]
+
+
+def test_simulate_runtime_merge_applies_proposed_patch_to_workspace(tmp_path: Path):
+    source_root = tmp_path / "source"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() {\n    return <main>Home</main>;\n}\n",
+        encoding="utf-8",
+    )
+
+    run_root = generated_root / "shop" / "run-frontend"
+    (run_root / "patches").mkdir(parents=True)
+    (run_root / "patches" / "proposed.patch").write_text(
+        """--- a/frontend/src/App.js
++++ b/frontend/src/App.js
+@@ -1,3 +1,6 @@
++import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";
+ export default function App() {
+     return <main>Home</main>;
+ }
++
++  <SharedChatbotWidget />
+""",
+        encoding="utf-8",
+    )
+
+    manifest = OverlayManifest.model_validate(
+        {
+            "run_id": "run-frontend",
+            "site": "shop",
+            "source_root": str(source_root),
+            "created_at": "2026-03-15T12:00:00+09:00",
+            "agent_version": "v1",
+            "analysis": {},
+            "generated_files": [],
+            "patch_targets": [],
+            "docker": {},
+            "tests": {},
+            "status": "generated",
+        }
+    )
+
+    workspace = prepare_runtime_workspace(
+        manifest=manifest,
+        generated_run_root=run_root,
+        runtime_root=runtime_root,
+    )
+    report_path = simulate_runtime_merge(
+        manifest=manifest,
+        generated_run_root=run_root,
+        runtime_workspace=workspace,
+        report_root=run_root / "reports",
+    )
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    content = (workspace / "frontend" / "src" / "App.js").read_text(encoding="utf-8")
+
+    assert "patches/proposed.patch" in payload["applied_patch_artifacts"]
+    assert payload["failed_patch_artifacts"] == []
+    assert 'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";' in content

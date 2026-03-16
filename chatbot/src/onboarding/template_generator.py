@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import json
 from pathlib import Path
 
@@ -509,8 +510,39 @@ def generate_frontend_mount_patch(run_root: str | Path) -> Path:
     analysis = manifest.get("analysis", {})
     mount_points = analysis.get("frontend_mount_points") or []
     target_file = str(mount_points[0]).strip() if mount_points else "frontend/src/App.js"
+    source_root = Path(str(manifest.get("source_root") or "")).expanduser()
 
     output_path = root / "patches" / "frontend_widget_mount.patch"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(_build_frontend_mount_patch(target_file), encoding="utf-8")
+    source_file = source_root / target_file
+    if source_file.exists():
+        source_lines = source_file.read_text(encoding="utf-8").splitlines(keepends=True)
+        updated_lines = _build_frontend_mount_updated_lines(source_lines, target_file)
+        diff = difflib.unified_diff(
+            source_lines,
+            updated_lines,
+            fromfile=f"a/{target_file}",
+            tofile=f"b/{target_file}",
+        )
+        output_path.write_text("".join(diff), encoding="utf-8")
+    else:
+        output_path.write_text(_build_frontend_mount_patch(target_file), encoding="utf-8")
     return output_path
+
+
+def _build_frontend_mount_updated_lines(source_lines: list[str], target_file: str) -> list[str]:
+    updated_lines = list(source_lines)
+    lower = target_file.lower()
+    if lower.endswith(".vue"):
+        widget_line = "  <SharedChatbotWidget />\n"
+        if widget_line not in updated_lines:
+            updated_lines.extend(["\n", "<template>\n", widget_line, "</template>\n"])
+        return updated_lines
+
+    import_line = 'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
+    if import_line not in updated_lines:
+        updated_lines = [import_line] + updated_lines
+    widget_line = "  <SharedChatbotWidget />\n"
+    if widget_line not in updated_lines:
+        updated_lines.extend(["\n", widget_line])
+    return updated_lines

@@ -48,6 +48,13 @@ def _infer_reason(relative_path: str, path: Path) -> str | None:
     lower = relative_path.lower()
     if "views.py" in lower or "routes" in lower or "urls.py" in lower:
         return "backend route or handler candidate"
+    if lower.endswith("main.py") or lower.endswith("app.py"):
+        try:
+            content = path.read_text(encoding="utf-8").lower()
+        except UnicodeDecodeError:
+            return None
+        if "fastapi" in content or "flask" in content:
+            return "backend application entrypoint candidate"
     if path.suffix in {".js", ".jsx", ".ts", ".tsx", ".vue"} and "app" in path.stem.lower():
         return "frontend mount or integration candidate"
     return None

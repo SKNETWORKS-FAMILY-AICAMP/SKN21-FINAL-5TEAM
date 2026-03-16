@@ -61,6 +61,8 @@ def test_run_onboarding_generation_emits_slack_observable_messages(tmp_path: Pat
     assert any(entry["message"].get("role") == "Planner" for entry in bridge.messages)
     assert any(entry["message"].get("role") == "Generator" for entry in bridge.messages)
     assert any(entry["message"].get("approval_type") == "apply" for entry in bridge.messages)
+    assert bridge.messages[-1]["message"]["kind"] == "run_summary"
+    assert bridge.messages[-1]["message"]["current_state"] == "completed"
 
     smoke_results = json.loads((generated_root / "food" / "food-run-001" / "reports" / "smoke-results.json").read_text(encoding="utf-8"))
     assert smoke_results[0]["returncode"] == 0
@@ -214,6 +216,8 @@ def test_run_onboarding_generation_with_slack_bridge_waits_for_store_decision(tm
     assert decision is not None
     assert decision["status"] == "pending"
     assert any(entry["message"].get("approval_type") == "analysis" for entry in bridge.messages)
+    assert bridge.messages[-1]["message"]["kind"] == "run_summary"
+    assert bridge.messages[-1]["message"]["current_state"] == "awaiting_analysis_approval"
 
 
 def test_run_onboarding_generation_retries_after_diagnostician_signal(tmp_path: Path, monkeypatch):
@@ -949,7 +953,8 @@ def test_run_onboarding_generation_writes_unified_diff_draft(tmp_path: Path):
     assert "+++ b/" in content
     assert "+++ b/backend/users/views.py" in content
     assert "def onboarding_chat_auth_token(request):" in content
-    assert "+++ b/backend/products/urls.py" in content
+    assert "+++ b/backend/orders/urls.py" in content
+    assert "from users.views import onboarding_chat_auth_token" in content
     assert "api/chat/auth-token" in content
 
 
@@ -1001,6 +1006,69 @@ def test_run_onboarding_generation_writes_merge_simulation_artifact(tmp_path: Pa
     assert result["merge_simulation_path"].endswith("reports/merge-simulation.json")
     assert merge_path.exists()
     assert payload["applied_generated_files"]
+    assert payload["passed"] is True
+
+
+def test_run_onboarding_generation_stops_when_merge_simulation_patch_apply_fails(tmp_path: Path, monkeypatch):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    def write_invalid_proposed_patch(*, source_root, generated_run_root, proposal_path, output_path) -> Path:
+        patch_path = Path(output_path)
+        patch_path.parent.mkdir(parents=True, exist_ok=True)
+        patch_path.write_text("not a valid patch\n", encoding="utf-8")
+        return patch_path
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.write_unified_diff_draft",
+        write_invalid_proposed_patch,
+    )
+
+    result = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-merge-fail",
+        agent_version="test-v1",
+        approval_decisions={
+            "analysis": "approve",
+            "apply": "approve",
+            "export": "approve",
+        },
+    )
+
+    run_root = generated_root / "food" / "food-run-merge-fail"
+    merge_path = run_root / "reports" / "merge-simulation.json"
+    payload = json.loads(merge_path.read_text(encoding="utf-8"))
+
+    assert result["current_state"] == "human_review_required"
+    assert result["runtime_workspace"] == str(runtime_root / "food" / "food-run-merge-fail" / "workspace")
+    assert payload["passed"] is False
+    assert payload["failed_patch_artifacts"]
 
 
 def test_run_onboarding_generation_writes_backend_evaluation_artifact(tmp_path: Path):
@@ -1052,3 +1120,203 @@ def test_run_onboarding_generation_writes_backend_evaluation_artifact(tmp_path: 
     assert report_path.exists()
     assert payload["passed"] is True
     assert payload["checked_files"]
+
+
+def test_run_onboarding_generation_writes_frontend_evaluation_artifact(tmp_path: Path):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    result = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-frontend-eval",
+        agent_version="test-v1",
+        approval_decisions={
+            "analysis": "approve",
+            "apply": "approve",
+            "export": "approve",
+        },
+    )
+
+    run_root = generated_root / "food" / "food-run-frontend-eval"
+    report_path = run_root / "reports" / "frontend-evaluation.json"
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert result["frontend_evaluation_path"].endswith("reports/frontend-evaluation.json")
+    assert report_path.exists()
+    assert payload["framework"] == "react"
+    assert payload["mount_candidates"]
+
+
+def test_run_onboarding_generation_writes_fastapi_registration_diff_draft(tmp_path: Path):
+    source_root = tmp_path / "shop"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "app").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "app" / "main.py").write_text(
+        "from fastapi import FastAPI\napp = FastAPI()\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    result = run_onboarding_generation(
+        site="shop",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="shop-run-fastapi",
+        agent_version="test-v1",
+        approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
+    )
+
+    content = (generated_root / "shop" / "shop-run-fastapi" / "patches" / "proposed.patch").read_text(encoding="utf-8")
+
+    assert result["current_state"] == "completed"
+    assert "+++ b/backend/app/main.py" in content
+    assert "from backend.chat_auth import router as onboarding_chat_router" in content
+    assert "app.include_router(onboarding_chat_router)" in content
+
+
+def test_run_onboarding_generation_writes_flask_registration_diff_draft(tmp_path: Path):
+    source_root = tmp_path / "shop"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "app.py").write_text(
+        "from flask import Flask\napp = Flask(__name__)\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    result = run_onboarding_generation(
+        site="shop",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="shop-run-flask",
+        agent_version="test-v1",
+        approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
+    )
+
+    content = (generated_root / "shop" / "shop-run-flask" / "patches" / "proposed.patch").read_text(encoding="utf-8")
+
+    assert result["current_state"] == "completed"
+    assert "+++ b/backend/app.py" in content
+    assert "from backend.chat_auth import chat_auth_bp" in content
+    assert "app.register_blueprint(chat_auth_bp)" in content
+
+
+def test_run_onboarding_generation_writes_frontend_mount_diff_draft(tmp_path: Path):
+    source_root = tmp_path / "shop"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() {\n    return <main>Home</main>;\n}\n",
+        encoding="utf-8",
+    )
+
+    result = run_onboarding_generation(
+        site="shop",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="shop-run-frontend-diff",
+        agent_version="test-v1",
+        approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
+    )
+
+    content = (generated_root / "shop" / "shop-run-frontend-diff" / "patches" / "proposed.patch").read_text(encoding="utf-8")
+
+    assert result["current_state"] == "completed"
+    assert "+++ b/frontend/src/App.js" in content
+    assert 'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";' in content
+    assert "<SharedChatbotWidget />" in content
+
+
+def test_run_onboarding_generation_handles_sources_without_trailing_newlines(tmp_path: Path):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }",
+        encoding="utf-8",
+    )
+
+    result = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-no-newline",
+        agent_version="test-v1",
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+
+    merge_path = generated_root / "food" / "food-run-no-newline" / "reports" / "merge-simulation.json"
+    payload = json.loads(merge_path.read_text(encoding="utf-8"))
+
+    assert result["current_state"] != "human_review_required"
+    assert payload["passed"] is True
