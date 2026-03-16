@@ -1,0 +1,58 @@
+{
+  "conversation_id": "conv_16d62886786c",
+  "user_id": 1,
+  "status": "completed",
+  "feedback_label": "bad",
+  "messages": [
+    {
+      "role": "user",
+      "content": "씨발아 환불해줘",
+      "at": "2026-03-14T04:40:03.219148+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다. 환불하실 주문을 선택해주세요.",
+      "at": "2026-03-14T04:40:03.219150+00:00"
+    },
+    {
+      "role": "user",
+      "content": "주문 선택 완료",
+      "at": "2026-03-14T04:40:14.855089+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "주문 조회 실패: 요청 실패: [Errno 8] nodename nor servname provided, or not known",
+      "at": "2026-03-14T04:40:14.855097+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": null,
+    "order_context": {
+      "pending_action": "refund",
+      "action_status": "failed",
+      "awaiting_resume_for": null,
+      "last_tool": "refund",
+      "last_ui_payload": null
+    },
+    "search_context": {},
+    "ui_action_required": null,
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "씨발아 환불해줘",
+      "output": "최근 30일 이내 주문 내역입니다. 환불하실 주문을 선택해주세요."
+    },
+    {
+      "turn_index": 1,
+      "input": "주문 선택 완료",
+      "output": "주문 조회 실패: 요청 실패: [Errno 8] nodename nor servname provided, or not known"
+    }
+  ],
+  "started_at": "2026-03-14T04:40:03.219145+00:00",
+  "ended_at": "2026-03-14T04:40:18.891376+00:00",
+  "updated_at": "2026-03-14T04:40:18.891376+00:00",
+  "reset_required": true
+}
