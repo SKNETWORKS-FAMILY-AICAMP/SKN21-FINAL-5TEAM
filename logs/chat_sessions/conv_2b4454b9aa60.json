@@ -1,0 +1,38 @@
+{
+  "conversation_id": "conv_2b4454b9aa60",
+  "user_id": 1,
+  "status": "in_progress",
+  "feedback_label": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "중고상품을 등록하고 싶어요",
+      "at": "2026-03-16T02:45:20.572832+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "중고 판매 등록 정보를 입력해주세요.",
+      "at": "2026-03-16T02:45:20.572836+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": "사용자: 중고상품을 등록하고 싶어요\n상담원: 중고상품 등록하고 싶습니다\n상담원 : 상담원:중고상품 등록을 하고 싶어요",
+    "order_context": {},
+    "search_context": {},
+    "ui_action_required": "show_used_sale_form",
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "site_id": "site-c"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "중고상품을 등록하고 싶어요",
+      "output": "중고 판매 등록 정보를 입력해주세요."
+    }
+  ],
+  "started_at": "2026-03-16T02:45:20.572817+00:00",
+  "ended_at": null,
+  "updated_at": "2026-03-16T02:45:20.572845+00:00",
+  "reset_required": false
+}

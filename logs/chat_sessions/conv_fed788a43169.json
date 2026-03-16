@@ -1,0 +1,38 @@
+{
+  "conversation_id": "conv_fed788a43169",
+  "user_id": 1,
+  "status": "completed",
+  "feedback_label": "bad",
+  "messages": [
+    {
+      "role": "user",
+      "content": "중고 상품을 등록하고싶어",
+      "at": "2026-03-16T00:29:57.338315+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "중고 판매 등록 정보를 입력해주세요.",
+      "at": "2026-03-16T00:29:57.338320+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": "중고 상품을 등록하고싶어 상담원:",
+    "order_context": {},
+    "search_context": {},
+    "ui_action_required": "show_used_sale_form",
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "site_id": "site-c"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "중고 상품을 등록하고싶어",
+      "output": "중고 판매 등록 정보를 입력해주세요."
+    }
+  ],
+  "started_at": "2026-03-16T00:29:57.338302+00:00",
+  "ended_at": "2026-03-16T00:30:43.183813+00:00",
+  "updated_at": "2026-03-16T00:30:43.183813+00:00",
+  "reset_required": true
+}

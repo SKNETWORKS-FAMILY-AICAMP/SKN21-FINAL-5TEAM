@@ -1,0 +1,59 @@
+{
+  "conversation_id": "conv_945d7a0b4fa1",
+  "user_id": 1,
+  "status": "completed",
+  "feedback_label": "bad",
+  "messages": [
+    {
+      "role": "user",
+      "content": "반품을 하고싶은데 규정이 있을까?",
+      "at": "2026-03-16T02:27:37.517538+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다. 환불하실 주문을 선택해주세요.",
+      "at": "2026-03-16T02:27:37.517543+00:00"
+    },
+    {
+      "role": "user",
+      "content": "주문 선택 완료",
+      "at": "2026-03-16T02:27:55.087214+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "주문 조회 실패: 요청 실패: [Errno 11001] getaddrinfo failed",
+      "at": "2026-03-16T02:27:55.087224+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": null,
+    "order_context": {
+      "pending_action": "refund",
+      "action_status": "failed",
+      "awaiting_resume_for": null,
+      "last_tool": "refund",
+      "last_ui_payload": null
+    },
+    "search_context": {},
+    "ui_action_required": null,
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "site_id": "site-c"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "반품을 하고싶은데 규정이 있을까?",
+      "output": "최근 30일 이내 주문 내역입니다. 환불하실 주문을 선택해주세요."
+    },
+    {
+      "turn_index": 1,
+      "input": "주문 선택 완료",
+      "output": "주문 조회 실패: 요청 실패: [Errno 11001] getaddrinfo failed"
+    }
+  ],
+  "started_at": "2026-03-16T02:27:37.517517+00:00",
+  "ended_at": "2026-03-16T02:27:56.384578+00:00",
+  "updated_at": "2026-03-16T02:27:56.384578+00:00",
+  "reset_required": true
+}
