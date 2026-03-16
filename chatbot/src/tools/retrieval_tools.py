@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from typing import Any
 
 from langchain_core.tools import tool
 from qdrant_client import models
@@ -93,6 +94,20 @@ def _extract_text(payload: dict) -> str:
     return (
         payload.get("text") or payload.get("content") or payload.get("title", "")
     ).strip()
+
+
+def _make_doc_key(collection: str, point_id: str, payload: dict[str, Any]) -> str:
+    """평가용으로 사용할 안정적인 문서 키를 생성합니다."""
+    question = str(payload.get("question", "")).strip()
+    if collection == settings.COLLECTION_FAQ and question:
+        return f"faq::{question}"
+
+    article_no = str(payload.get("article_no", "")).strip()
+    if article_no:
+        paragraph = str(payload.get("paragraph", "")).strip() or "_"
+        return f"terms::{article_no}:{paragraph}"
+
+    return f"{collection}::{point_id}"
 
 
 def _merge_sibling_texts(siblings) -> str:
@@ -225,7 +240,9 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
                     limit=20,
                 ).points
 
-            candidates.extend(results)
+            candidates.extend(
+                [{"collection": col, "point": point} for point in results]
+            )
         except Exception as e:
             print(f"Error searching {col}: {e}")
 
@@ -233,13 +250,15 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
         return {"documents": [], "message": "관련된 정보를 찾을 수 없습니다."}
 
     # 중복 제거 및 단일 문서 추출
-    unique = list({c.id: c for c in candidates}.values())
+    unique = list({entry["point"].id: entry for entry in candidates}.values())
 
     # Parent Document Retrieval & Contextual Merging
     faq_passages = []
     terms_to_expand = set()
 
-    for c in unique:
+    for entry in unique:
+        c = entry["point"]
+        collection = entry["collection"]
         if c.payload and "article_no" in c.payload:
             article_no = c.payload.get("article_no")
             paragraph = c.payload.get("paragraph", "")
@@ -248,6 +267,8 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
             faq_passages.append(
                 {
                     "id": str(c.id),
+                    "doc_key": _make_doc_key(collection, str(c.id), c.payload),
+                    "collection": collection,
                     "text": _extract_text(c.payload),
                     "meta": c.payload,
                     "score": float(getattr(c, "score", 0.0)),
@@ -288,10 +309,10 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
                 max_score = max(
                     [
                         float(getattr(c, "score", 0.0))
-                        for c in unique
-                        if c.payload
-                        and c.payload.get("article_no") == article_no
-                        and c.payload.get("paragraph", "") == paragraph
+                        for entry in unique
+                        if entry["point"].payload
+                        and entry["point"].payload.get("article_no") == article_no
+                        and entry["point"].payload.get("paragraph", "") == paragraph
                     ],
                     default=0.0,
                 )
@@ -299,6 +320,12 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
                 expanded_passages.append(
                     {
                         "id": passages_id,
+                        "doc_key": _make_doc_key(
+                            settings.COLLECTION_TERMS,
+                            passages_id,
+                            rep.payload,
+                        ),
+                        "collection": settings.COLLECTION_TERMS,
                         "text": merged_text,
                         "meta": rep.payload,
                         "score": max_score,
@@ -312,15 +339,34 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
     if RANKER:
         reranked = RANKER.rerank(RerankRequest(query=query, passages=passages))[:5]
         selected = [
-            {"text": item["text"], "meta": item.get("meta", {})} for item in reranked
+            {
+                "id": item.get("id", ""),
+                "doc_key": item.get("doc_key", ""),
+                "collection": item.get("collection", ""),
+                "text": item["text"],
+                "meta": item.get("meta", {}),
+                "score": float(item.get("score", 0.0)),
+            }
+            for item in reranked
         ]
     else:
         # Reranker 실패 시 점수 기반 fallback
         sorted_passages = sorted(passages, key=lambda x: x["score"], reverse=True)
-        selected = [{"text": p["text"], "meta": p["meta"]} for p in sorted_passages[:5]]
+        selected = [
+            {
+                "id": p.get("id", ""),
+                "doc_key": p.get("doc_key", ""),
+                "collection": p.get("collection", ""),
+                "text": p["text"],
+                "meta": p["meta"],
+                "score": float(p.get("score", 0.0)),
+            }
+            for p in sorted_passages[:5]
+        ]
 
     # 결과 포맷팅
     documents = []
+    items = []
     for res in selected:
         meta = res.get("meta", {})
         doc_type = (
@@ -331,5 +377,16 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
             else "정보"
         )
         documents.append(f"[{doc_type}] {res['text']}")
+        items.append(
+            {
+                "id": res.get("id", ""),
+                "doc_key": res.get("doc_key", ""),
+                "collection": res.get("collection", ""),
+                "score": float(res.get("score", 0.0)),
+                "meta": meta,
+                "text": res["text"],
+                "doc_type": doc_type,
+            }
+        )
 
-    return {"documents": documents, "count": len(documents)}
+    return {"documents": documents, "items": items, "count": len(documents)}

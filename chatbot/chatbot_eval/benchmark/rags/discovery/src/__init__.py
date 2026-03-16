@@ -1,0 +1,1 @@
+"""Discovery RAG evaluation package."""
