@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from .agent_contracts import AgentMessage, ApprovalType, RunEvent, RunState
@@ -169,9 +170,10 @@ class SlackWebBridge(InMemorySlackBridge):
 
     def post_agent_message(self, *, event: RunEvent, message: AgentMessage) -> dict:
         payload = super().post_agent_message(event=event, message=message)
+        summary = _build_agent_summary_text(message)
         self.web_client.chat_postMessage(
             channel=self.channel,
-            text=f"{message.role}: {message.claim}",
+            text=summary,
             thread_ts=self._thread_ts_by_run_id.get(event.run_id),
         )
         return payload
@@ -251,6 +253,17 @@ class SlackWebBridge(InMemorySlackBridge):
             thread_ts=self._thread_ts_by_run_id.get(run_id),
         )
         return payload
+
+
+def _build_agent_summary_text(message: AgentMessage) -> str:
+    text = f"{message.role}: {message.claim}"
+    proposed_files = list(message.metadata.get("proposed_files") or [])
+    proposed_patches = list(message.metadata.get("proposed_patches") or [])
+    proposal_items = proposed_files + proposed_patches
+    if proposal_items:
+        names = ", ".join(Path(item).name for item in proposal_items[:3])
+        text = f"{text} [{names}]"
+    return text
 
     def record_approval_decision(
         self,

@@ -123,9 +123,13 @@ class SiteCAdapter(BaseEcommerceSupportAdapter):
         self, ctx: AuthenticatedContext, input_data: GetOrderStatusInput
     ) -> GetOrderStatusResult:
         self.assert_authenticated(ctx)
+        headers = build_site_c_auth_headers(ctx)
+        resolved_order_id = await self._resolve_internal_order_id(
+            input_data.orderId, headers
+        )
 
         raw = await self.client.get_order(
-            ctx.userId, input_data, build_site_c_auth_headers(ctx)
+            ctx.userId, GetOrderStatusInput(orderId=resolved_order_id), headers
         )
         mapped = map_site_c_order(
             raw,
@@ -141,13 +145,19 @@ class SiteCAdapter(BaseEcommerceSupportAdapter):
         self, ctx: AuthenticatedContext, input_data: GetDeliveryTrackingInput
     ) -> GetDeliveryTrackingResult:
         self.assert_authenticated(ctx)
+        headers = build_site_c_auth_headers(ctx)
+        resolved_order_id = await self._resolve_internal_order_id(
+            input_data.orderId, headers
+        )
 
         # 권한 확인을 위해 주문 상태 조회 선행
         await self.get_order_status(
-            ctx, GetOrderStatusInput(orderId=input_data.orderId)
+            ctx, GetOrderStatusInput(orderId=resolved_order_id)
         )
 
-        raw = await self.client.get_delivery(input_data, build_site_c_auth_headers(ctx))
+        raw = await self.client.get_delivery(
+            GetDeliveryTrackingInput(orderId=resolved_order_id), headers
+        )
         if not raw:
             raise AdapterError(
                 "NOT_FOUND",
@@ -163,24 +173,46 @@ class SiteCAdapter(BaseEcommerceSupportAdapter):
         self, ctx: AuthenticatedContext, input_data: SubmitOrderActionInput
     ) -> SubmitOrderActionResult:
         self.assert_authenticated(ctx)
+        headers = build_site_c_auth_headers(ctx)
+        resolved_order_id = await self._resolve_internal_order_id(
+            input_data.orderId, headers
+        )
+        resolved_input = input_data.model_copy(update={"orderId": resolved_order_id})
 
         # 권한 확인
         await self.get_order_status(
-            ctx, GetOrderStatusInput(orderId=input_data.orderId)
+            ctx, GetOrderStatusInput(orderId=resolved_order_id)
         )
 
         if input_data.actionType.value == "cancel":
             raw = await self.client.submit_cancel(
-                ctx.userId, input_data, build_site_c_auth_headers(ctx)
+                ctx.userId, resolved_input, headers
             )
             return map_site_c_order_action(raw)
 
         if input_data.actionType.value == "refund":
             raw = await self.client.submit_refund(
-                ctx.userId, input_data, build_site_c_auth_headers(ctx)
+                ctx.userId, resolved_input, headers
             )
             return map_site_c_order_action(raw)
 
         raise AdapterError(
             "NOT_SUPPORTED", "ecommerce 사이트는 exchange API를 제공하지 않습니다."
         )
+
+    async def _resolve_internal_order_id(
+        self, order_id: str, headers: dict[str, str]
+    ) -> str:
+        candidate = str(order_id).strip()
+        if candidate.isdigit():
+            return candidate
+
+        raw = await self.client.get_order_by_number(candidate, headers)
+        internal_id = raw.get("id") if isinstance(raw, dict) else None
+        if internal_id is None:
+            raise AdapterError(
+                "NOT_FOUND",
+                "주문 번호에 해당하는 주문을 찾을 수 없습니다.",
+                {"order_number": candidate},
+            )
+        return str(internal_id)

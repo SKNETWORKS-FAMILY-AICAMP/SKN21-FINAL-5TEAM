@@ -10,9 +10,9 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from chatbot.src.onboarding.approval_store import ApprovalStore
 from chatbot.src.onboarding.orchestrator import run_onboarding_generation
 from chatbot.src.onboarding.slack_bridge import SlackWebBridge
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -22,13 +22,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-root", required=True)
     parser.add_argument("--generated-root", required=True)
     parser.add_argument("--runtime-root", required=True)
-    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--run-id")
+    parser.add_argument("--resume-run-id")
     parser.add_argument("--agent-version", default="dev")
     parser.add_argument("--use-llm-roles", action="store_true")
     parser.add_argument("--llm-provider", default="openai")
     parser.add_argument("--llm-model", default="gpt-4o-mini")
     parser.add_argument("--print-report-paths", action="store_true")
     parser.add_argument("--slack-channel")
+    parser.add_argument("--approval-store-root")
     parser.add_argument(
         "--approval",
         action="append",
@@ -38,7 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def build_slack_bridge_from_env(*, channel: str, web_client_factory=None) -> SlackWebBridge | None:
+def build_slack_bridge_from_env(
+    *, channel: str, web_client_factory=None
+) -> SlackWebBridge | None:
     bot_token = os.getenv("SLACK_BOT_TOKEN")
     if not bot_token:
         return None
@@ -60,9 +64,19 @@ def parse_approvals(items: list[str]) -> dict[str, str]:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    effective_run_id = args.resume_run_id or args.run_id
+    if not effective_run_id:
+        parser.error("one of --run-id or --resume-run-id is required")
     approvals = parse_approvals(args.approval)
     slack_bridge = (
-        build_slack_bridge_from_env(channel=args.slack_channel) if args.slack_channel else None
+        build_slack_bridge_from_env(channel=args.slack_channel)
+        if args.slack_channel
+        else None
+    )
+    approval_store = (
+        ApprovalStore(root=args.approval_store_root)
+        if args.approval_store_root
+        else None
     )
 
     result = run_onboarding_generation(
@@ -70,10 +84,11 @@ def main() -> int:
         source_root=args.source_root,
         generated_root=args.generated_root,
         runtime_root=args.runtime_root,
-        run_id=args.run_id,
+        run_id=effective_run_id,
         agent_version=args.agent_version,
         slack_bridge=slack_bridge,
         approval_decisions=approvals if approvals else None,
+        approval_store=approval_store,
         use_llm_roles=args.use_llm_roles,
         llm_provider=args.llm_provider,
         llm_model=args.llm_model,
@@ -86,7 +101,9 @@ def _default_web_client_factory(token: str):
     try:
         from slack_sdk.web import WebClient
     except ImportError as exc:  # pragma: no cover
-        raise SystemExit("slack_sdk is required to publish onboarding messages to Slack") from exc
+        raise SystemExit(
+            "slack_sdk is required to publish onboarding messages to Slack"
+        ) from exc
     return WebClient(token=token)
 
 

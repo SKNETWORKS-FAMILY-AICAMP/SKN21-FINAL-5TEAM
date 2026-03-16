@@ -1,13 +1,10 @@
 """
 어댑터 기반 주문 관련 Tools.
 
-site_id를 기반으로 동적으로 어댑터를 선택하여 다중 사이트를 지원합니다.
-- site-a (Ecommerce) → SiteCAdapter
-- site-b (Food)      → SiteAAdapter
-- site-c (Bilyeo)    → SiteBAdapter
+현재 주문 CS 어댑터는 ecommerce `site-c`만 정식 지원합니다.
 
 [설계 방침]
-- cancel, refund, shipping → 어댑터 API 호출 (다중 사이트 공통)
+- cancel, refund, shipping → site-c 어댑터 API 호출
 - exchange, change_option, update_payment, get_user_orders → 기존 order_tools.py (Ecommerce DB 전용)
 
 사용자 컨텍스트(AuthenticatedContext)는 LangGraph state의 user_info에서 구성합니다.
@@ -61,13 +58,11 @@ def _build_ctx(user_id: str, site_id: str, access_token: str | None = None) -> A
 
 
 def _get_site_adapter(site_id: str | None):
-    """site_id 기반으로 어댑터를 가져옵니다. None이면 기본 'site-a' 사용."""
-    effective_site_id = site_id or "site-a"
-    try:
-        return get_adapter(effective_site_id)
-    except AdapterError:
-        # 알 수 없는 site_id → Ecommerce fallback
-        return get_adapter("site-a")
+    """현재는 ecommerce `site-c`만 어댑터 경로로 지원합니다."""
+    effective_site_id = (site_id or "site-c").strip()
+    if effective_site_id != "site-c":
+        raise AdapterError("NOT_SUPPORTED", "현재 이 챗봇은 ecommerce(site-c)만 지원합니다.")
+    return get_adapter("site-c")
 
 
 # ─── 주문 취소 ─────────────────────────────────────────────────────────────────
@@ -163,6 +158,8 @@ def cancel_order_via_adapter(
             return {"error": f"취소 요청 실패: {e.message}"}
 
     except Exception as e:
+        if isinstance(e, AdapterError):
+            return {"error": e.message}
         if _is_langgraph_interrupt_error(e):
             raise
         return {"error": f"주문 취소 실패: {str(e)}"}
@@ -285,6 +282,8 @@ def register_return_via_adapter(
             return {"error": f"반품 접수 실패: {e.message}"}
 
     except Exception as e:
+        if isinstance(e, AdapterError):
+            return {"error": e.message}
         if _is_langgraph_interrupt_error(e):
             raise
         return {"error": f"반품 접수 실패: {str(e)}"}
@@ -346,6 +345,8 @@ def get_shipping_via_adapter(
             return {"error": f"배송 조회 실패: {e.message}"}
 
     except Exception as e:
+        if isinstance(e, AdapterError):
+            return {"error": e.message}
         if _is_langgraph_interrupt_error(e):
             raise
         return {"error": f"배송 정보 조회 실패: {str(e)}"}
@@ -403,6 +404,8 @@ def get_order_status_via_adapter(
             return {"error": f"주문 조회 실패: {e.message}"}
 
     except Exception as e:
+        if isinstance(e, AdapterError):
+            return {"error": e.message}
         if _is_langgraph_interrupt_error(e):
             raise
         return {"error": f"주문 상태 조회 실패: {str(e)}"}
@@ -466,6 +469,8 @@ def search_products_via_adapter(
         }
 
     except Exception as e:
+        if isinstance(e, AdapterError):
+            return {"error": e.message}
         if _is_langgraph_interrupt_error(e):
             raise
         return {"error": f"상품 검색 실패: {str(e)}"}

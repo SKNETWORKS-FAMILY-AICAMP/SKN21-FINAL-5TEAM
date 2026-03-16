@@ -12,6 +12,7 @@ def handle_interactive_action(
     payload: dict[str, Any],
     store: ApprovalStore,
     bridge: InMemorySlackBridge | None = None,
+    resume_run=None,
 ) -> dict[str, Any]:
     user_id = str((payload.get("user") or {}).get("id") or "")
     actions = list(payload.get("actions") or [])
@@ -46,6 +47,8 @@ def handle_interactive_action(
             approval_type=approval_type,
             decision=decision,
         )
+    if decision == "approve" and resume_run is not None:
+        resume_run(run_id, approval_type)
     return {"ok": True, "applied": True}
 
 
@@ -54,6 +57,7 @@ def register_socket_mode_handler(
     client: Any,
     store: ApprovalStore,
     bridge: InMemorySlackBridge | None = None,
+    resume_run=None,
     ack,
 ) -> None:
     def _listener(_socket_client, request: Any) -> None:
@@ -64,7 +68,12 @@ def register_socket_mode_handler(
         payload = _get_value(request, "payload") or {}
         if _get_value(payload, "type") != "block_actions":
             return
-        handle_interactive_action(payload=payload, store=store, bridge=bridge)
+        handle_interactive_action(
+            payload=payload,
+            store=store,
+            bridge=bridge,
+            resume_run=resume_run,
+        )
 
     client.socket_mode_request_listeners.append(_listener)
 

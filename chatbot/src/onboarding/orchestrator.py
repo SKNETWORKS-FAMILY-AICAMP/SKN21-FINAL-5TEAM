@@ -8,13 +8,16 @@ from typing import Any
 from .agent_contracts import RunState
 from .agent_orchestrator import AgentOrchestrator
 from .approval_store import ApprovalStore
+from .backend_evaluator import evaluate_backend_workspace
+from .codebase_mapper import write_codebase_map
 from .exporter import export_runtime_patch
 from .overlay_generator import generate_overlay_scaffold
+from .patch_planner import write_patch_proposal, write_unified_diff_draft
 from .role_runner import RoleRunner, build_llm_role_runner
 from .run_generator import generate_run_bundle
 from .slack_bridge import InMemorySlackBridge
 from .smoke_runner import load_smoke_plan, run_smoke_tests, summarize_smoke_results
-from .runtime_runner import prepare_runtime_workspace
+from .runtime_runner import prepare_runtime_workspace, simulate_runtime_merge
 from .manifest import OverlayManifest
 from .template_generator import (
     generate_chat_auth_template,
@@ -116,8 +119,13 @@ def run_onboarding_generation(
         run_id=run_id,
         agent_version=agent_version,
     )
+    codebase_map_path = write_codebase_map(
+        source_root=source_root,
+        output_path=run_root / "reports" / "codebase-map.json",
+    )
     manifest = OverlayManifest.model_validate_json((run_root / "manifest.json").read_text(encoding="utf-8"))
     analysis = manifest.analysis
+    codebase_map = json.loads(codebase_map_path.read_text(encoding="utf-8"))
     analyzer_context = {
         "site": site,
         "analysis": analysis,
@@ -137,18 +145,27 @@ def run_onboarding_generation(
             message=analyzer_message,
         )
 
-        bridge.post_approval_request(
-            run_id=run_id,
-            approval_type=agent.request_analysis_approval(
-                summary="Analysis is ready for review",
-                recommended_option="approve",
-            )["approval_type"],
+        analysis_request = agent.request_analysis_approval(
             summary="Analysis is ready for review",
             recommended_option="approve",
-            risk_if_approved="downstream plan depends on this analysis",
-            risk_if_rejected="run stops before generation",
-            available_actions=["approve", "reject"],
         )
+        should_publish_analysis_request = True
+        if approval_store is not None:
+            existing = approval_store.get_decision(run_id=run_id, approval_type="analysis")
+            if existing is None:
+                approval_store.create_request(run_id=run_id, approval_type="analysis")
+            else:
+                should_publish_analysis_request = existing["status"] == "pending"
+        if should_publish_analysis_request:
+            bridge.post_approval_request(
+                run_id=run_id,
+                approval_type=analysis_request["approval_type"],
+                summary="Analysis is ready for review",
+                recommended_option="approve",
+                risk_if_approved="downstream plan depends on this analysis",
+                risk_if_rejected="run stops before generation",
+                available_actions=["approve", "reject"],
+            )
 
     elif approvals is not None or approval_store is not None:
         agent.request_analysis_approval(
@@ -180,6 +197,12 @@ def run_onboarding_generation(
             "frontend_patch",
         ]
     ]
+    write_patch_proposal(
+        analysis=analysis,
+        codebase_map=codebase_map,
+        recommended_outputs=recommended_outputs,
+        output_path=run_root / "reports" / "patch-proposal.json",
+    )
     planner_context = {
         "site": site,
         "analysis": analysis,
@@ -236,20 +259,34 @@ def run_onboarding_generation(
         proposed_files=proposed_files,
         proposed_patches=proposed_patches,
     )
+    write_unified_diff_draft(
+        source_root=source_root,
+        generated_run_root=run_root,
+        output_path=run_root / "patches" / "proposed.patch",
+    )
 
     if bridge is not None:
-        bridge.post_approval_request(
-            run_id=run_id,
-            approval_type=agent.request_apply_approval(
-                summary="Overlay bundle is ready to apply",
-                recommended_option="approve",
-            )["approval_type"],
+        apply_request = agent.request_apply_approval(
             summary="Overlay bundle is ready to apply",
             recommended_option="approve",
-            risk_if_approved="runtime patch may fail",
-            risk_if_rejected="run stops before validation",
-            available_actions=["approve", "reject"],
         )
+        should_publish_apply_request = True
+        if approval_store is not None:
+            existing = approval_store.get_decision(run_id=run_id, approval_type="apply")
+            if existing is None:
+                approval_store.create_request(run_id=run_id, approval_type="apply")
+            else:
+                should_publish_apply_request = existing["status"] == "pending"
+        if should_publish_apply_request:
+            bridge.post_approval_request(
+                run_id=run_id,
+                approval_type=apply_request["approval_type"],
+                summary="Overlay bundle is ready to apply",
+                recommended_option="approve",
+                risk_if_approved="runtime patch may fail",
+                risk_if_rejected="run stops before validation",
+                available_actions=["approve", "reject"],
+            )
     else:
         agent.request_apply_approval(
             summary="Overlay bundle is ready to apply",
@@ -276,6 +313,16 @@ def run_onboarding_generation(
         manifest=manifest,
         generated_run_root=run_root,
         runtime_root=runtime_root,
+    )
+    simulate_runtime_merge(
+        manifest=manifest,
+        generated_run_root=run_root,
+        runtime_workspace=runtime_workspace,
+        report_root=run_root / "reports",
+    )
+    evaluate_backend_workspace(
+        runtime_workspace=runtime_workspace,
+        report_root=run_root / "reports",
     )
     agent.mark_apply_completed()
     smoke_plan = load_smoke_plan(run_root)
@@ -333,18 +380,27 @@ def run_onboarding_generation(
             ),
             message=validator_message,
         )
-        bridge.post_approval_request(
-            run_id=run_id,
-            approval_type=agent.request_export_approval(
-                summary="Export bundle is ready",
-                recommended_option="approve",
-            )["approval_type"],
+        export_request = agent.request_export_approval(
             summary="Export bundle is ready",
             recommended_option="approve",
-            risk_if_approved="patch export may still need manual review",
-            risk_if_rejected="run remains local only",
-            available_actions=["approve", "reject"],
         )
+        should_publish_export_request = True
+        if approval_store is not None:
+            existing = approval_store.get_decision(run_id=run_id, approval_type="export")
+            if existing is None:
+                approval_store.create_request(run_id=run_id, approval_type="export")
+            else:
+                should_publish_export_request = existing["status"] == "pending"
+        if should_publish_export_request:
+            bridge.post_approval_request(
+                run_id=run_id,
+                approval_type=export_request["approval_type"],
+                summary="Export bundle is ready",
+                recommended_option="approve",
+                risk_if_approved="patch export may still need manual review",
+                risk_if_rejected="run remains local only",
+                available_actions=["approve", "reject"],
+            )
     else:
         agent.request_export_approval(
             summary="Export bundle is ready",
@@ -572,6 +628,11 @@ def _build_run_result(
         "smoke_results_path": str(run_root / "reports" / "smoke-results.json"),
         "smoke_summary_path": str(run_root / "reports" / "smoke-summary.json"),
         "diagnostic_report_path": str(run_root / "reports" / "diagnostic-report.json"),
+        "codebase_map_path": str(run_root / "reports" / "codebase-map.json"),
+        "patch_proposal_path": str(run_root / "reports" / "patch-proposal.json"),
+        "merge_simulation_path": str(run_root / "reports" / "merge-simulation.json"),
+        "backend_evaluation_path": str(run_root / "reports" / "backend-evaluation.json"),
+        "proposed_patch_path": str(run_root / "patches" / "proposed.patch"),
         "export_metadata_path": str(run_root / "reports" / "export-metadata.json"),
         "slack_message_count": len(bridge.messages) if bridge is not None else 0,
         "current_state": agent.state.value,

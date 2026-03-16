@@ -1,0 +1,59 @@
+{
+  "conversation_id": "conv_0701311b394c",
+  "user_id": 1,
+  "status": "in_progress",
+  "feedback_label": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "환불해줘",
+      "at": "2026-03-16T02:31:59.380634+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다. 환불하실 주문을 선택해주세요.",
+      "at": "2026-03-16T02:31:59.380637+00:00"
+    },
+    {
+      "role": "user",
+      "content": "주문 선택 완료",
+      "at": "2026-03-16T02:32:01.396240+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "주문 조회 실패: 요청 실패: Client error '422 Unprocessable Content' for url 'http://localhost:8000/orders/1/orders/ORD-20260303-0002'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/422",
+      "at": "2026-03-16T02:32:01.396243+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": null,
+    "order_context": {
+      "pending_action": "refund",
+      "action_status": "failed",
+      "awaiting_resume_for": null,
+      "last_tool": "refund",
+      "last_ui_payload": null
+    },
+    "search_context": {},
+    "ui_action_required": null,
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "site_id": "site-c"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "환불해줘",
+      "output": "최근 30일 이내 주문 내역입니다. 환불하실 주문을 선택해주세요."
+    },
+    {
+      "turn_index": 1,
+      "input": "주문 선택 완료",
+      "output": "주문 조회 실패: 요청 실패: Client error '422 Unprocessable Content' for url 'http://localhost:8000/orders/1/orders/ORD-20260303-0002'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/422"
+    }
+  ],
+  "started_at": "2026-03-16T02:31:59.380627+00:00",
+  "ended_at": null,
+  "updated_at": "2026-03-16T02:32:01.396250+00:00",
+  "reset_required": false
+}

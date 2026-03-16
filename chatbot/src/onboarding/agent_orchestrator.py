@@ -28,6 +28,7 @@ class AgentOrchestrator:
 
     def mark_analysis_completed(self) -> None:
         self.state = RunState.PLANNING
+        self.pending_approval = None
 
     def mark_plan_completed(self) -> None:
         self.state = RunState.GENERATING
