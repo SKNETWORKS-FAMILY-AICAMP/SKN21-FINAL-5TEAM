@@ -7,8 +7,6 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
 
-import json
-
 from ecommerce.backend.app.database import SessionLocal
 from ecommerce.backend.app.models import (
     Review,
@@ -18,6 +16,10 @@ from ecommerce.backend.app.models import (
     ProductOption,
 )
 from chatbot.src.tools.base import BaseAPITool
+from chatbot.src.tools.order_tools import (
+    _is_langgraph_interrupt_error,
+    _require_order_id,
+)
 
 
 # Helper to get DB session
@@ -77,7 +79,7 @@ def get_reviews(product_id: str = None, limit: int = 10) -> dict:
 
 @tool
 def create_review(
-    order_id: str,
+    order_id: str = "",
     product_id: str = "",
     rating: int = 0,
     content: str = "",
@@ -96,12 +98,21 @@ def create_review(
     Returns:
         성공 여부, 메시지, 리뷰 ID
     """
-    if not order_id:
-        return {"error": "리뷰 작성을 위해 주문 번호가 필요합니다."}
-
     db = SessionLocal()
     try:
-        order = db.query(Order).filter(Order.order_number == order_id).first()
+        resolved_order_id = _require_order_id(
+            user_id=user_id,
+            order_id=order_id,
+            action_context="review",
+        )
+        if not resolved_order_id:
+            return {
+                "success": False,
+                "needs_order_id": True,
+                "message": "리뷰를 작성할 주문을 선택해주세요.",
+            }
+
+        order = db.query(Order).filter(Order.order_number == resolved_order_id).first()
         if not order:
             return {"error": "유효하지 않은 주문 번호입니다."}
 
@@ -146,18 +157,15 @@ def create_review(
 
         # UI Fallback Interception
         if rating == 0 or content == "UI_REQUEST":
-            return json.dumps(
-                {
-                    "ui_action": "show_review_form",
-                    "message": "리뷰 세부 정보를 입력해주세요.",
-                    "ui_data": {
-                        "order_id": order_id,
-                        "product_id": actual_product_id,
-                        "product_name": product_name,
-                    },
+            return {
+                "ui_action": "show_review_form",
+                "message": "리뷰 세부 정보를 입력해주세요.",
+                "ui_data": {
+                    "order_id": resolved_order_id,
+                    "product_id": actual_product_id,
+                    "product_name": product_name,
                 },
-                ensure_ascii=False,
-            )
+            }
 
         # 3. Create Review
         new_review = Review(
@@ -174,9 +182,12 @@ def create_review(
             "success": True,
             "message": "리뷰가 성공적으로 등록되었습니다.",
             "review_id": new_review.id,
+            "order_id": resolved_order_id,
         }
 
     except Exception as e:
+        if _is_langgraph_interrupt_error(e):
+            raise
         db.rollback()
         return {"error": f"리뷰 작성 실패: {str(e)}"}
     finally:

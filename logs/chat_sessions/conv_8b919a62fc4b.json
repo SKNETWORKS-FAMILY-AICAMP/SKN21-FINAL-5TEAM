@@ -1,0 +1,38 @@
+{
+  "conversation_id": "conv_8b919a62fc4b",
+  "user_id": 1,
+  "status": "completed",
+  "feedback_label": "bad",
+  "messages": [
+    {
+      "role": "user",
+      "content": "리뷰 작성을 하고싶어",
+      "at": "2026-03-16T03:39:30.721832+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "주문 번호를 알려주시면 리뷰를 작성해드리겠습니다.",
+      "at": "2026-03-16T03:39:30.721837+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": "사용자: 리뷰 작성을 하고싶어",
+    "order_context": {},
+    "search_context": {},
+    "ui_action_required": null,
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "site_id": "site-c"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "리뷰 작성을 하고싶어",
+      "output": "주문 번호를 알려주시면 리뷰를 작성해드리겠습니다."
+    }
+  ],
+  "started_at": "2026-03-16T03:39:30.721816+00:00",
+  "ended_at": "2026-03-16T03:39:36.417301+00:00",
+  "updated_at": "2026-03-16T03:39:36.417301+00:00",
+  "reset_required": true
+}
