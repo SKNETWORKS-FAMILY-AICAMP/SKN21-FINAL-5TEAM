@@ -61,10 +61,12 @@ def write_unified_diff_draft(
     *,
     source_root: str | Path,
     generated_run_root: str | Path,
+    proposal_path: str | Path,
     output_path: str | Path,
 ) -> Path:
     source = Path(source_root)
     generated_root = Path(generated_run_root)
+    proposal = json.loads(Path(proposal_path).read_text(encoding="utf-8"))
     patch_chunks: list[str] = []
 
     files_root = generated_root / "files"
@@ -83,6 +85,24 @@ def write_unified_diff_draft(
                 tofile=f"b/{relative.as_posix()}",
             )
             patch_chunks.append("".join(diff))
+
+    for target in proposal.get("target_files") or []:
+        relative = str(target.get("path") or "")
+        source_file = source / relative
+        source_lines = _read_text_or_empty(source_file)
+        if relative.endswith("views.py"):
+            updated_lines = source_lines + _build_python_stub_lines()
+        elif relative.endswith("urls.py"):
+            updated_lines = source_lines + _build_url_registration_stub_lines()
+        else:
+            continue
+        diff = difflib.unified_diff(
+            source_lines,
+            updated_lines,
+            fromfile=f"a/{relative}",
+            tofile=f"b/{relative}",
+        )
+        patch_chunks.append("".join(diff))
 
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -117,3 +137,20 @@ def _read_text_or_empty(path: Path) -> list[str]:
     if not path.exists():
         return []
     return path.read_text(encoding="utf-8").splitlines(keepends=True)
+
+
+def _build_python_stub_lines() -> list[str]:
+    return [
+        "\n",
+        "def onboarding_chat_auth_token(request):\n",
+        '    """Generated onboarding stub for runtime-only integration."""\n',
+        "    return None\n",
+    ]
+
+
+def _build_url_registration_stub_lines() -> list[str]:
+    return [
+        "\n",
+        '# onboarding draft route registration\n',
+        'path("api/chat/auth-token", onboarding_chat_auth_token),\n',
+    ]

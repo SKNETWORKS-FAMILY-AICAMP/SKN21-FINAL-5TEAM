@@ -1244,7 +1244,14 @@ def register_exchange_request(
         assert order is not None  # Type narrowing
 
         if order.status not in [OrderStatus.SHIPPED, OrderStatus.DELIVERED]:
-            return {"error": "배송 전입니다. 옵션 변경 기능을 이용해주세요."}
+            return change_product_option.invoke(
+                {
+                    "order_id": resolved_order_id,
+                    "user_id": user_id,
+                    "new_option_id": new_option_id,
+                    "confirmed": confirmed,
+                }
+            )
 
         if order.status == OrderStatus.DELIVERED:
             delivered_at = order.shipping_info.delivered_at if order.shipping_info else None
