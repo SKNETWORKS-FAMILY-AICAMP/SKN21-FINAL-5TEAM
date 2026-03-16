@@ -17,6 +17,6 @@ PROJECT_ROOT = find_project_root(BENCH_ROOT)
 
 # 하위 디렉터리
 DATA_DIR = BENCH_ROOT / "data"
-OUTPUT_DIR = BENCH_ROOT / "output"
+OUTPUT_DIR = BENCH_ROOT.parent / "result" / "API-Bank"
 CONFIG_PATH = BENCH_ROOT / "openai.cfg"
 ENV_PATH = PROJECT_ROOT / ".env"

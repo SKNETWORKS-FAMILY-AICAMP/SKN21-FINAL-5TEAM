@@ -1,25 +1,80 @@
 """
 model_caller.py
 
-OpenAI 호환 API를 통해 대상 모델(챗봇)을 호출합니다.
-각 턴의 query + tools 를 받아 모델 응답을 반환합니다.
+프로젝트 내부 LangGraph 챗봇(graph_app)을 직접 호출하여 응답을 반환합니다.
 """
 
-import os
+import sys
 import json
+import uuid
+import asyncio
 import logging
-from typing import List, Dict, Optional
+from pathlib import Path
+from typing import List, Dict, Optional, Any
 
-from openai import OpenAI
+# ── 프로젝트 루트 탐색 및 경로 설정 ─────────────────────────────────────────
+_BENCH_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _find_project_root(start: Path, marker: str = ".env") -> Path:
+    for parent in [start] + list(start.parents):
+        if (parent / marker).exists():
+            return parent
+    return start.parents[4]
+
+
+_PROJECT_ROOT = _find_project_root(_BENCH_ROOT)
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from dotenv import load_dotenv  # noqa: E402
+load_dotenv(_PROJECT_ROOT / ".env")
+
+from langchain_core.messages import HumanMessage, AIMessage  # noqa: E402
+from chatbot.src.graph.workflow import graph_app  # noqa: E402
+
+# ── 평가용 기본 사용자 정보 (prompt_variables로 덮어씀) ──────────────────────
+_DEFAULT_EVAL_USER: Dict[str, Any] = {
+    "id": 1,
+    "name": "평가용 사용자",
+    "email": "test@example.com",
+    "site_id": "site_a",
+}
+
+
+def _build_user_info(prompt_variables: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """prompt_variables에서 user_id, user_email을 추출해 user_info를 구성합니다."""
+    if not prompt_variables:
+        return dict(_DEFAULT_EVAL_USER)
+    user_id = prompt_variables.get("user_id", _DEFAULT_EVAL_USER["id"])
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        user_id = _DEFAULT_EVAL_USER["id"]
+    email = prompt_variables.get("user_email", _DEFAULT_EVAL_USER["email"])
+    return {**_DEFAULT_EVAL_USER, "id": user_id, "email": email}
+
+
+def _run_async(coro):
+    """동기 컨텍스트에서 코루틴을 실행합니다."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import nest_asyncio
+            nest_asyncio.apply()
+            return loop.run_until_complete(coro)
+        return loop.run_until_complete(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
 
 
 class ModelCaller:
-    """OpenAI 호환 API를 통해 챗봇 모델을 호출합니다."""
+    """LangGraph graph_app을 통해 챗봇 모델을 호출합니다."""
 
     def __init__(
         self,
-        model: str,
-        api_key: str,
+        model: str = "gpt-4o-mini",
+        api_key: Optional[str] = None,
         temperature: float = 0.0,
         base_url: Optional[str] = None,
         system_prompt_path: Optional[str] = None,
@@ -27,120 +82,101 @@ class ModelCaller:
     ):
         self.model = model
         self.temperature = temperature
-        self.client = OpenAI(
-            api_key=api_key,
-            base_url=base_url if base_url else None,
-        )
-        self.system_prompt_template = self._load_system_prompt_template(system_prompt_path)
-        self.default_variables = prompt_variables or {}
-        # 기본 변수로 치환된 시스템 프롬프트 (per-call 변수 없을 때 사용)
-        self.system_prompt = self._resolve_prompt(self.default_variables)
-
-    def _load_system_prompt_template(self, path: Optional[str]) -> str:
-        """시스템 프롬프트 템플릿을 파일에서 로드합니다."""
-        if path and os.path.isfile(path):
-            with open(path, "r", encoding="utf-8") as f:
-                return f.read().strip()
-        return ""
-
-    def _resolve_prompt(self, variables: Optional[Dict[str, str]] = None) -> str:
-        """시스템 프롬프트 템플릿의 플레이스홀더를 실제 값으로 치환합니다."""
-        prompt = self.system_prompt_template
-        if variables:
-            for key, value in variables.items():
-                prompt = prompt.replace(f"{{{key}}}", str(value))
-        return prompt
-
-    def _normalize_messages(self, messages: List[Dict]) -> List[Dict]:
-        """
-        데이터셋 포맷의 messages를 OpenAI API 포맷으로 변환합니다.
-
-        데이터셋 tool_calls: [{"name": ..., "arguments": ...}]
-        OpenAI API 요구:    [{"id": ..., "type": "function", "function": {"name": ..., "arguments": ...}}]
-        """
-        normalized = []
-        tool_call_id_map: Dict[str, str] = {}
-
-        for i, msg in enumerate(messages):
-            if msg.get("role") == "assistant" and msg.get("tool_calls"):
-                new_tool_calls = []
-                for j, tc in enumerate(msg["tool_calls"]):
-                    tc_id = f"call_{i}_{j}"
-                    tool_call_id_map[tc.get("name", "")] = tc_id
-                    new_tool_calls.append({
-                        "id": tc_id,
-                        "type": "function",
-                        "function": {
-                            "name": tc["name"],
-                            "arguments": tc["arguments"],
-                        },
-                    })
-                normalized.append({
-                    "role": "assistant",
-                    "content": msg.get("content"),
-                    "tool_calls": new_tool_calls,
-                })
-            elif msg.get("role") == "tool":
-                tool_name = msg.get("name", "")
-                tc_id = tool_call_id_map.get(tool_name, f"call_{tool_name}")
-                normalized.append({
-                    "role": "tool",
-                    "tool_call_id": tc_id,
-                    "content": msg.get("content", ""),
-                })
-            else:
-                normalized.append(msg)
-
-        return normalized
+        # api_key, base_url, system_prompt_path, prompt_variables는 하위 호환을 위해 받지만 미사용
 
     def call(self, query: List[Dict], tools: List[Dict], prompt_variables: Optional[Dict[str, str]] = None) -> Dict:
         """
-        모델을 호출하고 응답을 데이터셋 ground_truth 포맷으로 반환합니다.
-
-        Args:
-            prompt_variables: dialog별 플레이스홀더 치환 변수 (예: {"user_id": "1", "user_email": "..."})
+        graph_app을 호출하고 응답을 데이터셋 ground_truth 포맷으로 반환합니다.
 
         반환 포맷:
           - 텍스트 응답: {"role": "assistant", "content": "..."}
           - 툴 호출:     {"role": "assistant", "content": None,
                           "tool_calls": [{"name": "...", "arguments": "..."}]}
         """
-        # per-call 변수가 있으면 기본 변수와 합쳐서 새 시스템 프롬프트 생성
-        if prompt_variables:
-            merged = {**self.default_variables, **prompt_variables}
-            system_prompt = self._resolve_prompt(merged)
-        else:
-            system_prompt = self.system_prompt
+        # query를 LangChain 메시지로 변환 (system 메시지는 건너뜀)
+        messages: List = []
+        for msg in query:
+            role = msg.get("role", "")
+            content = msg.get("content") or ""
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                # tool_calls가 있는 assistant 메시지는 AIMessage에 tool_calls 추가
+                tool_calls_raw = msg.get("tool_calls")
+                if tool_calls_raw:
+                    # LangChain AIMessage.tool_calls 형식으로 변환
+                    lc_tool_calls = []
+                    for tc in tool_calls_raw:
+                        name = tc.get("name", "")
+                        args_raw = tc.get("arguments", "{}")
+                        try:
+                            args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+                        except Exception:
+                            args = {}
+                        lc_tool_calls.append({
+                            "name": name,
+                            "args": args,
+                            "id": f"call_{uuid.uuid4().hex[:8]}",
+                            "type": "tool_call",
+                        })
+                    messages.append(AIMessage(content=content, tool_calls=lc_tool_calls))
+                else:
+                    messages.append(AIMessage(content=content))
 
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.extend(query)
-        messages = self._normalize_messages(messages)
+        if not messages:
+            return {"role": "assistant", "content": None}
+
+        conv_id = f"eval_{uuid.uuid4().hex[:12]}"
+        state = {
+            "messages": messages,
+            "pending_tasks": [],
+            "completed_tasks": [],
+            "current_active_task": None,
+            "order_context": {},
+            "search_context": {},
+            "ui_action_required": None,
+            "agent_results": {},
+            "guardrail_passed": True,
+            "user_info": _build_user_info(prompt_variables),
+            "llm_provider": "openai",
+            "llm_model": self.model,
+            "conversation_id": conv_id,
+            "turn_id": f"turn_{uuid.uuid4().hex[:12]}",
+            "conversation_summary": None,
+        }
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=tools,
-                tool_choice="auto",
-                temperature=self.temperature,
+            result = _run_async(
+                graph_app.ainvoke(
+                    state,
+                    config={"configurable": {"thread_id": conv_id}},
+                )
             )
         except Exception as e:
-            logging.error(f"모델 API 호출 실패: {e}")
+            logging.error(f"graph_app 호출 실패: {e}")
             raise
 
-        choice = response.choices[0]
-        message = choice.message
-        result: Dict = {"role": "assistant", "content": message.content}
+        result_messages = result.get("messages", [])
 
-        if message.tool_calls:
-            result["tool_calls"] = [
-                {
-                    "name": tc.function.name,
-                    "arguments": tc.function.arguments,  # JSON 문자열
+        # tool_calls가 있는 첫 번째 AIMessage를 반환 (call 턴 평가용)
+        for msg in result_messages:
+            if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+                tool_calls = [
+                    {
+                        "name": tc["name"],
+                        "arguments": json.dumps(tc.get("args", {}), ensure_ascii=False),
+                    }
+                    for tc in msg.tool_calls
+                ]
+                return {
+                    "role": "assistant",
+                    "content": msg.content,
+                    "tool_calls": tool_calls,
                 }
-                for tc in message.tool_calls
-            ]
 
-        return result
+        # tool_calls 없음 — 마지막 AIMessage 텍스트 반환 (completion 턴)
+        for msg in reversed(result_messages):
+            if isinstance(msg, AIMessage):
+                return {"role": "assistant", "content": msg.content}
+
+        return {"role": "assistant", "content": None}
