@@ -121,7 +121,9 @@ const Products = () => {
                     <img
                       src={
                         product.image
-                          ? `http://127.0.0.1:8000/media/${product.image}`
+                          ? (product.image.startsWith("http")
+                              ? product.image
+                              : `http://127.0.0.1:8000/media/${product.image}`)
                           : `https://via.placeholder.com/400x300?text=${encodeURIComponent(
                               product.name ?? "상품"
                             )}`

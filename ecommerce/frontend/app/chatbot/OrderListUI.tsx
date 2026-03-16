@@ -33,6 +33,7 @@ type OrderListUIProps = {
 };
 
 export default function OrderListUI({ message, orders, onSelect, requiresSelection = false, prior_action, ui_config }: OrderListUIProps) {
+  const safeOrders = orders ?? [];
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [confirmed, setConfirmed] = React.useState(false);  // 선택 완료 상태
 
@@ -88,7 +89,7 @@ export default function OrderListUI({ message, orders, onSelect, requiresSelecti
     <div className={styles.orderListContainer}>
       <p className={styles.orderListMessage}>{message}</p>
       <div className={styles.orderCards}>
-        {orders.map((order) => (
+        {safeOrders.map((order) => (
           <div key={order.order_id} className={styles.orderCard}>
             {showSelection && (
               <input

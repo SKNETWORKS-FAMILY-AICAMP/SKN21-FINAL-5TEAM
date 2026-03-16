@@ -57,6 +57,7 @@ from chatbot.src.graph.nodes.order_flow import (
     refund_subagent_node,
     exchange_subagent_node,
     shipping_subagent_node,
+    order_list_subagent_node,
 )
 from chatbot.src.graph.nodes.discovery_subagent import discovery_subagent_node
 from chatbot.src.graph.nodes.policy_rag_subagent import policy_rag_subagent_node
@@ -80,6 +81,7 @@ def build_graph() -> StateGraph:
     builder.add_node("refund_subagent",        refund_subagent_node)
     builder.add_node("exchange_subagent",      exchange_subagent_node)
     builder.add_node("shipping_subagent",      shipping_subagent_node)
+    builder.add_node("order_list_subagent",    order_list_subagent_node)
     builder.add_node("discovery_subagent",     discovery_subagent_node)
     builder.add_node("policy_rag_subagent",    policy_rag_subagent_node)
     builder.add_node("form_action_subagent",   form_action_subagent_node)
@@ -118,6 +120,7 @@ def build_graph() -> StateGraph:
             "discovery_subagent":    "discovery_subagent",
             "policy_rag_subagent":   "policy_rag_subagent",
             "form_action_subagent":  "form_action_subagent",
+            "order_list_subagent":   "order_list_subagent",
             "final_generator":       "final_generator",
         },
     )
@@ -132,6 +135,7 @@ def build_graph() -> StateGraph:
             "refund_subagent": "refund_subagent",
             "exchange_subagent": "exchange_subagent",
             "shipping_subagent": "shipping_subagent",
+            "order_list_subagent": "order_list_subagent",
             "final_generator": "final_generator",
         },
     )
@@ -150,6 +154,8 @@ def build_graph() -> StateGraph:
                 "final_generator": "final_generator",
             },
         )
+
+    builder.add_edge("order_list_subagent", "final_generator")
 
     # ── 나머지 SubAgent → supervisor (loop) ───────────────
     for subagent in (

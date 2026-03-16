@@ -1,0 +1,44 @@
+{
+  "conversation_id": "conv_db58c6ce5c91",
+  "user_id": 1,
+  "status": "completed",
+  "feedback_label": "bad",
+  "messages": [
+    {
+      "role": "user",
+      "content": "주문 목록을 보여주세요",
+      "at": "2026-03-16T02:58:10.288820+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다.\n- 2026-03-13 · ORD-20260313-104549-378 · 주문 취소 · 62,912원\n- 2026-03-03 · ORD-20260303-0003 · 결제 완료 · 63,063원\n- 2026-03-03 · ORD-20260303-0002 · 배송중 · 33,000원\n- 2026-03-03 · ORD-20260303-0001 · 환불 완료 · 18,000원",
+      "at": "2026-03-16T02:58:10.288822+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": null,
+    "order_context": {
+      "pending_action": "list_orders",
+      "action_status": "completed",
+      "awaiting_resume_for": null,
+      "last_tool": "order_list",
+      "last_ui_payload": null
+    },
+    "search_context": {},
+    "ui_action_required": null,
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "site_id": "site-c"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "주문 목록을 보여주세요",
+      "output": "최근 30일 이내 주문 내역입니다.\n- 2026-03-13 · ORD-20260313-104549-378 · 주문 취소 · 62,912원\n- 2026-03-03 · ORD-20260303-0003 · 결제 완료 · 63,063원\n- 2026-03-03 · ORD-20260303-0002 · 배송중 · 33,000원\n- 2026-03-03 · ORD-20260303-0001 · 환불 완료 · 18,000원"
+    }
+  ],
+  "started_at": "2026-03-16T02:58:10.288810+00:00",
+  "ended_at": "2026-03-16T02:59:29.864733+00:00",
+  "updated_at": "2026-03-16T02:59:29.864733+00:00",
+  "reset_required": true
+}
