@@ -895,7 +895,7 @@ export default function ChatbotFab() {
                     role: 'bot',
                     type: 'order_list',
                     message: buildOrderListMessage(data.message, data.requires_selection),
-                    orders: data.ui_data,
+                    orders: data.ui_data || [],
                     requiresSelection: data.requires_selection,
                     prior_action: data.prior_action,
                   },

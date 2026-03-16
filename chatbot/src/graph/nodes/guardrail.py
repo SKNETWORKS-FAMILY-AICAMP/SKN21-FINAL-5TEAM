@@ -24,6 +24,7 @@ from chatbot.src.graph.state import GlobalAgentState
 
 logger = logging.getLogger(__name__)
 
+
 # ── 모델 싱글톤 ───────────────────────────────────────────
 
 _GUARDRAIL_PIPELINE: Pipeline | None = None
@@ -84,6 +85,10 @@ def guardrail_node(state: GlobalAgentState) -> dict:
     if not user_text:
         return {"guardrail_passed": True}
 
+    if _is_order_list_intent(user_text):
+        logger.debug("[Guardrail] 주문 조회 의도 — 차단 없이 통과합니다.")
+        return {"guardrail_passed": True}
+
     try:
         results = _GUARDRAIL_PIPELINE(user_text)
         # pipeline top_k=1 반환 형식: [[{"label": ..., "score": ...}]]
@@ -93,15 +98,12 @@ def guardrail_node(state: GlobalAgentState) -> dict:
 
         logger.debug(f"[Guardrail] label={label}, score={score:.3f}, text='{user_text[:50]}'")
 
-        # 신뢰도가 임계값 미만이면 모호한 입력 → 차단 (안전 우선)
+        # 임계값 미만이면 판별이 불안정하므로 우선 통과 처리 (모호함보다는 응답 제공 우선)
         if score < _CONFIDENCE_THRESHOLD:
-            blocked_msg = AIMessage(
-                content="죄송합니다. 해당 내용은 서비스 정책에 따라 답변이 어렵습니다. 쇼핑 관련 문의 사항이 있으시면 말씀해 주세요."
+            logger.debug(
+                f"[Guardrail] 낮은 신뢰도({score:.3f})로 차단하지 않고 통과합니다."
             )
-            return {
-                "guardrail_passed": False,
-                "messages": [blocked_msg],
-            }
+            return {"guardrail_passed": True}
 
         # SAFE(정상 발화) 외 모든 클래스 차단
         if label != _SAFE_LABEL:
@@ -141,3 +143,11 @@ def _get_last_user_message(messages: list) -> str | None:
             content = getattr(msg, "content", "")
             return str(content).strip() if content else None
     return None
+def _is_order_list_intent(text: str | None) -> bool:
+    if not text:
+        return False
+    normalized = text.lower()
+    return (
+        "주문" in normalized
+        and any(token in normalized for token in ("목록", "내역", "조회", "보여", "내 주문", "주문 내역"))
+    )

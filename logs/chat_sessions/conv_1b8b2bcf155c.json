@@ -1,0 +1,33 @@
+{
+  "conversation_id": "conv_1b8b2bcf155c",
+  "user_id": 1,
+  "status": "completed",
+  "feedback_label": "bad",
+  "messages": [
+    {
+      "role": "user",
+      "content": "주문목록을 보여주세요",
+      "at": "2026-03-16T02:37:08.409209+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다. 환불하실 주문을 선택해주세요.",
+      "at": "2026-03-16T02:37:08.409212+00:00"
+    }
+  ],
+  "selected_state": {
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "주문목록을 보여주세요",
+      "output": "최근 30일 이내 주문 내역입니다. 환불하실 주문을 선택해주세요."
+    }
+  ],
+  "started_at": "2026-03-16T02:37:08.409197+00:00",
+  "ended_at": "2026-03-16T02:40:48.718498+00:00",
+  "updated_at": "2026-03-16T02:40:48.718498+00:00",
+  "reset_required": true
+}
