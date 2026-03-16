@@ -97,9 +97,7 @@ def _extract_order_id(query: str) -> str:
     return m.group(0) if m else ""
 
 def _extract_reason(query: str) -> str:
-    for c in sorted(REASON_CANDIDATES, key=len, reverse=True):
-        if c in (query or ""):
-            return c
+    # 'reason' 제외 정책 적용: 항상 빈 문자열 반환
     return ""
 
 def _extract_gift_code(query: str) -> str:
@@ -161,7 +159,8 @@ def _build_param_value(param_name: str, query: str, item: dict):
     if param_name == "order_id":
         return _extract_order_id(query) or order_id or None
     if param_name == "reason":
-        return _extract_reason(query) or None
+        # 'reason' 제외 정책 적용
+        return None
     if param_name == "query":
         return _extract_search_query(query) or None
     if param_name == "code":
@@ -209,7 +208,7 @@ def generate_rule_based_ground_truth(item: dict, tool_map: dict) -> dict:
 
         if value is not None and value != "":
             arguments[param_name] = value
-        elif param_name in required_set:
+        elif param_name in required_set and param_name != "reason":
             raise ValueError(f"필수 인자 누락: {tool_name}.{param_name} / query={query_text}")
 
     gt = {

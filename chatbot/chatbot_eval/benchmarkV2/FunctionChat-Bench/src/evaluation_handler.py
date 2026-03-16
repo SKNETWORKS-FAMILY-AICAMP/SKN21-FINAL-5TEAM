@@ -1,0 +1,789 @@
+import os
+import json
+import csv
+import time
+import logging
+from tqdm import tqdm
+from typing import Optional, Union
+import concurrent.futures
+
+import src.utils as utils
+import src.openai_utils as openai_utils
+from src.api_executor import (
+    OpenaiModelAzureAPI,
+    OpenaiModelAPI
+)
+from src.formatter import (
+    CommonResponseFormatter,
+    DialogResponseFormatter,
+    SingleCallResponseFormatter,
+)
+from src.evaluation_registor import (
+    CommonEvaluationRegistor,
+    DialogEvaluationRegistor,
+    SingleCallEvaluationRegistor
+)
+from src.constants import COMMON, SINGLECALL, DIALOG, CALL, COMPLETION, RELEVANCE, SLOT
+from src.color import GREEN, RESET
+
+RESPONSE_FORMATTER_OBJ = {
+    COMMON: CommonResponseFormatter,
+    SINGLECALL: SingleCallResponseFormatter,
+    DIALOG: DialogResponseFormatter,
+}
+
+EVAlUATION_REGISTOR_OBJ = {
+    COMMON: CommonEvaluationRegistor,
+    SINGLECALL: SingleCallEvaluationRegistor,
+    DIALOG: DialogEvaluationRegistor,
+}
+
+from src.paths import BENCH_ROOT, ENV_PATH, PROJECT_ROOT
+REPO_PATH = str(BENCH_ROOT)
+
+import sys
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+try:
+    from ecommerce.backend.app.database import SessionLocal
+    from ecommerce.backend.app.router.users.crud import get_user_by_email
+except ImportError:
+    SessionLocal = None
+    get_user_by_email = None
+
+
+class EvaluationHandler:
+    """
+    A class to handle different types of evaluations for models.
+    It manages the setup, execution, and storage of evaluation results based on evaluation metrics and configurations.
+    """
+    def __init__(self, evaluation_type):
+        import logging
+        logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+        """
+        Initializes the EvaluationHandler with a specific type of evaluation.
+
+        Parameters:
+            evaluation_type (str): The type of evaluation to perform, which determines the evaluation logic and outputs.
+
+        Attributes:
+            evaluation_type (str): Stores the type of evaluation.
+            rubric_prompts (list): Contains the rubric prompts loaded based on evaluation type.
+            temperature (float): The temperature setting for model predictions, loaded from configuration.
+            executor (object): The API executor instance used to run model predictions.
+            eval_reg (object): An instance of the evaluation register object for storing and managing evaluation results.
+        """
+        self.evaluation_type = evaluation_type
+        # load prompt
+        self.rubric_prompts = self.get_rubric_prompts()
+        cfg = json.loads(open(f'{REPO_PATH}/openai.cfg', 'r').read())
+        
+        # Load environment variables
+        from dotenv import load_dotenv
+        load_dotenv(ENV_PATH)
+        
+        self.temperature = float(cfg.get('temperature'))
+        self.executor = self.load_api_executor(cfg)
+        self.openai_model = cfg['api_version']
+        
+        # Priority: Config file -> Environment Variable
+        self.openai_apikey = cfg['api_key']
+        if not self.openai_apikey or "placeholder" in self.openai_apikey or "YOUR_OPENAI_KEY" in self.openai_apikey:
+             self.openai_apikey = os.getenv("OPENAI_API_KEY")
+             # Update cfg for executor if needed (though executor is already loaded, might need update)
+             if isinstance(self.executor, OpenaiModelAPI):
+                 self.executor.api_key = self.openai_apikey
+
+        if not self.openai_apikey:
+            logging.warning("OpenAI API Key not found in config or environment variables.")
+
+        self.max_tokens = cfg['max_tokens']
+        self.eval_reg = EVAlUATION_REGISTOR_OBJ[self.evaluation_type]()
+        self.meta_log_file = f"{REPO_PATH}/output/.batch_meta_{self.evaluation_type}.jsonl"
+        self.batch_file = f"{REPO_PATH}/output/.batch_{self.evaluation_type}.jsonl"
+        self.batch_output_file = f"{REPO_PATH}/output/.batch_{self.evaluation_type}_result.jsonl"
+
+    def get_rubric_prompts(self) -> dict:
+        rubric_prompts = {}
+        for output_type in [CALL, COMPLETION, RELEVANCE, SLOT]:
+            rubric_file_path = os.path.join(REPO_PATH, 'data', f'rubric_{output_type}.txt')
+            if os.path.isfile(rubric_file_path):
+                try:
+                    with open(rubric_file_path, "r", encoding="utf-8") as file:
+                        rubric_prompts[output_type] = file.read().strip()
+                except IOError as e:
+                    logging.warning(f"Error reading {rubric_file_path}: {e}")
+        logging.info(f"Loaded {len(rubric_prompts)} rubric prompts: {list(rubric_prompts.keys())}")
+        return rubric_prompts
+
+    def load_api_executor(self, cfg: dict) -> Union[OpenaiModelAzureAPI, OpenaiModelAPI]:
+        api_type = cfg.get('api_type', None)
+        
+        if api_type == "azure":
+            return OpenaiModelAzureAPI(
+                instance=cfg.get('instance'),
+                api_key=cfg.get('api_key') or os.getenv("AZURE_OPENAI_API_KEY"),
+                api_base=cfg.get('api_base'),
+                api_version=cfg.get('api_version')
+            )
+        elif api_type == "openai":
+            key = cfg.get('api_key')
+            if not key or "placeholder" in key or "YOUR_OPENAI_KEY" in key:
+                key = os.getenv("OPENAI_API_KEY")
+            
+            return OpenaiModelAPI(
+                model=cfg.get('api_version'),
+                api_key=key,
+                use_eval=True
+            )
+        else:
+            raise ValueError(f"Unsupported evaluation API type: {api_type}")
+
+    def clean_tool_calls(self, tools: list) -> Optional[list]:
+        if not tools:
+            return tools
+        return [{k: v for k, v in tool.items() if k != 'id'} for tool in tools]
+
+
+    def get_input_prompt(self, inp: dict, out: dict) -> list:
+        # Get scenario name and handle fallback
+        scenario_name_input = inp.get('scenario_name', 'default')
+        scenario_id_raw = inp.get('scenario_id')
+        
+        # Scenario file mapping (Korean name and internal name)
+        scenario_file_map = {
+            "주문 취소": "1_cancel_order_system_prompt.txt",
+            "환불/반품 신청": "2_refund_request_system_prompt.txt",
+            "교환 신청": "3_exchange_request_system_prompt.txt",
+            "주문 내역 조회": "4_order_list_lookup_system_prompt.txt",
+            "배송 조회": "5_order_detail_lookup_system_prompt.txt",
+            # internal names for safety
+            "cancel": "1_cancel_order_system_prompt.txt",
+            "refund": "2_refund_request_system_prompt.txt",
+            "exchange": "3_exchange_request_system_prompt.txt",
+            "shipping": "5_order_detail_lookup_system_prompt.txt",
+            "get_user_orders": "4_order_list_lookup_system_prompt.txt"
+        }
+        
+        prompt_file = scenario_file_map.get(scenario_name_input)
+        
+        # Fallback to ID mapping if name fails
+        if not prompt_file and scenario_id_raw:
+            try:
+                s_id = int(str(scenario_id_raw).split('-')[0])
+                ID_TO_FILE = {
+                    1: "1_cancel_order_system_prompt.txt",
+                    2: "2_refund_request_system_prompt.txt",
+                    3: "3_exchange_request_system_prompt.txt",
+                    4: "4_order_list_lookup_system_prompt.txt",
+                    5: "5_order_detail_lookup_system_prompt.txt"
+                }
+                prompt_file = ID_TO_FILE.get(s_id)
+            except:
+                pass
+        
+        scenario_name = scenario_name_input # Current display name
+        user_email = inp.get('user_email', 'user@example.com')
+        user_id = inp.get('user_id')
+
+        # If user_id is missing or default 3, try to fetch from DB using email (if available)
+        if (user_id is None or user_id == 3) and SessionLocal and get_user_by_email:
+            try:
+                session = SessionLocal()
+                user = get_user_by_email(session, user_email)
+                if user:
+                    user_id = user.id
+                session.close()
+            except Exception as e:
+                logging.error(f"Error fetching user_id from DB for {user_email}: {e}")
+
+        # Final fallback if still none
+        if user_id is None:
+            user_id = 1
+        
+        # Prompts directory
+
+        # Load target scenario prompt file
+        prompts_dir = os.path.join(str(BENCH_ROOT), 'data', 'system_prompts')
+        scenario_content = ""
+        if prompt_file:
+            target_path = os.path.join(prompts_dir, prompt_file)
+            if os.path.exists(target_path):
+                try:
+                    with open(target_path, "r", encoding="utf-8") as f:
+                        scenario_content = f.read().strip()
+                except Exception as e:
+                    logging.error(f"Error reading prompt file {target_path}: {e}")
+        
+        if scenario_content:
+            # Replace placeholders
+            scenario_rule = scenario_content.replace("{user_id}", str(user_id)).replace("{user_email}", str(user_email))
+            logging.info(f"Successfully loaded prompt for scenario: {scenario_name}")
+        else:
+            scenario_rule = f"가이드라인 준수 (user_id: {user_id})"
+            logging.warning(f"Using default prompt for scenario: {scenario_name} (Content empty or file not found)")
+        
+        # Criteria mapping
+        criteria_map = {
+            # "register_gift_card": "1. assistant가 바로 tool call을 했다면 FAIL\n2. assistant가 상품권 코드를 요청하는 질문을 했다면 PASS\n3. 질문 문구가 정확히 같지 않아도 의미가 같으면 PASS",
+            "cancel": "1. 주문번호가 주어졌을 때 결과적으로 cancel 도구를 호출했다면 PASS (인자값 무시)\n2. 불필요하게 목록 조회를 먼저 유도하더라도 올바른 도구를 호출하면 PASS",
+            "refund": "1. 결과적으로 refund 도구를 호출했다면 PASS (인자값 무시)",
+            "default": "1. 정답과 동일한 도구(Tool)를 호출했다면 PASS (인자값 일치 여부는 무시)\n2. 틀린 도구를 호출하거나 도구를 호출하지 않았다면 FAIL\n3. 모델이 필요한 도구를 호출했다면 인자(Arguments)가 조금 다르더라도 PASS로 평가함"
+        }
+        criteria = criteria_map.get(scenario_name, criteria_map["default"])
+
+        # Format Dialogue (DE-DUPLICATION: Use short placeholder for system message in dialogue)
+        dialogue_text = ""
+        # Support both 'messages' and 'dialogue' keys for compatibility
+        messages_list = inp.get('messages', inp.get('dialogue', []))
+        for msg in messages_list:
+            role = "User" if msg['role'] == 'user' else "Assistant" if msg['role'] == 'assistant' else "System"
+            content = msg.get('content', '')
+            if msg['role'] == 'system':
+                content = "[생략: 상단 Scenario Rule 참고]"
+            dialogue_text += f"{role}: \"{content}\"\n"
+        
+        # Format Submission
+        submission_text = "None" if out is None else json.dumps(out, ensure_ascii=False)
+
+        output_type = inp['type_of_output']
+        rubric_prompt = self.rubric_prompts.get(output_type)
+        if not rubric_prompt:
+            logging.error(f"Unsupported rubric prompt type: {output_type}. Available: {list(self.rubric_prompts.keys())}")
+            raise ValueError(f"Unsupported rubric prompt type: {output_type}")
+
+        # Modularize: System (Role+Criteria+Output) / User (Scenario+Dialogue+Submission)
+        if '---' in rubric_prompt:
+            system_part, user_part = rubric_prompt.split('---', 1)
+        else:
+            system_part = rubric_prompt
+            user_part = " [Scenario Rule]\n{scenario_rule}\n\n[Dialogue]\n{dialogue}\n\n[Model Response]\n{response}"
+
+        # Prepare Tools/Query/GT for rubrics
+        tools_list = inp.get('tools', [])
+        tools_text = json.dumps(tools_list, ensure_ascii=False, indent=2)
+        query_text = inp.get('query', '')
+        gt_list = inp.get('out_golden', [])
+        gt_text = json.dumps(gt_list, ensure_ascii=False, indent=2) if gt_list else "None"
+        acc_args = json.dumps(self.get_acceptable_arguments(inp), ensure_ascii=False, indent=2)
+
+        # 1 & 2. Combined System Message (Scenario Rules + Rubric & Criteria)
+        combined_system_content = f"# Scenario Instructions ({scenario_name})\n{scenario_rule}\n\n"
+        
+        # Use a flexible formatting to handle different rubric placeholders
+        formatting_vars = {
+            "criteria": criteria,
+            "tools": tools_text,
+            "query": query_text,
+            "ground_truth": gt_text,
+            "acceptable_arguments": acc_args,
+            "response": submission_text # for some rubrics that put response in system part
+        }
+        
+        # Safely format only the keys present in system_part
+        import re
+        def safe_format(template, variables):
+            # Find all {key} placeholders
+            placeholders = re.findall(r'\{(\w+)\}', template)
+            valid_vars = {k: v for k, v in variables.items() if k in placeholders}
+            # Also handle if template has placeholders not in variables (keep them as is)
+            for p in placeholders:
+                if p not in valid_vars:
+                    valid_vars[p] = f"{{{p}}}"
+            return template.format(**valid_vars)
+
+        system_content = safe_format(system_part, formatting_vars).strip()
+        combined_system_content += system_content
+        
+        system_message = {'role': 'system', 'content': combined_system_content}
+
+        # 3. User Evaluation Content (Dialogue & Response)
+        user_formatting_vars = {
+            "scenario_rule": "[Refer to System Message for Scenario Rules]",
+            "dialogue": dialogue_text.strip(),
+            "response": submission_text,
+            "query": query_text,
+            "ground_truth": gt_text,
+            "tools": tools_text
+        }
+        user_content = safe_format(user_part, user_formatting_vars).strip()
+        user_message = {'role': 'user', 'content': user_content}
+
+        return [
+            system_message,
+            user_message
+        ]
+
+    def get_acceptable_arguments(self, inp: dict) -> dict:
+        acceptable_arguments = inp.get('acceptable_arguments', None)
+        if acceptable_arguments:
+            try:
+                acceptable_arguments = json.loads(acceptable_arguments)
+            except Exception:
+                acceptable_arguments = json.loads(f'"{acceptable_arguments}"')
+        if acceptable_arguments is None:
+            return {}
+        if acceptable_arguments == "Only ground truth is allowed.":
+            return {}
+        if acceptable_arguments == "The date should be expressed as 'tomorrow'. A specific date should not be designated.":
+            return {}
+        if acceptable_arguments == "Since the user did not mention a specific year, it will fail if the date was created including the year in the submission.":
+            return {}
+        if isinstance(acceptable_arguments, str):
+            acceptable_arguments = json.loads(acceptable_arguments)
+        return acceptable_arguments
+
+    def compare_arguments(self, g_func_args: str, p_func_args: str, acceptable_arguments: dict) -> bool:
+        # 사용자 요청에 따라 인자값 비교는 항상 승인 (Tool 호출 여부만 중요)
+        return True
+
+    def _default_evaluate_response(self, message: str = "skip evaluation", exact: str = "fail") -> dict:
+        return {
+            "id": "exact-match",
+            "choices": [{
+                "finish_reason": "stop",
+                "index": 0,
+                "message": {"content": message, "role": "assistant"},
+                "function_call": None,
+                "tool_calls": None,
+            }],
+            "exact": exact
+        }
+
+    def exact_match(self, inp: dict, out: dict, debug: bool = False) -> tuple[bool, dict, Union[str, list]]:
+        # Populate input_prompt for logging even if exact match is performed
+        try:
+            input_prompt = self.get_input_prompt(inp, out)
+        except Exception as e:
+            logging.error(f"Error generating input prompt in exact_match: {e}")
+            input_prompt = ""
+        is_pass = "fail"
+        if not inp['type_of_output'] == CALL:
+            return False, self._default_evaluate_response(), input_prompt
+
+        if out is None:
+            return False, self._default_evaluate_response(message="skip evaluation, because model response is None"), input_prompt
+
+        is_pass_bool = False
+        ground_truth = inp.get('ground_truth', {})
+        acceptable_arguments = self.get_acceptable_arguments(inp)
+        diff_case_msg = ""
+
+        
+        if 'tool_calls' in ground_truth and ground_truth['tool_calls'] is not None:
+            # Handle cases where tool_calls might be an empty list or have no function key safely
+            tc_list = ground_truth.get('tool_calls', [])
+            if tc_list and len(tc_list) > 0:
+                ground_truth_func = tc_list[0].get('function', {})
+            else:
+                ground_truth_func = {}
+        else:
+            ground_truth_func = ground_truth
+            
+        g_func_name = ground_truth_func.get('name')
+        g_func_args = ground_truth_func.get('arguments', {})
+
+        # 'reason' 제외 정책 적용
+        if isinstance(g_func_args, str):
+            try:
+                g_func_args_dict = json.loads(g_func_args)
+                if 'reason' in g_func_args_dict:
+                    del g_func_args_dict['reason']
+                g_func_args = json.dumps(g_func_args_dict, ensure_ascii=False)
+            except: pass
+        elif isinstance(g_func_args, dict):
+            if 'reason' in g_func_args:
+                del g_func_args['reason']
+
+        predict_tools = out.get('tool_calls') or []
+        
+        if g_func_name == "no_tool_call":
+            if not predict_tools or len(predict_tools) == 0:
+                is_pass = "pass"
+                is_pass_bool = True
+            else:
+                p_func_name = predict_tools[0].get('function', {}).get('name')
+                diff_case_msg += f"함수명 불일치: 정답({g_func_name}) | 모델({p_func_name})\n"
+        elif predict_tools and len(predict_tools) > 0:
+            predicted_func = predict_tools[0].get('function', {})
+            p_func_name = predicted_func.get('name')
+            p_func_args = predicted_func.get('arguments', {})
+
+            # 'reason' 제외 정책 적용
+            if isinstance(p_func_args, str):
+                try:
+                    p_func_args_dict = json.loads(p_func_args)
+                    if 'reason' in p_func_args_dict:
+                        del p_func_args_dict['reason']
+                    p_func_args = json.dumps(p_func_args_dict, ensure_ascii=False)
+                except: pass
+            elif isinstance(p_func_args, dict):
+                if 'reason' in p_func_args:
+                    del p_func_args['reason']
+
+            if g_func_name == p_func_name:
+                is_pass = "pass"
+                is_pass_bool = True
+                # Tool selection match is PASS (User request: ignore arguments accuracy)
+            else:
+                diff_case_msg += f"함수명 불일치: 정답({g_func_name}) | 모델({p_func_name})\n"
+        else:
+            diff_case_msg += f"모델이 도구를 호출하지 않았습니다. 기대값: {g_func_name}\n"
+
+        msg = f"[정밀 비교 결과]\n{diff_case_msg}\n\n{is_pass}\n{is_pass}\n"
+
+        if debug:
+            logging.debug(f"\nInput: {inp}\nOutput: {out}")
+            logging.debug(f"Evaluation Message: {msg}")
+
+        return is_pass_bool, self._default_evaluate_response(msg, is_pass), input_prompt
+
+    def _get_batch_info_in_cached_meta(self, meta_log_file: str, client) -> tuple[Optional[str], Optional[str]]:
+        from types import SimpleNamespace
+        if os.path.isfile(meta_log_file):
+            data = {}
+            with open(meta_log_file, 'r') as f:
+                data = json.load(f)
+            batch_meta = SimpleNamespace(**data)
+            batch = client.batches.retrieve(batch_meta.id)
+            return batch.id, batch.status
+        return None, None
+
+    def _execute_batch_request(self, batch_file, debug=False):
+        import sys
+        import itertools
+        from openai import OpenAI
+        client = OpenAI(api_key=self.openai_apikey)
+        batch_id, batch_status = self._get_batch_info_in_cached_meta(self.meta_log_file, client)
+        if batch_status is None:
+            batch_input_file = client.files.create(
+                file=open(batch_file, "rb"),
+                purpose="batch"
+            )
+            batch_input_file_id = batch_input_file.id
+            batch_object = client.batches.create(
+                input_file_id=batch_input_file_id,
+                endpoint="/v1/chat/completions",
+                completion_window="24h",
+                metadata={
+                    "description": f"FunctionChat-Bench {self.evaluation_type} eval job.."
+                }
+            )
+            with open(self.meta_log_file, 'w') as f:
+                f.write(json.dumps(batch_object.to_dict(), indent=2))
+            batch_id = batch_object.id
+            if batch_id is None:
+                raise Exception("openai Batch job Error")
+        # Waiting
+        batch = client.batches.retrieve(batch_id)
+        print(f"\n\nbatch {GREEN}{batch_id}{RESET} status .. {batch.status}")
+        if batch.status != 'completed':
+            print(f"** If you want to check it yourself, click here. https://platform.openai.com/batches/{batch_id}")
+            spinner = itertools.cycle(['～o(▽｀ o)         ', '～o(▽｀ o) =3      ', '～o(▽｀ o) =3 =3   ', '～o(▽｀ o) =3 =3 =3'])
+            while batch.status != 'completed':
+                for _ in range(120):
+                    sys.stdout.write(f"\rWaiting for the batch job to finish. Current batch status is [{batch.status}] {next(spinner)}")
+                    sys.stdout.flush()
+                    time.sleep(0.5)  # 애니메이션 갱신 속도
+                batch = client.batches.retrieve(batch_id)
+            print(f"\n\nbatch status .. {batch.status}")
+        output_file_id = batch.output_file_id
+        content = client.files.content(output_file_id)
+        with open(self.batch_output_file, "wb") as file:
+            for chunk in content.iter_bytes():
+                file.write(chunk)
+        batch_result = []
+        with open(self.batch_output_file, "r") as file:
+            for line in file.readlines():
+                batch_result.append(json.loads(line.strip()))
+        if len(batch_result) == 0:
+            raise Exception(f"batch result is empty. check your batch output : https://platform.openai.com/batches/{batch_id}")
+        return batch_result
+
+    def fetch(self, inp, out, debug=False):
+        messages = self.get_input_prompt(inp, out)
+        evaluate_response = self.executor.predict({
+            'temperature': self.temperature, 
+            'messages': messages,
+            'trace': inp.get('trace', True)
+        })
+        if debug is True:
+            print(f"\nserial_num : {inp['serial_num']}")
+            print(f'evaluate_request (messages) : {json.dumps(messages, ensure_ascii=False, indent=2)}')
+            print(f"evaluate_response : {evaluate_response['choices'][0]['message']['content']}\n")
+        return evaluate_response, json.dumps(messages, ensure_ascii=False)
+
+    def load_cached_evaluation_result(self, eval_file_path, max_size):
+        if utils.is_exist_file(eval_file_path):
+            eval_output = utils.load_to_jsonl(eval_file_path)
+            if len(eval_output) == max_size:
+                print(f"[[already evaluate]] .. {len(eval_output)}/{max_size}\npath : {eval_file_path}")
+                return eval_output
+            else:
+                print(f"[[continue .. {len(eval_output)}/{max_size}]]\n")
+                return eval_output
+        return []
+
+    def _process_exact_match(self, input_set, output_set, start_index):
+        from itertools import islice
+        requests = islice(zip(input_set, output_set), start_index, None)
+        outputs = []
+        for idx, (inp, out) in enumerate(tqdm(requests, desc="Processing exact eval")):
+            if out is None:
+                out = {'tool_calls': []}
+            inp['type_of_output'] = 'call' if self.evaluation_type == 'singlecall' else inp['type_of_output']
+            is_pass, evaluate_response, input_prompt = self.exact_match(inp, out)
+            response_formatter = RESPONSE_FORMATTER_OBJ[self.evaluation_type](
+                request_model=inp,
+                response_model=out,
+                evaluate_prompt=json.dumps(input_prompt, ensure_ascii=False) if isinstance(input_prompt, list) else input_prompt,
+                evaluate_response=evaluate_response
+            )
+            outputs.append((is_pass, response_formatter))
+        return outputs
+
+    def _finalize_evaluation(self, eval_file_path, eval_log_file_path, eval_reasoning_file_path, outputs, model_name, llm_judge_name, model_path, eval_subtype):
+        write_option = 'w'
+        # update evaluate register
+        for idx, response_formatter in outputs:
+            self.eval_reg.add_eval_output(response_formatter.to_dict())
+        # show evaluate result
+        self.eval_reg.display()
+        # save evaluate result
+        eval_raw_fw = open(eval_file_path, write_option, encoding='utf-8')
+        eval_tsv_fw = open(eval_log_file_path, write_option, encoding='utf-8')
+        eval_reason_fw = open(eval_reasoning_file_path, write_option, encoding='utf-8', newline='')
+        
+        if write_option == 'w':
+            title = response_formatter.get_tsv_title()
+            eval_tsv_fw.write(f"{title}\n")
+            
+        csv_writer = csv.DictWriter(eval_reason_fw, fieldnames=['serial_num', 'is_pass', 'reasoning'])
+        csv_writer.writeheader()
+
+        for idx, response_formatter in outputs:
+            raw_data = response_formatter.to_dict()
+            eval_raw_fw.write(f"{json.dumps(raw_data, ensure_ascii=False)}\n")
+            eval_tsv_fw.write(f"{response_formatter.to_tsv().strip()}\n")
+            
+            # Extract raw reasoning from JSON string if needed
+            reasoning_field = response_formatter.report_arguments.get('reasoning', '')
+            try:
+                reasoning_text = json.loads(reasoning_field).get('reasoning', reasoning_field)
+            except:
+                reasoning_text = reasoning_field
+
+            # 불필요한 'pass', 'fail' 반복 문구 제거 (정밀 비교 결과 정리)
+            if isinstance(reasoning_text, str) and "[정밀 비교 결과]" in reasoning_text:
+                reasoning_text = reasoning_text.split('\n\n')[0].strip()
+
+            # Filter: Only write to reasoning CSV if it's a FAIL case
+            is_pass_val = response_formatter.report_arguments.get('is_pass')
+            if str(is_pass_val).lower() != 'pass':
+                csv_writer.writerow({
+                    'serial_num': response_formatter.report_arguments.get('serial_num'),
+                    'is_pass': str(is_pass_val).upper(),
+                    'reasoning': reasoning_text
+                })
+
+        eval_raw_fw.close()
+        eval_tsv_fw.close()
+        eval_reason_fw.close()
+
+        if os.path.isfile(self.meta_log_file):
+            os.remove(self.meta_log_file)
+        if os.path.isfile(self.batch_file):
+            os.remove(self.batch_file)
+        if os.path.isfile(self.batch_output_file):
+            os.remove(self.batch_output_file)
+        print(f"[[model evaluation file : {eval_log_file_path}]]")
+
+        self._save_evaluation_result(model_name, llm_judge_name, model_path, eval_subtype,
+                                      output_dir=os.path.dirname(eval_file_path))
+        
+
+    def _create_batch_file(self, batch_file, outputs):
+        input_prompts = []
+        with open(batch_file, 'w', encoding='utf-8') as fp:
+            for idx, (is_pass, response_formatter) in enumerate(tqdm(outputs, desc="Processing make batch file")):
+                if is_pass:
+                    continue
+                inp = response_formatter.request_model
+                out = response_formatter.response_model
+                
+                custom_id = f"{self.evaluation_type}_{idx}"
+                messages = self.get_input_prompt(inp, out)
+                reformed_json = openai_utils.get_openai_batch_format(custom_id, self.openai_model, messages, self.max_tokens)
+                input_prompts.append(json.dumps(messages, ensure_ascii=False))
+                fp.write(json.dumps(reformed_json, ensure_ascii=False)+'\n')
+        return input_prompts
+       
+    def _process_rubric_evaluation(self, outputs, is_batch=False):
+        if is_batch:
+            input_prompts = self._create_batch_file(self.batch_file, outputs)
+            if not input_prompts:
+                print("No items to evaluate with LLM Judge (All passed exact match or no output). Skipping Batch API.")
+                return outputs
+
+            batch_result = self._execute_batch_request(self.batch_file)
+            # write_file
+            for input_prompt, data in zip(input_prompts, batch_result):
+                # custom_id = f"{self.evaluation_type}_{idx}"
+                idx = int(data['custom_id'].split('_')[-1])
+                response_formatter = outputs[idx][1]
+                response_formatter.evaluate_prompt = input_prompt
+                response_formatter.set_evaluate_response(data['response']['body'])
+                outputs[idx] = (True, response_formatter)
+        else:
+            def rubric_eval_worker(idx, is_pass, response_formatter):
+                # 도구 이름이 맞아서 이미 PASS한 경우 LLM Judge를 거치지 않음
+                if is_pass:
+                    return idx, (is_pass, response_formatter)
+                
+                inp = response_formatter.request_model
+                out = response_formatter.response_model
+                
+                try:
+                    evaluate_response, input_prompt = self.fetch(inp, out)
+                    new_formatter = RESPONSE_FORMATTER_OBJ[self.evaluation_type](
+                        request_model=inp,
+                        response_model=out,
+                        evaluate_prompt=input_prompt,
+                        evaluate_response=evaluate_response
+                    )
+                    return idx, (True, new_formatter) # We set it to True because rubric eval finished
+                except Exception as e:
+                    logging.error(f"Error in rubric eval for idx {idx}: {e}")
+                    return idx, (is_pass, response_formatter)
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                futures = {
+                    executor.submit(rubric_eval_worker, idx, is_pass, response_formatter): idx 
+                    for idx, (is_pass, response_formatter) in enumerate(outputs)
+                }
+                for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Processing rubric eval"):
+                    idx, result = future.result()
+                    outputs[idx] = result
+        return outputs
+
+    def _save_evaluation_result(self, model_name, llm_judge_name, model_path, eval_subtype, output_dir=None):
+        if output_dir:
+            base_output_path = output_dir
+        else:
+            base_output_path = f"{REPO_PATH}/output/{model_name}"
+            
+        eval_score_path = f"{base_output_path}/FunctionChat-{model_name}.eval_score.json"
+        if not os.path.isdir(base_output_path):
+            os.makedirs(base_output_path)
+        singlecall_score = {}
+        dialog_score = {}
+        calldecision_score = {}
+        common_score = {}
+        if os.path.isfile(eval_score_path):
+            with open(eval_score_path, 'r', encoding='utf-8') as f:
+                try:
+                    total_score = json.load(f)
+                    singlecall_score = total_score.get('singlecall_score', {})
+                    dialog_score = total_score.get('dialog_score', {})
+                    calldecision_score = total_score.get('calldecision_score', {})
+                    common_score = total_score.get('common_score', {})
+                except Exception as e:
+                    print(f"Error loading evaluation score: {e}")
+                    singlecall_score = {}
+                    dialog_score = {}
+                    calldecision_score = {}
+                    common_score = {}
+        if self.evaluation_type == SINGLECALL:
+            singlecall_score = self.eval_reg.get_score()
+        elif self.evaluation_type == DIALOG:
+            dialog_score = self.eval_reg.get_score()
+        elif self.evaluation_type == COMMON:
+            if eval_subtype == 'CallDecision':
+                calldecision_score = self.eval_reg.get_score()
+            else:
+                common_score = self.eval_reg.get_score()
+        else:
+            raise ValueError(f"Unsupported evaluation type: {self.evaluation_type}")
+        
+        fcb_version, fcb_environments = utils.get_git_info()
+
+        with open(eval_score_path, 'w', encoding='utf-8') as f:
+            total_score = {
+                'fcb_version': fcb_version,
+                'fcb_environments': fcb_environments,
+                'llm_judge_model': llm_judge_name,
+                'target_model_path': str(model_path),
+                'singlecall_score': singlecall_score,
+                'dialog_score': dialog_score,
+                'calldecision_score': calldecision_score
+            }
+            if len(common_score) > 0:
+                total_score[f'{eval_subtype.lower()}_score'] = common_score
+            f.write(json.dumps(total_score, ensure_ascii=False, indent=4))
+        print(f"[[evaluation scores saved to: {eval_score_path}]]")
+
+        print(f"[[evaluation scores saved to: {eval_score_path}]]")
+
+    def _set_batch_file_names(self, model_name=None):
+        """
+        배치 관련 파일 이름을 설정합니다.
+
+        Parameters:
+            model_name (str, optional): include model name in file name.
+        """
+        if model_name:
+            self.meta_log_file = f"{REPO_PATH}/output/.batch_meta_{self.evaluation_type}_{model_name}.jsonl"
+            self.batch_file = f"{REPO_PATH}/output/.batch_{self.evaluation_type}_{model_name}.jsonl"
+            self.batch_output_file = f"{REPO_PATH}/output/.batch_{self.evaluation_type}_{model_name}_result.jsonl"
+        else:
+            self.meta_log_file = f"{REPO_PATH}/output/.batch_meta_{self.evaluation_type}.jsonl"
+            self.batch_file = f"{REPO_PATH}/output/.batch_{self.evaluation_type}.jsonl"
+            self.batch_output_file = f"{REPO_PATH}/output/.batch_{self.evaluation_type}_result.jsonl"
+
+    def evaluate(self, input_set, output_set, eval_file_path, eval_log_file_path, eval_reasoning_file_path, reset, sample,
+                 debug=False, only_exact=False, model_name=None, llm_judge_name=None, model_path=None, is_batch=False,
+                 eval_subtype=None):
+        """
+        Perform the evaluation based on input and output sets, and manage caching and logging of results.
+
+        Parameters:
+            input_set (list): A list of input data for the model.
+            output_set (list): A list of expected output data corresponding to the input data.
+            eval_file_path (str): File path where raw evaluation results are stored.
+            eval_log_file_path (str): File path where formatted evaluation logs are stored.
+            reset (bool): Whether to reset (overwrite) the existing evaluation results.
+            sample (bool): If True, perform a quick evaluation on a small sample.
+            debug (bool): If True, print detailed debug information during evaluation.
+            model_name (str): Name of the model being evaluated.
+            llm_judge_name (str): Name of the LLM judge used for evaluation.
+        """
+        if not eval_subtype:
+            eval_subtype = self.evaluation_type
+        # check cached file
+        self._set_batch_file_names(model_name)
+        
+        self.eval_reg.set_eval_output(
+            self.load_cached_evaluation_result(eval_file_path, len(input_set)) if not reset else []
+        )
+        eval_output_length = self.eval_reg.get_eval_output_length()
+        if eval_output_length == len(input_set):
+           self.eval_reg.display()
+           self._save_evaluation_result(model_name, llm_judge_name, model_path, eval_subtype,
+                                         output_dir=os.path.dirname(eval_file_path))
+           return
+        # start evaluation
+        start_time = time.time()
+        if debug:
+            print("[[evaluate]]")
+            print(f" ** start index : {eval_output_length} .. (reset is {reset})")
+        if sample:
+            # TODO : sample 1개만 실행하고 파일에 저장하게 작업 추가
+            return
+        outputs = self._process_exact_match(input_set, output_set, eval_output_length)
+        if not only_exact:
+            outputs = self._process_rubric_evaluation(outputs, is_batch)
+        self._finalize_evaluation(eval_file_path, eval_log_file_path, eval_reasoning_file_path, outputs, model_name, llm_judge_name, model_path, eval_subtype)
+        elapsed_time = time.time() - start_time
+        print(f"Total time execution: {elapsed_time:.2f} seconds")
+        return
