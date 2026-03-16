@@ -7,6 +7,7 @@ from typing import Any
 
 from .agent_contracts import RunState
 from .agent_orchestrator import AgentOrchestrator
+from .approval_store import ApprovalStore
 from .exporter import export_runtime_patch
 from .overlay_generator import generate_overlay_scaffold
 from .role_runner import RoleRunner, build_llm_role_runner
@@ -34,6 +35,7 @@ def run_onboarding_generation(
     slack_bridge: InMemorySlackBridge | None = None,
     role_runner: RoleRunner | None = None,
     approval_decisions: dict[str, str] | None = None,
+    approval_store: ApprovalStore | None = None,
     use_llm_roles: bool = False,
     llm_provider: str = "openai",
     llm_model: str = "gpt-4o-mini",
@@ -148,16 +150,19 @@ def run_onboarding_generation(
             available_actions=["approve", "reject"],
         )
 
-    elif approvals is not None:
+    elif approvals is not None or approval_store is not None:
         agent.request_analysis_approval(
             summary="Analysis is ready for review",
             recommended_option="approve",
         )
+        if approval_store is not None:
+            approval_store.create_request(run_id=run_id, approval_type="analysis")
 
     approval_result = _apply_approval_decision(
         agent=agent,
         approval_type="analysis",
         decisions=approvals,
+        approval_store=approval_store,
     )
     if approval_result != "approved":
         return _build_run_result(
@@ -250,11 +255,14 @@ def run_onboarding_generation(
             summary="Overlay bundle is ready to apply",
             recommended_option="approve",
         )
+        if approval_store is not None:
+            approval_store.create_request(run_id=run_id, approval_type="apply")
 
     approval_result = _apply_approval_decision(
         agent=agent,
         approval_type="apply",
         decisions=approvals,
+        approval_store=approval_store,
     )
     if approval_result != "approved":
         return _build_run_result(
@@ -342,11 +350,14 @@ def run_onboarding_generation(
             summary="Export bundle is ready",
             recommended_option="approve",
         )
+        if approval_store is not None:
+            approval_store.create_request(run_id=run_id, approval_type="export")
 
     approval_result = _apply_approval_decision(
         agent=agent,
         approval_type="export",
         decisions=approvals,
+        approval_store=approval_store,
     )
     if approval_result != "approved":
         return _build_run_result(
@@ -376,13 +387,22 @@ def _apply_approval_decision(
     agent: AgentOrchestrator,
     approval_type: str,
     decisions: dict[str, str] | None,
+    approval_store: ApprovalStore | None,
 ) -> str | None:
-    if decisions is None:
+    if decisions is None and approval_store is None:
         decision = "approve"
-    else:
+    elif decisions is not None:
         decision = decisions.get(approval_type)
         if decision is None:
             return None
+    else:
+        consumed = approval_store.consume_decision(
+            run_id=agent.run_id,
+            approval_type=approval_type,
+        )
+        if consumed is None:
+            return None
+        decision = str(consumed.get("decision") or "")
 
     normalized = decision.strip().lower()
     if normalized == "approve":

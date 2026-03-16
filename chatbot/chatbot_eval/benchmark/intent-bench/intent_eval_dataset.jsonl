@@ -1,0 +1,61 @@
+{"input": "어제 산 건데 마음이 바뀌었어요", "expected_intents": ["ORDER_CS"], "category": "single"}
+{"input": "물건이 파손돼서 왔는데 어떡하죠?", "expected_intents": ["ORDER_CS"], "category": "single"}
+{"input": "다른 색상으로 바꿀 수 있을까요?", "expected_intents": ["ORDER_CS"], "category": "single"}
+{"input": "지난주에 뭐 샀는지 확인 좀요", "expected_intents": ["ORDER_CS"], "category": "single"}
+{"input": "택배가 아직도 안 왔어요", "expected_intents": ["ORDER_CS"], "category": "single"}
+{"input": "결제한 금액 돌려받고 싶어요", "expected_intents": ["ORDER_CS"], "category": "single"}
+{"input": "잘못 주문해서 되돌리고 싶어요", "expected_intents": ["ORDER_CS"], "category": "single"}
+{"input": "받은 물건이 주문한 거랑 달라요", "expected_intents": ["ORDER_CS"], "category": "single"}
+{"input": "데이트할 때 입을 만한 옷 없을까?", "expected_intents": ["SEARCH_SIMILAR_TEXT"], "category": "single"}
+{"input": "출근복으로 괜찮은 코디 좀 골라줘", "expected_intents": ["SEARCH_SIMILAR_TEXT"], "category": "single"}
+{"input": "봄에 가벼운 아우터 찾고 있어", "expected_intents": ["SEARCH_SIMILAR_TEXT"], "category": "single"}
+{"input": "운동할 때 편한 바지 추천 좀", "expected_intents": ["SEARCH_SIMILAR_TEXT"], "category": "single"}
+{"input": "면접용 정장 보여줄 수 있어?", "expected_intents": ["SEARCH_SIMILAR_TEXT"], "category": "single"}
+{"input": "이런 느낌 옷 더 없어? /products/22457.jpg", "expected_intents": ["SEARCH_SIMILAR_IMAGE"], "category": "single"}
+{"input": "SNS에서 본 건데 비슷한 거 있나요 /products/57099.jpg", "expected_intents": ["SEARCH_SIMILAR_IMAGE"], "category": "single"}
+{"input": "/products/46129.jpg 여기 나온 거랑 같은 종류로 찾아줘", "expected_intents": ["SEARCH_SIMILAR_IMAGE"], "category": "single"}
+{"input": "친구가 입은 옷인데 같은 거 어디 있어? /products/14872.jpg", "expected_intents": ["SEARCH_SIMILAR_IMAGE"], "category": "single"}
+{"input": "물건 하자 있으면 보상 어떻게 돼요?", "expected_intents": ["POLICY_RAG"], "category": "single"}
+{"input": "개봉한 것도 돌려보낼 수 있어요?", "expected_intents": ["POLICY_RAG"], "category": "single"}
+{"input": "제주도도 배송비 같은가요?", "expected_intents": ["POLICY_RAG"], "category": "single"}
+{"input": "교환할 때 택배비 누가 부담해요?", "expected_intents": ["POLICY_RAG"], "category": "single"}
+{"input": "결제 후 며칠 안에 취소 가능해요?", "expected_intents": ["POLICY_RAG"], "category": "single"}
+{"input": "사은품도 같이 반품해야 되나요?", "expected_intents": ["POLICY_RAG"], "category": "single"}
+{"input": "옷장 정리하는데 안 입는 거 처분하고 싶어", "expected_intents": ["REGISTER_USED_ITEM"], "category": "single"}
+{"input": "한번 쓴 가방인데 되팔 수 있나요?", "expected_intents": ["REGISTER_USED_ITEM"], "category": "single"}
+{"input": "사이즈 안 맞는 옷 중고로 내놓을래요", "expected_intents": ["REGISTER_USED_ITEM"], "category": "single"}
+{"input": "새 거나 다름없는 신발 올리고 싶어", "expected_intents": ["REGISTER_USED_ITEM"], "category": "single"}
+{"input": "선물 받았는데 안 맞아서 되팔고 싶어요", "expected_intents": ["REGISTER_USED_ITEM"], "category": "single"}
+{"input": "배송 빠르고 좋았다고 남기고 싶어요", "expected_intents": ["WRITE_REVIEW"], "category": "single"}
+{"input": "이 상품 별점 주고 싶은데 어디서 해요?", "expected_intents": ["WRITE_REVIEW"], "category": "single"}
+{"input": "착용 사진이랑 후기를 올리고 싶어요", "expected_intents": ["WRITE_REVIEW"], "category": "single"}
+{"input": "구매평 작성하는 곳이 어디예요?", "expected_intents": ["WRITE_REVIEW"], "category": "single"}
+{"input": "사진 첨부해서 리뷰 쓸 수 있어?", "expected_intents": ["WRITE_REVIEW"], "category": "single"}
+{"input": "생일 선물로 받은 카드 쓰고 싶어요", "expected_intents": ["REGISTER_GIFT_CARD"], "category": "single"}
+{"input": "이벤트 당첨 코드 어디에 넣어요?", "expected_intents": ["REGISTER_GIFT_CARD"], "category": "single"}
+{"input": "이벤트 당첨 코드 입력할 곳이 어디죠?", "expected_intents": ["REGISTER_GIFT_CARD"], "category": "single"}
+{"input": "당첨된 코드 어디에 넣어야 돼?", "expected_intents": ["REGISTER_GIFT_CARD"], "category": "single"}
+{"input": "이 코드 입력하려면 어떤 링크 가야 해?", "expected_intents": ["REGISTER_GIFT_CARD"], "category": "single"}
+{"input": "기프트카드 번호 입력하는 곳이 어디예요?", "expected_intents": ["REGISTER_GIFT_CARD"], "category": "single"}
+{"input": "모바일 상품권은 어떻게 적용해요?", "expected_intents": ["REGISTER_GIFT_CARD"], "category": "single"}
+{"input": "회사에서 받은 포인트 코드 등록해주세요", "expected_intents": ["REGISTER_GIFT_CARD"], "category": "single"}
+{"input": "심심한데 재밌는 이야기 해줘", "expected_intents": ["GENERAL_CHAT"], "category": "single"}
+{"input": "지금 몇 시야?", "expected_intents": ["GENERAL_CHAT"], "category": "single"}
+{"input": "수학 문제 하나 풀어줘", "expected_intents": ["GENERAL_CHAT"], "category": "single"}
+{"input": "주말에 갈 만한 맛집 추천해줘", "expected_intents": ["GENERAL_CHAT"], "category": "single"}
+{"input": "여행 갈 만한 곳 추천해줘", "expected_intents": ["GENERAL_CHAT"], "category": "single"}
+{"input": "오늘 미세먼지 어때?", "expected_intents": ["GENERAL_CHAT"], "category": "single"}
+{"input": "강아지 키우는 법 알려줘", "expected_intents": ["GENERAL_CHAT"], "category": "single"}
+{"input": "강아지를 어떻게 잘 기를 수 있을까?", "expected_intents": ["GENERAL_CHAT"], "category": "single"}
+{"input": "강아지 키우는 팁 좀 알려줄래?", "expected_intents": ["GENERAL_CHAT"], "category": "single"}
+{"input": "강아지 돌보는 법 좀 궁금해!", "expected_intents": ["GENERAL_CHAT"], "category": "single"}
+{"input": "어제 산 거 돌려보내고 비슷한 걸로 다시 찾아줘", "expected_intents": ["ORDER_CS", "SEARCH_SIMILAR_TEXT"], "category": "multi"}
+{"input": "개봉 후 환불 가능한지랑 받은 물건 반송도 해줘", "expected_intents": ["POLICY_RAG", "ORDER_CS"], "category": "multi"}
+{"input": "별점 남기고 이 옷이랑 어울리는 것도 보여줘", "expected_intents": ["WRITE_REVIEW", "SEARCH_SIMILAR_TEXT"], "category": "multi"}
+{"input": "안 입는 옷 처분하면서 교환 규정도 알고 싶어", "expected_intents": ["REGISTER_USED_ITEM", "POLICY_RAG"], "category": "multi"}
+{"input": "선물 받은 카드 등록하고 잘못 주문한 거 취소해줘", "expected_intents": ["REGISTER_GIFT_CARD", "ORDER_CS"], "category": "multi"}
+{"input": "선물 카드 등록해주고, 잘못 주문한 것도 취소해줘.", "expected_intents": ["REGISTER_GIFT_CARD", "ORDER_CS"], "category": "multi"}
+{"input": "내가 받은 기프트 카드 등록하고, 주문 잘못한 거 환불해줘.", "expected_intents": ["REGISTER_GIFT_CARD", "ORDER_CS"], "category": "multi"}
+{"input": "선물 받은 카드 등록 부탁하고, 잘못 주문한 건 취소해줘요.", "expected_intents": ["REGISTER_GIFT_CARD", "ORDER_CS"], "category": "multi"}
+{"input": "색상 교환하면서 배송 며칠 걸리는지도 알려줘", "expected_intents": ["ORDER_CS", "POLICY_RAG"], "category": "multi"}
+{"input": "SNS에서 본 이 옷 찾아주고 착용 후기도 쓸래 /products/26664.jpg", "expected_intents": ["SEARCH_SIMILAR_IMAGE", "WRITE_REVIEW"], "category": "multi"}

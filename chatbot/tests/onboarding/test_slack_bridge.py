@@ -1,10 +1,11 @@
 import sys
+import json
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from chatbot.src.onboarding.agent_contracts import AgentMessage, ApprovalType, RunEvent, RunState
-from chatbot.src.onboarding.slack_bridge import InMemorySlackBridge
+from chatbot.src.onboarding.slack_bridge import InMemorySlackBridge, SlackWebBridge
 
 
 def test_slack_bridge_posts_root_message_and_preserves_thread_key():
@@ -83,6 +84,15 @@ def test_slack_bridge_posts_approval_request_payload():
     assert payload["thread_key"] == "food-run-001"
     assert payload["message"]["approval_type"] == "apply"
     assert payload["message"]["recommended_option"] == "approve"
+    actions = payload["message"]["actions"]
+    assert actions[0]["text"] == "Approve"
+    approve_value = json.loads(actions[0]["value"])
+    assert approve_value["run_id"] == "food-run-001"
+    assert approve_value["approval_type"] == "apply"
+    assert approve_value["decision"] == "approve"
+    assert actions[1]["text"] == "Reject"
+    reject_value = json.loads(actions[1]["value"])
+    assert reject_value["decision"] == "reject"
 
 
 def test_slack_bridge_keeps_all_messages_in_memory():
@@ -151,3 +161,82 @@ def test_slack_bridge_can_record_export_approval_decision():
     assert payload["thread_key"] == "food-run-001"
     assert payload["message"]["approval_type"] == "export"
     assert payload["message"]["decision"] == "approve"
+
+
+def test_slack_web_bridge_stores_thread_ts_from_root_message():
+    class FakeWebClient:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def chat_postMessage(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"ok": True, "ts": "1710000000.100"}
+
+    client = FakeWebClient()
+    bridge = SlackWebBridge(channel="#onboarding-runs", web_client=client)
+
+    bridge.post_run_root(
+        run_id="food-run-001",
+        site="food",
+        source_root="/workspace/food",
+        goal="generate onboarding overlay",
+        current_state=RunState.QUEUED,
+        approval_status="not_requested",
+    )
+    event = RunEvent(
+        event_type="analysis.completed",
+        run_id="food-run-001",
+        state=RunState.ANALYZING,
+        payload={"phase": "analysis"},
+        created_at="2026-03-15T23:00:00+09:00",
+    )
+    message = AgentMessage(
+        role="Analyzer",
+        claim="Detected session auth",
+        evidence=["session token cookie is read in login flow"],
+        confidence=0.91,
+        risk="medium",
+        next_action="forward auth capability to planner",
+        blocking_issue="none",
+    )
+
+    bridge.post_agent_message(event=event, message=message)
+
+    assert client.calls[1]["thread_ts"] == "1710000000.100"
+
+
+def test_slack_web_bridge_posts_block_kit_approval_message():
+    class FakeWebClient:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def chat_postMessage(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"ok": True, "ts": "1710000000.100"}
+
+    client = FakeWebClient()
+    bridge = SlackWebBridge(channel="#onboarding-runs", web_client=client)
+    bridge.post_run_root(
+        run_id="food-run-001",
+        site="food",
+        source_root="/workspace/food",
+        goal="generate onboarding overlay",
+        current_state=RunState.QUEUED,
+        approval_status="not_requested",
+    )
+
+    payload = bridge.post_approval_request(
+        run_id="food-run-001",
+        approval_type=ApprovalType.APPLY,
+        summary="Overlay is ready to apply",
+        recommended_option="approve",
+        risk_if_approved="runtime patch may fail",
+        risk_if_rejected="run will stop before validation",
+        available_actions=["approve", "reject"],
+    )
+
+    blocks = client.calls[-1]["blocks"]
+    assert blocks[-1]["type"] == "actions"
+    assert blocks[-1]["elements"][0]["type"] == "button"
+    assert blocks[-1]["elements"][0]["text"]["text"] == "Approve"
+    assert payload["message"]["approval_type"] == "apply"
