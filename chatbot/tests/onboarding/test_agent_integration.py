@@ -4,6 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from chatbot.src.onboarding.approval_store import ApprovalStore
 from chatbot.src.onboarding.orchestrator import run_onboarding_generation
 from chatbot.src.onboarding.role_runner import RoleRunner
 from chatbot.src.onboarding.slack_bridge import InMemorySlackBridge
@@ -109,6 +110,60 @@ def test_run_onboarding_generation_stops_when_analysis_approval_missing(tmp_path
     assert result["pending_approval"]["approval_type"] == "analysis"
     assert not (generated_root / "food" / "food-run-002" / "reports" / "smoke-results.json").exists()
     assert any(entry["message"].get("approval_type") == "analysis" for entry in bridge.messages)
+
+
+def test_run_onboarding_generation_uses_approval_store_decisions(tmp_path: Path):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+    approval_root = tmp_path / "approvals"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    store = ApprovalStore(root=approval_root)
+    for approval_type in ["analysis", "apply", "export"]:
+        store.create_request(run_id="food-run-store", approval_type=approval_type)
+        store.record_decision(
+            run_id="food-run-store",
+            approval_type=approval_type,
+            decision="approve",
+            actor="U123",
+        )
+
+    result = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-store",
+        agent_version="test-v1",
+        approval_store=store,
+    )
+
+    assert result["current_state"] == "completed"
+    assert store.get_decision(run_id="food-run-store", approval_type="analysis")["status"] == "consumed"
+    assert store.get_decision(run_id="food-run-store", approval_type="apply")["status"] == "consumed"
+    assert store.get_decision(run_id="food-run-store", approval_type="export")["status"] == "consumed"
 
 
 def test_run_onboarding_generation_retries_after_diagnostician_signal(tmp_path: Path, monkeypatch):

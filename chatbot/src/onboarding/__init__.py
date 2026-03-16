@@ -1,4 +1,5 @@
 from .agent_contracts import AgentMessage, ApprovalType, RunEvent, RunState
+from .approval_store import ApprovalStore
 from .exporter import export_runtime_patch
 from .manifest import OverlayManifest, OverlayManifestError
 from .overlay_generator import generate_overlay_scaffold
@@ -18,6 +19,7 @@ from .template_generator import (
 __all__ = [
     "AgentMessage",
     "ApprovalType",
+    "ApprovalStore",
     "RunEvent",
     "RunState",
     "export_runtime_patch",

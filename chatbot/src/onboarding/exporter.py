@@ -8,7 +8,10 @@ from pathlib import Path
 def _read_text_or_empty(path: Path) -> list[str]:
     if not path.exists():
         return []
-    return path.read_text(encoding="utf-8").splitlines(keepends=True)
+    try:
+        return path.read_text(encoding="utf-8").splitlines(keepends=True)
+    except UnicodeDecodeError:
+        return []
 
 
 def export_runtime_patch(

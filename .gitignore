@@ -34,7 +34,6 @@ yarn-error.log*
 
 # Project specific
 backend.log
-logs/
 results/
 ecommerce/backend/data/raw/
 ecommerce/backend/data/raw/fashion-dataset
@@ -64,3 +63,5 @@ food/frontend/.env*
 
 # Local worktrees
 .worktrees/
+
+generated/

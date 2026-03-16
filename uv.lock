@@ -2260,6 +2260,7 @@ dependencies = [
     { name = "python-jose", extra = ["cryptography"] },
     { name = "qdrant-client" },
     { name = "selenium" },
+    { name = "slack-sdk" },
     { name = "sqlalchemy" },
     { name = "torch" },
     { name = "tqdm" },
@@ -2306,6 +2307,7 @@ requires-dist = [
     { name = "python-jose", extras = ["cryptography"], specifier = ">=3.3.0" },
     { name = "qdrant-client", specifier = ">=1.16.2" },
     { name = "selenium", specifier = ">=4.41.0" },
+    { name = "slack-sdk", specifier = ">=3.36.0" },
     { name = "sqlalchemy", specifier = ">=2.0.46" },
     { name = "torch", specifier = ">=2.7.0" },
     { name = "tqdm", specifier = ">=4.67.3" },
@@ -2319,6 +2321,15 @@ requires-dist = [
 dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pytest", specifier = ">=9.0.2" },
+]
+
+[[package]]
+name = "slack-sdk"
+version = "3.41.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/22/35/fc009118a13187dd9731657c60138e5a7c2dea88681a7f04dc406af5da7d/slack_sdk-3.41.0.tar.gz", hash = "sha256:eb61eb12a65bebeca9cb5d36b3f799e836ed2be21b456d15df2627cfe34076ca", size = 250568, upload-time = "2026-03-12T16:10:11.381Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a1/df/2e4be347ff98281b505cc0ccf141408cdd25eb5ca9f3830deb361b2472d3/slack_sdk-3.41.0-py2.py3-none-any.whl", hash = "sha256:bb18dcdfff1413ec448e759cf807ec3324090993d8ab9111c74081623b692a89", size = 313885, upload-time = "2026-03-12T16:10:09.811Z" },
 ]
 
 [[package]]
