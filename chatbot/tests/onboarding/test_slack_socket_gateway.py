@@ -157,3 +157,59 @@ def test_gateway_posts_decision_message_when_bridge_present(tmp_path: Path):
 
     assert ack["ok"] is True
     assert bridge.messages[-1]["message"]["text"].startswith("Approval decision recorded")
+
+
+def test_gateway_approving_action_triggers_resume_callback(tmp_path: Path):
+    store = ApprovalStore(root=tmp_path)
+    store.create_request(run_id="food-run-001", approval_type="analysis")
+    resumed: list[tuple[str, str]] = []
+
+    ack = handle_interactive_action(
+        payload={
+            "user": {"id": "U123"},
+            "actions": [
+                {
+                    "value": json.dumps(
+                        {
+                            "run_id": "food-run-001",
+                            "approval_type": "analysis",
+                            "decision": "approve",
+                        }
+                    ),
+                }
+            ],
+        },
+        store=store,
+        resume_run=lambda run_id, approval_type: resumed.append((run_id, approval_type)),
+    )
+
+    assert ack["ok"] is True
+    assert resumed == [("food-run-001", "analysis")]
+
+
+def test_gateway_reject_does_not_trigger_resume_callback(tmp_path: Path):
+    store = ApprovalStore(root=tmp_path)
+    store.create_request(run_id="food-run-001", approval_type="analysis")
+    resumed: list[tuple[str, str]] = []
+
+    ack = handle_interactive_action(
+        payload={
+            "user": {"id": "U123"},
+            "actions": [
+                {
+                    "value": json.dumps(
+                        {
+                            "run_id": "food-run-001",
+                            "approval_type": "analysis",
+                            "decision": "reject",
+                        }
+                    ),
+                }
+            ],
+        },
+        store=store,
+        resume_run=lambda run_id, approval_type: resumed.append((run_id, approval_type)),
+    )
+
+    assert ack["ok"] is True
+    assert resumed == []

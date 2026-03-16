@@ -5,6 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from chatbot.src.onboarding.approval_store import ApprovalStore
 from chatbot.scripts.run_onboarding_generation import build_parser
 from chatbot.scripts.run_onboarding_generation import build_slack_bridge_from_env
 from chatbot.scripts.run_slack_socket_gateway import (
@@ -69,6 +70,7 @@ def test_cli_runner_executes_onboarding_flow(tmp_path: Path):
     payload = json.loads(result.stdout)
     assert payload["run_root"].endswith("generated/food/food-run-001")
     assert payload["runtime_workspace"].endswith("runtime/food/food-run-001/workspace")
+    assert payload["patch_proposal_path"].endswith("reports/patch-proposal.json")
 
 
 def test_cli_runner_accepts_explicit_approval_inputs(tmp_path: Path):
@@ -226,6 +228,182 @@ def test_cli_parser_accepts_llm_role_runner_flags():
     assert args.print_report_paths is True
 
 
+def test_cli_parser_accepts_approval_store_and_resume_flags():
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "--site",
+            "food",
+            "--source-root",
+            "food",
+            "--generated-root",
+            "generated",
+            "--runtime-root",
+            "runtime",
+            "--resume-run-id",
+            "food-run-010",
+            "--approval-store-root",
+            "generated/approvals",
+        ]
+    )
+
+    assert args.resume_run_id == "food-run-010"
+    assert args.approval_store_root == "generated/approvals"
+
+
+def test_cli_runner_stops_at_pending_approval_when_store_is_enabled(tmp_path: Path):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+    approval_root = tmp_path / "approvals"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "chatbot/scripts/run_onboarding_generation.py",
+            "--site",
+            "food",
+            "--source-root",
+            str(source_root),
+            "--generated-root",
+            str(generated_root),
+            "--runtime-root",
+            str(runtime_root),
+            "--run-id",
+            "food-run-pending",
+            "--agent-version",
+            "test-v1",
+            "--approval-store-root",
+            str(approval_root),
+        ],
+        cwd=Path(__file__).resolve().parents[3],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["current_state"] == "awaiting_analysis_approval"
+    assert payload["pending_approval"]["approval_type"] == "analysis"
+
+
+def test_cli_runner_can_resume_run_after_approval_decision(tmp_path: Path):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+    approval_root = tmp_path / "approvals"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    first = subprocess.run(
+        [
+            sys.executable,
+            "chatbot/scripts/run_onboarding_generation.py",
+            "--site",
+            "food",
+            "--source-root",
+            str(source_root),
+            "--generated-root",
+            str(generated_root),
+            "--runtime-root",
+            str(runtime_root),
+            "--run-id",
+            "food-run-resume",
+            "--agent-version",
+            "test-v1",
+            "--approval-store-root",
+            str(approval_root),
+        ],
+        cwd=Path(__file__).resolve().parents[3],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert first.returncode == 0, first.stderr
+    store = ApprovalStore(root=approval_root)
+    store.record_decision(
+        run_id="food-run-resume",
+        approval_type="analysis",
+        decision="approve",
+        actor="U123",
+    )
+
+    second = subprocess.run(
+        [
+            sys.executable,
+            "chatbot/scripts/run_onboarding_generation.py",
+            "--site",
+            "food",
+            "--source-root",
+            str(source_root),
+            "--generated-root",
+            str(generated_root),
+            "--runtime-root",
+            str(runtime_root),
+            "--resume-run-id",
+            "food-run-resume",
+            "--agent-version",
+            "test-v1",
+            "--approval-store-root",
+            str(approval_root),
+        ],
+        cwd=Path(__file__).resolve().parents[3],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert payload["current_state"] == "awaiting_apply_approval"
+    assert payload["pending_approval"]["approval_type"] == "apply"
+
+
 def test_gateway_cli_parser_accepts_socket_mode_flags():
     parser = build_gateway_parser()
 
@@ -235,17 +413,31 @@ def test_gateway_cli_parser_accepts_socket_mode_flags():
             "#onboarding-runs",
             "--approval-store-root",
             "generated/approvals",
+            "--site",
+            "food",
+            "--source-root",
+            "food",
+            "--generated-root",
+            "generated",
+            "--runtime-root",
+            "runtime",
         ]
     )
 
     assert args.channel == "#onboarding-runs"
     assert args.approval_store_root == "generated/approvals"
+    assert args.site == "food"
+    assert args.source_root == "food"
 
 
 def test_cli_can_build_slack_web_bridge_from_env(monkeypatch):
     class FakeWebClient:
         def __init__(self, token: str):
             self.token = token
+
+        def chat_postMessage(self, **kwargs):
+            captured["post"] = kwargs
+            return {"ok": True, "ts": "1710000000.100"}
 
     monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
 
@@ -364,6 +556,74 @@ def test_run_gateway_logs_connection_lifecycle(tmp_path: Path):
 
     assert exit_code == 0
     assert "gateway started" in logger.messages[0]
+
+
+def test_run_gateway_approve_action_can_trigger_resume(tmp_path: Path):
+    captured: dict[str, object] = {}
+    listeners: list = []
+
+    class FakeWebClient:
+        def __init__(self, token: str):
+            self.token = token
+
+        def chat_postMessage(self, **kwargs):
+            captured["post"] = kwargs
+            return {"ok": True, "ts": "1710000000.100"}
+
+    class FakeSocketClient:
+        def __init__(self, *, app_token: str, web_client):
+            self.socket_mode_request_listeners = listeners
+
+    class FakeLogger:
+        def __init__(self):
+            self.messages: list[str] = []
+
+        def info(self, message: str, *args):
+            self.messages.append(message % args if args else message)
+
+        def exception(self, message: str, *args):
+            self.messages.append(message % args if args else message)
+
+    def resume_run(run_id: str, approval_type: str):
+        captured["resume"] = (run_id, approval_type)
+
+    logger = FakeLogger()
+    exit_code = run_gateway(
+        channel="#onboarding-runs",
+        approval_store_root=tmp_path,
+        bot_token="xoxb-test",
+        app_token="xapp-test",
+        socket_client_factory=lambda **kwargs: FakeSocketClient(**kwargs),
+        web_client_factory=lambda token: FakeWebClient(token),
+        connect=False,
+        run_forever=False,
+        logger=logger,
+        resume_run=resume_run,
+    )
+
+    assert exit_code == 0
+    request = {
+        "envelope_id": "env-123",
+        "payload": {
+            "type": "block_actions",
+            "user": {"id": "U123"},
+            "actions": [
+                {
+                    "value": json.dumps(
+                        {
+                            "run_id": "food-run-001",
+                            "approval_type": "analysis",
+                            "decision": "approve",
+                        }
+                    ),
+                }
+            ],
+        },
+    }
+
+    listeners[0](None, request)
+
+    assert captured["resume"] == ("food-run-001", "analysis")
 
 
 def test_load_gateway_env_reads_root_dotenv(tmp_path: Path, monkeypatch):

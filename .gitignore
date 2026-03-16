@@ -65,3 +65,5 @@ food/frontend/.env*
 .worktrees/
 
 generated/
+
+runtime/

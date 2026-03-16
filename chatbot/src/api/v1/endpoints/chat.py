@@ -405,6 +405,7 @@ def _build_current_state(
     model: str,
     conversation_id: str,
     turn_id: str,
+    access_token: str | None = None,
 ) -> dict:
     """요청/이전 상태 기반 GlobalAgentState 구성."""
     history = _deserialize_messages(previous_state.get("messages", []))
@@ -437,6 +438,7 @@ def _build_current_state(
             "name": current_user.name,
             "email": current_user.email,
             "site_id": request.site_id,
+            "access_token": access_token,
         },
         "llm_provider": provider,
         "llm_model": model,
@@ -574,6 +576,7 @@ async def upload_chat_image(
 # ── 스트리밍 엔드포인트 ────────────────────────────────────────────────────────
 @router.post("/stream")
 async def chat_streaming_endpoint(
+    http_request: Request,
     request: ChatRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -642,6 +645,7 @@ async def chat_streaming_endpoint(
                     model=model,
                     conversation_id=conversation_id,
                     turn_id=turn_id,
+                    access_token=http_request.cookies.get("access_token"),
                 )
                 stream_input = current_state
 

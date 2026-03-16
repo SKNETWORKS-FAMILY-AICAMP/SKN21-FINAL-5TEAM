@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -67,3 +68,33 @@ def apply_overlay_patches(
             raise OverlayPatchApplyError(
                 f"Failed to apply patch {patch_path.name}: {stderr or 'unknown error'}"
             )
+
+
+def simulate_runtime_merge(
+    *,
+    manifest: OverlayManifest,
+    generated_run_root: str | Path,
+    runtime_workspace: str | Path,
+    report_root: str | Path,
+) -> Path:
+    generated_root = Path(generated_run_root)
+    workspace = Path(runtime_workspace)
+    reports = Path(report_root)
+    reports.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        "run_id": manifest.run_id,
+        "site": manifest.site,
+        "workspace_root": str(workspace),
+        "applied_generated_files": sorted(
+            str(path.relative_to(generated_root / "files").as_posix())
+            for path in (generated_root / "files").rglob("*")
+            if path.is_file()
+        )
+        if (generated_root / "files").exists()
+        else [],
+        "applied_patch_artifacts": sorted(manifest.patch_targets),
+    }
+    output_path = reports / "merge-simulation.json"
+    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return output_path

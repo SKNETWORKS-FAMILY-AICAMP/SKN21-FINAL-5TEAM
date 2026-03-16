@@ -1,0 +1,61 @@
+{
+  "conversation_id": "conv_a939b75f6d49",
+  "user_id": 1,
+  "status": "in_progress",
+  "feedback_label": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "환불좀해줘",
+      "at": "2026-03-16T02:36:04.642466+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다. 환불하실 주문을 선택해주세요.",
+      "at": "2026-03-16T02:36:04.642470+00:00"
+    },
+    {
+      "role": "user",
+      "content": "주문 선택 완료",
+      "at": "2026-03-16T02:36:08.605767+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "환불이 요청되었습니다",
+      "at": "2026-03-16T02:36:08.605769+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": null,
+    "order_context": {
+      "pending_action": "refund",
+      "action_status": "failed",
+      "awaiting_resume_for": null,
+      "last_tool": "refund",
+      "last_ui_payload": null,
+      "target_order_id": "ORD-20260303-0002",
+      "last_action_status": "requested"
+    },
+    "search_context": {},
+    "ui_action_required": null,
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "site_id": "site-c"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "환불좀해줘",
+      "output": "최근 30일 이내 주문 내역입니다. 환불하실 주문을 선택해주세요."
+    },
+    {
+      "turn_index": 1,
+      "input": "주문 선택 완료",
+      "output": "환불이 요청되었습니다"
+    }
+  ],
+  "started_at": "2026-03-16T02:36:04.642459+00:00",
+  "ended_at": null,
+  "updated_at": "2026-03-16T02:36:08.605774+00:00",
+  "reset_required": false
+}

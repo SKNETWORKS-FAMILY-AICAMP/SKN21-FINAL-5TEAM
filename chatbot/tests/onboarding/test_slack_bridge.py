@@ -240,3 +240,48 @@ def test_slack_web_bridge_posts_block_kit_approval_message():
     assert blocks[-1]["elements"][0]["type"] == "button"
     assert blocks[-1]["elements"][0]["text"]["text"] == "Approve"
     assert payload["message"]["approval_type"] == "apply"
+
+
+def test_slack_web_bridge_includes_generator_targets_in_message_text():
+    class FakeWebClient:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def chat_postMessage(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"ok": True, "ts": "1710000000.100"}
+
+    client = FakeWebClient()
+    bridge = SlackWebBridge(channel="#onboarding-runs", web_client=client)
+    bridge.post_run_root(
+        run_id="food-run-001",
+        site="food",
+        source_root="/workspace/food",
+        goal="generate onboarding overlay",
+        current_state=RunState.QUEUED,
+        approval_status="not_requested",
+    )
+    event = RunEvent(
+        event_type="generation.completed",
+        run_id="food-run-001",
+        state=RunState.GENERATING,
+        payload={"phase": "generation"},
+        created_at="2026-03-15T23:00:00+09:00",
+    )
+    message = AgentMessage(
+        role="Generator",
+        claim="Prepared overlay artifact proposal",
+        evidence=["proposal ready"],
+        confidence=0.88,
+        risk="medium",
+        next_action="materialize proposed files and patches",
+        blocking_issue="none",
+        metadata={
+            "proposed_files": ["files/backend/chat_auth.py"],
+            "proposed_patches": ["patches/frontend_widget_mount.patch"],
+        },
+    )
+
+    bridge.post_agent_message(event=event, message=message)
+
+    assert "chat_auth.py" in client.calls[-1]["text"]
