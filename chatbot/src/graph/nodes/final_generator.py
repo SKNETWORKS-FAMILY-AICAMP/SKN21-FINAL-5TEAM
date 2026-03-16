@@ -62,7 +62,8 @@ def final_generator_node(state: GlobalAgentState) -> dict:
 
     # UI 액션 대기 상태에서는 텍스트를 생성하지 않고 UI 이벤트만 전달
     if ui_action:
-        return {}
+        # UI 이벤트 우선순위가 있으므로 어떤 텍스트도 생성하지 않고 플래그만 유지합니다.
+        return {"ui_action_required": ui_action, "messages": []}
 
     # ── Case 1. 작업 없음 → GENERAL_CHAT 직접 응답 ────────
     if not completed_tasks:

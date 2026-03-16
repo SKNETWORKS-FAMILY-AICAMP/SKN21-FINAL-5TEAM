@@ -29,9 +29,10 @@ from chatbot.src.tools.adapter_order_tools import (
 from chatbot.src.tools.order_tools import (
     change_product_option,
     register_exchange_request,
+    get_user_orders,
 )
 
-_ORDER_ACTIONS = {"cancel", "refund", "exchange", "shipping"}
+_ORDER_ACTIONS = {"cancel", "refund", "exchange", "shipping", "list_orders"}
 _WAITING_UI_ACTIONS = {
     "show_order_list": "order_selection",
     "show_option_list": "new_option",
@@ -86,6 +87,7 @@ def route_after_order_intent_router(state: GlobalAgentState) -> str:
         "refund": "refund_subagent",
         "exchange": "exchange_subagent",
         "shipping": "shipping_subagent",
+        "list_orders": "order_list_subagent",
     }.get(action, "final_generator")
 
 
@@ -112,6 +114,52 @@ def refund_subagent_node(state: GlobalAgentState) -> dict:
         tool=register_return_request,
         include_site_context=True,
     )
+
+
+def order_list_subagent_node(state: GlobalAgentState) -> dict:
+    """단순 주문 목록 조회용 서브에이전트"""
+    user_info = state.get("user_info", {})
+    user_id = user_info.get("id", 1)
+
+    payload = get_user_orders(
+        user_id=user_id,
+        limit=10,
+        days=30,
+        requires_selection=False,
+        action_context=None,
+    )
+
+    order_context = dict(state.get("order_context", {}))
+    order_context["pending_action"] = "list_orders"
+    order_context["action_status"] = "waiting_user"
+    order_context["awaiting_resume_for"] = None
+    order_context["last_tool"] = "order_list"
+
+    completed_tasks = list(state.get("completed_tasks", []))
+    if TaskIntent.ORDER_CS not in completed_tasks:
+        completed_tasks.append(TaskIntent.ORDER_CS)
+
+    agent_results = {
+        **state.get("agent_results", {}),
+        TaskIntent.ORDER_CS: payload.get("message", "최근 주문 내역입니다."),
+    }
+
+    ui_action = payload.get("ui_action")
+    ui_payload = {
+        "ui_action": ui_action,
+        "ui_data": payload.get("ui_data") or [],
+        "requires_selection": payload.get("requires_selection", False),
+        "prior_action": "list_orders",
+        "message": payload.get("message"),
+    }
+    order_context["last_ui_payload"] = ui_payload
+
+    return {
+        "order_context": order_context,
+        "completed_tasks": completed_tasks,
+        "agent_results": agent_results,
+        "ui_action_required": ui_action,
+    }
 
 
 def shipping_subagent_node(state: GlobalAgentState) -> dict:
@@ -314,6 +362,8 @@ def _classify_order_action(latest_user_message: str, current_action: str | None)
         return "refund"
     if any(keyword in text for keyword in ("취소", "주문취소")):
         return "cancel"
+    if _is_order_list_intent(text):
+        return "list_orders"
 
     if current_action in _ORDER_ACTIONS:
         return current_action
@@ -321,8 +371,16 @@ def _classify_order_action(latest_user_message: str, current_action: str | None)
     return "refund"
 
 
+
 def _get_latest_user_message(state: GlobalAgentState) -> str:
     for msg in reversed(state.get("messages", [])):
         if isinstance(msg, HumanMessage):
             return str(msg.content).strip()
     return ""
+
+
+def _is_order_list_intent(text: str) -> bool:
+    return (
+        "주문" in text
+        and any(token in text for token in ("목록", "내역", "조회", "보여"))
+    )

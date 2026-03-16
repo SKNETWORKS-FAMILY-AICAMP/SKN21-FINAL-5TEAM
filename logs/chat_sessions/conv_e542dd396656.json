@@ -1,0 +1,38 @@
+{
+  "conversation_id": "conv_e542dd396656",
+  "user_id": 1,
+  "status": "in_progress",
+  "feedback_label": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "주문목록을 보여주세요",
+      "at": "2026-03-16T03:06:03.088361+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "죄송합니다. 해당 내용은 서비스 정책에 따라 답변이 어렵습니다. 쇼핑 관련 문의 사항이 있으시면 말씀해 주세요.",
+      "at": "2026-03-16T03:06:03.088365+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": null,
+    "order_context": {},
+    "search_context": {},
+    "ui_action_required": null,
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "site_id": "site-c"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "주문목록을 보여주세요",
+      "output": "죄송합니다. 해당 내용은 서비스 정책에 따라 답변이 어렵습니다. 쇼핑 관련 문의 사항이 있으시면 말씀해 주세요."
+    }
+  ],
+  "started_at": "2026-03-16T03:06:03.088348+00:00",
+  "ended_at": null,
+  "updated_at": "2026-03-16T03:06:03.088377+00:00",
+  "reset_required": false
+}

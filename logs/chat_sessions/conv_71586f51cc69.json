@@ -1,0 +1,38 @@
+{
+  "conversation_id": "conv_71586f51cc69",
+  "user_id": 1,
+  "status": "completed",
+  "feedback_label": "good",
+  "messages": [
+    {
+      "role": "user",
+      "content": "{\"event\":\"used_sale_submitted\",\"action\":\"register_used_sale\",\"category_id\":2,\"category\":\"신발\",\"item_name\":\"나이키신발\",\"description\":\"새거임 ㄹㅇ 333\",\"condition_id\":1,\"condition\":\"S급\",\"expected_price\":30000,\"source\":\"used_sale_form_ui\"}",
+      "at": "2026-03-16T02:53:15.274080+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "중고 판매가 성공적으로 등록되었습니다. 상품명은 '나이키신발'이며, 희망가는 30,000원입니다. \n\n현재 상태는 \"대기 중\"이며, 관리자 검수 이후 판매 상태가 업데이트됩니다.",
+      "at": "2026-03-16T02:53:15.274086+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": "사용자: {\"event\":\"used_sale_submitted\",\"action\" :\"register_use드__ale\",\"신발\",\"description\",\"새거임 ᄅᄋ 333\",\"S급\",\"상담원\"",
+    "order_context": {},
+    "search_context": {},
+    "ui_action_required": null,
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "site_id": "site-c"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "{\"event\":\"used_sale_submitted\",\"action\":\"register_used_sale\",\"category_id\":2,\"category\":\"신발\",\"item_name\":\"나이키신발\",\"description\":\"새거임 ㄹㅇ 333\",\"condition_id\":1,\"condition\":\"S급\",\"expected_price\":30000,\"source\":\"used_sale_form_ui\"}",
+      "output": "중고 판매가 성공적으로 등록되었습니다. 상품명은 '나이키신발'이며, 희망가는 30,000원입니다. \n\n현재 상태는 \"대기 중\"이며, 관리자 검수 이후 판매 상태가 업데이트됩니다."
+    }
+  ],
+  "started_at": "2026-03-16T02:53:15.274064+00:00",
+  "ended_at": "2026-03-16T02:53:16.174091+00:00",
+  "updated_at": "2026-03-16T02:53:16.174091+00:00",
+  "reset_required": true
+}
