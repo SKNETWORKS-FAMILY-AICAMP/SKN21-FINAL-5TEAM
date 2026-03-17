@@ -1,0 +1,57 @@
+{"input": "주문 취소해주세요", "expected_node": "order_intent_router"}
+{"input": "방금 결제한 거 취소하고 싶어요", "expected_node": "order_intent_router"}
+{"input": "잘못 주문했는데 취소 가능해요?", "expected_node": "order_intent_router"}
+{"input": "환불 받고 싶어요", "expected_node": "order_intent_router"}
+{"input": "환불 요청할게요", "expected_node": "order_intent_router"}
+{"input": "돈 돌려받고 싶어", "expected_node": "order_intent_router"}
+{"input": "이거 환불해줄 수 있어?", "expected_node": "order_intent_router"}
+{"input": "반품 신청할게요", "expected_node": "order_intent_router"}
+{"input": "반품하고 싶은데요", "expected_node": "order_intent_router"}
+{"input": "반품 신청할게", "expected_node": "order_intent_router"}
+{"input": "반품 요청해도 될까요?", "expected_node": "order_intent_router"}
+{"input": "물건이 불량이라 돈 돌려받고 싶어요", "expected_node": "order_intent_router"}
+{"input": "사이즈 교환하고 싶어요", "expected_node": "order_intent_router"}
+{"input": "다른 색상으로 바꿀 수 있을까요?", "expected_node": "order_intent_router"}
+{"input": "옵션 변경하고 싶은데 교환 돼요?", "expected_node": "order_intent_router"}
+{"input": "배송 어디까지 왔어요?", "expected_node": "order_intent_router"}
+{"input": "택배 언제 도착하나요?", "expected_node": "order_intent_router"}
+{"input": "송장번호 알려주세요", "expected_node": "order_intent_router"}
+{"input": "내 주문 내역 보여줘", "expected_node": "order_intent_router"}
+{"input": "최근 주문 목록 조회해줘", "expected_node": "order_intent_router"}
+{"input": "그동안 뭐 샀는지 주문 내역 확인하고 싶어요", "expected_node": "order_intent_router"}
+{"input": "봄에 입기 좋은 옷 추천해줘", "expected_node": "discovery_subagent"}
+{"input": "데이트할 때 입을 만한 코디 찾아줘", "expected_node": "discovery_subagent"}
+{"input": "출근복으로 괜찮은 정장 보여줘", "expected_node": "discovery_subagent"}
+{"input": "운동할 때 편한 바지 추천 좀", "expected_node": "discovery_subagent"}
+{"input": "캐주얼한 느낌 아우터 있어?", "expected_node": "discovery_subagent"}
+{"input": "이 사진이랑 비슷한 옷 찾아줘 /products/17464.jpg", "expected_node": "discovery_subagent"}
+{"input": "이것과 비슷한 스타일 보여줘 /products/1581.jpg", "expected_node": "discovery_subagent"}
+{"input": "/products/50385.jpg 이거랑 같은 종류 있어?", "expected_node": "discovery_subagent"}
+{"input": "SNS에서 본 건데 비슷한 거 있나요 /products/39233.jpg", "expected_node": "discovery_subagent"}
+{"input": "환불 정책 알려줘", "expected_node": "policy_rag_subagent"}
+{"input": "배송 규정이 어떻게 되나요?", "expected_node": "policy_rag_subagent"}
+{"input": "교환 기한이 얼마예요?", "expected_node": "policy_rag_subagent"}
+{"input": "교환할 수 있는 기간이 어떻게 되죠?", "expected_node": "policy_rag_subagent"}
+{"input": "교환은 몇 일까지 가능한 거야?", "expected_node": "policy_rag_subagent"}
+{"input": "교환 기한이 언제까지인지 알고 싶어요.", "expected_node": "policy_rag_subagent"}
+{"input": "반품 택배비 누가 부담해요?", "expected_node": "policy_rag_subagent"}
+{"input": "개봉한 것도 돌려보낼 수 있어요?", "expected_node": "policy_rag_subagent"}
+{"input": "제주도도 배송비 같은가요?", "expected_node": "policy_rag_subagent"}
+{"input": "제주도 배송비도 똑같나요?", "expected_node": "policy_rag_subagent"}
+{"input": "제주도에 배송할 때도 배송비가 동일해?", "expected_node": "policy_rag_subagent"}
+{"input": "제주도 배송비가 일반 배송비랑 같아?", "expected_node": "policy_rag_subagent"}
+{"input": "중고 등록하고 싶어요", "expected_node": "form_action_subagent"}
+{"input": "안 입는 옷 팔고 싶어요", "expected_node": "form_action_subagent"}
+{"input": "사이즈 안 맞는 옷 중고로 내놓을래요", "expected_node": "form_action_subagent"}
+{"input": "새 거나 다름없는 신발 올리고 싶어", "expected_node": "form_action_subagent"}
+{"input": "옷장 정리하는데 안 입는 거 처분하고 싶어", "expected_node": "form_action_subagent"}
+{"input": "리뷰 쓰고 싶어요", "expected_node": "form_action_subagent"}
+{"input": "후기 남기고 싶어요", "expected_node": "form_action_subagent"}
+{"input": "별점 주고 싶은데 어디서 해요?", "expected_node": "form_action_subagent"}
+{"input": "착용 사진이랑 후기를 올리고 싶어요", "expected_node": "form_action_subagent"}
+{"input": "구매평 작성하는 곳이 어디예요?", "expected_node": "form_action_subagent"}
+{"input": "상품권 등록해주세요", "expected_node": "form_action_subagent"}
+{"input": "기프트카드 번호 입력하고 싶어요", "expected_node": "form_action_subagent"}
+{"input": "이벤트 당첨 코드 어디에 넣어요?", "expected_node": "form_action_subagent"}
+{"input": "모바일 상품권은 어떻게 적용해요?", "expected_node": "form_action_subagent"}
+{"input": "회사에서 받은 포인트 코드 등록해주세요", "expected_node": "form_action_subagent"}
