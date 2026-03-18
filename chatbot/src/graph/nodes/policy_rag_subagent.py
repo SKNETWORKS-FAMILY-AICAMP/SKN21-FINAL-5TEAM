@@ -28,6 +28,7 @@ QUERY_TRANSFORM_PROMPT = """당신은 검색 쿼리 최적화 전문가입니다
 규칙:
 - 불필요한 조사, 어미, 인사말 제거
 - 핵심 도메인 용어 보존 (배송, 환불, 반품, 교환, 취소 등)
+- 검색에 중요한 구분어는 반드시 유지 (제주/도서산간, A/S, 사은품, USED/유즈드, 부분/일부, 배송비/반품비)
 - 1~2문장으로 간결하게 출력
 - 변환된 쿼리만 출력 (설명 없이)
 
@@ -52,6 +53,12 @@ QUERY_TRANSFORM_PROMPT = """당신은 검색 쿼리 최적화 전문가입니다
 
 입력: "AS는 어디로 문의해야 하나요?"
 출력: "구매한 상품 A/S 필요 문의 방법"
+
+입력: "제주도도 배송비 같은가요?"
+출력: "제주도 도서산간 배송비 추가 여부"
+
+입력: "사은품도 같이 반품해야 되나요?"
+출력: "사은품 반품 동봉 필요 여부"
 """
 
 POLICY_RAG_ANSWER_PROMPT = """당신은 MOYEO 쇼핑몰 CS 상담원입니다.
@@ -84,15 +91,30 @@ def run_policy_rag_pipeline(
         HumanMessage(content=user_query),
     ])
     optimized_query = str(transform_response.content).strip()
+    inferred_categories = _infer_policy_categories(user_query, optimized_query)
+    inferred_category = inferred_categories[0] if inferred_categories else None
+    query_variants = _build_query_variants(user_query, optimized_query)
 
-    retrieval_result = search_knowledge_base.invoke({"query": optimized_query})
-    documents: list[str] = retrieval_result.get("documents", [])
+    retrieval_attempts = _build_retrieval_attempts(
+        query_variants=query_variants,
+        inferred_categories=inferred_categories,
+    )
+
+    retrieval_results: list[dict] = []
+    retrieval_result: dict = {"documents": [], "items": [], "count": 0}
+    documents: list[str] = []
     used_fallback = False
 
-    if not documents:
-        retrieval_result = search_knowledge_base.invoke({"query": user_query})
-        documents = retrieval_result.get("documents", [])
-        used_fallback = True
+    for index, payload in enumerate(retrieval_attempts):
+        current_result = search_knowledge_base.invoke(payload)
+        retrieval_results.append(current_result)
+
+        current_documents = current_result.get("documents", [])
+        if current_documents and not documents:
+            used_fallback = index > 0
+
+    retrieval_result = _merge_retrieval_results(retrieval_results)
+    documents = retrieval_result.get("documents", [])
 
     context = "\n\n".join(documents) if documents else "관련 정책 문서를 찾을 수 없습니다."
 
@@ -105,6 +127,8 @@ def run_policy_rag_pipeline(
     return {
         "user_query": user_query,
         "optimized_query": optimized_query,
+        "inferred_category": inferred_category,
+        "query_variants": query_variants,
         "retrieval_result": retrieval_result,
         "used_fallback": used_fallback,
         "answer_content": answer_content,
@@ -158,6 +182,146 @@ def _get_last_user_message(messages: list) -> str | None:
         if isinstance(msg, HumanMessage):
             return str(msg.content).strip()
     return None
+
+
+def _infer_policy_category(user_query: str, optimized_query: str) -> str | None:
+    """가장 우선순위가 높은 단일 카테고리를 반환한다."""
+    categories = _infer_policy_categories(user_query, optimized_query)
+    return categories[0] if categories else None
+
+
+def _infer_policy_categories(user_query: str, optimized_query: str) -> list[str]:
+    """질문 키워드를 기반으로 검색할 카테고리 후보를 우선순위 순으로 추정한다."""
+    text = f"{user_query} {optimized_query}".lower()
+    categories: list[str] = []
+
+    def has_any(*keywords: str) -> bool:
+        return any(keyword.lower() in text for keyword in keywords)
+
+    def add(category: str) -> None:
+        if category not in categories:
+            categories.append(category)
+
+    has_payment = has_any("결제수단", "결제", "카드", "무통장", "입금", "승인", "계좌이체")
+    has_return = has_any("교환", "반품", "환불", "취소", "철회", "반송", "회수", "수거")
+    has_shipping = has_any("배송", "송장", "택배", "출고", "도착", "배송지", "제주", "도서산간")
+    has_as = has_any("a/s", "as", "불량", "하자", "수선", "문의처")
+    is_payment_method_question = has_any("결제수단", "결제 방법", "무통장", "신용카드", "계좌이체")
+    is_payment_cancel_question = has_payment and has_any("취소", "환불") and has_any("결제 후", "상품준비중", "승인", "무통장")
+
+    if is_payment_method_question or is_payment_cancel_question:
+        add("주문/결제")
+
+    if has_as:
+        add("상품/AS 문의")
+
+    if has_return:
+        add("취소/교환/반품")
+
+    if has_shipping:
+        add("배송")
+
+    if has_payment and "주문/결제" not in categories:
+        add("주문/결제")
+
+    return categories
+
+
+def _build_retrieval_attempts(
+    query_variants: list[str],
+    inferred_categories: list[str],
+) -> list[dict[str, str]]:
+    """Tool schema 검증을 피하기 위해 None 값은 payload에서 제거한다."""
+    attempts: list[dict[str, str]] = []
+    seen: set[tuple[str, str | None]] = set()
+
+    for query in query_variants:
+        for category in inferred_categories:
+            key = (query, category)
+            if key not in seen:
+                attempts.append({"query": query, "category": category})
+                seen.add(key)
+
+        key = (query, None)
+        if key not in seen:
+            attempts.append({"query": query})
+            seen.add(key)
+
+    return attempts
+
+
+def _build_query_variants(user_query: str, optimized_query: str) -> list[str]:
+    """질문 성격에 맞는 검색 변형 질의를 추가로 만든다."""
+    lowered = f"{user_query} {optimized_query}".lower()
+    variants: list[str] = [optimized_query]
+
+    def has_any(*keywords: str) -> bool:
+        return any(keyword.lower() in lowered for keyword in keywords)
+
+    def add(query: str) -> None:
+        query = query.strip()
+        if query and query not in variants:
+            variants.append(query)
+
+    if user_query != optimized_query:
+        add(user_query)
+
+    if has_any("결제수단", "결제 방법", "무통장", "신용카드", "계좌이체"):
+        add("결제수단 카드 무통장입금 계좌이체 결제 방법 종류")
+
+    if has_any("카드", "승인") and has_any("취소", "환불"):
+        add("주문 취소 카드 승인 취소 환불 시점 결제수단")
+
+    if has_any("무통장", "무통장입금") and has_any("취소", "환불"):
+        add("무통장입금 주문 취소 환불 금액 입금 시점")
+
+    if has_any("배송지", "주소") and has_any("상품 준비중", "상품준비중", "출고 후", "배송 출발", "출발한 뒤"):
+        add("상품준비중 출고 후 배송지 주소 옵션 변경 가능 여부 불가")
+
+    if has_any("하자", "불량"):
+        add("불량 하자 교환 반품 환불 배송비 부담")
+
+    return variants[:6]
+
+
+def _merge_retrieval_results(results: list[dict]) -> dict:
+    """여러 검색 시도 결과를 합쳐 반복 등장한 문서를 상위로 올린다."""
+    merged: dict[str, dict] = {}
+    fallback_key_seq = 0
+
+    for result in results:
+        for item in result.get("items", []):
+            doc_key = item.get("doc_key") or f"item::{fallback_key_seq}"
+            fallback_key_seq += 1
+            if doc_key not in merged:
+                merged[doc_key] = dict(item)
+                merged[doc_key]["score"] = float(item.get("score", 0.0))
+                merged[doc_key]["_hits"] = 1
+            else:
+                merged[doc_key]["score"] = max(
+                    float(merged[doc_key].get("score", 0.0)),
+                    float(item.get("score", 0.0)),
+                )
+                merged[doc_key]["_hits"] += 1
+
+    ranked = sorted(
+        merged.values(),
+        key=lambda item: float(item.get("score", 0.0)) + (0.45 * int(item.get("_hits", 1) - 1)),
+        reverse=True,
+    )[:5]
+
+    documents = [f"[{item.get('doc_type', '정보')}] {item.get('text', '')}" for item in ranked]
+    items = []
+    for item in ranked:
+        cleaned = dict(item)
+        cleaned.pop("_hits", None)
+        items.append(cleaned)
+
+    return {
+        "documents": documents,
+        "items": items,
+        "count": len(documents),
+    }
 
 
 def _error_response(state: GlobalAgentState, task: str | None, reason: str) -> dict:
