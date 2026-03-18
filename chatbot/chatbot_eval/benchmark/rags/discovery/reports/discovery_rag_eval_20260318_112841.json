@@ -1,0 +1,1605 @@
+{
+  "dataset_path": "chatbot/chatbot_eval/benchmark/rags/discovery/data/eval_dataset.jsonl",
+  "provider": "openai",
+  "model": "gpt-4o-mini",
+  "dataset_size": 30,
+  "retrieval_pass_rate": 0.0,
+  "retrieval_hit_at_1": 0.0,
+  "retrieval_hit_at_3": 0.0,
+  "retrieval_hit_at_5": 0.0,
+  "grounding_pass_rate": 0.1333,
+  "grounding_keyword_recall": 0.1389,
+  "results": [
+    {
+      "id": "discovery_001",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 백팩 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "4585"
+      ],
+      "expected_keywords": [
+        "backpack",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "백팩은 카테고리로 분류할 수 있습니다. 검은색 백팩을 추천해드릴까요?",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_002",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "회색 백팩 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "4583"
+      ],
+      "expected_keywords": [
+        "backpack",
+        "grey"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "grey"
+        ],
+        "keyword_recall": 0.5
+      },
+      "retrieved_product_ids": [
+        "15789",
+        "19886",
+        "1554",
+        "50281",
+        "58905"
+      ],
+      "retrieved_products": [
+        {
+          "id": 15789,
+          "name": "Facit Men Grey Comfort Briefs",
+          "price": 85191.0,
+          "category": "브리프",
+          "color": "Grey",
+          "season": null,
+          "image_url": "/products/15789.jpg"
+        },
+        {
+          "id": 19886,
+          "name": "ADIDAS Originals Unisex Dicolor Red Cap",
+          "price": 81674.0,
+          "category": "캡",
+          "color": "Red",
+          "season": null,
+          "image_url": "/products/19886.jpg"
+        },
+        {
+          "id": 1554,
+          "name": "Quechua  Blue Sipper",
+          "price": 80964.0,
+          "category": "기타",
+          "color": "Blue",
+          "season": null,
+          "image_url": "/products/1554.jpg"
+        },
+        {
+          "id": 50281,
+          "name": "Parx Men Maroon and Black Tie",
+          "price": 52451.0,
+          "category": "기타",
+          "color": "Maroon",
+          "season": null,
+          "image_url": "/products/50281.jpg"
+        },
+        {
+          "id": 58905,
+          "name": "Hakashi Men Maroon Silk Tie",
+          "price": 80535.0,
+          "category": "기타",
+          "color": "Maroon",
+          "season": null,
+          "image_url": "/products/58905.jpg"
+        }
+      ],
+      "answer": "회색 백팩을 찾는 데 어려움이 있었습니다. 대신 다른 상품들이 검색되었습니다. 아래는 검색된 상품 목록입니다:\n\n1. **Facit Men Grey Comfort Briefs**\n   - 가격: 85,191원\n   - 카테고리: 브리프\n   - 색상: 회색\n   - ![이미지](https://example.com/products/15789.jpg)\n\n2. **ADIDAS Originals Unisex Dicolor Red Cap**\n   - 가격: 81,674원\n   - 카테고리: 캡\n   - 색상: 빨강\n   - ![이미지](https://example.com/products/19886.jpg)\n\n3. **Quechua Blue Sipper**\n   - 가격: 80,964원\n   - 카테고리: 기타\n   - 색상: 파랑\n   - ![이미지](https://example.com/products/1554.jpg)\n\n4. **Parx Men Maroon and Black Tie**\n   - 가격: 52,451원\n   - 카테고리: 기타\n   - 색상: 마룬\n   - ![이미지](https://example.com/products/50281.jpg)\n\n5. **Hakashi Men Maroon Silk Tie**\n   - 가격: 80,535원\n   - 카테고리: 기타\n   - 색상: 마룬\n   - ![이미지](https://example.com/products/58905.jpg)\n\n회색 백팩을 다시 검색해드릴까요?",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_003",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "회색 더플백 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "1943"
+      ],
+      "expected_keywords": [
+        "duffle",
+        "bag",
+        "grey"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [
+          "grey"
+        ],
+        "keyword_recall": 0.3333
+      },
+      "retrieved_product_ids": [
+        "15789",
+        "1982",
+        "19886",
+        "30593",
+        "37555"
+      ],
+      "retrieved_products": [
+        {
+          "id": 15789,
+          "name": "Facit Men Grey Comfort Briefs",
+          "price": 85191.0,
+          "category": "브리프",
+          "color": "Grey",
+          "season": null,
+          "image_url": "/products/15789.jpg"
+        },
+        {
+          "id": 1982,
+          "name": "Puma Women's Island Shorts Purple",
+          "price": 65824.0,
+          "category": "반바지",
+          "color": "Purple",
+          "season": null,
+          "image_url": "/products/1982.jpg"
+        },
+        {
+          "id": 19886,
+          "name": "ADIDAS Originals Unisex Dicolor Red Cap",
+          "price": 81674.0,
+          "category": "캡",
+          "color": "Red",
+          "season": null,
+          "image_url": "/products/19886.jpg"
+        },
+        {
+          "id": 30593,
+          "name": "Nike Unisex Tennis White Cap",
+          "price": 50352.0,
+          "category": "캡",
+          "color": "White",
+          "season": null,
+          "image_url": "/products/30593.jpg"
+        },
+        {
+          "id": 37555,
+          "name": "Madagascar 3 Infants Girl Pink Mittens",
+          "price": 24821.0,
+          "category": "기타",
+          "color": "Pink",
+          "season": null,
+          "image_url": "/products/37555.jpg"
+        }
+      ],
+      "answer": "회색 더플백을 찾는 데 도움이 되는 상품이 없습니다. 다른 스타일이나 색상의 가방을 원하시면 말씀해 주세요!",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_004",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "빨간색 더플백 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "5254"
+      ],
+      "expected_keywords": [
+        "duffle",
+        "bag",
+        "red"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "더플백을 추천하기 위해서는 카테고리를 \"가방\"으로 설정할 수 있습니다. 하지만 \"가방\" 카테고리에는 여러 종류가 있을 수 있으니, 더플백 외에 다른 특정 용도나 스타일이 있는지 알려주실 수 있나요? 예를 들어, 여행용, 운동용 등.",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_005",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "파란색 여행용 백팩 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "4601"
+      ],
+      "expected_keywords": [
+        "rucksack",
+        "blue",
+        "travel"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "죄송하지만 현재 상품 데이터를 로드할 수 없는 상태입니다. 다른 요청이나 질문이 있으시면 말씀해 주세요!",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_006",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "주황색 백팩 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "7123"
+      ],
+      "expected_keywords": [
+        "backpack",
+        "orange"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [
+        "57731",
+        "36346",
+        "15789",
+        "19886",
+        "58905"
+      ],
+      "retrieved_products": [
+        {
+          "id": 57731,
+          "name": "Lotus Herbals Velvety Rose Lip Balm",
+          "price": 80414.0,
+          "category": "립 케어",
+          "color": "Rose",
+          "season": null,
+          "image_url": "/products/57731.jpg"
+        },
+        {
+          "id": 36346,
+          "name": "Reid & Taylor Men Maroon Checked Tie",
+          "price": 74308.0,
+          "category": "사은품",
+          "color": "Maroon",
+          "season": null,
+          "image_url": "/products/36346.jpg"
+        },
+        {
+          "id": 15789,
+          "name": "Facit Men Grey Comfort Briefs",
+          "price": 85191.0,
+          "category": "브리프",
+          "color": "Grey",
+          "season": null,
+          "image_url": "/products/15789.jpg"
+        },
+        {
+          "id": 19886,
+          "name": "ADIDAS Originals Unisex Dicolor Red Cap",
+          "price": 81674.0,
+          "category": "캡",
+          "color": "Red",
+          "season": null,
+          "image_url": "/products/19886.jpg"
+        },
+        {
+          "id": 58905,
+          "name": "Hakashi Men Maroon Silk Tie",
+          "price": 80535.0,
+          "category": "기타",
+          "color": "Maroon",
+          "season": null,
+          "image_url": "/products/58905.jpg"
+        }
+      ],
+      "answer": "주황색 백팩을 찾는 데 어려움이 있었습니다. 대신 다른 상품들이 검색되었습니다. 주황색 백팩을 찾기 위해 추가적인 검색이 필요할 수 있습니다. \n\n다음은 검색된 상품 목록입니다:\n\n1. **Lotus Herbals Velvety Rose Lip Balm**\n   - 가격: 80,414원\n   - 카테고리: 립 케어\n   - 색상: Rose\n   - ![이미지](https://example.com/products/57731.jpg)\n\n2. **Reid & Taylor Men Maroon Checked Tie**\n   - 가격: 74,308원\n   - 카테고리: 사은품\n   - 색상: Maroon\n   - ![이미지](https://example.com/products/36346.jpg)\n\n3. **Facit Men Grey Comfort Briefs**\n   - 가격: 85,191원\n   - 카테고리: 브리프\n   - 색상: Grey\n   - ![이미지](https://example.com/products/15789.jpg)\n\n4. **ADIDAS Originals Unisex Dicolor Red Cap**\n   - 가격: 81,674원\n   - 카테고리: 캡\n   - 색상: Red\n   - ![이미지](https://example.com/products/19886.jpg)\n\n5. **Hakashi Men Maroon Silk Tie**\n   - 가격: 80,535원\n   - 카테고리: 기타\n   - 색상: Maroon\n   - ![이미지](https://example.com/products/58905.jpg)\n\n주황색 백팩을 찾기 위해 다른 키워드로 다시 검색해볼까요?",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_007",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 운동 가방 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "8248"
+      ],
+      "expected_keywords": [
+        "bag",
+        "black",
+        "gym"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [
+        "55528",
+        "1554",
+        "19886",
+        "15789",
+        "30593"
+      ],
+      "retrieved_products": [
+        {
+          "id": 55528,
+          "name": "Revlon Skinlights Face Peach Light Illuminator Lotion",
+          "price": 42031.0,
+          "category": "하이라이터 & 블러셔",
+          "color": "Skin",
+          "season": null,
+          "image_url": "/products/55528.jpg"
+        },
+        {
+          "id": 1554,
+          "name": "Quechua  Blue Sipper",
+          "price": 80964.0,
+          "category": "기타",
+          "color": "Blue",
+          "season": null,
+          "image_url": "/products/1554.jpg"
+        },
+        {
+          "id": 19886,
+          "name": "ADIDAS Originals Unisex Dicolor Red Cap",
+          "price": 81674.0,
+          "category": "캡",
+          "color": "Red",
+          "season": null,
+          "image_url": "/products/19886.jpg"
+        },
+        {
+          "id": 15789,
+          "name": "Facit Men Grey Comfort Briefs",
+          "price": 85191.0,
+          "category": "브리프",
+          "color": "Grey",
+          "season": null,
+          "image_url": "/products/15789.jpg"
+        },
+        {
+          "id": 30593,
+          "name": "Nike Unisex Tennis White Cap",
+          "price": 50352.0,
+          "category": "캡",
+          "color": "White",
+          "season": null,
+          "image_url": "/products/30593.jpg"
+        }
+      ],
+      "answer": "검은색 운동 가방을 찾는 데 도움이 되는 상품이 없습니다. 다른 색상이나 스타일의 운동 가방을 원하시면 말씀해 주세요!",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_008",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "갈색 캐주얼 신발 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "12511"
+      ],
+      "expected_keywords": [
+        "shoes",
+        "brown",
+        "casual"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "죄송하지만, 현재 갈색 캐주얼 신발에 대한 상품 데이터를 로드할 수 없는 상태입니다. 다른 색상이나 스타일의 신발을 원하시거나, 다른 종류의 상품을 찾으시겠습니까?",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_009",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 정장 구두 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "9041"
+      ],
+      "expected_keywords": [
+        "shoes",
+        "black",
+        "formal"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "검은색 정장 구두에 대한 추천을 제공하는 데 문제가 발생했습니다. 다른 스타일이나 색상으로 구두를 찾고 계신가요? 또는 다른 종류의 신발을 원하시는지 알려주시면 도와드리겠습니다.",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_010",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "흰색 스포츠 운동화 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "15314"
+      ],
+      "expected_keywords": [
+        "shoes",
+        "white",
+        "sports"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [
+          "white"
+        ],
+        "keyword_recall": 0.3333
+      },
+      "retrieved_product_ids": [
+        "55528",
+        "45087",
+        "1554",
+        "19886",
+        "30593"
+      ],
+      "retrieved_products": [
+        {
+          "id": 55528,
+          "name": "Revlon Skinlights Face Peach Light Illuminator Lotion",
+          "price": 42031.0,
+          "category": "하이라이터 & 블러셔",
+          "color": "Skin",
+          "season": null,
+          "image_url": "/products/55528.jpg"
+        },
+        {
+          "id": 45087,
+          "name": "Bwitch Women Pink Lily Robe",
+          "price": 82458.0,
+          "category": "로브",
+          "color": "Pink",
+          "season": null,
+          "image_url": "/products/45087.jpg"
+        },
+        {
+          "id": 1554,
+          "name": "Quechua  Blue Sipper",
+          "price": 80964.0,
+          "category": "기타",
+          "color": "Blue",
+          "season": null,
+          "image_url": "/products/1554.jpg"
+        },
+        {
+          "id": 19886,
+          "name": "ADIDAS Originals Unisex Dicolor Red Cap",
+          "price": 81674.0,
+          "category": "캡",
+          "color": "Red",
+          "season": null,
+          "image_url": "/products/19886.jpg"
+        },
+        {
+          "id": 30593,
+          "name": "Nike Unisex Tennis White Cap",
+          "price": 50352.0,
+          "category": "캡",
+          "color": "White",
+          "season": null,
+          "image_url": "/products/30593.jpg"
+        }
+      ],
+      "answer": "죄송하지만, 흰색 스포츠 운동화에 대한 검색 결과가 없습니다. 다른 스타일이나 색상의 운동화를 원하시면 말씀해 주세요!",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_011",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "파란색 스포츠화 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "13699"
+      ],
+      "expected_keywords": [
+        "shoes",
+        "blue",
+        "sports"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "죄송하지만 현재 상품 데이터를 로드할 수 없는 상태입니다. 다른 스타일이나 색상의 스포츠화를 원하시면 말씀해 주세요!",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_012",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 셔츠 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "15975"
+      ],
+      "expected_keywords": [
+        "shirt",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "검은색 셔츠를 찾기 위해서는 어떤 용도로 사용하실 건가요? 예를 들어, 캐주얼, 포멀, 또는 다른 특정한 용도가 있으신가요?",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_013",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "흰색 체크 셔츠 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "12180"
+      ],
+      "expected_keywords": [
+        "shirt",
+        "white",
+        "checked"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [
+          "white"
+        ],
+        "keyword_recall": 0.3333
+      },
+      "retrieved_product_ids": [
+        "55528",
+        "15789",
+        "19886",
+        "1554",
+        "30593"
+      ],
+      "retrieved_products": [
+        {
+          "id": 55528,
+          "name": "Revlon Skinlights Face Peach Light Illuminator Lotion",
+          "price": 42031.0,
+          "category": "하이라이터 & 블러셔",
+          "color": "Skin",
+          "season": null,
+          "image_url": "/products/55528.jpg"
+        },
+        {
+          "id": 15789,
+          "name": "Facit Men Grey Comfort Briefs",
+          "price": 85191.0,
+          "category": "브리프",
+          "color": "Grey",
+          "season": null,
+          "image_url": "/products/15789.jpg"
+        },
+        {
+          "id": 19886,
+          "name": "ADIDAS Originals Unisex Dicolor Red Cap",
+          "price": 81674.0,
+          "category": "캡",
+          "color": "Red",
+          "season": null,
+          "image_url": "/products/19886.jpg"
+        },
+        {
+          "id": 1554,
+          "name": "Quechua  Blue Sipper",
+          "price": 80964.0,
+          "category": "기타",
+          "color": "Blue",
+          "season": null,
+          "image_url": "/products/1554.jpg"
+        },
+        {
+          "id": 30593,
+          "name": "Nike Unisex Tennis White Cap",
+          "price": 50352.0,
+          "category": "캡",
+          "color": "White",
+          "season": null,
+          "image_url": "/products/30593.jpg"
+        }
+      ],
+      "answer": "죄송하지만, 흰색 체크 셔츠에 대한 검색 결과가 없습니다. 다른 스타일이나 색상의 셔츠를 원하시면 말씀해 주세요!",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_014",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "파란 줄무늬 셔츠 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "9256"
+      ],
+      "expected_keywords": [
+        "shirt",
+        "blue",
+        "striped"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [
+          "blue"
+        ],
+        "keyword_recall": 0.3333
+      },
+      "retrieved_product_ids": [
+        "15789",
+        "50281",
+        "1554",
+        "19886",
+        "15956"
+      ],
+      "retrieved_products": [
+        {
+          "id": 15789,
+          "name": "Facit Men Grey Comfort Briefs",
+          "price": 85191.0,
+          "category": "브리프",
+          "color": "Grey",
+          "season": null,
+          "image_url": "/products/15789.jpg"
+        },
+        {
+          "id": 50281,
+          "name": "Parx Men Maroon and Black Tie",
+          "price": 52451.0,
+          "category": "기타",
+          "color": "Maroon",
+          "season": null,
+          "image_url": "/products/50281.jpg"
+        },
+        {
+          "id": 1554,
+          "name": "Quechua  Blue Sipper",
+          "price": 80964.0,
+          "category": "기타",
+          "color": "Blue",
+          "season": null,
+          "image_url": "/products/1554.jpg"
+        },
+        {
+          "id": 19886,
+          "name": "ADIDAS Originals Unisex Dicolor Red Cap",
+          "price": 81674.0,
+          "category": "캡",
+          "color": "Red",
+          "season": null,
+          "image_url": "/products/19886.jpg"
+        },
+        {
+          "id": 15956,
+          "name": "Turtle Men Check Black Ties",
+          "price": 24360.0,
+          "category": "기타",
+          "color": "Black",
+          "season": null,
+          "image_url": "/products/15956.jpg"
+        }
+      ],
+      "answer": "죄송하지만, 파란 줄무늬 셔츠에 대한 결과가 없습니다. 대신 다른 상품들이 검색되었습니다:\n\n1. **Facit Men Grey Comfort Briefs**\n   - 가격: 85,191원\n   - 카테고리: 브리프\n   - ![이미지](https://example.com/products/15789.jpg)\n\n2. **Parx Men Maroon and Black Tie**\n   - 가격: 52,451원\n   - 카테고리: 기타\n   - ![이미지](https://example.com/products/50281.jpg)\n\n3. **Quechua Blue Sipper**\n   - 가격: 80,964원\n   - 카테고리: 기타\n   - ![이미지](https://example.com/products/1554.jpg)\n\n4. **ADIDAS Originals Unisex Dicolor Red Cap**\n   - 가격: 81,674원\n   - 카테고리: 캡\n   - ![이미지](https://example.com/products/19886.jpg)\n\n5. **Turtle Men Check Black Ties**\n   - 가격: 24,360원\n   - 카테고리: 기타\n   - ![이미지](https://example.com/products/15956.jpg)\n\n다른 스타일이나 색상의 셔츠를 찾고 계신가요?",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_015",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "네이비 폴로 티셔츠 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "7744"
+      ],
+      "expected_keywords": [
+        "polo",
+        "navy",
+        "t-shirt"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [
+        "1982",
+        "47260",
+        "15789",
+        "53537",
+        "37549"
+      ],
+      "retrieved_products": [
+        {
+          "id": 1982,
+          "name": "Puma Women's Island Shorts Purple",
+          "price": 65824.0,
+          "category": "반바지",
+          "color": "Purple",
+          "season": null,
+          "image_url": "/products/1982.jpg"
+        },
+        {
+          "id": 47260,
+          "name": "FCUK Underwear Men White Brief",
+          "price": 67403.0,
+          "category": "브리프",
+          "color": "White",
+          "season": null,
+          "image_url": "/products/47260.jpg"
+        },
+        {
+          "id": 15789,
+          "name": "Facit Men Grey Comfort Briefs",
+          "price": 85191.0,
+          "category": "브리프",
+          "color": "Grey",
+          "season": null,
+          "image_url": "/products/15789.jpg"
+        },
+        {
+          "id": 53537,
+          "name": "Amante Women Pack of 3 Assorted Briefs PFCP12",
+          "price": 30924.0,
+          "category": "브리프",
+          "color": "Multi",
+          "season": null,
+          "image_url": "/products/53537.jpg"
+        },
+        {
+          "id": 37549,
+          "name": "Madagascar 3 Infants Girls Pink Booties",
+          "price": 64575.0,
+          "category": "부츠",
+          "color": "Pink",
+          "season": null,
+          "image_url": "/products/37549.jpg"
+        }
+      ],
+      "answer": "죄송하지만, 네이비 폴로 티셔츠에 대한 검색 결과가 없습니다. 다른 스타일이나 색상의 티셔츠를 원하시면 말씀해 주세요!",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_016",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "회색 프린트 티셔츠 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "4256"
+      ],
+      "expected_keywords": [
+        "t-shirt",
+        "grey",
+        "printed"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "죄송하지만 현재 회색 프린트 티셔츠에 대한 상품 데이터를 로드할 수 없습니다. 다른 색상이나 스타일의 티셔츠를 원하시거나, 다른 종류의 의류를 추천받고 싶으신가요?",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_017",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "흰색 티셔츠 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "10015"
+      ],
+      "expected_keywords": [
+        "t-shirt",
+        "white"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "white"
+        ],
+        "keyword_recall": 0.5
+      },
+      "retrieved_product_ids": [
+        "15789",
+        "1554",
+        "30593",
+        "50281",
+        "19886"
+      ],
+      "retrieved_products": [
+        {
+          "id": 15789,
+          "name": "Facit Men Grey Comfort Briefs",
+          "price": 85191.0,
+          "category": "브리프",
+          "color": "Grey",
+          "season": null,
+          "image_url": "/products/15789.jpg"
+        },
+        {
+          "id": 1554,
+          "name": "Quechua  Blue Sipper",
+          "price": 80964.0,
+          "category": "기타",
+          "color": "Blue",
+          "season": null,
+          "image_url": "/products/1554.jpg"
+        },
+        {
+          "id": 30593,
+          "name": "Nike Unisex Tennis White Cap",
+          "price": 50352.0,
+          "category": "캡",
+          "color": "White",
+          "season": null,
+          "image_url": "/products/30593.jpg"
+        },
+        {
+          "id": 50281,
+          "name": "Parx Men Maroon and Black Tie",
+          "price": 52451.0,
+          "category": "기타",
+          "color": "Maroon",
+          "season": null,
+          "image_url": "/products/50281.jpg"
+        },
+        {
+          "id": 19886,
+          "name": "ADIDAS Originals Unisex Dicolor Red Cap",
+          "price": 81674.0,
+          "category": "캡",
+          "color": "Red",
+          "season": null,
+          "image_url": "/products/19886.jpg"
+        }
+      ],
+      "answer": "흰색 티셔츠를 찾는 데 도움이 되는 상품 목록입니다. 하지만 흰색 티셔츠는 포함되어 있지 않고, 다른 카테고리의 상품들이 검색되었습니다. \n\n혹시 다른 스타일이나 색상의 티셔츠를 원하신다면 말씀해 주세요!",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_018",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "주황색 폴로 티셔츠 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "2149"
+      ],
+      "expected_keywords": [
+        "polo",
+        "orange",
+        "t-shirt"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "죄송하지만, 현재 주황색 폴로 티셔츠에 대한 상품 데이터를 로드할 수 없는 상황입니다. 다른 색상이나 스타일의 티셔츠를 원하시거나, 다른 종류의 의류를 추천받고 싶으신가요?",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_019",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "빨간색 여성 상의 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "7704"
+      ],
+      "expected_keywords": [
+        "top",
+        "red",
+        "women"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "죄송하지만, 현재 빨간색 여성 상의 상품 데이터를 로드할 수 없습니다. 다른 색상이나 스타일의 상의를 원하시면 말씀해 주세요!",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_020",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "파란색 여성 자켓 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "8478"
+      ],
+      "expected_keywords": [
+        "jacket",
+        "blue",
+        "women"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "여성 자켓을 추천해드리겠습니다. 어떤 용도로 사용하실 건가요? (예: 캐주얼, 포멀 등)",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_021",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "빨간색 스포츠 자켓 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "7686"
+      ],
+      "expected_keywords": [
+        "jacket",
+        "red",
+        "sports"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "죄송하지만, 현재 빨간색 스포츠 자켓에 대한 상품 데이터를 로드할 수 없습니다. 다른 색상이나 스타일의 스포츠 자켓을 원하시거나, 다른 종류의 의류를 찾으시겠습니까?",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_022",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 조끼 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "8581"
+      ],
+      "expected_keywords": [
+        "waistcoat",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "조끼는 어떤 용도로 사용하실 건가요? 예를 들어, 캐주얼, 포멀, 스포츠 등 용도를 알려주시면 더 정확한 추천을 드릴 수 있습니다.",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_023",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "핑크색 민소매 원피스 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "6874"
+      ],
+      "expected_keywords": [
+        "dress",
+        "pink",
+        "sleeveless"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "죄송하지만 현재 핑크색 민소매 원피스에 대한 상품 데이터를 로드할 수 없습니다. 다른 색상이나 스타일의 원피스를 원하시면 말씀해 주세요!",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_024",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 원피스 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "6873"
+      ],
+      "expected_keywords": [
+        "dress",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "죄송하지만 현재 검은색 원피스에 대한 상품 데이터를 로드할 수 없습니다. 다른 색상이나 스타일의 원피스를 원하시면 말씀해 주세요!",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_025",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 청바지 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "11520"
+      ],
+      "expected_keywords": [
+        "jeans",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "black"
+        ],
+        "keyword_recall": 0.5
+      },
+      "retrieved_product_ids": [
+        "55528",
+        "17464",
+        "50281",
+        "1554",
+        "37549"
+      ],
+      "retrieved_products": [
+        {
+          "id": 55528,
+          "name": "Revlon Skinlights Face Peach Light Illuminator Lotion",
+          "price": 42031.0,
+          "category": "하이라이터 & 블러셔",
+          "color": "Skin",
+          "season": null,
+          "image_url": "/products/55528.jpg"
+        },
+        {
+          "id": 17464,
+          "name": "Beyouty Women Zena BR 01 Pink Bra",
+          "price": 22942.0,
+          "category": "브래지어",
+          "color": "Pink",
+          "season": null,
+          "image_url": "/products/17464.jpg"
+        },
+        {
+          "id": 50281,
+          "name": "Parx Men Maroon and Black Tie",
+          "price": 52451.0,
+          "category": "기타",
+          "color": "Maroon",
+          "season": null,
+          "image_url": "/products/50281.jpg"
+        },
+        {
+          "id": 1554,
+          "name": "Quechua  Blue Sipper",
+          "price": 80964.0,
+          "category": "기타",
+          "color": "Blue",
+          "season": null,
+          "image_url": "/products/1554.jpg"
+        },
+        {
+          "id": 37549,
+          "name": "Madagascar 3 Infants Girls Pink Booties",
+          "price": 64575.0,
+          "category": "부츠",
+          "color": "Pink",
+          "season": null,
+          "image_url": "/products/37549.jpg"
+        }
+      ],
+      "answer": "검은색 청바지를 찾는 데 어려움이 있었습니다. 대신 다른 상품들이 검색되었습니다. 아래는 검색된 상품 목록입니다:\n\n1. **Revlon Skinlights Face Peach Light Illuminator Lotion**\n   - 가격: 42,031원\n   - 카테고리: 하이라이터 & 블러셔\n   - ![상품 이미지](https://example.com/products/55528.jpg)\n\n2. **Beyouty Women Zena BR 01 Pink Bra**\n   - 가격: 22,942원\n   - 카테고리: 브래지어\n   - ![상품 이미지](https://example.com/products/17464.jpg)\n\n3. **Parx Men Maroon and Black Tie**\n   - 가격: 52,451원\n   - 카테고리: 기타\n   - ![상품 이미지](https://example.com/products/50281.jpg)\n\n4. **Quechua Blue Sipper**\n   - 가격: 80,964원\n   - 카테고리: 기타\n   - ![상품 이미지](https://example.com/products/1554.jpg)\n\n5. **Madagascar 3 Infants Girls Pink Booties**\n   - 가격: 64,575원\n   - 카테고리: 부츠\n   - ![상품 이미지](https://example.com/products/37549.jpg)\n\n검은색 청바지를 다시 검색해볼까요?",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_026",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "핑크 트레이닝 바지 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "4774"
+      ],
+      "expected_keywords": [
+        "track",
+        "pants",
+        "pink"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [
+          "pink"
+        ],
+        "keyword_recall": 0.3333
+      },
+      "retrieved_product_ids": [
+        "55528",
+        "20365",
+        "37549",
+        "37539",
+        "19886"
+      ],
+      "retrieved_products": [
+        {
+          "id": 55528,
+          "name": "Revlon Skinlights Face Peach Light Illuminator Lotion",
+          "price": 42031.0,
+          "category": "하이라이터 & 블러셔",
+          "color": "Skin",
+          "season": null,
+          "image_url": "/products/55528.jpg"
+        },
+        {
+          "id": 20365,
+          "name": "United Colors of Benetton Women Solid Dark Brown Tights",
+          "price": 69928.0,
+          "category": "스타킹",
+          "color": "Brown",
+          "season": null,
+          "image_url": "/products/20365.jpg"
+        },
+        {
+          "id": 37549,
+          "name": "Madagascar 3 Infants Girls Pink Booties",
+          "price": 64575.0,
+          "category": "부츠",
+          "color": "Pink",
+          "season": null,
+          "image_url": "/products/37549.jpg"
+        },
+        {
+          "id": 37539,
+          "name": "Madagascar 3 Infants Boys White Booties",
+          "price": 97844.0,
+          "category": "부츠",
+          "color": "White",
+          "season": null,
+          "image_url": "/products/37539.jpg"
+        },
+        {
+          "id": 19886,
+          "name": "ADIDAS Originals Unisex Dicolor Red Cap",
+          "price": 81674.0,
+          "category": "캡",
+          "color": "Red",
+          "season": null,
+          "image_url": "/products/19886.jpg"
+        }
+      ],
+      "answer": "죄송하지만, 핑크 트레이닝 바지에 대한 검색 결과가 없습니다. 대신 다른 핑크 색상의 상품들을 보여드릴게요.\n\n1. **Madagascar 3 Infants Girls Pink Booties**\n   - 가격: 64,575원\n   - ![상품 이미지](https://example.com/products/37549.jpg)\n\n다른 스타일이나 색상의 상품을 원하시면 말씀해 주세요!",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_027",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 카프리 바지 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "5027"
+      ],
+      "expected_keywords": [
+        "capris",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "죄송하지만 현재 검은색 카프리 바지에 대한 상품 데이터를 로드할 수 없습니다. 다른 스타일이나 색상의 바지를 원하시면 말씀해 주세요!",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_028",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "핑크 쿠르티 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "12108"
+      ],
+      "expected_keywords": [
+        "kurtis",
+        "pink"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "\"쿠르티\"는 상의의 일종으로, 어떤 스타일이나 색상을 원하시는지 더 구체적으로 말씀해 주실 수 있나요? 예를 들어, 캐주얼한 스타일인지, 포멀한 스타일인지, 또는 특정한 용도가 있는지 알려주시면 더 정확한 추천을 드릴 수 있습니다.",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_029",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "흰색 쿠르타 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "12789"
+      ],
+      "expected_keywords": [
+        "kurtas",
+        "white"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 0
+      },
+      "grounding_eval": {
+        "passed": false,
+        "matched_keywords": [],
+        "keyword_recall": 0.0
+      },
+      "retrieved_product_ids": [],
+      "retrieved_products": [],
+      "answer": "쿠르타는 상의로 분류되는데, 어떤 용도로 사용하고 싶으신가요? 예를 들어, 캐주얼, 포멀, 또는 특별한 행사용 등으로 말씀해 주시면 더 정확한 추천이 가능합니다.",
+      "ui_action_required": null
+    },
+    {
+      "id": "discovery_030",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 비니 모자 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "12440"
+      ],
+      "expected_keywords": [
+        "cap",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "cap",
+          "black"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "52494",
+        "55528",
+        "50281",
+        "58905",
+        "19886"
+      ],
+      "retrieved_products": [
+        {
+          "id": 52494,
+          "name": "Red Rose Women Pink Bath Robe",
+          "price": 51253.0,
+          "category": "목욕 가운",
+          "color": "Pink",
+          "season": null,
+          "image_url": "/products/52494.jpg"
+        },
+        {
+          "id": 55528,
+          "name": "Revlon Skinlights Face Peach Light Illuminator Lotion",
+          "price": 42031.0,
+          "category": "하이라이터 & 블러셔",
+          "color": "Skin",
+          "season": null,
+          "image_url": "/products/55528.jpg"
+        },
+        {
+          "id": 50281,
+          "name": "Parx Men Maroon and Black Tie",
+          "price": 52451.0,
+          "category": "기타",
+          "color": "Maroon",
+          "season": null,
+          "image_url": "/products/50281.jpg"
+        },
+        {
+          "id": 58905,
+          "name": "Hakashi Men Maroon Silk Tie",
+          "price": 80535.0,
+          "category": "기타",
+          "color": "Maroon",
+          "season": null,
+          "image_url": "/products/58905.jpg"
+        },
+        {
+          "id": 19886,
+          "name": "ADIDAS Originals Unisex Dicolor Red Cap",
+          "price": 81674.0,
+          "category": "캡",
+          "color": "Red",
+          "season": null,
+          "image_url": "/products/19886.jpg"
+        }
+      ],
+      "answer": "검은색 비니 모자를 찾는 데 어려움이 있었습니다. 대신 다른 상품들이 검색되었습니다. 검은색 비니 모자에 대한 정보는 없지만, 아래의 상품들을 확인해 보세요:\n\n1. **Red Rose Women Pink Bath Robe**\n   - 가격: 51,253원\n   - 카테고리: 목욕 가운\n   - 색상: 핑크\n   - ![이미지](https://example.com/products/52494.jpg)\n\n2. **Revlon Skinlights Face Peach Light Illuminator Lotion**\n   - 가격: 42,031원\n   - 카테고리: 하이라이터 & 블러셔\n   - 색상: 스킨\n   - ![이미지](https://example.com/products/55528.jpg)\n\n3. **Parx Men Maroon and Black Tie**\n   - 가격: 52,451원\n   - 카테고리: 기타\n   - 색상: 마룬\n   - ![이미지](https://example.com/products/50281.jpg)\n\n4. **Hakashi Men Maroon Silk Tie**\n   - 가격: 80,535원\n   - 카테고리: 기타\n   - 색상: 마룬\n   - ![이미지](https://example.com/products/58905.jpg)\n\n5. **ADIDAS Originals Unisex Dicolor Red Cap**\n   - 가격: 81,674원\n   - 카테고리: 캡\n   - 색상: 레드\n   - ![이미지](https://example.com/products/19886.jpg)\n\n검은색 비니 모자를 다시 검색해 보길 원하시면 말씀해 주세요!",
+      "ui_action_required": null
+    }
+  ]
+}

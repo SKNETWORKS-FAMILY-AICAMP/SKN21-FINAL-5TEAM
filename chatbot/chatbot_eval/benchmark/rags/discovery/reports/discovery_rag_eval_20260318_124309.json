@@ -1,0 +1,3130 @@
+{
+  "dataset_path": "chatbot/chatbot_eval/benchmark/rags/discovery/data/eval_dataset.jsonl",
+  "provider": "openai",
+  "model": "gpt-4o-mini",
+  "dataset_size": 30,
+  "retrieval_pass_rate": 0.9,
+  "retrieval_hit_at_1": 0.3667,
+  "retrieval_hit_at_3": 0.7667,
+  "retrieval_hit_at_5": 0.9,
+  "grounding_pass_rate": 1.0,
+  "grounding_keyword_recall": 0.95,
+  "results": [
+    {
+      "id": "discovery_001",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 백팩 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "4585"
+      ],
+      "expected_keywords": [
+        "backpack",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "4585"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 1,
+        "mrr": 0.2,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "backpack",
+          "black"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "42064",
+        "42065",
+        "13493",
+        "18164",
+        "4585"
+      ],
+      "retrieved_products": [
+        {
+          "id": 42064,
+          "name": "American Tourister Unisex Black Trolley Bag",
+          "price": 42430.0,
+          "category": "캐리어",
+          "color": "Black",
+          "season": null,
+          "description": "Unisex Trolley Bag Summer",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/42064.jpg"
+        },
+        {
+          "id": 42065,
+          "name": "American Tourister Unisex Black Trolley Bag",
+          "price": 15877.0,
+          "category": "캐리어",
+          "color": "Black",
+          "season": null,
+          "description": "Unisex Trolley Bag Summer",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/42065.jpg"
+        },
+        {
+          "id": 13493,
+          "name": "Wildcraft Unisex Gangotri Black & Red Rucksack",
+          "price": 89738.0,
+          "category": "등산 백팩",
+          "color": "Red",
+          "season": null,
+          "description": "Unisex Rucksacks Winter",
+          "tags": "Accessories,Bags,Travel",
+          "usage": "Accessories,Bags,Travel",
+          "image_url": "/products/13493.jpg"
+        },
+        {
+          "id": 18164,
+          "name": "Spice Art Women Zircons Black Clutch",
+          "price": 94218.0,
+          "category": "클러치백",
+          "color": "Black",
+          "season": null,
+          "description": "Women Clutches Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/18164.jpg"
+        },
+        {
+          "id": 4585,
+          "name": "Wildcraft Unisex Black Solid Backpack",
+          "price": 35434.0,
+          "category": "백팩",
+          "color": "Black",
+          "season": null,
+          "description": "Unisex Backpacks Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/4585.jpg"
+        }
+      ],
+      "answer": "'검은색 백팩 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 American Tourister Unisex Black Trolley Bag (캐리어, Black)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_002",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "회색 백팩 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "4583"
+      ],
+      "expected_keywords": [
+        "backpack",
+        "grey"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "grey"
+        ],
+        "keyword_recall": 0.5
+      },
+      "retrieved_product_ids": [
+        "38962",
+        "4594",
+        "38968",
+        "4601",
+        "7780"
+      ],
+      "retrieved_products": [
+        {
+          "id": 38962,
+          "name": "Wildcraft Unisex Grey & Green Rucksack",
+          "price": 69157.0,
+          "category": "등산 백팩",
+          "color": "Grey",
+          "season": null,
+          "description": "Unisex Rucksacks Winter",
+          "tags": "Accessories,Bags,Travel",
+          "usage": "Accessories,Bags,Travel",
+          "image_url": "/products/38962.jpg"
+        },
+        {
+          "id": 4594,
+          "name": "Wildcraft Unisex Red & Grey Rucksack",
+          "price": 38647.0,
+          "category": "등산 백팩",
+          "color": "Red",
+          "season": null,
+          "description": "Unisex Rucksacks Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/4594.jpg"
+        },
+        {
+          "id": 38968,
+          "name": "Wildcraft Unisex Yellow & Grey Rucksack",
+          "price": 52750.0,
+          "category": "등산 백팩",
+          "color": "Yellow",
+          "season": null,
+          "description": "Unisex Rucksacks Summer",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/38968.jpg"
+        },
+        {
+          "id": 4601,
+          "name": "Wildcraft Unisex Blue & Grey Rucksack",
+          "price": 55727.0,
+          "category": "등산 백팩",
+          "color": "Blue",
+          "season": null,
+          "description": "Unisex Rucksacks Winter",
+          "tags": "Accessories,Bags,Travel",
+          "usage": "Accessories,Bags,Travel",
+          "image_url": "/products/4601.jpg"
+        },
+        {
+          "id": 7780,
+          "name": "Wildcraft Unisex Grey & Orange Rucksack",
+          "price": 74535.0,
+          "category": "등산 백팩",
+          "color": "Orange",
+          "season": null,
+          "description": "Unisex Rucksacks Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/7780.jpg"
+        }
+      ],
+      "answer": "'회색 백팩 보여줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Wildcraft Unisex Grey & Green Rucksack (등산 백팩, Grey)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_003",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "회색 더플백 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "1943"
+      ],
+      "expected_keywords": [
+        "duffle",
+        "bag",
+        "grey"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "1943"
+        ],
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 1.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "duffle",
+          "bag",
+          "grey"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "1943",
+        "5263",
+        "4583",
+        "17112",
+        "47328"
+      ],
+      "retrieved_products": [
+        {
+          "id": 1943,
+          "name": "Domyos Grey Duffle Duffle Bag",
+          "price": 57338.0,
+          "category": "더플백",
+          "color": "Grey",
+          "season": null,
+          "description": "Unisex Duffel Bag Summer",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/1943.jpg"
+        },
+        {
+          "id": 5263,
+          "name": "Wildcraft Unisex Grey & Green Printed Messenger Bag",
+          "price": 97760.0,
+          "category": "메신저백",
+          "color": "Grey",
+          "season": null,
+          "description": "Unisex Messenger Bag Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/5263.jpg"
+        },
+        {
+          "id": 4583,
+          "name": "Wildcraft Unisex Grey Backpack",
+          "price": 73896.0,
+          "category": "백팩",
+          "color": "Grey",
+          "season": null,
+          "description": "Unisex Backpacks Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/4583.jpg"
+        },
+        {
+          "id": 17112,
+          "name": "Lino Perros Women Beaded Grey Clutch",
+          "price": 20850.0,
+          "category": "클러치백",
+          "color": "Grey",
+          "season": null,
+          "description": "Women Clutches Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/17112.jpg"
+        },
+        {
+          "id": 47328,
+          "name": "Baggit Women Grey Doodle Jhuti Mobile Pouch",
+          "price": 24868.0,
+          "category": "모바일 파우치",
+          "color": "Grey",
+          "season": null,
+          "description": "Women Mobile Pouch Summer",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/47328.jpg"
+        }
+      ],
+      "answer": "'회색 더플백 찾아줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Domyos Grey Duffle Duffle Bag (더플백, Grey)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_004",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "빨간색 더플백 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "5254"
+      ],
+      "expected_keywords": [
+        "duffle",
+        "bag",
+        "red"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "5254"
+        ],
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 1.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "duffle",
+          "bag",
+          "red"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "5254",
+        "4594",
+        "13493",
+        "36042",
+        "21250"
+      ],
+      "retrieved_products": [
+        {
+          "id": 5254,
+          "name": "Wildcraft Unisex Red Duffle Bag",
+          "price": 18714.0,
+          "category": "더플백",
+          "color": "Red",
+          "season": null,
+          "description": "Unisex Duffel Bag Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/5254.jpg"
+        },
+        {
+          "id": 4594,
+          "name": "Wildcraft Unisex Red & Grey Rucksack",
+          "price": 38647.0,
+          "category": "등산 백팩",
+          "color": "Red",
+          "season": null,
+          "description": "Unisex Rucksacks Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/4594.jpg"
+        },
+        {
+          "id": 13493,
+          "name": "Wildcraft Unisex Gangotri Black & Red Rucksack",
+          "price": 89738.0,
+          "category": "등산 백팩",
+          "color": "Red",
+          "season": null,
+          "description": "Unisex Rucksacks Winter",
+          "tags": "Accessories,Bags,Travel",
+          "usage": "Accessories,Bags,Travel",
+          "image_url": "/products/13493.jpg"
+        },
+        {
+          "id": 36042,
+          "name": "OTLS Unisex Blue Duffle Bag",
+          "price": 85723.0,
+          "category": "더플백",
+          "color": "Blue",
+          "season": null,
+          "description": "Unisex Duffel Bag Summer",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/36042.jpg"
+        },
+        {
+          "id": 21250,
+          "name": "Skybags Unisex Navy Duffle Bag",
+          "price": 15202.0,
+          "category": "더플백",
+          "color": "Navy Blue",
+          "season": null,
+          "description": "Unisex Duffel Bag Summer",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/21250.jpg"
+        }
+      ],
+      "answer": "'빨간색 더플백 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Wildcraft Unisex Red Duffle Bag (더플백, Red)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_005",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "파란색 여행용 백팩 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "4601"
+      ],
+      "expected_keywords": [
+        "rucksack",
+        "blue",
+        "travel"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "4601"
+        ],
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 1.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "rucksack",
+          "blue"
+        ],
+        "keyword_recall": 0.6667
+      },
+      "retrieved_product_ids": [
+        "4601",
+        "13493",
+        "20578",
+        "38962",
+        "8246"
+      ],
+      "retrieved_products": [
+        {
+          "id": 4601,
+          "name": "Wildcraft Unisex Blue & Grey Rucksack",
+          "price": 55727.0,
+          "category": "등산 백팩",
+          "color": "Blue",
+          "season": null,
+          "description": "Unisex Rucksacks Winter",
+          "tags": "Accessories,Bags,Travel",
+          "usage": "Accessories,Bags,Travel",
+          "image_url": "/products/4601.jpg"
+        },
+        {
+          "id": 13493,
+          "name": "Wildcraft Unisex Gangotri Black & Red Rucksack",
+          "price": 89738.0,
+          "category": "등산 백팩",
+          "color": "Red",
+          "season": null,
+          "description": "Unisex Rucksacks Winter",
+          "tags": "Accessories,Bags,Travel",
+          "usage": "Accessories,Bags,Travel",
+          "image_url": "/products/13493.jpg"
+        },
+        {
+          "id": 20578,
+          "name": "Baggit Women Panchnama Enzyme Blue Mobile Pouch",
+          "price": 44299.0,
+          "category": "모바일 파우치",
+          "color": "Blue",
+          "season": null,
+          "description": "Women Mobile Pouch Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/20578.jpg"
+        },
+        {
+          "id": 38962,
+          "name": "Wildcraft Unisex Grey & Green Rucksack",
+          "price": 69157.0,
+          "category": "등산 백팩",
+          "color": "Grey",
+          "season": null,
+          "description": "Unisex Rucksacks Winter",
+          "tags": "Accessories,Bags,Travel",
+          "usage": "Accessories,Bags,Travel",
+          "image_url": "/products/38962.jpg"
+        },
+        {
+          "id": 8246,
+          "name": "Fastrack Unisex Blue Bag",
+          "price": 19258.0,
+          "category": "메신저백",
+          "color": "Blue",
+          "season": null,
+          "description": "Unisex Messenger Bag Fall",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/8246.jpg"
+        }
+      ],
+      "answer": "'파란색 여행용 백팩 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Wildcraft Unisex Blue & Grey Rucksack (등산 백팩, Blue)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_006",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "주황색 백팩 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "7123"
+      ],
+      "expected_keywords": [
+        "backpack",
+        "orange"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "7123"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 0.3333,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "backpack",
+          "orange"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "7780",
+        "39511",
+        "7123",
+        "39524",
+        "38458"
+      ],
+      "retrieved_products": [
+        {
+          "id": 7780,
+          "name": "Wildcraft Unisex Grey & Orange Rucksack",
+          "price": 74535.0,
+          "category": "등산 백팩",
+          "color": "Orange",
+          "season": null,
+          "description": "Unisex Rucksacks Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/7780.jpg"
+        },
+        {
+          "id": 39511,
+          "name": "Peter England Unisex Orange Backpack",
+          "price": 66994.0,
+          "category": "백팩",
+          "color": "Orange",
+          "season": null,
+          "description": "Unisex Backpacks Summer",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/39511.jpg"
+        },
+        {
+          "id": 7123,
+          "name": "Wildcraft Unisex Orange Printed Backpack",
+          "price": 13283.0,
+          "category": "백팩",
+          "color": "Orange",
+          "season": null,
+          "description": "Unisex Backpacks Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/7123.jpg"
+        },
+        {
+          "id": 39524,
+          "name": "Peter England Unisex Orange Sleeve Bag",
+          "price": 49950.0,
+          "category": "노트북 백",
+          "color": "Orange",
+          "season": null,
+          "description": "Unisex Laptop Bag Summer",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/39524.jpg"
+        },
+        {
+          "id": 38458,
+          "name": "Baggit Women Orange Sling Bag",
+          "price": 65059.0,
+          "category": "핸드백",
+          "color": "Orange",
+          "season": null,
+          "description": "Women Handbags Summer",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/38458.jpg"
+        }
+      ],
+      "answer": "'주황색 백팩 찾아줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Wildcraft Unisex Grey & Orange Rucksack (등산 백팩, Orange)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_007",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 운동 가방 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "8248"
+      ],
+      "expected_keywords": [
+        "bag",
+        "black",
+        "gym"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "8248"
+        ],
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 1.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "bag",
+          "black",
+          "gym"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "8248",
+        "18164",
+        "6535",
+        "17129",
+        "1943"
+      ],
+      "retrieved_products": [
+        {
+          "id": 8248,
+          "name": "Fastrack Men Black Gym Bag",
+          "price": 89283.0,
+          "category": "더플백",
+          "color": "Black",
+          "season": null,
+          "description": "Men Duffel Bag Fall",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/8248.jpg"
+        },
+        {
+          "id": 18164,
+          "name": "Spice Art Women Zircons Black Clutch",
+          "price": 94218.0,
+          "category": "클러치백",
+          "color": "Black",
+          "season": null,
+          "description": "Women Clutches Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/18164.jpg"
+        },
+        {
+          "id": 6535,
+          "name": "Nike Unisex Allegian Black Laptop Bag",
+          "price": 61674.0,
+          "category": "노트북 백",
+          "color": "Black",
+          "season": null,
+          "description": "Unisex Laptop Bag Summer",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/6535.jpg"
+        },
+        {
+          "id": 17129,
+          "name": "Lino Perros Women Classic Black  Handbag",
+          "price": 99463.0,
+          "category": "핸드백",
+          "color": "Black",
+          "season": null,
+          "description": "Women Handbags Winter",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/17129.jpg"
+        },
+        {
+          "id": 1943,
+          "name": "Domyos Grey Duffle Duffle Bag",
+          "price": 57338.0,
+          "category": "더플백",
+          "color": "Grey",
+          "season": null,
+          "description": "Unisex Duffel Bag Summer",
+          "tags": "Accessories,Bags,Casual",
+          "usage": "Accessories,Bags,Casual",
+          "image_url": "/products/1943.jpg"
+        }
+      ],
+      "answer": "'검은색 운동 가방 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Fastrack Men Black Gym Bag (더플백, Black)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_008",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "갈색 캐주얼 신발 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "12511"
+      ],
+      "expected_keywords": [
+        "shoes",
+        "brown",
+        "casual"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "12511"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 0.5,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "shoes",
+          "brown",
+          "casual"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "22126",
+        "12511",
+        "15502",
+        "9702",
+        "4013"
+      ],
+      "retrieved_products": [
+        {
+          "id": 22126,
+          "name": "Provogue Men Brown Formal Shoes",
+          "price": 35254.0,
+          "category": "정장화",
+          "color": "Brown",
+          "season": null,
+          "description": "Men Formal Shoes Fall",
+          "tags": "Footwear,Shoes,Formal",
+          "usage": "Footwear,Shoes,Formal",
+          "image_url": "/products/22126.jpg"
+        },
+        {
+          "id": 12511,
+          "name": "Red Tape Men Casual Brown Casual Shoes",
+          "price": 64511.0,
+          "category": "캐주얼화",
+          "color": "Brown",
+          "season": null,
+          "description": "Men Casual Shoes Winter",
+          "tags": "Footwear,Shoes,Casual",
+          "usage": "Footwear,Shoes,Casual",
+          "image_url": "/products/12511.jpg"
+        },
+        {
+          "id": 15502,
+          "name": "Carlton London Women Casual Brown Casual Shoes",
+          "price": 39652.0,
+          "category": "캐주얼화",
+          "color": "Brown",
+          "season": null,
+          "description": "Women Casual Shoes Fall",
+          "tags": "Footwear,Shoes,Casual",
+          "usage": "Footwear,Shoes,Casual",
+          "image_url": "/products/15502.jpg"
+        },
+        {
+          "id": 9702,
+          "name": "Hush Puppies Men Chevelle Brown Formal Shoes",
+          "price": 61064.0,
+          "category": "정장화",
+          "color": "Brown",
+          "season": null,
+          "description": "Men Formal Shoes Fall",
+          "tags": "Footwear,Shoes,Formal",
+          "usage": "Footwear,Shoes,Formal",
+          "image_url": "/products/9702.jpg"
+        },
+        {
+          "id": 4013,
+          "name": "Spalding  177z NBA School Brown Basketball",
+          "price": 11131.0,
+          "category": "농구공",
+          "color": "Brown",
+          "season": null,
+          "description": "Unisex Basketballs Summer",
+          "tags": "Sporting Goods,Sports Equipment,Casual",
+          "usage": "Sporting Goods,Sports Equipment,Casual",
+          "image_url": "/products/4013.jpg"
+        }
+      ],
+      "answer": "'갈색 캐주얼 신발 보여줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Provogue Men Brown Formal Shoes (정장화, Brown)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_009",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 정장 구두 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "9041"
+      ],
+      "expected_keywords": [
+        "shoes",
+        "black",
+        "formal"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "9041"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 0.5,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "shoes",
+          "black",
+          "formal"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "17822",
+        "9041",
+        "4284",
+        "30260",
+        "22126"
+      ],
+      "retrieved_products": [
+        {
+          "id": 17822,
+          "name": "Lee Cooper Men  Black Formal Shoe",
+          "price": 32538.0,
+          "category": "정장화",
+          "color": "Black",
+          "season": null,
+          "description": "Men Formal Shoes Fall",
+          "tags": "Footwear,Shoes,Formal",
+          "usage": "Footwear,Shoes,Formal",
+          "image_url": "/products/17822.jpg"
+        },
+        {
+          "id": 9041,
+          "name": "Buckaroo Men Moles Black Formal Shoes",
+          "price": 90367.0,
+          "category": "정장화",
+          "color": "Black",
+          "season": null,
+          "description": "Men Formal Shoes Winter",
+          "tags": "Footwear,Shoes,Formal",
+          "usage": "Footwear,Shoes,Formal",
+          "image_url": "/products/9041.jpg"
+        },
+        {
+          "id": 4284,
+          "name": "Rockport Men Arratoon Black Shoe",
+          "price": 75298.0,
+          "category": "정장화",
+          "color": "Black",
+          "season": null,
+          "description": "Men Formal Shoes Summer",
+          "tags": "Footwear,Shoes,Formal",
+          "usage": "Footwear,Shoes,Formal",
+          "image_url": "/products/4284.jpg"
+        },
+        {
+          "id": 30260,
+          "name": "Red Tape Men Black Shoes",
+          "price": 95392.0,
+          "category": "정장화",
+          "color": "Black",
+          "season": null,
+          "description": "Men Formal Shoes Winter",
+          "tags": "Footwear,Shoes,Casual",
+          "usage": "Footwear,Shoes,Casual",
+          "image_url": "/products/30260.jpg"
+        },
+        {
+          "id": 22126,
+          "name": "Provogue Men Brown Formal Shoes",
+          "price": 35254.0,
+          "category": "정장화",
+          "color": "Brown",
+          "season": null,
+          "description": "Men Formal Shoes Fall",
+          "tags": "Footwear,Shoes,Formal",
+          "usage": "Footwear,Shoes,Formal",
+          "image_url": "/products/22126.jpg"
+        }
+      ],
+      "answer": "'검은색 정장 구두 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Lee Cooper Men  Black Formal Shoe (정장화, Black)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_010",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "흰색 스포츠 운동화 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "15314"
+      ],
+      "expected_keywords": [
+        "shoes",
+        "white",
+        "sports"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "15314"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 0.5,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "shoes",
+          "white",
+          "sports"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "4484",
+        "15314",
+        "24455",
+        "4634",
+        "15259"
+      ],
+      "retrieved_products": [
+        {
+          "id": 4484,
+          "name": "Puma Men Kraftek White Silver Shoe",
+          "price": 98359.0,
+          "category": "스포츠화",
+          "color": "White",
+          "season": null,
+          "description": "Men Sports Shoes Summer",
+          "tags": "Footwear,Shoes,Sports",
+          "usage": "Footwear,Shoes,Sports",
+          "image_url": "/products/4484.jpg"
+        },
+        {
+          "id": 15314,
+          "name": "ADIDAS Men Ranger White Sports Shoes",
+          "price": 68650.0,
+          "category": "스포츠화",
+          "color": "White",
+          "season": null,
+          "description": "Men Sports Shoes Fall",
+          "tags": "Footwear,Shoes,Sports",
+          "usage": "Footwear,Shoes,Sports",
+          "image_url": "/products/15314.jpg"
+        },
+        {
+          "id": 24455,
+          "name": "Nike Women Court Majestic White Shoes",
+          "price": 37592.0,
+          "category": "스포츠화",
+          "color": "White",
+          "season": null,
+          "description": "Women Sports Shoes Summer",
+          "tags": "Footwear,Shoes,Casual",
+          "usage": "Footwear,Shoes,Casual",
+          "image_url": "/products/24455.jpg"
+        },
+        {
+          "id": 4634,
+          "name": "ADIDAS Men's Adi Ultra Low White Navy Shoe",
+          "price": 89675.0,
+          "category": "스포츠화",
+          "color": "White",
+          "season": null,
+          "description": "Men Sports Shoes Summer",
+          "tags": "Footwear,Shoes,Sports",
+          "usage": "Footwear,Shoes,Sports",
+          "image_url": "/products/4634.jpg"
+        },
+        {
+          "id": 15259,
+          "name": "ADIDAS Originals Women Top Ten low Sleek White Casual Shoes",
+          "price": 49801.0,
+          "category": "캐주얼화",
+          "color": "White",
+          "season": null,
+          "description": "Women Casual Shoes Fall",
+          "tags": "Footwear,Shoes,Casual",
+          "usage": "Footwear,Shoes,Casual",
+          "image_url": "/products/15259.jpg"
+        }
+      ],
+      "answer": "'흰색 스포츠 운동화 찾아줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Puma Men Kraftek White Silver Shoe (스포츠화, White)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_011",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "파란색 스포츠화 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "13699"
+      ],
+      "expected_keywords": [
+        "shoes",
+        "blue",
+        "sports"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "13699"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 1,
+        "mrr": 0.25,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "shoes",
+          "blue",
+          "sports"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "34733",
+        "35465",
+        "16224",
+        "13699",
+        "26323"
+      ],
+      "retrieved_products": [
+        {
+          "id": 34733,
+          "name": "Puma Women Faas 300 Blue & Pink Sports Shoes",
+          "price": 20339.0,
+          "category": "스포츠화",
+          "color": "Blue",
+          "season": null,
+          "description": "Women Sports Shoes Summer",
+          "tags": "Footwear,Shoes,Sports",
+          "usage": "Footwear,Shoes,Sports",
+          "image_url": "/products/34733.jpg"
+        },
+        {
+          "id": 35465,
+          "name": "Franco Leone Men Blue Shoes",
+          "price": 53513.0,
+          "category": "캐주얼화",
+          "color": "Blue",
+          "season": null,
+          "description": "Men Casual Shoes Fall",
+          "tags": "Footwear,Shoes,Casual",
+          "usage": "Footwear,Shoes,Casual",
+          "image_url": "/products/35465.jpg"
+        },
+        {
+          "id": 16224,
+          "name": "Puma Men Poly Knitted Navy Blue Tracksuit",
+          "price": 86263.0,
+          "category": "트레이닝 세트",
+          "color": "Navy Blue",
+          "season": null,
+          "description": "Men Tracksuits Fall",
+          "tags": "Apparel,Bottomwear,Sports",
+          "usage": "Apparel,Bottomwear,Sports",
+          "image_url": "/products/16224.jpg"
+        },
+        {
+          "id": 13699,
+          "name": "ADIDAS Men CC Oscillate M Blue Sports Shoes",
+          "price": 28759.0,
+          "category": "스포츠화",
+          "color": "Blue",
+          "season": null,
+          "description": "Men Sports Shoes Fall",
+          "tags": "Footwear,Shoes,Sports",
+          "usage": "Footwear,Shoes,Sports",
+          "image_url": "/products/13699.jpg"
+        },
+        {
+          "id": 26323,
+          "name": "Proline Men Navy Tracksuit",
+          "price": 52317.0,
+          "category": "트레이닝 세트",
+          "color": "Navy Blue",
+          "season": null,
+          "description": "Men Tracksuits Fall",
+          "tags": "Apparel,Bottomwear,Sports",
+          "usage": "Apparel,Bottomwear,Sports",
+          "image_url": "/products/26323.jpg"
+        }
+      ],
+      "answer": "'파란색 스포츠화 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Puma Women Faas 300 Blue & Pink Sports Shoes (스포츠화, Blue)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_012",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 셔츠 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "15975"
+      ],
+      "expected_keywords": [
+        "shirt",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "15975"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 1,
+        "mrr": 0.25,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "shirt",
+          "black"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "50194",
+        "28554",
+        "36303",
+        "15975",
+        "16442"
+      ],
+      "retrieved_products": [
+        {
+          "id": 50194,
+          "name": "Gini and Jony Boys Black T-shirt",
+          "price": 42290.0,
+          "category": "티셔츠",
+          "color": "Black",
+          "season": null,
+          "description": "Boys Tshirts Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/50194.jpg"
+        },
+        {
+          "id": 28554,
+          "name": "Nike Men Club Pique Black Polo T-shirt",
+          "price": 21454.0,
+          "category": "티셔츠",
+          "color": "Black",
+          "season": null,
+          "description": "Men Tshirts Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/28554.jpg"
+        },
+        {
+          "id": 36303,
+          "name": "Angry Birds Men Black Stop The Madness T-shirt",
+          "price": 80862.0,
+          "category": "티셔츠",
+          "color": "Black",
+          "season": null,
+          "description": "Men Tshirts Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/36303.jpg"
+        },
+        {
+          "id": 15975,
+          "name": "Turtle Solid Men Black Shirt",
+          "price": 92030.0,
+          "category": "셔츠",
+          "color": "Black",
+          "season": null,
+          "description": "Men Shirts Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/15975.jpg"
+        },
+        {
+          "id": 16442,
+          "name": "Levis Men Printed Black Sweatshirts",
+          "price": 33433.0,
+          "category": "맨투맨",
+          "color": "Black",
+          "season": null,
+          "description": "Men Sweatshirts Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/16442.jpg"
+        }
+      ],
+      "answer": "'검은색 셔츠 보여줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Gini and Jony Boys Black T-shirt (티셔츠, Black)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_013",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "흰색 체크 셔츠 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "12180"
+      ],
+      "expected_keywords": [
+        "shirt",
+        "white",
+        "checked"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "12180"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 0.3333,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "shirt",
+          "white",
+          "checked"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "27887",
+        "6255",
+        "12180",
+        "23145",
+        "2149"
+      ],
+      "retrieved_products": [
+        {
+          "id": 27887,
+          "name": "Scullers For Her White Check Shirt",
+          "price": 74239.0,
+          "category": "셔츠",
+          "color": "White",
+          "season": null,
+          "description": "Women Shirts Summer",
+          "tags": "Apparel,Topwear,Formal",
+          "usage": "Apparel,Topwear,Formal",
+          "image_url": "/products/27887.jpg"
+        },
+        {
+          "id": 6255,
+          "name": "Lee Women's Byonce White T-shirt",
+          "price": 37380.0,
+          "category": "티셔츠",
+          "color": "White",
+          "season": null,
+          "description": "Women Tshirts Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/6255.jpg"
+        },
+        {
+          "id": 12180,
+          "name": "Basics Men White Slim Fit Checked Shirt",
+          "price": 63636.0,
+          "category": "셔츠",
+          "color": "White",
+          "season": null,
+          "description": "Men Shirts Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/12180.jpg"
+        },
+        {
+          "id": 23145,
+          "name": "Quechua Women  Fleece Off-White Sweatshirt",
+          "price": 64101.0,
+          "category": "맨투맨",
+          "color": "Off White",
+          "season": null,
+          "description": "Women Sweatshirts Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/23145.jpg"
+        },
+        {
+          "id": 2149,
+          "name": "Basics Men Orange & White Polo T-shirt",
+          "price": 89185.0,
+          "category": "티셔츠",
+          "color": "White",
+          "season": null,
+          "description": "Men Tshirts Spring",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/2149.jpg"
+        }
+      ],
+      "answer": "'흰색 체크 셔츠 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Scullers For Her White Check Shirt (셔츠, White)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_014",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "파란 줄무늬 셔츠 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "9256"
+      ],
+      "expected_keywords": [
+        "shirt",
+        "blue",
+        "striped"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "9256"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 0.5,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "shirt",
+          "blue",
+          "striped"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "33249",
+        "9256",
+        "12003",
+        "7053",
+        "4361"
+      ],
+      "retrieved_products": [
+        {
+          "id": 33249,
+          "name": "Arrow Men Blue Striped Shirt",
+          "price": 28149.0,
+          "category": "셔츠",
+          "color": "White",
+          "season": null,
+          "description": "Men Shirts Summer",
+          "tags": "Apparel,Topwear,Formal",
+          "usage": "Apparel,Topwear,Formal",
+          "image_url": "/products/33249.jpg"
+        },
+        {
+          "id": 9256,
+          "name": "Mark Taylor Men Blue Striped Shirt",
+          "price": 37546.0,
+          "category": "셔츠",
+          "color": "Blue",
+          "season": null,
+          "description": "Men Shirts Fall",
+          "tags": "Apparel,Topwear,Formal",
+          "usage": "Apparel,Topwear,Formal",
+          "image_url": "/products/9256.jpg"
+        },
+        {
+          "id": 12003,
+          "name": "Mark Taylor Men Grey Striped Shirt",
+          "price": 17748.0,
+          "category": "셔츠",
+          "color": "Grey",
+          "season": null,
+          "description": "Men Shirts Fall",
+          "tags": "Apparel,Topwear,Formal",
+          "usage": "Apparel,Topwear,Formal",
+          "image_url": "/products/12003.jpg"
+        },
+        {
+          "id": 7053,
+          "name": "s.Oliver Men Striped Dark Blue Shirt",
+          "price": 43731.0,
+          "category": "셔츠",
+          "color": "Blue",
+          "season": null,
+          "description": "Men Shirts Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/7053.jpg"
+        },
+        {
+          "id": 4361,
+          "name": "Free Authority Men's Melting Times Blue T-shirt",
+          "price": 40156.0,
+          "category": "티셔츠",
+          "color": "Blue",
+          "season": null,
+          "description": "Men Tshirts Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/4361.jpg"
+        }
+      ],
+      "answer": "'파란 줄무늬 셔츠 찾아줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Arrow Men Blue Striped Shirt (셔츠, White)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_015",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "네이비 폴로 티셔츠 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "7744"
+      ],
+      "expected_keywords": [
+        "polo",
+        "navy",
+        "t-shirt"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "7744"
+        ],
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 1.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "polo",
+          "navy",
+          "t-shirt"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "7744",
+        "40036",
+        "7925",
+        "8612",
+        "24050"
+      ],
+      "retrieved_products": [
+        {
+          "id": 7744,
+          "name": "Indigo Nation Men Navy Blue Polo T-shirt",
+          "price": 91668.0,
+          "category": "티셔츠",
+          "color": "Navy Blue",
+          "season": null,
+          "description": "Men Tshirts Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/7744.jpg"
+        },
+        {
+          "id": 40036,
+          "name": "ADIDAS Men Navy Blue T-shirt",
+          "price": 25776.0,
+          "category": "티셔츠",
+          "color": "Navy Blue",
+          "season": null,
+          "description": "Men Tshirts Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/40036.jpg"
+        },
+        {
+          "id": 7925,
+          "name": "Proline Men Navy Polo T-shirt",
+          "price": 88183.0,
+          "category": "티셔츠",
+          "color": "Navy Blue",
+          "season": null,
+          "description": "Men Tshirts Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/7925.jpg"
+        },
+        {
+          "id": 8612,
+          "name": "Scullers Men Navy Blue Polo T-Shirts",
+          "price": 78266.0,
+          "category": "티셔츠",
+          "color": "Navy Blue",
+          "season": null,
+          "description": "Men Tshirts Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/8612.jpg"
+        },
+        {
+          "id": 24050,
+          "name": "Locomotive Men Printed Blue T-shirt",
+          "price": 62912.0,
+          "category": "티셔츠",
+          "color": "Blue",
+          "season": null,
+          "description": "Men Tshirts Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/24050.jpg"
+        }
+      ],
+      "answer": "'네이비 폴로 티셔츠 보여줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Indigo Nation Men Navy Blue Polo T-shirt (티셔츠, Navy Blue)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_016",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "회색 프린트 티셔츠 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "4256"
+      ],
+      "expected_keywords": [
+        "t-shirt",
+        "grey",
+        "printed"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "4256"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 0.5,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "t-shirt",
+          "grey",
+          "printed"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "48242",
+        "4256",
+        "23119",
+        "16233",
+        "12003"
+      ],
+      "retrieved_products": [
+        {
+          "id": 48242,
+          "name": "Avengers Boys Grey Printed T-shirt",
+          "price": 22173.0,
+          "category": "티셔츠",
+          "color": "Grey Melange",
+          "season": null,
+          "description": "Boys Tshirts Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/48242.jpg"
+        },
+        {
+          "id": 4256,
+          "name": "Inkfruit Men Grey Melange Printed T-shirt",
+          "price": 55348.0,
+          "category": "티셔츠",
+          "color": "Grey Melange",
+          "season": null,
+          "description": "Men Tshirts Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/4256.jpg"
+        },
+        {
+          "id": 23119,
+          "name": "Quechua Men Warm Fleece Grey Sweatshirt",
+          "price": 44793.0,
+          "category": "맨투맨",
+          "color": "Grey",
+          "season": null,
+          "description": "Men Sweatshirts Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/23119.jpg"
+        },
+        {
+          "id": 16233,
+          "name": "Puma Men Ess Crew Grey Sweatshirt",
+          "price": 23665.0,
+          "category": "맨투맨",
+          "color": "Grey",
+          "season": null,
+          "description": "Men Sweatshirts Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/16233.jpg"
+        },
+        {
+          "id": 12003,
+          "name": "Mark Taylor Men Grey Striped Shirt",
+          "price": 17748.0,
+          "category": "셔츠",
+          "color": "Grey",
+          "season": null,
+          "description": "Men Shirts Fall",
+          "tags": "Apparel,Topwear,Formal",
+          "usage": "Apparel,Topwear,Formal",
+          "image_url": "/products/12003.jpg"
+        }
+      ],
+      "answer": "'회색 프린트 티셔츠 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Avengers Boys Grey Printed T-shirt (티셔츠, Grey Melange)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_017",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "흰색 티셔츠 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "10015"
+      ],
+      "expected_keywords": [
+        "t-shirt",
+        "white"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "t-shirt",
+          "white"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "6255",
+        "2149",
+        "27887",
+        "23145",
+        "12180"
+      ],
+      "retrieved_products": [
+        {
+          "id": 6255,
+          "name": "Lee Women's Byonce White T-shirt",
+          "price": 37380.0,
+          "category": "티셔츠",
+          "color": "White",
+          "season": null,
+          "description": "Women Tshirts Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/6255.jpg"
+        },
+        {
+          "id": 2149,
+          "name": "Basics Men Orange & White Polo T-shirt",
+          "price": 89185.0,
+          "category": "티셔츠",
+          "color": "White",
+          "season": null,
+          "description": "Men Tshirts Spring",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/2149.jpg"
+        },
+        {
+          "id": 27887,
+          "name": "Scullers For Her White Check Shirt",
+          "price": 74239.0,
+          "category": "셔츠",
+          "color": "White",
+          "season": null,
+          "description": "Women Shirts Summer",
+          "tags": "Apparel,Topwear,Formal",
+          "usage": "Apparel,Topwear,Formal",
+          "image_url": "/products/27887.jpg"
+        },
+        {
+          "id": 23145,
+          "name": "Quechua Women  Fleece Off-White Sweatshirt",
+          "price": 64101.0,
+          "category": "맨투맨",
+          "color": "Off White",
+          "season": null,
+          "description": "Women Sweatshirts Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/23145.jpg"
+        },
+        {
+          "id": 12180,
+          "name": "Basics Men White Slim Fit Checked Shirt",
+          "price": 63636.0,
+          "category": "셔츠",
+          "color": "White",
+          "season": null,
+          "description": "Men Shirts Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/12180.jpg"
+        }
+      ],
+      "answer": "'흰색 티셔츠 찾아줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Lee Women's Byonce White T-shirt (티셔츠, White)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_018",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "주황색 폴로 티셔츠 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "2149"
+      ],
+      "expected_keywords": [
+        "polo",
+        "orange",
+        "t-shirt"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "2149"
+        ],
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 1.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "polo",
+          "orange",
+          "t-shirt"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "2149",
+        "4361",
+        "37940",
+        "58372",
+        "24168"
+      ],
+      "retrieved_products": [
+        {
+          "id": 2149,
+          "name": "Basics Men Orange & White Polo T-shirt",
+          "price": 89185.0,
+          "category": "티셔츠",
+          "color": "White",
+          "season": null,
+          "description": "Men Tshirts Spring",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/2149.jpg"
+        },
+        {
+          "id": 4361,
+          "name": "Free Authority Men's Melting Times Blue T-shirt",
+          "price": 40156.0,
+          "category": "티셔츠",
+          "color": "Blue",
+          "season": null,
+          "description": "Men Tshirts Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/4361.jpg"
+        },
+        {
+          "id": 37940,
+          "name": "Mineral Women Orange Tunic",
+          "price": 25129.0,
+          "category": "튜닉",
+          "color": "Orange",
+          "season": null,
+          "description": "Women Tunics Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/37940.jpg"
+        },
+        {
+          "id": 58372,
+          "name": "Locomotive Men Beige T-shirt",
+          "price": 35405.0,
+          "category": "티셔츠",
+          "color": "Beige",
+          "season": null,
+          "description": "Men Tshirts Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/58372.jpg"
+        },
+        {
+          "id": 24168,
+          "name": "Aurelia Women Orange Striped Kurti",
+          "price": 31834.0,
+          "category": "쿠르티",
+          "color": "Orange",
+          "season": null,
+          "description": "Women Kurtis Fall",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/24168.jpg"
+        }
+      ],
+      "answer": "'주황색 폴로 티셔츠 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Basics Men Orange & White Polo T-shirt (티셔츠, White)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_019",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "빨간색 여성 상의 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "7704"
+      ],
+      "expected_keywords": [
+        "top",
+        "red",
+        "women"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "7704"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 1,
+        "mrr": 0.25,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "top",
+          "red",
+          "women"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "56810",
+        "34283",
+        "52100",
+        "7704",
+        "59673"
+      ],
+      "retrieved_products": [
+        {
+          "id": 56810,
+          "name": "Aneri Women Red Kurti",
+          "price": 68683.0,
+          "category": "쿠르티",
+          "color": "Red",
+          "season": null,
+          "description": "Women Kurtis Summer",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/56810.jpg"
+        },
+        {
+          "id": 34283,
+          "name": "Fabindia Women Red Dupatta",
+          "price": 70756.0,
+          "category": "두파타",
+          "color": "Red",
+          "season": null,
+          "description": "Women Dupatta Summer",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/34283.jpg"
+        },
+        {
+          "id": 52100,
+          "name": "Myntra Women Red Printed Kurta",
+          "price": 38873.0,
+          "category": "쿠르타",
+          "color": "Red",
+          "season": null,
+          "description": "Women Kurtas Summer",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/52100.jpg"
+        },
+        {
+          "id": 7704,
+          "name": "Jealous 21 Women's She's Got Attitude Red Top",
+          "price": 92534.0,
+          "category": "탑",
+          "color": "Red",
+          "season": null,
+          "description": "Women Tops Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/7704.jpg"
+        },
+        {
+          "id": 59673,
+          "name": "FNF Red Bridal Collection Lehenga Choli",
+          "price": 83103.0,
+          "category": "레헹가 촐리",
+          "color": "Red",
+          "season": null,
+          "description": "Women Lehenga Choli Fall",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/59673.jpg"
+        }
+      ],
+      "answer": "'빨간색 여성 상의 보여줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Aneri Women Red Kurti (쿠르티, Red)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_020",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "파란색 여성 자켓 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "8478"
+      ],
+      "expected_keywords": [
+        "jacket",
+        "blue",
+        "women"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "8478"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 0.3333,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "jacket",
+          "blue",
+          "women"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "5768",
+        "14117",
+        "8478",
+        "10654",
+        "9803"
+      ],
+      "retrieved_products": [
+        {
+          "id": 5768,
+          "name": "Jealous 21 Women Dark Blue Jeggning",
+          "price": 16751.0,
+          "category": "청바지",
+          "color": "Blue",
+          "season": null,
+          "description": "Women Jeans Summer",
+          "tags": "Apparel,Bottomwear,Casual",
+          "usage": "Apparel,Bottomwear,Casual",
+          "image_url": "/products/5768.jpg"
+        },
+        {
+          "id": 14117,
+          "name": "Flying Machine Women Washed Blue Jeans",
+          "price": 24450.0,
+          "category": "청바지",
+          "color": "Blue",
+          "season": null,
+          "description": "Women Jeans Fall",
+          "tags": "Apparel,Bottomwear,Casual",
+          "usage": "Apparel,Bottomwear,Casual",
+          "image_url": "/products/14117.jpg"
+        },
+        {
+          "id": 8478,
+          "name": "Forever New Women Vintage Blue Jackets",
+          "price": 59660.0,
+          "category": "재킷",
+          "color": "Blue",
+          "season": null,
+          "description": "Women Jackets Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/8478.jpg"
+        },
+        {
+          "id": 10654,
+          "name": "Doodle Girl Denim skirt with belt Blue Skirts",
+          "price": 93849.0,
+          "category": "스커트",
+          "color": "Blue",
+          "season": null,
+          "description": "Women Skirts Fall",
+          "tags": "Apparel,Bottomwear,Casual",
+          "usage": "Apparel,Bottomwear,Casual",
+          "image_url": "/products/10654.jpg"
+        },
+        {
+          "id": 9803,
+          "name": "Scullers For Her Women Scullers Top Navy Blue Tops",
+          "price": 66051.0,
+          "category": "튜닉",
+          "color": "Navy Blue",
+          "season": null,
+          "description": "Women Tunics Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/9803.jpg"
+        }
+      ],
+      "answer": "'파란색 여성 자켓 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Jealous 21 Women Dark Blue Jeggning (청바지, Blue)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_021",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "빨간색 스포츠 자켓 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "7686"
+      ],
+      "expected_keywords": [
+        "jacket",
+        "red",
+        "sports"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "7686"
+        ],
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 1.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "jacket",
+          "red"
+        ],
+        "keyword_recall": 0.6667
+      },
+      "retrieved_product_ids": [
+        "7686",
+        "42828",
+        "38357",
+        "53357",
+        "35888"
+      ],
+      "retrieved_products": [
+        {
+          "id": 7686,
+          "name": "Puma Men Alonso Track Red Ferrari Jacket",
+          "price": 95213.0,
+          "category": "재킷",
+          "color": "Red",
+          "season": null,
+          "description": "Men Jackets Fall",
+          "tags": "Apparel,Topwear,Sports",
+          "usage": "Apparel,Topwear,Sports",
+          "image_url": "/products/7686.jpg"
+        },
+        {
+          "id": 42828,
+          "name": "Nike Unisex Swoosh Red Wristbands",
+          "price": 12142.0,
+          "category": "손목밴드",
+          "color": "Red",
+          "season": null,
+          "description": "Unisex Wristbands Summer",
+          "tags": "Sporting Goods,Wristbands,Sports",
+          "usage": "Sporting Goods,Wristbands,Sports",
+          "image_url": "/products/42828.jpg"
+        },
+        {
+          "id": 38357,
+          "name": "2go Active Gear USA Men Red Bjorn Track Pants",
+          "price": 53006.0,
+          "category": "트레이닝 세트",
+          "color": "Red",
+          "season": null,
+          "description": "Men Tracksuits Summer",
+          "tags": "Apparel,Bottomwear,Casual",
+          "usage": "Apparel,Bottomwear,Casual",
+          "image_url": "/products/38357.jpg"
+        },
+        {
+          "id": 53357,
+          "name": "Puma Unisex Pack of 2 Red Wristband",
+          "price": 54570.0,
+          "category": "손목밴드",
+          "color": "Red",
+          "season": null,
+          "description": "Unisex Wristbands Fall",
+          "tags": "Accessories,Sports Accessories,Sports",
+          "usage": "Accessories,Sports Accessories,Sports",
+          "image_url": "/products/53357.jpg"
+        },
+        {
+          "id": 35888,
+          "name": "Jungle Book Boys Baby Red Clothing Set",
+          "price": 61741.0,
+          "category": "의류 세트",
+          "color": "Red",
+          "season": null,
+          "description": "Boys Clothing Set Summer",
+          "tags": "Apparel,Apparel Set,Casual",
+          "usage": "Apparel,Apparel Set,Casual",
+          "image_url": "/products/35888.jpg"
+        }
+      ],
+      "answer": "'빨간색 스포츠 자켓 찾아줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Puma Men Alonso Track Red Ferrari Jacket (재킷, Red)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_022",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 조끼 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "8581"
+      ],
+      "expected_keywords": [
+        "waistcoat",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "8581"
+        ],
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 1.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "waistcoat",
+          "black"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "8581",
+        "5027",
+        "8583",
+        "8580",
+        "8582"
+      ],
+      "retrieved_products": [
+        {
+          "id": 8581,
+          "name": "Scullers Men Black Waistcoat",
+          "price": 17199.0,
+          "category": "조끼",
+          "color": "Black",
+          "season": null,
+          "description": "Men Waistcoat Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/8581.jpg"
+        },
+        {
+          "id": 5027,
+          "name": "ADIDAS Men's Long Black Capris",
+          "price": 85765.0,
+          "category": "트레이닝 바지",
+          "color": "Black",
+          "season": null,
+          "description": "Men Track Pants Summer",
+          "tags": "Apparel,Bottomwear,Sports",
+          "usage": "Apparel,Bottomwear,Sports",
+          "image_url": "/products/5027.jpg"
+        },
+        {
+          "id": 8583,
+          "name": "Scullers Men Dark Grey Waistcoat",
+          "price": 25422.0,
+          "category": "조끼",
+          "color": "Grey",
+          "season": null,
+          "description": "Men Waistcoat Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/8583.jpg"
+        },
+        {
+          "id": 8580,
+          "name": "Scullers Men  Grey Waistcoat",
+          "price": 15467.0,
+          "category": "조끼",
+          "color": "Grey",
+          "season": null,
+          "description": "Men Waistcoat Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/8580.jpg"
+        },
+        {
+          "id": 8582,
+          "name": "Scullers Men Grey Waistcoat",
+          "price": 38347.0,
+          "category": "조끼",
+          "color": "Grey",
+          "season": null,
+          "description": "Men Waistcoat Fall",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/8582.jpg"
+        }
+      ],
+      "answer": "'검은색 조끼 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Scullers Men Black Waistcoat (조끼, Black)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_023",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "핑크색 민소매 원피스 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "6874"
+      ],
+      "expected_keywords": [
+        "dress",
+        "pink",
+        "sleeveless"
+      ],
+      "retrieval_eval": {
+        "passed": false,
+        "matched_product_ids": [],
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "mrr": 0.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "dress",
+          "pink"
+        ],
+        "keyword_recall": 0.6667
+      },
+      "retrieved_product_ids": [
+        "52494",
+        "8933",
+        "27498",
+        "55528",
+        "45082"
+      ],
+      "retrieved_products": [
+        {
+          "id": 52494,
+          "name": "Red Rose Women Pink Bath Robe",
+          "price": 51253.0,
+          "category": "목욕 가운",
+          "color": "Pink",
+          "season": null,
+          "description": "Women Bath Robe Winter",
+          "tags": "Apparel,Loungewear and Nightwear,Casual",
+          "usage": "Apparel,Loungewear and Nightwear,Casual",
+          "image_url": "/products/52494.jpg"
+        },
+        {
+          "id": 8933,
+          "name": "Puma Unisex Fundamentals Pink Wristbands",
+          "price": 20738.0,
+          "category": "손목밴드",
+          "color": "Pink",
+          "season": null,
+          "description": "Unisex Wristbands Fall",
+          "tags": "Accessories,Sports Accessories,Casual",
+          "usage": "Accessories,Sports Accessories,Casual",
+          "image_url": "/products/8933.jpg"
+        },
+        {
+          "id": 27498,
+          "name": "Jockey Pink Camisole",
+          "price": 52509.0,
+          "category": "캐미솔",
+          "color": "Pink",
+          "season": null,
+          "description": "Women Camisoles Winter",
+          "tags": "Apparel,Innerwear,Casual",
+          "usage": "Apparel,Innerwear,Casual",
+          "image_url": "/products/27498.jpg"
+        },
+        {
+          "id": 55528,
+          "name": "Revlon Skinlights Face Peach Light Illuminator Lotion",
+          "price": 42031.0,
+          "category": "하이라이터 & 블러셔",
+          "color": "Skin",
+          "season": null,
+          "description": "Women Highlighter and Blush Spring",
+          "tags": "Personal Care,Makeup,Casual",
+          "usage": "Personal Care,Makeup,Casual",
+          "image_url": "/products/55528.jpg"
+        },
+        {
+          "id": 45082,
+          "name": "Bwitch Pink Nightdress",
+          "price": 19752.0,
+          "category": "나이트 원피스",
+          "color": "Pink",
+          "season": null,
+          "description": "Women Nightdress Summer",
+          "tags": "Apparel,Loungewear and Nightwear,Casual",
+          "usage": "Apparel,Loungewear and Nightwear,Casual",
+          "image_url": "/products/45082.jpg"
+        }
+      ],
+      "answer": "'핑크색 민소매 원피스 보여줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Red Rose Women Pink Bath Robe (목욕 가운, Pink)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_024",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 원피스 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "6873"
+      ],
+      "expected_keywords": [
+        "dress",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "6873"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 0.3333,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "dress",
+          "black"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "59972",
+        "40127",
+        "6873",
+        "59716",
+        "52499"
+      ],
+      "retrieved_products": [
+        {
+          "id": 59972,
+          "name": "Avirate Black Dress",
+          "price": 51384.0,
+          "category": "드레스",
+          "color": "Black",
+          "season": null,
+          "description": "Women Dresses Fall",
+          "tags": "Apparel,Dress,Party",
+          "usage": "Apparel,Dress,Party",
+          "image_url": "/products/59972.jpg"
+        },
+        {
+          "id": 40127,
+          "name": "Gini and Jony Girls Roseatte Black Dress",
+          "price": 26617.0,
+          "category": "드레스",
+          "color": "Black",
+          "season": null,
+          "description": "Girls Dresses Summer",
+          "tags": "Apparel,Dress,Casual",
+          "usage": "Apparel,Dress,Casual",
+          "image_url": "/products/40127.jpg"
+        },
+        {
+          "id": 6873,
+          "name": "Forever New Women's Top Black Dress",
+          "price": 87835.0,
+          "category": "드레스",
+          "color": "Black",
+          "season": null,
+          "description": "Women Dresses Summer",
+          "tags": "Apparel,Dress,Casual",
+          "usage": "Apparel,Dress,Casual",
+          "image_url": "/products/6873.jpg"
+        },
+        {
+          "id": 59716,
+          "name": "Avirate Black Babydoll Nightdress",
+          "price": 69746.0,
+          "category": "나이트 원피스",
+          "color": "Black",
+          "season": null,
+          "description": "Women Nightdress Summer",
+          "tags": "Apparel,Loungewear and Nightwear,Casual",
+          "usage": "Apparel,Loungewear and Nightwear,Casual",
+          "image_url": "/products/59716.jpg"
+        },
+        {
+          "id": 52499,
+          "name": "Red Rose Women Black Nightdress",
+          "price": 10239.0,
+          "category": "베이비돌",
+          "color": "Black",
+          "season": null,
+          "description": "Women Baby Dolls Summer",
+          "tags": "Apparel,Loungewear and Nightwear,Casual",
+          "usage": "Apparel,Loungewear and Nightwear,Casual",
+          "image_url": "/products/52499.jpg"
+        }
+      ],
+      "answer": "'검은색 원피스 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Avirate Black Dress (드레스, Black)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_025",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 청바지 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "11520"
+      ],
+      "expected_keywords": [
+        "jeans",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "11520"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 0.5,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "jeans",
+          "black"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "33309",
+        "11520",
+        "50948",
+        "18869",
+        "49954"
+      ],
+      "retrieved_products": [
+        {
+          "id": 33309,
+          "name": "Palm Tree Boys Solid Black Jeans",
+          "price": 95477.0,
+          "category": "청바지",
+          "color": "Black",
+          "season": null,
+          "description": "Boys Jeans Summer",
+          "tags": "Apparel,Bottomwear,Casual",
+          "usage": "Apparel,Bottomwear,Casual",
+          "image_url": "/products/33309.jpg"
+        },
+        {
+          "id": 11520,
+          "name": "United Colors of Benetton Women Denim Black Jeans",
+          "price": 56020.0,
+          "category": "청바지",
+          "color": "Black",
+          "season": null,
+          "description": "Women Jeans Fall",
+          "tags": "Apparel,Bottomwear,Casual",
+          "usage": "Apparel,Bottomwear,Casual",
+          "image_url": "/products/11520.jpg"
+        },
+        {
+          "id": 50948,
+          "name": "Lee Women Black Jeans",
+          "price": 85695.0,
+          "category": "청바지",
+          "color": "Black",
+          "season": null,
+          "description": "Women Jeans Winter",
+          "tags": "Apparel,Bottomwear,Casual",
+          "usage": "Apparel,Bottomwear,Casual",
+          "image_url": "/products/50948.jpg"
+        },
+        {
+          "id": 18869,
+          "name": "Puma Women Black Core Track Pants",
+          "price": 61820.0,
+          "category": "트레이닝 바지",
+          "color": "Black",
+          "season": null,
+          "description": "Women Track Pants Fall",
+          "tags": "Apparel,Bottomwear,Casual",
+          "usage": "Apparel,Bottomwear,Casual",
+          "image_url": "/products/18869.jpg"
+        },
+        {
+          "id": 49954,
+          "name": "Hanes Men Black Lounge Pant",
+          "price": 69480.0,
+          "category": "라운지 팬츠",
+          "color": "Black",
+          "season": null,
+          "description": "Men Lounge Pants Summer",
+          "tags": "Apparel,Loungewear and Nightwear,Casual",
+          "usage": "Apparel,Loungewear and Nightwear,Casual",
+          "image_url": "/products/49954.jpg"
+        }
+      ],
+      "answer": "'검은색 청바지 찾아줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Palm Tree Boys Solid Black Jeans (청바지, Black)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_026",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "핑크 트레이닝 바지 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "4774"
+      ],
+      "expected_keywords": [
+        "track",
+        "pants",
+        "pink"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "4774"
+        ],
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 1.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "track",
+          "pants",
+          "pink"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "4774",
+        "38357",
+        "12788",
+        "4920",
+        "6874"
+      ],
+      "retrieved_products": [
+        {
+          "id": 4774,
+          "name": "ADIDAS Women 3S Pink Track Pants",
+          "price": 48203.0,
+          "category": "트레이닝 바지",
+          "color": "Pink",
+          "season": null,
+          "description": "Women Track Pants Summer",
+          "tags": "Apparel,Bottomwear,Sports",
+          "usage": "Apparel,Bottomwear,Sports",
+          "image_url": "/products/4774.jpg"
+        },
+        {
+          "id": 38357,
+          "name": "2go Active Gear USA Men Red Bjorn Track Pants",
+          "price": 53006.0,
+          "category": "트레이닝 세트",
+          "color": "Red",
+          "season": null,
+          "description": "Men Tracksuits Summer",
+          "tags": "Apparel,Bottomwear,Casual",
+          "usage": "Apparel,Bottomwear,Casual",
+          "image_url": "/products/38357.jpg"
+        },
+        {
+          "id": 12788,
+          "name": "Mother Earth Women Renu Pink Kurtis",
+          "price": 10980.0,
+          "category": "쿠르티",
+          "color": "Pink",
+          "season": null,
+          "description": "Women Kurtis Fall",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/12788.jpg"
+        },
+        {
+          "id": 4920,
+          "name": "Gini and Jony Girl's Veeya Pink Infant Kidswear",
+          "price": 66050.0,
+          "category": "탑",
+          "color": "Pink",
+          "season": null,
+          "description": "Women Tops Summer",
+          "tags": "Apparel,Topwear,Casual",
+          "usage": "Apparel,Topwear,Casual",
+          "image_url": "/products/4920.jpg"
+        },
+        {
+          "id": 6874,
+          "name": "Forever New Women Pink Sleeveless Dress",
+          "price": 26470.0,
+          "category": "드레스",
+          "color": "Pink",
+          "season": null,
+          "description": "Women Dresses Summer",
+          "tags": "Apparel,Dress,Casual",
+          "usage": "Apparel,Dress,Casual",
+          "image_url": "/products/6874.jpg"
+        }
+      ],
+      "answer": "'핑크 트레이닝 바지 보여줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 ADIDAS Women 3S Pink Track Pants (트레이닝 바지, Pink)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_027",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 카프리 바지 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "5027"
+      ],
+      "expected_keywords": [
+        "capris",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "5027"
+        ],
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 1.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "capris",
+          "black"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "5027",
+        "18001",
+        "18869",
+        "49954",
+        "51332"
+      ],
+      "retrieved_products": [
+        {
+          "id": 5027,
+          "name": "ADIDAS Men's Long Black Capris",
+          "price": 85765.0,
+          "category": "트레이닝 바지",
+          "color": "Black",
+          "season": null,
+          "description": "Men Track Pants Summer",
+          "tags": "Apparel,Bottomwear,Sports",
+          "usage": "Apparel,Bottomwear,Sports",
+          "image_url": "/products/5027.jpg"
+        },
+        {
+          "id": 18001,
+          "name": "Puma Women Black Essential Skinny Capris",
+          "price": 83617.0,
+          "category": "라운지 팬츠",
+          "color": "Black",
+          "season": null,
+          "description": "Women Lounge Pants Summer",
+          "tags": "Apparel,Loungewear and Nightwear,Sports",
+          "usage": "Apparel,Loungewear and Nightwear,Sports",
+          "image_url": "/products/18001.jpg"
+        },
+        {
+          "id": 18869,
+          "name": "Puma Women Black Core Track Pants",
+          "price": 61820.0,
+          "category": "트레이닝 바지",
+          "color": "Black",
+          "season": null,
+          "description": "Women Track Pants Fall",
+          "tags": "Apparel,Bottomwear,Casual",
+          "usage": "Apparel,Bottomwear,Casual",
+          "image_url": "/products/18869.jpg"
+        },
+        {
+          "id": 49954,
+          "name": "Hanes Men Black Lounge Pant",
+          "price": 69480.0,
+          "category": "라운지 팬츠",
+          "color": "Black",
+          "season": null,
+          "description": "Men Lounge Pants Summer",
+          "tags": "Apparel,Loungewear and Nightwear,Casual",
+          "usage": "Apparel,Loungewear and Nightwear,Casual",
+          "image_url": "/products/49954.jpg"
+        },
+        {
+          "id": 51332,
+          "name": "Wildcraft Men Black Rain Trousers",
+          "price": 12680.0,
+          "category": "레인 팬츠",
+          "color": "Black",
+          "season": null,
+          "description": "Men Rain Trousers Summer",
+          "tags": "Apparel,Bottomwear,",
+          "usage": "Apparel,Bottomwear,",
+          "image_url": "/products/51332.jpg"
+        }
+      ],
+      "answer": "'검은색 카프리 바지 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 ADIDAS Men's Long Black Capris (트레이닝 바지, Black)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_028",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "핑크 쿠르티 보여줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "12108"
+      ],
+      "expected_keywords": [
+        "kurtis",
+        "pink"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "12108"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 0.3333,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "kurtis",
+          "pink"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "12788",
+        "53818",
+        "12108",
+        "21911",
+        "24168"
+      ],
+      "retrieved_products": [
+        {
+          "id": 12788,
+          "name": "Mother Earth Women Renu Pink Kurtis",
+          "price": 10980.0,
+          "category": "쿠르티",
+          "color": "Pink",
+          "season": null,
+          "description": "Women Kurtis Fall",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/12788.jpg"
+        },
+        {
+          "id": 53818,
+          "name": "Ayaany Women Pink Kurti",
+          "price": 32905.0,
+          "category": "쿠르티",
+          "color": "Pink",
+          "season": null,
+          "description": "Women Kurtis Fall",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/53818.jpg"
+        },
+        {
+          "id": 12108,
+          "name": "W Women Printed Pink Kurtis",
+          "price": 17479.0,
+          "category": "쿠르티",
+          "color": "Blue",
+          "season": null,
+          "description": "Women Kurtis Fall",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/12108.jpg"
+        },
+        {
+          "id": 21911,
+          "name": "Biba Women Pink & Brown Printed Churidar Kurta with Dupatta",
+          "price": 45266.0,
+          "category": "쿠르타 세트",
+          "color": "Pink",
+          "season": null,
+          "description": "Women Kurta Sets Fall",
+          "tags": "Apparel,Apparel Set,Ethnic",
+          "usage": "Apparel,Apparel Set,Ethnic",
+          "image_url": "/products/21911.jpg"
+        },
+        {
+          "id": 24168,
+          "name": "Aurelia Women Orange Striped Kurti",
+          "price": 31834.0,
+          "category": "쿠르티",
+          "color": "Orange",
+          "season": null,
+          "description": "Women Kurtis Fall",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/24168.jpg"
+        }
+      ],
+      "answer": "'핑크 쿠르티 보여줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Mother Earth Women Renu Pink Kurtis (쿠르티, Pink)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_029",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "흰색 쿠르타 추천해줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "12789"
+      ],
+      "expected_keywords": [
+        "kurtas",
+        "white"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "12789"
+        ],
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 1.0,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "kurtas",
+          "white"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "12789",
+        "28985",
+        "32243",
+        "36832",
+        "18255"
+      ],
+      "retrieved_products": [
+        {
+          "id": 12789,
+          "name": "Mother Earth Women Sajiya Collt White Kurtas",
+          "price": 42328.0,
+          "category": "쿠르타",
+          "color": "White",
+          "season": null,
+          "description": "Women Kurtas Fall",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/12789.jpg"
+        },
+        {
+          "id": 28985,
+          "name": "Biba Outlet Women White & Green Printed Churidar Kurta with Dupatta",
+          "price": 89187.0,
+          "category": "쿠르타 세트",
+          "color": "White",
+          "season": null,
+          "description": "Women Kurta Sets Summer",
+          "tags": "Apparel,Apparel Set,Ethnic",
+          "usage": "Apparel,Apparel Set,Ethnic",
+          "image_url": "/products/28985.jpg"
+        },
+        {
+          "id": 32243,
+          "name": "Fabindia Women Printed Blue Kurta",
+          "price": 38495.0,
+          "category": "쿠르타",
+          "color": "White",
+          "season": null,
+          "description": "Women Kurtas Summer",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/32243.jpg"
+        },
+        {
+          "id": 36832,
+          "name": "Vishudh Women Green White & Green Kurta",
+          "price": 92168.0,
+          "category": "쿠르타",
+          "color": "Green",
+          "season": null,
+          "description": "Women Kurtas Summer",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/36832.jpg"
+        },
+        {
+          "id": 18255,
+          "name": "Aneri Women Multi Coloured Kurta",
+          "price": 20508.0,
+          "category": "쿠르타",
+          "color": "Off White",
+          "season": null,
+          "description": "Women Kurtas Summer",
+          "tags": "Apparel,Topwear,Ethnic",
+          "usage": "Apparel,Topwear,Ethnic",
+          "image_url": "/products/18255.jpg"
+        }
+      ],
+      "answer": "'흰색 쿠르타 추천해줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 Mother Earth Women Sajiya Collt White Kurtas (쿠르타, White)입니다.",
+      "ui_action_required": "show_product_list"
+    },
+    {
+      "id": "discovery_030",
+      "task": "TaskIntent.SEARCH_SIMILAR_TEXT",
+      "user_query": "검은색 비니 모자 찾아줘",
+      "image_url": null,
+      "expected_product_ids": [
+        "12440"
+      ],
+      "expected_keywords": [
+        "cap",
+        "black"
+      ],
+      "retrieval_eval": {
+        "passed": true,
+        "matched_product_ids": [
+          "12440"
+        ],
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "mrr": 0.5,
+        "retrieved_count": 5
+      },
+      "grounding_eval": {
+        "passed": true,
+        "matched_keywords": [
+          "cap",
+          "black"
+        ],
+        "keyword_recall": 1.0
+      },
+      "retrieved_product_ids": [
+        "17533",
+        "12440",
+        "21438",
+        "12439",
+        "5027"
+      ],
+      "retrieved_products": [
+        {
+          "id": 17533,
+          "name": "ADIDAS Unisex Beanie Black Skull Caps",
+          "price": 14224.0,
+          "category": "비니",
+          "color": "Black",
+          "season": null,
+          "description": "Unisex Hat Fall",
+          "tags": "Accessories,Headwear,Casual",
+          "usage": "Accessories,Headwear,Casual",
+          "image_url": "/products/17533.jpg"
+        },
+        {
+          "id": 12440,
+          "name": "Timberland Unisex Casual Black Skull Caps",
+          "price": 13556.0,
+          "category": "비니",
+          "color": "Black",
+          "season": null,
+          "description": "Unisex Hat Fall",
+          "tags": "Accessories,Headwear,Casual",
+          "usage": "Accessories,Headwear,Casual",
+          "image_url": "/products/12440.jpg"
+        },
+        {
+          "id": 21438,
+          "name": "Roxy Women Mellow Beanie Blue Cap",
+          "price": 90459.0,
+          "category": "캡",
+          "color": "Blue",
+          "season": null,
+          "description": "Women Caps Winter",
+          "tags": "Accessories,Headwear,Casual",
+          "usage": "Accessories,Headwear,Casual",
+          "image_url": "/products/21438.jpg"
+        },
+        {
+          "id": 12439,
+          "name": "Timberland Unisex Casual Red Skull Caps",
+          "price": 20455.0,
+          "category": "비니",
+          "color": "Red",
+          "season": null,
+          "description": "Unisex Hat Fall",
+          "tags": "Accessories,Headwear,Casual",
+          "usage": "Accessories,Headwear,Casual",
+          "image_url": "/products/12439.jpg"
+        },
+        {
+          "id": 5027,
+          "name": "ADIDAS Men's Long Black Capris",
+          "price": 85765.0,
+          "category": "트레이닝 바지",
+          "color": "Black",
+          "season": null,
+          "description": "Men Track Pants Summer",
+          "tags": "Apparel,Bottomwear,Sports",
+          "usage": "Apparel,Bottomwear,Sports",
+          "image_url": "/products/5027.jpg"
+        }
+      ],
+      "answer": "'검은색 비니 모자 찾아줘'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 ADIDAS Unisex Beanie Black Skull Caps (비니, Black)입니다.",
+      "ui_action_required": "show_product_list"
+    }
+  ]
+}
