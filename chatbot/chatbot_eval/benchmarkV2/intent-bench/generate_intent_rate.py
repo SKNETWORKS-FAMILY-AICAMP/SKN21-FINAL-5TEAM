@@ -5,7 +5,7 @@ supervisor_eval_dataset_info.json의 템플릿을 기반으로
 LLM 변형을 생성하여 supervisor_eval_dataset.jsonl로 저장합니다.
 
 출력 JSONL 각 샘플:
-  {"input": "...", "expected_node": "order_intent_router"}
+  {"input": "...", "expected_node": "order_intent_router", "difficulty": "easy"}
 """
 
 import argparse
@@ -84,68 +84,139 @@ def fill_image_url(template: str, image_urls: list[str]) -> str:
 # ── LLM 변형 생성 ─────────────────────────────────────────
 
 
-def _parse_llm_list(content: str, count: int) -> list[str]:
-    """LLM JSON 응답을 파싱하여 문자열 리스트 반환."""
-    parsed = json.loads(content)
-    if isinstance(parsed, list):
-        return parsed[:count]
+def _extract_string_list(parsed, count: int) -> list[str]:
+    """LLM JSON 응답에서 문자열 리스트를 추출."""
+    # {"variations": ["a", "b", ...]} — dict 안에 list value
     if isinstance(parsed, dict):
         for val in parsed.values():
             if isinstance(val, list):
-                return val[:count]
+                strings = [s.strip() for s in val if isinstance(s, str) and s.strip()]
+                if strings:
+                    return strings[:count]
+        # {"1": "a", "2": "b", ...} — flat dict with string values
+        strings = [v.strip() for v in parsed.values() if isinstance(v, str) and v.strip()]
+        if strings:
+            return strings[:count]
+    # ["a", "b", ...] — raw list
+    if isinstance(parsed, list):
+        strings = [s.strip() for s in parsed if isinstance(s, str) and s.strip()]
+        if strings:
+            return strings[:count]
     return []
 
 
 def generate_variations(
     client: OpenAI,
-    template: str,
+    templates: list[str],
     description: str,
     count: int,
     model: str,
     temperature: float,
+    max_retries: int = 3,
 ) -> list[str]:
-    """단일 라우팅 대상 템플릿의 LLM 변형 생성."""
-    prompt = f"""다음은 '{description}' 라우팅 대상의 사용자 발화 예시입니다:
-"{template}"
+    """템플릿 리스트를 한 번에 전달하고 count개의 변형을 생성. 실패 시 원본 반환."""
+    templates_text = "\n".join(f'{i + 1}. "{t}"' for i, t in enumerate(templates))
 
-이 문장과 같은 의도를 가진 자연스러운 한국어 변형 문장을 {count}개 생성해주세요.
+    prompt = f"""다음은 '{description}' 의도를 가진 사용자 발화 예시 {len(templates)}개입니다:
+
+{templates_text}
+
+위 예시들과 같은 의도를 유지하면서 자연스러운 한국어 변형 문장을 {count}개 생성해주세요.
 
 규칙:
 - 원본과 같은 의도를 유지해야 합니다.
 - 존댓말, 반말, 구어체 등 다양한 말투를 섞어주세요.
-- URL이 포함된 문장이면 URL도 다른 예시 URL로 변형해주세요.
-- JSON 배열 형식으로만 응답하세요.
+- URL이 포함된 문장이면 URL도 유지해주세요.
+- 반드시 아래 JSON 형식으로만 응답하세요.
 
-예시 출력: ["변형1", "변형2", "변형3"]"""
+출력 형식: {{"variations": ["문장1", "문장2", ..., "문장{count}"]}}"""
 
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
-            response_format={"type": "json_object"},
-        )
-        return _parse_llm_list(response.choices[0].message.content, count)
-    except Exception as e:
-        print(f"  [경고] 변형 생성 실패 ({template[:30]}...): {e}")
-        return []
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+                response_format={"type": "json_object"},
+            )
+            content = response.choices[0].message.content
+            if not content:
+                print(f"    [경고] 빈 응답 (시도 {attempt + 1}/{max_retries})")
+                continue
+
+            parsed = json.loads(content)
+            results = _extract_string_list(parsed, count)
+            if len(results) >= count:
+                return results[:count]
+
+            print(f"    [경고] {count}개 요청했으나 {len(results)}개만 파싱됨 (시도 {attempt + 1}/{max_retries}): {content[:100]}")
+        except Exception as e:
+            print(f"    [경고] 변형 생성 실패 (시도 {attempt + 1}/{max_retries}): {e}")
+
+    print(f"    [폴백] 원본 템플릿 사용")
+    return templates[:count]
 
 
 # ── 메인 데이터셋 생성 ─────────────────────────────────────
 
 
+def _collect_template_groups(
+    info: dict, image_urls: list[str],
+) -> list[dict]:
+    """supervisor_eval_dataset_info.json에서 모든 템플릿 그룹을 수집.
+
+    Returns:
+        [{"node_name", "label", "description", "difficulty", "templates"}]
+    """
+    groups = []
+    for node_name, node_data in info["routing_targets"].items():
+        if "sub_routes" in node_data:
+            for sub_route, sub_data in node_data["sub_routes"].items():
+                desc = sub_data["description"]
+                templates = sub_data.get("templates", {})
+                for difficulty in ("easy", "hard"):
+                    raw_list = templates.get(difficulty, [])
+                    filled = [fill_image_url(t, image_urls) for t in raw_list]
+                    if filled:
+                        groups.append({
+                            "node_name": node_name,
+                            "label": f"{node_name} → {sub_route}",
+                            "description": desc,
+                            "difficulty": difficulty,
+                            "templates": filled,
+                        })
+        else:
+            desc = node_data["description"]
+            templates = node_data.get("templates", {})
+            for difficulty in ("easy", "hard"):
+                raw_list = templates.get(difficulty, [])
+                filled = [fill_image_url(t, image_urls) for t in raw_list]
+                if filled:
+                    groups.append({
+                        "node_name": node_name,
+                        "label": node_name,
+                        "description": desc,
+                        "difficulty": difficulty,
+                        "templates": filled,
+                    })
+    return groups
+
+
 def build_dataset(
     info_path: Path = INFO_PATH,
     output_path: Path = OUTPUT_PATH,
-    variations_override: int | None = None,
     model_override: str | None = None,
 ) -> int:
-    """supervisor_eval_dataset_info.json → supervisor_eval_dataset.jsonl 생성."""
+    """supervisor_eval_dataset_info.json → supervisor_eval_dataset.jsonl 생성.
+
+    각 세부사항의 난이도별 템플릿 10개를 한 번에 LLM에 전달하여
+    변형 10개를 받아옵니다. (14그룹 × 10개 = 총 140개)
+    """
     with open(info_path, encoding="utf-8") as f:
         info = json.load(f)
 
     config = info["generation_config"]
-    variations_count = variations_override or config["variations_per_template"]
+    variations_count = config["variations_per_template"]
     llm_model = model_override or config["llm_model"]
     temperature = config["temperature"]
 
@@ -159,62 +230,37 @@ def build_dataset(
     else:
         print("[경고] DB에서 이미지 URL을 가져오지 못했습니다.")
 
-    # 1) 단일 라우팅 대상 데이터셋
+    # 템플릿 그룹 수집
+    groups = _collect_template_groups(info, image_urls)
+    total_templates = sum(len(g["templates"]) for g in groups)
+
     print("=== Supervisor 라우팅 평가 데이터셋 생성 ===")
-    for node_name, node_data in info["routing_targets"].items():
-        if "sub_routes" in node_data:
-            for sub_route, sub_data in node_data["sub_routes"].items():
-                description = sub_data["description"]
-                templates = sub_data["templates"]
-                print(f"\n[{node_name} → {sub_route}] 템플릿 {len(templates)}개 처리 중...")
+    print(f"총 {len(groups)}개 그룹, {total_templates}개 템플릿\n")
 
-                for raw_template in templates:
-                    template = fill_image_url(raw_template, image_urls)
+    for group in groups:
+        node_name = group["node_name"]
+        label = group["label"]
+        difficulty = group["difficulty"]
+        description = group["description"]
+        templates = group["templates"]
 
-                    samples.append({
-                        "input": template,
-                        "expected_node": node_name,
-                    })
+        print(f"[{label}] {difficulty} 템플릿 {len(templates)}개 → 변형 {variations_count}개 생성 중...")
 
-                    variations = generate_variations(
-                        client, template, description,
-                        variations_count, llm_model, temperature,
-                    )
-                    for var in variations:
-                        if isinstance(var, str) and var.strip():
-                            samples.append({
-                                "input": var.strip(),
-                                "expected_node": node_name,
-                            })
+        variations = generate_variations(
+            client, templates, description,
+            variations_count, llm_model, temperature,
+        )
 
-                print(f"  -> {node_name}/{sub_route}: 현재 총 {len(samples)}개")
-        else:
-            description = node_data["description"]
-            templates = node_data["templates"]
-            print(f"\n[{node_name}] 템플릿 {len(templates)}개 처리 중...")
+        for var in variations:
+            samples.append({
+                "input": var,
+                "expected_node": node_name,
+                "difficulty": difficulty,
+            })
 
-            for raw_template in templates:
-                template = fill_image_url(raw_template, image_urls)
+        print(f"  -> 완료 ({len(variations)}개 생성)\n")
 
-                samples.append({
-                    "input": template,
-                    "expected_node": node_name,
-                })
-
-                variations = generate_variations(
-                    client, template, description,
-                    variations_count, llm_model, temperature,
-                )
-                for var in variations:
-                    if isinstance(var, str) and var.strip():
-                        samples.append({
-                            "input": var.strip(),
-                            "expected_node": node_name,
-                        })
-
-            print(f"  -> {node_name}: 현재 총 {len(samples)}개")
-
-    # 2) JSONL 저장
+    # JSONL 저장
     with open(output_path, "w", encoding="utf-8") as f:
         for sample in samples:
             f.write(json.dumps(sample, ensure_ascii=False) + "\n")
@@ -223,23 +269,34 @@ def build_dataset(
     print(f"\n=== 완료: {len(samples)}개 샘플 → {output_path} ===")
 
     node_dist: Counter = Counter()
+    diff_dist: Counter = Counter()
+    node_diff_dist: Counter = Counter()
     for s in samples:
         node_dist[s["expected_node"]] += 1
+        diff_dist[s["difficulty"]] += 1
+        node_diff_dist[f"{s['expected_node']}_{s['difficulty']}"] += 1
+
     print("\n  [라우팅 노드 분포]")
     for node, count in sorted(node_dist.items()):
         print(f"    {node}: {count}")
+    print("\n  [난이도 분포]")
+    for diff, count in sorted(diff_dist.items()):
+        print(f"    {diff}: {count}")
+    print("\n  [노드×난이도 분포]")
+    for key, count in sorted(node_diff_dist.items()):
+        print(f"    {key}: {count}")
 
     return len(samples)
 
 
 # ── CLI ────────────────────────────────────────────────────
+# 실행 명령어:
+#   python generate_intent_rate.py
+#   python generate_intent_rate.py --model gpt-4o
+#   python generate_intent_rate.py --info <info.json 경로> --output <output.jsonl 경로>
 
 def main():
     parser = argparse.ArgumentParser(description="Supervisor 라우팅 평가 데이터셋 생성")
-    parser.add_argument(
-        "--variations", type=int, default=None,
-        help="템플릿당 변형 수 (기본: info JSON의 설정값)",
-    )
     parser.add_argument(
         "--model", type=str, default=None,
         help="변형 생성에 사용할 LLM 모델 (기본: info JSON의 설정값)",
@@ -264,7 +321,6 @@ def main():
     build_dataset(
         info_path=info_path,
         output_path=output_path,
-        variations_override=args.variations,
         model_override=args.model,
     )
 
