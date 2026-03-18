@@ -645,7 +645,10 @@ async def chat_streaming_endpoint(
                     model=model,
                     conversation_id=conversation_id,
                     turn_id=turn_id,
-                    access_token=http_request.cookies.get("access_token"),
+                    access_token=(
+                        http_request.cookies.get("access_token")
+                        or http_request.cookies.get("session_token")
+                    ),
                 )
                 stream_input = current_state
 
