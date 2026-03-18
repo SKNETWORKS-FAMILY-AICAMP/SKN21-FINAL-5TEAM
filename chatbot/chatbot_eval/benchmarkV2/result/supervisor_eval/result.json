@@ -1,9 +1,10 @@
 [
   {
     "model": "openai/gpt-5-mini",
-    "timestamp": "2026-03-17T12:22:19.716031",
-    "elapsed_seconds": 23.74,
-    "total_samples": 57,
+    "timestamp": "2026-03-18T11:23:09.076668",
+    "elapsed_seconds": 23.96,
+    "difficulty_filter": "easy",
+    "total_samples": 54,
     "metrics": {
       "accuracy": 1.0,
       "per_node_f1": {
@@ -11,25 +12,25 @@
           "precision": 1.0,
           "recall": 1.0,
           "f1": 1.0,
-          "support": 9
+          "support": 12
         },
         "form_action_subagent": {
           "precision": 1.0,
           "recall": 1.0,
           "f1": 1.0,
-          "support": 15
+          "support": 18
         },
         "order_intent_router": {
           "precision": 1.0,
           "recall": 1.0,
           "f1": 1.0,
-          "support": 21
+          "support": 18
         },
         "policy_rag_subagent": {
           "precision": 1.0,
           "recall": 1.0,
           "f1": 1.0,
-          "support": 12
+          "support": 6
         },
         "macro_avg": {
           "precision": 1.0,
@@ -40,113 +41,112 @@
       "macro_f1": 1.0,
       "confusion_matrix": {
         "order_intent_router": {
-          "order_intent_router": 21
+          "order_intent_router": 18
         },
         "discovery_subagent": {
-          "discovery_subagent": 9
+          "discovery_subagent": 12
         },
         "policy_rag_subagent": {
-          "policy_rag_subagent": 12
+          "policy_rag_subagent": 6
         },
         "form_action_subagent": {
-          "form_action_subagent": 15
+          "form_action_subagent": 18
         }
       }
     },
-    "summary": {
-      "total": 57,
-      "correct": 57
-    }
-  },
-  {
-    "model": "vllm/qwen3:0.6b",
-    "timestamp": "2026-03-17T12:35:53.406506",
-    "elapsed_seconds": 690.15,
-    "total_samples": 57,
-    "metrics": {
-      "accuracy": 0.614,
-      "per_node_f1": {
-        "discovery_subagent": {
-          "precision": 0.5455,
-          "recall": 0.6667,
-          "f1": 0.6,
-          "support": 9
-        },
-        "final_generator": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1": 0.0,
-          "support": 0
-        },
-        "form_action_subagent": {
-          "precision": 1.0,
-          "recall": 0.6667,
-          "f1": 0.8,
-          "support": 15
-        },
-        "order_intent_router": {
-          "precision": 0.8333,
-          "recall": 0.7143,
-          "f1": 0.7692,
-          "support": 21
-        },
-        "policy_rag_subagent": {
-          "precision": 0.5714,
-          "recall": 0.3333,
-          "f1": 0.4211,
-          "support": 12
-        },
-        "macro_avg": {
-          "precision": 0.59,
-          "recall": 0.4762,
-          "f1": 0.5181
-        }
-      },
-      "macro_f1": 0.5181,
-      "confusion_matrix": {
-        "order_intent_router": {
-          "order_intent_router": 15,
-          "policy_rag_subagent": 3,
-          "discovery_subagent": 2,
-          "final_generator": 1
-        },
-        "discovery_subagent": {
-          "final_generator": 2,
-          "discovery_subagent": 6,
-          "order_intent_router": 1
-        },
-        "policy_rag_subagent": {
-          "policy_rag_subagent": 4,
-          "final_generator": 6,
-          "discovery_subagent": 1,
-          "order_intent_router": 1
-        },
-        "form_action_subagent": {
-          "form_action_subagent": 10,
-          "discovery_subagent": 2,
-          "order_intent_router": 1,
-          "final_generator": 2
-        }
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 54,
+        "correct": 54,
+        "accuracy": 1.0
       }
     },
     "summary": {
-      "total": 57,
-      "correct": 35
+      "total": 54,
+      "correct": 54
     }
   },
   {
-    "model": "openai/gpt-4o-mini",
-    "timestamp": "2026-03-17T12:38:47.235522",
-    "elapsed_seconds": 10.48,
-    "total_samples": 57,
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T11:24:53.514339",
+    "elapsed_seconds": 19.39,
+    "difficulty_filter": "hard",
+    "total_samples": 34,
     "metrics": {
-      "accuracy": 0.8421,
+      "accuracy": 1.0,
       "per_node_f1": {
         "discovery_subagent": {
           "precision": 1.0,
           "recall": 1.0,
           "f1": 1.0,
-          "support": 9
+          "support": 7
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 8
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 13
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 13
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 7
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 8
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 34,
+        "correct": 34,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 34,
+      "correct": 34
+    }
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T11:26:30.631107",
+    "elapsed_seconds": 7.21,
+    "difficulty_filter": "easy",
+    "total_samples": 54,
+    "metrics": {
+      "accuracy": 0.8519,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 12
         },
         "final_generator": {
           "precision": 0.0,
@@ -156,50 +156,758 @@
         },
         "form_action_subagent": {
           "precision": 1.0,
-          "recall": 0.9333,
-          "f1": 0.9655,
-          "support": 15
+          "recall": 0.8333,
+          "f1": 0.9091,
+          "support": 18
         },
         "order_intent_router": {
           "precision": 1.0,
-          "recall": 0.8095,
-          "f1": 0.8947,
-          "support": 21
+          "recall": 0.7778,
+          "f1": 0.875,
+          "support": 18
         },
         "policy_rag_subagent": {
           "precision": 1.0,
-          "recall": 0.6667,
-          "f1": 0.8,
-          "support": 12
+          "recall": 0.8333,
+          "f1": 0.9091,
+          "support": 6
         },
         "macro_avg": {
           "precision": 0.8,
-          "recall": 0.6819,
-          "f1": 0.732
+          "recall": 0.6889,
+          "f1": 0.7386
         }
       },
-      "macro_f1": 0.732,
+      "macro_f1": 0.7386,
       "confusion_matrix": {
         "order_intent_router": {
-          "order_intent_router": 17,
+          "order_intent_router": 14,
           "final_generator": 4
         },
         "discovery_subagent": {
-          "discovery_subagent": 9
+          "discovery_subagent": 12
         },
         "policy_rag_subagent": {
-          "policy_rag_subagent": 8,
-          "final_generator": 4
+          "policy_rag_subagent": 5,
+          "final_generator": 1
         },
         "form_action_subagent": {
-          "form_action_subagent": 14,
-          "final_generator": 1
+          "form_action_subagent": 15,
+          "final_generator": 3
         }
       }
     },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 54,
+        "correct": 46,
+        "accuracy": 0.8519
+      }
+    },
     "summary": {
-      "total": 57,
-      "correct": 48
+      "total": 54,
+      "correct": 46
+    }
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T11:28:35.194625",
+    "elapsed_seconds": 5.5,
+    "difficulty_filter": "hard",
+    "total_samples": 34,
+    "metrics": {
+      "accuracy": 0.8824,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 7
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.75,
+          "f1": 0.8571,
+          "support": 8
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 0.8462,
+          "f1": 0.9167,
+          "support": 13
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 0.8,
+          "recall": 0.7192,
+          "f1": 0.7548
+        }
+      },
+      "macro_f1": 0.7548,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 11,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 7
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 6,
+          "final_generator": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 34,
+        "correct": 30,
+        "accuracy": 0.8824
+      }
+    },
+    "summary": {
+      "total": 34,
+      "correct": 30
+    }
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T11:40:49.450807",
+    "elapsed_seconds": 578.29,
+    "difficulty_filter": "easy",
+    "total_samples": 54,
+    "metrics": {
+      "accuracy": 0.6852,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.6429,
+          "recall": 0.75,
+          "f1": 0.6923,
+          "support": 12
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.6667,
+          "f1": 0.8,
+          "support": 18
+        },
+        "order_intent_router": {
+          "precision": 0.8125,
+          "recall": 0.7222,
+          "f1": 0.7647,
+          "support": 18
+        },
+        "policy_rag_subagent": {
+          "precision": 0.6,
+          "recall": 0.5,
+          "f1": 0.5455,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 0.6111,
+          "recall": 0.5278,
+          "f1": 0.5605
+        }
+      },
+      "macro_f1": 0.5605,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 13,
+          "policy_rag_subagent": 2,
+          "discovery_subagent": 2,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "final_generator": 2,
+          "discovery_subagent": 9,
+          "order_intent_router": 1
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 3,
+          "discovery_subagent": 1,
+          "order_intent_router": 1,
+          "final_generator": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 12,
+          "discovery_subagent": 2,
+          "order_intent_router": 1,
+          "final_generator": 3
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 54,
+        "correct": 37,
+        "accuracy": 0.6852
+      }
+    },
+    "summary": {
+      "total": 54,
+      "correct": 37
+    }
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T11:54:27.483465",
+    "elapsed_seconds": 313.48,
+    "difficulty_filter": "hard",
+    "total_samples": 34,
+    "metrics": {
+      "accuracy": 0.5294,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.75,
+          "recall": 0.8571,
+          "f1": 0.8,
+          "support": 7
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.375,
+          "f1": 0.5455,
+          "support": 8
+        },
+        "order_intent_router": {
+          "precision": 0.625,
+          "recall": 0.3846,
+          "f1": 0.4762,
+          "support": 13
+        },
+        "policy_rag_subagent": {
+          "precision": 0.5714,
+          "recall": 0.6667,
+          "f1": 0.6154,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 0.5893,
+          "recall": 0.4567,
+          "f1": 0.4874
+        }
+      },
+      "macro_f1": 0.4874,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 5,
+          "policy_rag_subagent": 3,
+          "final_generator": 4,
+          "discovery_subagent": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 6,
+          "final_generator": 1
+        },
+        "policy_rag_subagent": {
+          "discovery_subagent": 1,
+          "policy_rag_subagent": 4,
+          "order_intent_router": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 3,
+          "final_generator": 3,
+          "order_intent_router": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 34,
+        "correct": 18,
+        "accuracy": 0.5294
+      }
+    },
+    "summary": {
+      "total": 34,
+      "correct": 18
+    }
+  },
+  {
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T16:06:20.702252",
+    "elapsed_seconds": 25.49,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 1.0,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 10
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 10
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 30
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 70,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 70
+    }
+  },
+  {
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T16:07:13.146840",
+    "elapsed_seconds": 38.19,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.9286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.9,
+          "f1": 0.9474,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8889,
+          "recall": 0.8,
+          "f1": 0.8421,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.7692,
+          "recall": 1.0,
+          "f1": 0.8696,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7316,
+          "recall": 0.74,
+          "f1": 0.7318
+        }
+      },
+      "macro_f1": 0.7318,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "policy_rag_subagent": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 10
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 27,
+          "final_generator": 1,
+          "order_intent_router": 1,
+          "policy_rag_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 65,
+        "accuracy": 0.9286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 65
+    }
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T16:08:41.351085",
+    "elapsed_seconds": 12.88,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8857,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8667,
+          "f1": 0.9286,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 0.8,
+          "f1": 0.8889,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8889,
+          "recall": 0.8,
+          "f1": 0.8421,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7778,
+          "recall": 0.6933,
+          "f1": 0.7319
+        }
+      },
+      "macro_f1": 0.7319,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 8,
+          "final_generator": 2
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 26,
+          "policy_rag_subagent": 1,
+          "final_generator": 3
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 62,
+        "accuracy": 0.8857
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 62
+    }
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T16:09:39.925493",
+    "elapsed_seconds": 11.48,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8714,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.9,
+          "f1": 0.9474,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8571,
+          "recall": 0.6,
+          "f1": 0.7059,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7314,
+          "recall": 0.66,
+          "f1": 0.6907
+        }
+      },
+      "macro_f1": 0.6907,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "final_generator": 1,
+          "policy_rag_subagent": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6,
+          "order_intent_router": 1,
+          "final_generator": 3
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 27,
+          "order_intent_router": 1,
+          "final_generator": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 61,
+        "accuracy": 0.8714
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 61
+    }
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T16:18:41.144911",
+    "elapsed_seconds": 496.72,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.7286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.7917,
+          "recall": 0.95,
+          "f1": 0.8636,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.6333,
+          "f1": 0.7755,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1": 0.6667,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7183,
+          "recall": 0.5767,
+          "f1": 0.6212
+        }
+      },
+      "macro_f1": 0.6212,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "discovery_subagent": 1,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 19,
+          "final_generator": 1
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 5,
+          "final_generator": 5
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 19,
+          "order_intent_router": 2,
+          "discovery_subagent": 4,
+          "final_generator": 5
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 51,
+        "accuracy": 0.7286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 51
+    }
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T16:40:49.173509",
+    "elapsed_seconds": 1253.61,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.5714,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.7826,
+          "recall": 0.9,
+          "f1": 0.8372,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.4,
+          "f1": 0.5714,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.4286,
+          "recall": 0.6,
+          "f1": 0.5,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.5714,
+          "recall": 0.4,
+          "f1": 0.4706,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.5565,
+          "recall": 0.46,
+          "f1": 0.4758
+        }
+      },
+      "macro_f1": 0.4758,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 6,
+          "policy_rag_subagent": 3,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 18,
+          "final_generator": 2
+        },
+        "policy_rag_subagent": {
+          "order_intent_router": 4,
+          "policy_rag_subagent": 4,
+          "final_generator": 2
+        },
+        "form_action_subagent": {
+          "final_generator": 9,
+          "discovery_subagent": 5,
+          "order_intent_router": 4,
+          "form_action_subagent": 12
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 40,
+        "accuracy": 0.5714
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 40
     }
   }
 ]

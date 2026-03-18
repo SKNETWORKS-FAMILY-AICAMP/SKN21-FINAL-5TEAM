@@ -1,1047 +1,4968 @@
 [
   {
     "model": "openai/gpt-5-mini",
-    "timestamp": "2026-03-17T12:22:19.716031",
-    "total_samples": 57,
+    "timestamp": "2026-03-18T11:23:09.076668",
+    "difficulty_filter": "easy",
+    "total_samples": 54,
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 54,
+        "correct": 54,
+        "accuracy": 1.0
+      }
+    },
     "details": [
       {
         "input": "주문 취소해주세요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "방금 결제한 거 취소하고 싶어요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "지금 결제한 주문을 취소하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "방금 결제한 거 취소해줄 수 있어?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "방금 결제한 주문을 없애고 싶어.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "잘못 주문했는데 취소 가능해요?",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "환불 받고 싶어요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "환불 요청할게요",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "돈 돌려받고 싶어",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "이거 환불해줄 수 있어?",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "반품 신청할게요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "반품하고 싶은데요",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "반품 신청할게",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "반품 요청해도 될까요?",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "물건이 불량이라 돈 돌려받고 싶어요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "사이즈 교환하고 싶어요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "다른 색상으로 바꿀 수 있을까요?",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "옵션 변경하고 싶은데 교환 돼요?",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "배송 어디까지 왔어요?",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "택배 언제 도착하나요?",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "송장번호 알려주세요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "내 주문 내역 보여줘",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "최근 주문 목록 조회해줘",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "그동안 뭐 샀는지 주문 내역 확인하고 싶어요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "봄에 입기 좋은 옷 추천해줘",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "봄에 어울리는 옷 좀 추천해줄래?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이른 봄에 입기 좋은 옷 추천해줘요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "봄에 입기 딱 좋은 옷 찾아줘!",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "데이트할 때 입을 만한 코디 찾아줘",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "출근복으로 괜찮은 정장 보여줘",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "운동할 때 편한 바지 추천 좀",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "캐주얼한 느낌 아우터 있어?",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
-        "input": "이 사진이랑 비슷한 옷 찾아줘 /products/17464.jpg",
+        "input": "이 사진이랑 비슷한 옷 찾아줘 /products/56277.jpg",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
-        "input": "이것과 비슷한 스타일 보여줘 /products/1581.jpg",
+        "input": "이것과 비슷한 스타일 보여줘 /products/28233.jpg",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
-        "input": "/products/50385.jpg 이거랑 같은 종류 있어?",
+        "input": "/products/55836.jpg 이거랑 같은 종류 있어?",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
-        "input": "SNS에서 본 건데 비슷한 거 있나요 /products/39233.jpg",
+        "input": "SNS에서 본 건데 비슷한 거 있나요 /products/51455.jpg",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "환불 정책 알려줘",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "배송 규정이 어떻게 되나요?",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "교환 기한이 얼마예요?",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
-        "correct": true
-      },
-      {
-        "input": "교환할 수 있는 기간이 어떻게 되죠?",
-        "predicted_node": "policy_rag_subagent",
-        "expected_node": "policy_rag_subagent",
-        "correct": true
-      },
-      {
-        "input": "교환은 몇 일까지 가능한 거야?",
-        "predicted_node": "policy_rag_subagent",
-        "expected_node": "policy_rag_subagent",
-        "correct": true
-      },
-      {
-        "input": "교환 기한이 언제까지인지 알고 싶어요.",
-        "predicted_node": "policy_rag_subagent",
-        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "반품 택배비 누가 부담해요?",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "개봉한 것도 돌려보낼 수 있어요?",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "제주도도 배송비 같은가요?",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
-        "correct": true
-      },
-      {
-        "input": "제주도 배송비도 똑같나요?",
-        "predicted_node": "policy_rag_subagent",
-        "expected_node": "policy_rag_subagent",
-        "correct": true
-      },
-      {
-        "input": "제주도에 배송할 때도 배송비가 동일해?",
-        "predicted_node": "policy_rag_subagent",
-        "expected_node": "policy_rag_subagent",
-        "correct": true
-      },
-      {
-        "input": "제주도 배송비가 일반 배송비랑 같아?",
-        "predicted_node": "policy_rag_subagent",
-        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "중고 등록하고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "안 입는 옷 팔고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "사이즈 안 맞는 옷 중고로 내놓을래요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "새 거나 다름없는 신발 올리고 싶어",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "옷장 정리하는데 안 입는 거 처분하고 싶어",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "리뷰 쓰고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "후기 남기고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "별점 주고 싶은데 어디서 해요?",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "착용 사진이랑 후기를 올리고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "구매평 작성하는 곳이 어디예요?",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "상품권 등록해주세요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "기프트카드 번호 입력하고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "이벤트 당첨 코드 어디에 넣어요?",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "모바일 상품권은 어떻게 적용해요?",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "모바일 상품권은 어떻게 사용하는 거죠?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 모바일 상품권 어떻게 적용해야 해?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "모바일 쿠폰 사용하는 방법이 궁금해요!",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "회사에서 받은 포인트 코드 등록해주세요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       }
     ]
   },
   {
-    "model": "vllm/qwen3:0.6b",
-    "timestamp": "2026-03-17T12:35:53.406506",
-    "total_samples": 57,
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T11:24:53.514339",
+    "difficulty_filter": "hard",
+    "total_samples": 34,
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 34,
+        "correct": 34,
+        "accuracy": 1.0
+      }
+    },
     "details": [
       {
-        "input": "주문 취소해주세요",
+        "input": "결제하고 나서 생각해보니 이미 비슷한 게 집에 있는 것 같아서 좀 고민이 되는데 아직 안 보냈으면 없던 걸로 할 수 있을까요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "방금 결제한 거 취소하고 싶어요",
+        "input": "카드 할부로 질렀는데 와이프한테 혼나서 어떻게 좀 되돌릴 수 없을까요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "잘못 주문했는데 취소 가능해요?",
+        "input": "충동적으로 눌러버렸는데 사실 필요 없는 건데 아직 처리 전이면 원상복구 가능한가요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "환불 받고 싶어요",
+        "input": "택배 받아봤는데 사진이랑 색감이 너무 달라서 실망했거든요 이런 경우에 어떻게 하면 되는 건지요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "환불 요청할게요",
+        "input": "아이 옷으로 샀는데 막상 입혀보니 소재가 까슬까슬해서 아이가 싫어하는데 다시 보낼 수 있나요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "돈 돌려받고 싶어",
+        "input": "선물용으로 샀는데 받는 사람이 이미 갖고 있는 거라고 하네요 포장은 뜯었는데 다시 돌려보내고 싶어요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "이거 환불해줄 수 있어?",
+        "input": "온라인으로 사이즈 재고 보고 M을 시켰는데 실제로 입어보니 좀 작아서 L로 바꿔야 할 것 같아요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "반품 신청할게요",
+        "input": "네이비 컬러인 줄 알고 주문했는데 받아보니 블랙에 가까운 것 같아서 차라리 다른 색으로 받고 싶은데요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "반품하고 싶은데요",
+        "input": "일주일 전에 주문한 건데 아직도 아무 소식이 없어서 혹시 분실된 건 아닌지 좀 불안해서요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "반품 신청할게",
-        "predicted_node": "policy_rag_subagent",
-        "expected_node": "order_intent_router",
-        "correct": false
-      },
-      {
-        "input": "반품 요청해도 될까요?",
+        "input": "내일 출장이라 오늘 안에 와야 하는데 지금 어디쯤 오고 있는 건지 확인 좀 해주실 수 있나요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "물건이 불량이라 돈 돌려받고 싶어요",
-        "predicted_node": "policy_rag_subagent",
-        "expected_node": "order_intent_router",
-        "correct": false
-      },
-      {
-        "input": "사이즈 교환하고 싶어요",
+        "input": "문 앞에 놓아달라고 했는데 택배 기사님이 아직 안 오신 것 같은데 진행 상황을 좀 알고 싶어요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "다른 색상으로 바꿀 수 있을까요?",
-        "predicted_node": "discovery_subagent",
-        "expected_node": "order_intent_router",
-        "correct": false
-      },
-      {
-        "input": "옵션 변경하고 싶은데 교환 돼요?",
-        "predicted_node": "policy_rag_subagent",
-        "expected_node": "order_intent_router",
-        "correct": false
-      },
-      {
-        "input": "배송 어디까지 왔어요?",
-        "predicted_node": "discovery_subagent",
-        "expected_node": "order_intent_router",
-        "correct": false
-      },
-      {
-        "input": "택배 언제 도착하나요?",
-        "predicted_node": "final_generator",
-        "expected_node": "order_intent_router",
-        "correct": false
-      },
-      {
-        "input": "송장번호 알려주세요",
+        "input": "작년에 여기서 산 패딩이 너무 좋았는데 같은 걸 하나 더 사고 싶어서 그때 뭘 샀는지 찾아보고 싶어요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "내 주문 내역 보여줘",
+        "input": "카드값 나온 거 보고 여기서 얼마나 썼는지 정리 좀 하고 싶은데 그동안 구매한 것들 볼 수 있을까요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "최근 주문 목록 조회해줘",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "그동안 뭐 샀는지 주문 내역 확인하고 싶어요",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "봄에 입기 좋은 옷 추천해줘",
-        "predicted_node": "final_generator",
-        "expected_node": "discovery_subagent",
-        "correct": false
-      },
-      {
-        "input": "데이트할 때 입을 만한 코디 찾아줘",
+        "input": "이번 주말 소개팅인데 너무 튀지 않으면서도 세련돼 보이는 그런 분위기의 옷이 있으면 좋겠어요",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "출근복으로 괜찮은 정장 보여줘",
+        "input": "다음 달에 제주도 여행 가는데 사진 찍었을 때 이쁘게 나오면서 편한 옷이 뭐가 있을까요",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "운동할 때 편한 바지 추천 좀",
-        "predicted_node": "final_generator",
-        "expected_node": "discovery_subagent",
-        "correct": false
-      },
-      {
-        "input": "캐주얼한 느낌 아우터 있어?",
-        "predicted_node": "order_intent_router",
-        "expected_node": "discovery_subagent",
-        "correct": false
-      },
-      {
-        "input": "이 사진이랑 비슷한 옷 찾아줘 /products/17464.jpg",
+        "input": "요즘 직장 상사가 복장에 대해 한마디 하셔서 너무 캐주얼하지 않으면서 답답하지도 않은 옷을 찾고 있어요",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "이것과 비슷한 스타일 보여줘 /products/1581.jpg",
+        "input": "매일 아침마다 뭐 입을지 고민인데 아무거나 걸쳐도 괜찮아 보이는 기본템 같은 거 없나요",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "/products/50385.jpg 이거랑 같은 종류 있어?",
+        "input": "친구 결혼식에 입고 가려는데 하객 룩으로 괜찮으면서 나중에 평소에도 입을 수 있는 그런 옷이 있을까요",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "SNS에서 본 건데 비슷한 거 있나요 /products/39233.jpg",
+        "input": "길 가다가 어떤 사람이 입고 있는 옷이 너무 이뻐서 몰래 사진 찍어왔는데 이것과 비슷한 거 있으면 보여주세요 /products/5027.jpg",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "환불 정책 알려줘",
+        "input": "유튜버가 입고 나왔던 옷인데 캡처해놨거든요 이런 느낌의 옷을 찾고 싶어요 /products/35381.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구가 여기서 산 건 2주 안에 보내면 된다고 했는데 진짜 그런 건지 정확히 알고 싶어서요",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "배송 규정이 어떻게 되나요?",
-        "predicted_node": "final_generator",
-        "expected_node": "policy_rag_subagent",
-        "correct": false
-      },
-      {
-        "input": "교환 기한이 얼마예요?",
+        "input": "택배를 열어봤는데 하자가 있거든요 근데 개봉하면 반품이 안 되는 건 아닌지 걱정이 돼서요",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "교환할 수 있는 기간이 어떻게 되죠?",
-        "predicted_node": "final_generator",
-        "expected_node": "policy_rag_subagent",
-        "correct": false
-      },
-      {
-        "input": "교환은 몇 일까지 가능한 거야?",
+        "input": "도서산간 지역인데 배송비가 추가로 붙는다는 얘기를 들은 것 같은데 정확히 얼마가 더 나오는지 알 수 있나요",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "교환 기한이 언제까지인지 알고 싶어요.",
+        "input": "지인이 선물로 보내준 건데 영수증이 없으면 교환이나 환불이 불가능한 건지 궁금합니다",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "반품 택배비 누가 부담해요?",
-        "predicted_node": "discovery_subagent",
+        "input": "세일 상품도 일반 상품이랑 똑같은 조건으로 반품할 수 있는 건가요 아니면 뭔가 다른 규정이 적용되나요",
+        "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
-        "correct": false
+        "difficulty": "hard",
+        "correct": true
       },
       {
-        "input": "개봉한 것도 돌려보낼 수 있어요?",
-        "predicted_node": "order_intent_router",
+        "input": "해외 배송 상품이라 국내 반품이랑 절차가 다를 것 같은데 어떤 규정이 적용되는지 궁금해요",
+        "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
-        "correct": false
-      },
-      {
-        "input": "제주도도 배송비 같은가요?",
-        "predicted_node": "final_generator",
-        "expected_node": "policy_rag_subagent",
-        "correct": false
-      },
-      {
-        "input": "제주도 배송비도 똑같나요?",
-        "predicted_node": "final_generator",
-        "expected_node": "policy_rag_subagent",
-        "correct": false
-      },
-      {
-        "input": "제주도에 배송할 때도 배송비가 동일해?",
-        "predicted_node": "final_generator",
-        "expected_node": "policy_rag_subagent",
-        "correct": false
-      },
-      {
-        "input": "제주도 배송비가 일반 배송비랑 같아?",
-        "predicted_node": "final_generator",
-        "expected_node": "policy_rag_subagent",
-        "correct": false
-      },
-      {
-        "input": "중고 등록하고 싶어요",
-        "predicted_node": "form_action_subagent",
-        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "안 입는 옷 팔고 싶어요",
-        "predicted_node": "discovery_subagent",
-        "expected_node": "form_action_subagent",
-        "correct": false
-      },
-      {
-        "input": "사이즈 안 맞는 옷 중고로 내놓을래요",
-        "predicted_node": "discovery_subagent",
-        "expected_node": "form_action_subagent",
-        "correct": false
-      },
-      {
-        "input": "새 거나 다름없는 신발 올리고 싶어",
+        "input": "작년에 산 코트인데 한 번밖에 안 입었고 거의 새것이나 다름없거든요 누가 필요한 사람이 있으면 넘기고 싶은데요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "옷장 정리하는데 안 입는 거 처분하고 싶어",
-        "predicted_node": "order_intent_router",
-        "expected_node": "form_action_subagent",
-        "correct": false
-      },
-      {
-        "input": "리뷰 쓰고 싶어요",
+        "input": "다이어트 성공해서 예전 옷들이 다 큰데 버리기는 아깝고 필요한 분한테 양도하고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "후기 남기고 싶어요",
+        "input": "임산부 때 입었던 옷들이 이제 필요 없는데 한꺼번에 정리하고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "별점 주고 싶은데 어디서 해요?",
+        "input": "이번에 산 운동화가 쿠션감도 좋고 디자인도 예뻐서 다른 분들한테도 알려주고 싶은데 어떻게 하면 되나요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "착용 사진이랑 후기를 올리고 싶어요",
+        "input": "솔직히 품질이 가격 대비 별로라서 다른 분들이 실수하지 않게 제 경험을 공유하고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "구매평 작성하는 곳이 어디예요?",
-        "predicted_node": "final_generator",
-        "expected_node": "form_action_subagent",
-        "correct": false
-      },
-      {
-        "input": "상품권 등록해주세요",
+        "input": "사이즈 고민하시는 분들 참고하시라고 제 체형이랑 핏 사진을 올려두고 싶은데요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "기프트카드 번호 입력하고 싶어요",
+        "input": "생일 선물로 여기 사용 가능한 상품권을 받았는데 숫자 코드가 적혀있는 카드인데 이걸 어디에 입력하는 건지 모르겠어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "hard",
         "correct": true
       },
       {
-        "input": "이벤트 당첨 코드 어디에 넣어요?",
-        "predicted_node": "final_generator",
-        "expected_node": "form_action_subagent",
-        "correct": false
-      },
-      {
-        "input": "모바일 상품권은 어떻게 적용해요?",
+        "input": "회사 연말 행사에서 모바일 쿠폰을 받았는데 바코드 번호를 어떻게 적용시키는 건지 알려주세요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
-        "correct": true
-      },
-      {
-        "input": "회사에서 받은 포인트 코드 등록해주세요",
-        "predicted_node": "form_action_subagent",
-        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
         "correct": true
       }
     ]
   },
   {
     "model": "openai/gpt-4o-mini",
-    "timestamp": "2026-03-17T12:38:47.235522",
-    "total_samples": 57,
+    "timestamp": "2026-03-18T11:26:30.631107",
+    "difficulty_filter": "easy",
+    "total_samples": 54,
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 54,
+        "correct": 46,
+        "accuracy": 0.8519
+      }
+    },
     "details": [
       {
         "input": "주문 취소해주세요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "방금 결제한 거 취소하고 싶어요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "지금 결제한 주문을 취소하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "방금 결제한 거 취소해줄 수 있어?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "방금 결제한 주문을 없애고 싶어.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "잘못 주문했는데 취소 가능해요?",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "환불 받고 싶어요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "환불 요청할게요",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "돈 돌려받고 싶어",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "이거 환불해줄 수 있어?",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "반품 신청할게요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "반품하고 싶은데요",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "반품 신청할게",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
-        "correct": true
-      },
-      {
-        "input": "반품 요청해도 될까요?",
-        "predicted_node": "order_intent_router",
-        "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "물건이 불량이라 돈 돌려받고 싶어요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "사이즈 교환하고 싶어요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "다른 색상으로 바꿀 수 있을까요?",
         "predicted_node": "final_generator",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": false
       },
       {
         "input": "옵션 변경하고 싶은데 교환 돼요?",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "배송 어디까지 왔어요?",
         "predicted_node": "final_generator",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": false
       },
       {
         "input": "택배 언제 도착하나요?",
         "predicted_node": "final_generator",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": false
       },
       {
         "input": "송장번호 알려주세요",
         "predicted_node": "final_generator",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": false
       },
       {
         "input": "내 주문 내역 보여줘",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "최근 주문 목록 조회해줘",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "그동안 뭐 샀는지 주문 내역 확인하고 싶어요",
         "predicted_node": "order_intent_router",
         "expected_node": "order_intent_router",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "봄에 입기 좋은 옷 추천해줘",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "봄에 어울리는 옷 좀 추천해줄래?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이른 봄에 입기 좋은 옷 추천해줘요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "봄에 입기 딱 좋은 옷 찾아줘!",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "데이트할 때 입을 만한 코디 찾아줘",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "출근복으로 괜찮은 정장 보여줘",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "운동할 때 편한 바지 추천 좀",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "캐주얼한 느낌 아우터 있어?",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
-        "input": "이 사진이랑 비슷한 옷 찾아줘 /products/17464.jpg",
+        "input": "이 사진이랑 비슷한 옷 찾아줘 /products/56277.jpg",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
-        "input": "이것과 비슷한 스타일 보여줘 /products/1581.jpg",
+        "input": "이것과 비슷한 스타일 보여줘 /products/28233.jpg",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
-        "input": "/products/50385.jpg 이거랑 같은 종류 있어?",
+        "input": "/products/55836.jpg 이거랑 같은 종류 있어?",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
-        "input": "SNS에서 본 건데 비슷한 거 있나요 /products/39233.jpg",
+        "input": "SNS에서 본 건데 비슷한 거 있나요 /products/51455.jpg",
         "predicted_node": "discovery_subagent",
         "expected_node": "discovery_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "환불 정책 알려줘",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "배송 규정이 어떻게 되나요?",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "교환 기한이 얼마예요?",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
-        "correct": true
-      },
-      {
-        "input": "교환할 수 있는 기간이 어떻게 되죠?",
-        "predicted_node": "policy_rag_subagent",
-        "expected_node": "policy_rag_subagent",
-        "correct": true
-      },
-      {
-        "input": "교환은 몇 일까지 가능한 거야?",
-        "predicted_node": "policy_rag_subagent",
-        "expected_node": "policy_rag_subagent",
-        "correct": true
-      },
-      {
-        "input": "교환 기한이 언제까지인지 알고 싶어요.",
-        "predicted_node": "policy_rag_subagent",
-        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "반품 택배비 누가 부담해요?",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "개봉한 것도 돌려보낼 수 있어요?",
         "predicted_node": "policy_rag_subagent",
         "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "제주도도 배송비 같은가요?",
         "predicted_node": "final_generator",
         "expected_node": "policy_rag_subagent",
-        "correct": false
-      },
-      {
-        "input": "제주도 배송비도 똑같나요?",
-        "predicted_node": "final_generator",
-        "expected_node": "policy_rag_subagent",
-        "correct": false
-      },
-      {
-        "input": "제주도에 배송할 때도 배송비가 동일해?",
-        "predicted_node": "final_generator",
-        "expected_node": "policy_rag_subagent",
-        "correct": false
-      },
-      {
-        "input": "제주도 배송비가 일반 배송비랑 같아?",
-        "predicted_node": "final_generator",
-        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
         "correct": false
       },
       {
         "input": "중고 등록하고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "안 입는 옷 팔고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "사이즈 안 맞는 옷 중고로 내놓을래요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "새 거나 다름없는 신발 올리고 싶어",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "옷장 정리하는데 안 입는 거 처분하고 싶어",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "리뷰 쓰고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "후기 남기고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "별점 주고 싶은데 어디서 해요?",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "착용 사진이랑 후기를 올리고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "구매평 작성하는 곳이 어디예요?",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "상품권 등록해주세요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "기프트카드 번호 입력하고 싶어요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
       },
       {
         "input": "이벤트 당첨 코드 어디에 넣어요?",
         "predicted_node": "final_generator",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": false
       },
       {
         "input": "모바일 상품권은 어떻게 적용해요?",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
         "correct": true
+      },
+      {
+        "input": "모바일 상품권은 어떻게 사용하는 거죠?",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "이 모바일 상품권 어떻게 적용해야 해?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "모바일 쿠폰 사용하는 방법이 궁금해요!",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
       },
       {
         "input": "회사에서 받은 포인트 코드 등록해주세요",
         "predicted_node": "form_action_subagent",
         "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      }
+    ]
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T11:28:35.194625",
+    "difficulty_filter": "hard",
+    "total_samples": 34,
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 34,
+        "correct": 30,
+        "accuracy": 0.8824
+      }
+    },
+    "details": [
+      {
+        "input": "결제하고 나서 생각해보니 이미 비슷한 게 집에 있는 것 같아서 좀 고민이 되는데 아직 안 보냈으면 없던 걸로 할 수 있을까요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "카드 할부로 질렀는데 와이프한테 혼나서 어떻게 좀 되돌릴 수 없을까요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "충동적으로 눌러버렸는데 사실 필요 없는 건데 아직 처리 전이면 원상복구 가능한가요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "택배 받아봤는데 사진이랑 색감이 너무 달라서 실망했거든요 이런 경우에 어떻게 하면 되는 건지요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "아이 옷으로 샀는데 막상 입혀보니 소재가 까슬까슬해서 아이가 싫어하는데 다시 보낼 수 있나요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "선물용으로 샀는데 받는 사람이 이미 갖고 있는 거라고 하네요 포장은 뜯었는데 다시 돌려보내고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "온라인으로 사이즈 재고 보고 M을 시켰는데 실제로 입어보니 좀 작아서 L로 바꿔야 할 것 같아요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "네이비 컬러인 줄 알고 주문했는데 받아보니 블랙에 가까운 것 같아서 차라리 다른 색으로 받고 싶은데요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "일주일 전에 주문한 건데 아직도 아무 소식이 없어서 혹시 분실된 건 아닌지 좀 불안해서요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "내일 출장이라 오늘 안에 와야 하는데 지금 어디쯤 오고 있는 건지 확인 좀 해주실 수 있나요",
+        "predicted_node": "final_generator",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "문 앞에 놓아달라고 했는데 택배 기사님이 아직 안 오신 것 같은데 진행 상황을 좀 알고 싶어요",
+        "predicted_node": "final_generator",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "작년에 여기서 산 패딩이 너무 좋았는데 같은 걸 하나 더 사고 싶어서 그때 뭘 샀는지 찾아보고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "카드값 나온 거 보고 여기서 얼마나 썼는지 정리 좀 하고 싶은데 그동안 구매한 것들 볼 수 있을까요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "이번 주말 소개팅인데 너무 튀지 않으면서도 세련돼 보이는 그런 분위기의 옷이 있으면 좋겠어요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "다음 달에 제주도 여행 가는데 사진 찍었을 때 이쁘게 나오면서 편한 옷이 뭐가 있을까요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "요즘 직장 상사가 복장에 대해 한마디 하셔서 너무 캐주얼하지 않으면서 답답하지도 않은 옷을 찾고 있어요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "매일 아침마다 뭐 입을지 고민인데 아무거나 걸쳐도 괜찮아 보이는 기본템 같은 거 없나요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구 결혼식에 입고 가려는데 하객 룩으로 괜찮으면서 나중에 평소에도 입을 수 있는 그런 옷이 있을까요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "길 가다가 어떤 사람이 입고 있는 옷이 너무 이뻐서 몰래 사진 찍어왔는데 이것과 비슷한 거 있으면 보여주세요 /products/5027.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "유튜버가 입고 나왔던 옷인데 캡처해놨거든요 이런 느낌의 옷을 찾고 싶어요 /products/35381.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구가 여기서 산 건 2주 안에 보내면 된다고 했는데 진짜 그런 건지 정확히 알고 싶어서요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "택배를 열어봤는데 하자가 있거든요 근데 개봉하면 반품이 안 되는 건 아닌지 걱정이 돼서요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "도서산간 지역인데 배송비가 추가로 붙는다는 얘기를 들은 것 같은데 정확히 얼마가 더 나오는지 알 수 있나요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "지인이 선물로 보내준 건데 영수증이 없으면 교환이나 환불이 불가능한 건지 궁금합니다",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "세일 상품도 일반 상품이랑 똑같은 조건으로 반품할 수 있는 건가요 아니면 뭔가 다른 규정이 적용되나요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외 배송 상품이라 국내 반품이랑 절차가 다를 것 같은데 어떤 규정이 적용되는지 궁금해요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "작년에 산 코트인데 한 번밖에 안 입었고 거의 새것이나 다름없거든요 누가 필요한 사람이 있으면 넘기고 싶은데요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "다이어트 성공해서 예전 옷들이 다 큰데 버리기는 아깝고 필요한 분한테 양도하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "임산부 때 입었던 옷들이 이제 필요 없는데 한꺼번에 정리하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "이번에 산 운동화가 쿠션감도 좋고 디자인도 예뻐서 다른 분들한테도 알려주고 싶은데 어떻게 하면 되나요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "솔직히 품질이 가격 대비 별로라서 다른 분들이 실수하지 않게 제 경험을 공유하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "사이즈 고민하시는 분들 참고하시라고 제 체형이랑 핏 사진을 올려두고 싶은데요",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "생일 선물로 여기 사용 가능한 상품권을 받았는데 숫자 코드가 적혀있는 카드인데 이걸 어디에 입력하는 건지 모르겠어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "회사 연말 행사에서 모바일 쿠폰을 받았는데 바코드 번호를 어떻게 적용시키는 건지 알려주세요",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      }
+    ]
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T11:40:49.450807",
+    "difficulty_filter": "easy",
+    "total_samples": 54,
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 54,
+        "correct": 37,
+        "accuracy": 0.6852
+      }
+    },
+    "details": [
+      {
+        "input": "주문 취소해주세요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "방금 결제한 거 취소하고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "지금 결제한 주문을 취소하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "방금 결제한 거 취소해줄 수 있어?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "방금 결제한 주문을 없애고 싶어.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "잘못 주문했는데 취소 가능해요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "환불 받고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "반품 신청할게요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "물건이 불량이라 돈 돌려받고 싶어요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "사이즈 교환하고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "다른 색상으로 바꿀 수 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "옵션 변경하고 싶은데 교환 돼요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "배송 어디까지 왔어요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "택배 언제 도착하나요?",
+        "predicted_node": "final_generator",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "송장번호 알려주세요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "내 주문 내역 보여줘",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "최근 주문 목록 조회해줘",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "그동안 뭐 샀는지 주문 내역 확인하고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "봄에 입기 좋은 옷 추천해줘",
+        "predicted_node": "final_generator",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "봄에 어울리는 옷 좀 추천해줄래?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이른 봄에 입기 좋은 옷 추천해줘요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "봄에 입기 딱 좋은 옷 찾아줘!",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "데이트할 때 입을 만한 코디 찾아줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "출근복으로 괜찮은 정장 보여줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "운동할 때 편한 바지 추천 좀",
+        "predicted_node": "final_generator",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "캐주얼한 느낌 아우터 있어?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "이 사진이랑 비슷한 옷 찾아줘 /products/56277.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이것과 비슷한 스타일 보여줘 /products/28233.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "/products/55836.jpg 이거랑 같은 종류 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "SNS에서 본 건데 비슷한 거 있나요 /products/51455.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "환불 정책 알려줘",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송 규정이 어떻게 되나요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "교환 기한이 얼마예요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "반품 택배비 누가 부담해요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "개봉한 것도 돌려보낼 수 있어요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "제주도도 배송비 같은가요?",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "중고 등록하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "안 입는 옷 팔고 싶어요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "사이즈 안 맞는 옷 중고로 내놓을래요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "새 거나 다름없는 신발 올리고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "옷장 정리하는데 안 입는 거 처분하고 싶어",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "리뷰 쓰고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "후기 남기고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "별점 주고 싶은데 어디서 해요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "착용 사진이랑 후기를 올리고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "구매평 작성하는 곳이 어디예요?",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "상품권 등록해주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "기프트카드 번호 입력하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이벤트 당첨 코드 어디에 넣어요?",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "모바일 상품권은 어떻게 적용해요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "모바일 상품권은 어떻게 사용하는 거죠?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 모바일 상품권 어떻게 적용해야 해?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "모바일 쿠폰 사용하는 방법이 궁금해요!",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "회사에서 받은 포인트 코드 등록해주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      }
+    ]
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T11:54:27.483465",
+    "difficulty_filter": "hard",
+    "total_samples": 34,
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 34,
+        "correct": 18,
+        "accuracy": 0.5294
+      }
+    },
+    "details": [
+      {
+        "input": "결제하고 나서 생각해보니 이미 비슷한 게 집에 있는 것 같아서 좀 고민이 되는데 아직 안 보냈으면 없던 걸로 할 수 있을까요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "카드 할부로 질렀는데 와이프한테 혼나서 어떻게 좀 되돌릴 수 없을까요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "충동적으로 눌러버렸는데 사실 필요 없는 건데 아직 처리 전이면 원상복구 가능한가요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "택배 받아봤는데 사진이랑 색감이 너무 달라서 실망했거든요 이런 경우에 어떻게 하면 되는 건지요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "아이 옷으로 샀는데 막상 입혀보니 소재가 까슬까슬해서 아이가 싫어하는데 다시 보낼 수 있나요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "선물용으로 샀는데 받는 사람이 이미 갖고 있는 거라고 하네요 포장은 뜯었는데 다시 돌려보내고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "온라인으로 사이즈 재고 보고 M을 시켰는데 실제로 입어보니 좀 작아서 L로 바꿔야 할 것 같아요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "네이비 컬러인 줄 알고 주문했는데 받아보니 블랙에 가까운 것 같아서 차라리 다른 색으로 받고 싶은데요",
+        "predicted_node": "final_generator",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "일주일 전에 주문한 건데 아직도 아무 소식이 없어서 혹시 분실된 건 아닌지 좀 불안해서요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "내일 출장이라 오늘 안에 와야 하는데 지금 어디쯤 오고 있는 건지 확인 좀 해주실 수 있나요",
+        "predicted_node": "final_generator",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "문 앞에 놓아달라고 했는데 택배 기사님이 아직 안 오신 것 같은데 진행 상황을 좀 알고 싶어요",
+        "predicted_node": "final_generator",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "작년에 여기서 산 패딩이 너무 좋았는데 같은 걸 하나 더 사고 싶어서 그때 뭘 샀는지 찾아보고 싶어요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "카드값 나온 거 보고 여기서 얼마나 썼는지 정리 좀 하고 싶은데 그동안 구매한 것들 볼 수 있을까요",
+        "predicted_node": "final_generator",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "이번 주말 소개팅인데 너무 튀지 않으면서도 세련돼 보이는 그런 분위기의 옷이 있으면 좋겠어요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "다음 달에 제주도 여행 가는데 사진 찍었을 때 이쁘게 나오면서 편한 옷이 뭐가 있을까요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "요즘 직장 상사가 복장에 대해 한마디 하셔서 너무 캐주얼하지 않으면서 답답하지도 않은 옷을 찾고 있어요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "매일 아침마다 뭐 입을지 고민인데 아무거나 걸쳐도 괜찮아 보이는 기본템 같은 거 없나요",
+        "predicted_node": "final_generator",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "친구 결혼식에 입고 가려는데 하객 룩으로 괜찮으면서 나중에 평소에도 입을 수 있는 그런 옷이 있을까요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "길 가다가 어떤 사람이 입고 있는 옷이 너무 이뻐서 몰래 사진 찍어왔는데 이것과 비슷한 거 있으면 보여주세요 /products/5027.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "유튜버가 입고 나왔던 옷인데 캡처해놨거든요 이런 느낌의 옷을 찾고 싶어요 /products/35381.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구가 여기서 산 건 2주 안에 보내면 된다고 했는데 진짜 그런 건지 정확히 알고 싶어서요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "택배를 열어봤는데 하자가 있거든요 근데 개봉하면 반품이 안 되는 건 아닌지 걱정이 돼서요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "도서산간 지역인데 배송비가 추가로 붙는다는 얘기를 들은 것 같은데 정확히 얼마가 더 나오는지 알 수 있나요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "지인이 선물로 보내준 건데 영수증이 없으면 교환이나 환불이 불가능한 건지 궁금합니다",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "세일 상품도 일반 상품이랑 똑같은 조건으로 반품할 수 있는 건가요 아니면 뭔가 다른 규정이 적용되나요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외 배송 상품이라 국내 반품이랑 절차가 다를 것 같은데 어떤 규정이 적용되는지 궁금해요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "작년에 산 코트인데 한 번밖에 안 입었고 거의 새것이나 다름없거든요 누가 필요한 사람이 있으면 넘기고 싶은데요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "다이어트 성공해서 예전 옷들이 다 큰데 버리기는 아깝고 필요한 분한테 양도하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "임산부 때 입었던 옷들이 이제 필요 없는데 한꺼번에 정리하고 싶어요",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "이번에 산 운동화가 쿠션감도 좋고 디자인도 예뻐서 다른 분들한테도 알려주고 싶은데 어떻게 하면 되나요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "솔직히 품질이 가격 대비 별로라서 다른 분들이 실수하지 않게 제 경험을 공유하고 싶어요",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "사이즈 고민하시는 분들 참고하시라고 제 체형이랑 핏 사진을 올려두고 싶은데요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "생일 선물로 여기 사용 가능한 상품권을 받았는데 숫자 코드가 적혀있는 카드인데 이걸 어디에 입력하는 건지 모르겠어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "회사 연말 행사에서 모바일 쿠폰을 받았는데 바코드 번호를 어떻게 적용시키는 건지 알려주세요",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      }
+    ]
+  },
+  {
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T16:06:20.702252",
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 70,
+        "accuracy": 1.0
+      }
+    },
+    "details": [
+      {
+        "input": "주문을 취소하고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "방금 결제한 걸 취소해주실 수 있나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "잘못 주문했는데, 취소할 수 있을까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "환불 요청하고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "반품할게요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사이즈를 바꾸고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "다른 색으로 교환할 수 있을까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송 현황 좀 알려주세요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "택배 도착 예정일이 언제예요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "내 주문 목록 좀 보여줄래요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "봄철에 어울리는 옷 추천해줄래?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "데이트룩으로 입기 좋은 코디 좀 찾아줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "출근할 때 입을 정장 보여줄 수 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "운동할 때 입기 편한 바지 추천해줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "캐주얼한 아우터 어떤 거 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "여름에 입기 좋은 시원한 린넨 셔츠 있나?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "겨울철에 따뜻한 패딩 추천해 줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "가성비 좋은 니트 제품 알고 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "요즘 유행하는 와이드 팬츠 좀 보여줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "비즈니스 캐주얼 코디로 어떤 게 좋을까?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 사진이랑 비슷한 제품 좀 찾아줄래? /products/36505.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 스타일의 옷 또 보여줄 수 있어? /products/37940.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거랑 비슷한 제품 있나요? /products/58548.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "SNS에서 본 스타일인데, 비슷한 거 있으면 알려줘 /products/40591.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 옷과 비슷한 거 추천해 줘 /products/52510.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 느낌의 옷 더 찾아줄래? /products/55351.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거랑 비슷한 브랜드 제품은 어디서 사나요? /products/42974.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거와 같은 브랜드의 다른 제품도 있을까? /products/37940.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 사진 속 바지와 비슷한 제품 찾아줘 /products/55351.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 느낌의 코트 있어? /products/36526.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "환불은 어떻게 진행되죠?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송은 얼마나 걸리나요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "교환할 수 있는 기간이 언제까지인가요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "반품할 때 택배비는 누가 내야 해요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "포장을 뜯은 상품도 반품 가능한가요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "제주도에 배송할 때 추가 요금이 있나요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "무료 배송이 되려면 어떤 조건이 있어야 해요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "회원 등급에 따라 어떤 혜택이 있지?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "적립금 사용에 대한 조건이 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "주문한 상품 취소는 몇 일 내에 가능해요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "중고 물건 올리고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "안 쓰는 옷 좀 팔아야겠어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사이즈가 안 맞아서 중고로 내놓고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "옷장 정리하면서 안 입는 것들 처분하려고 해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "거의 새 같은 신발을 판매하려고 해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "중고 판매 등록하는 방법 좀 알려주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사용하지 않는 가방을 팔고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "선물 받은 옷이 안 맞아서 중고로 판매할게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "작아진 옷을 중고로 거래하고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "한 번 입었던 원피스 팔고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "리뷰를 남기고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "후기를 작성하고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "착용 샷과 함께 후기 올릴게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "별점은 어디서 줄 수 있나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "구매 후기를 쓰는 곳이 어디예요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 제품에 대한 평가를 남기고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "주문한 옷에 대한 리뷰 쓸게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사용 후기를 남기려면 어떻게 해야 해?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품 별점과 간단한 평 올리고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송에 대한 후기를 작성하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품권 등록 좀 해주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "기프트카드 번호를 입력하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "모바일 상품권 적용 방법 알려주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이벤트 당첨 코드는 어디에 넣어야 하나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "회사에서 받은 포인트 코드 등록 부탁해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품권 번호 입력하는 곳이 어디인지 알려줘",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "기프트카드 잔액 어떻게 확인하죠?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "쿠폰 코드 적용하는 방법이 궁금해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "선물 받은 상품권 사용할 수 있게 해주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "종이 상품권 온라인으로 등록할 수 있나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      }
+    ]
+  },
+  {
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T16:07:13.146840",
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 65,
+        "accuracy": 0.9286
+      }
+    },
+    "details": [
+      {
+        "input": "주문했는데 혹시 취소할 수 있을까요? 필요 없는 것 같아서요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송된 제품이랑 사진이랑 너무 다른데, 반품은 어떻게 하나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "아이에게 맞는 옷을 샀는데 입혀보니 안 맞아서 교환하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "선물로 주문했는데 이미 같은 걸 가지고 있다고 하네요. 포장은 뜯었는데 환불 가능한가요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "배송 조회를 하고 싶은데, 제 주문 상태가 궁금해요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "사이즈를 잘못 선택한 것 같아서, 변경할 수 있는지 알고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "주문 취소를 하고 싶은데, 아직 배송 전이면 가능할까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "택배를 받았는데 색상이 마음에 안 들어서 다른 걸로 바꿀 수 있나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송이 너무 지연되고 있어서 확인해보고 싶어요. 언제쯤 도착하나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "결제한 지 얼마 안 됐는데, 환불 절차가 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "이번 주말에 소개팅이 있는데, 세련되면서도 너무 튀지 않는 옷 추천해 줄 수 있어요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "다음 달 제주도로 여행 가는데, 사진 찍을 때 예쁘게 나올 수 있는 편한 옷이 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "요즘 직장 상사가 복장에 대해 신경 쓰라고 하셔서, 캐주얼하지 않으면서도 답답하지 않은 옷을 찾고 있어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "매일 아침 뭘 입을까 고민하는데, 아무거나 걸쳐도 괜찮은 기본템 있으면 좋겠어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구 결혼식에 하객으로 가야 하는데, 나중에 평소에도 입을 수 있는 옷 추천해 줄 수 있어요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "곧 면접이 있는데, 너무 딱딱하지 않으면서 신뢰감을 줄 수 있는 옷이 뭐가 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "체형이 통통한 편인데, 날씬해 보이면서도 편안한 옷 찾고 있어요. 추천해 주세요!",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "40대 남성인데, 너무 젊어 보이지 않고 올드하지 않은 적당한 캐주얼룩 찾아주세요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "키가 작아서 비율이 좋아 보이는 코디가 필요해요. 어떤 스타일이 나을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "재택근무할 때 편하면서도 갑자기 화상회의가 잡혀도 괜찮은 옷 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "어제 길에서 본 옷이 너무 예뻐서 사진을 찍었어요. 이거랑 비슷한 거 찾을 수 있을까요? /products/12345.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "유튜브에서 본 스타일인데 캡처해놓은 게 있어요. 이런 느낌의 옷 찾아주세요! /products/67890.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "인스타그램에서 본 코디인데, 이 사진처럼 비슷한 옷을 추천해주실 수 있나요? /products/54321.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "쇼핑몰 광고에서 본 옷이 너무 마음에 들어요. 이거랑 비슷하면서 가격이 더 저렴한 거 있을까요? /products/98765.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "드라마에서 주인공이 입었던 옷인데, 그 사진으로 비슷한 상품 찾아줄 수 있어요? /products/11111.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구가 입고 온 옷이 진짜 예뻤어요. 사진 찍어왔는데, 같은 건 아니어도 비슷한 느낌의 옷이 있을까요? /products/22222.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외 쇼핑몰에서 본 옷인데, 직구는 좀 부담스러워서 국내에서 비슷한 제품 찾고 있어요. /products/33333.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "잡지에서 잘라둔 코디인데, 이런 느낌의 아이템들 추천해주시면 좋겠어요. /products/44444.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "작년에 구입한 옷인데 절판됐더라고요. 사진만 가지고 있는데, 이와 비슷한 디자인 찾을 수 있을까요? /products/55555.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "핀터레스트에 저장해둔 코디인데, 이 분위기를 그대로 재현할 수 있는 옷이 있을까요? /products/66666.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "여기서 사면 2주 안에 배송된다고 들었는데, 그게 맞는지 확인하고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "택배를 받았는데 제품에 문제가 있어요. 개봉하면 반품이 불가능한지 궁금합니다.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "도서산간 지역에 사는데, 배송비가 추가로 얼마 더 드는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구가 선물해줬는데 영수증 없이도 교환이나 환불이 가능한지 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "세일 상품은 반품할 때 일반 상품이랑 같은 조건인지 아니면 다른 규정이 있는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외에서 구매한 제품인데 국내에서 반품할 때 절차가 어떻게 되는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "요즘 직구 많이 하는데, 관세 관련 안내가 있는지 여기는 어떤지 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "적립금이 좀 쌓였는데, 이걸 현금처럼 자유롭게 쓸 수 있는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "한 달 넘게 사용했는데, 이런 경우에도 교환이나 환불이 가능한가요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "명절 기간에는 배송이 지연된다고 들었는데, 정확히 언제부터 언제까지 늦어지는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "작년에 구매한 코트가 거의 새것 같은데, 필요한 분께 드리고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "다이어트를 성공해서 예전 옷들이 다 커버렸는데, 그냥 버리기엔 아깝고 필요한 분께 주고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "임산부 때 입었던 옷이 이제 필요 없어서, 정리하려고 해요.",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "해외에서 사온 브랜드 옷이 스타일에 안 맞아서 좋은 가격에 판매하고 싶은데, 가능할까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "결혼식 때만 입은 정장이 앞으로는 안 입을 것 같아서 상태 좋은 걸 넘기고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "유행이 지나서 더 이상 안 입는 옷들이 있는데, 상태가 괜찮아서 버리기 아까워요. 올릴 수 있을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "아이가 금방 커버려서 한 번도 못 입힌 아동복이 있는데, 필요한 분께 저렴하게 드리고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "온라인으로 샀는데 색상이 마음에 안 들어서 교환 대신 중고로 판매하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "이사 준비 중이라서 옷이 너무 많아요. 상태 좋은 것들 위주로 한꺼번에 판매하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "헬스장을 그만두면서 운동복이 필요 없어졌는데, 거의 새것이라 누군가에게 쓰이면 좋겠어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "최근에 산 신발이 너무 편하고 예뻐서 다른 분들에게 추천하고 싶어요. 어떻게 후기를 남기면 좋을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "솔직히 가격 대비 품질이 아쉬워서 제 경험을 공유해서 다른 분들이 실수하지 않게 하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "사이즈 고민하시는 분들 위해서 제 체형과 착용 사진을 공유하고 싶은데 어떻게 하면 될까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "한 달 정도 사용해보고 후기를 남기고 싶은데, 구매한 지 좀 됐어도 괜찮나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "이 옷을 사기 전에 후기가 없어서 고민했었는데, 제 경험을 다른 분들과 나누고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "세탁 후에 약간 변형이 있었는데, 이런 점도 다른 구매자분들이 알면 좋을 것 같아서 공유할게요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송이 아주 빠르고 포장도 완벽해서 칭찬 후기를 어디에 남기면 좋을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "실제 착용 사진과 함께 자세한 후기를 남겨서 비슷한 체형분들에게 도움이 되고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "교환 과정에서 고객 서비스가 정말 좋았는데, 이런 경험도 후기로 남길 수 있을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "선물로 받은 제품이 너무 마음에 들어서 추천 후기를 꼭 남기고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "생일 선물로 받은 상품권에 숫자 코드가 있는데, 이거 어디에 입력해야 할지 모르겠어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "회사 행사에서 받은 모바일 쿠폰 바코드 번호를 어떻게 등록해야 할까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "부모님이 주신 명절 상품권에 코드가 적혀 있는데, 등록하는 방법이 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "명절에 받은 상품권 여러 장을 한 번에 등록할 수 있는지, 아니면 하나씩 해야 하는지 알고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "경품으로 받은 모바일 상품권 유효기간이 임박해서 빨리 등록해야 하는데, 방법을 알려주세요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "카카오톡 선물함에 있는 상품권 코드 입력하는 곳이 어디인지 알고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "신용카드 포인트로 받은 상품권 코드 등록 방법이 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "직원 복지 포인트로 받은 온라인 상품권, 이 쇼핑몰에서 쓸 수 있는지 확인하고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "결혼 축하로 받은 상품권 여러 장을 합쳐서 등록할 수 있는지 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "중고로 구매한 상품권이 일부 사용된 건지 확인하고 등록하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      }
+    ]
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T16:08:41.351085",
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 62,
+        "accuracy": 0.8857
+      }
+    },
+    "details": [
+      {
+        "input": "주문을 취소하고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "방금 결제한 걸 취소해주실 수 있나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "잘못 주문했는데, 취소할 수 있을까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "환불 요청하고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "반품할게요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사이즈를 바꾸고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "다른 색으로 교환할 수 있을까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송 현황 좀 알려주세요",
+        "predicted_node": "final_generator",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "택배 도착 예정일이 언제예요?",
+        "predicted_node": "final_generator",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "내 주문 목록 좀 보여줄래요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "봄철에 어울리는 옷 추천해줄래?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "데이트룩으로 입기 좋은 코디 좀 찾아줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "출근할 때 입을 정장 보여줄 수 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "운동할 때 입기 편한 바지 추천해줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "캐주얼한 아우터 어떤 거 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "여름에 입기 좋은 시원한 린넨 셔츠 있나?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "겨울철에 따뜻한 패딩 추천해 줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "가성비 좋은 니트 제품 알고 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "요즘 유행하는 와이드 팬츠 좀 보여줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "비즈니스 캐주얼 코디로 어떤 게 좋을까?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 사진이랑 비슷한 제품 좀 찾아줄래? /products/36505.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 스타일의 옷 또 보여줄 수 있어? /products/37940.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거랑 비슷한 제품 있나요? /products/58548.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "SNS에서 본 스타일인데, 비슷한 거 있으면 알려줘 /products/40591.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 옷과 비슷한 거 추천해 줘 /products/52510.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 느낌의 옷 더 찾아줄래? /products/55351.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거랑 비슷한 브랜드 제품은 어디서 사나요? /products/42974.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거와 같은 브랜드의 다른 제품도 있을까? /products/37940.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 사진 속 바지와 비슷한 제품 찾아줘 /products/55351.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 느낌의 코트 있어? /products/36526.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "환불은 어떻게 진행되죠?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송은 얼마나 걸리나요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "교환할 수 있는 기간이 언제까지인가요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "반품할 때 택배비는 누가 내야 해요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "포장을 뜯은 상품도 반품 가능한가요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "제주도에 배송할 때 추가 요금이 있나요?",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "무료 배송이 되려면 어떤 조건이 있어야 해요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "회원 등급에 따라 어떤 혜택이 있지?",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "적립금 사용에 대한 조건이 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "주문한 상품 취소는 몇 일 내에 가능해요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "중고 물건 올리고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "안 쓰는 옷 좀 팔아야겠어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사이즈가 안 맞아서 중고로 내놓고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "옷장 정리하면서 안 입는 것들 처분하려고 해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "거의 새 같은 신발을 판매하려고 해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "중고 판매 등록하는 방법 좀 알려주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사용하지 않는 가방을 팔고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "선물 받은 옷이 안 맞아서 중고로 판매할게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "작아진 옷을 중고로 거래하고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "한 번 입었던 원피스 팔고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "리뷰를 남기고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "후기를 작성하고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "착용 샷과 함께 후기 올릴게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "별점은 어디서 줄 수 있나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "구매 후기를 쓰는 곳이 어디예요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 제품에 대한 평가를 남기고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "주문한 옷에 대한 리뷰 쓸게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사용 후기를 남기려면 어떻게 해야 해?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품 별점과 간단한 평 올리고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송에 대한 후기를 작성하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품권 등록 좀 해주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "기프트카드 번호를 입력하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "모바일 상품권 적용 방법 알려주세요",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "이벤트 당첨 코드는 어디에 넣어야 하나요?",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "회사에서 받은 포인트 코드 등록 부탁해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품권 번호 입력하는 곳이 어디인지 알려줘",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "기프트카드 잔액 어떻게 확인하죠?",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "쿠폰 코드 적용하는 방법이 궁금해요",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "선물 받은 상품권 사용할 수 있게 해주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "종이 상품권 온라인으로 등록할 수 있나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      }
+    ]
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T16:09:39.925493",
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 61,
+        "accuracy": 0.8714
+      }
+    },
+    "details": [
+      {
+        "input": "주문했는데 혹시 취소할 수 있을까요? 필요 없는 것 같아서요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송된 제품이랑 사진이랑 너무 다른데, 반품은 어떻게 하나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "아이에게 맞는 옷을 샀는데 입혀보니 안 맞아서 교환하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "선물로 주문했는데 이미 같은 걸 가지고 있다고 하네요. 포장은 뜯었는데 환불 가능한가요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송 조회를 하고 싶은데, 제 주문 상태가 궁금해요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "사이즈를 잘못 선택한 것 같아서, 변경할 수 있는지 알고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "주문 취소를 하고 싶은데, 아직 배송 전이면 가능할까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "택배를 받았는데 색상이 마음에 안 들어서 다른 걸로 바꿀 수 있나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송이 너무 지연되고 있어서 확인해보고 싶어요. 언제쯤 도착하나요?",
+        "predicted_node": "final_generator",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "결제한 지 얼마 안 됐는데, 환불 절차가 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "이번 주말에 소개팅이 있는데, 세련되면서도 너무 튀지 않는 옷 추천해 줄 수 있어요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "다음 달 제주도로 여행 가는데, 사진 찍을 때 예쁘게 나올 수 있는 편한 옷이 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "요즘 직장 상사가 복장에 대해 신경 쓰라고 하셔서, 캐주얼하지 않으면서도 답답하지 않은 옷을 찾고 있어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "매일 아침 뭘 입을까 고민하는데, 아무거나 걸쳐도 괜찮은 기본템 있으면 좋겠어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구 결혼식에 하객으로 가야 하는데, 나중에 평소에도 입을 수 있는 옷 추천해 줄 수 있어요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "곧 면접이 있는데, 너무 딱딱하지 않으면서 신뢰감을 줄 수 있는 옷이 뭐가 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "체형이 통통한 편인데, 날씬해 보이면서도 편안한 옷 찾고 있어요. 추천해 주세요!",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "40대 남성인데, 너무 젊어 보이지 않고 올드하지 않은 적당한 캐주얼룩 찾아주세요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "키가 작아서 비율이 좋아 보이는 코디가 필요해요. 어떤 스타일이 나을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "재택근무할 때 편하면서도 갑자기 화상회의가 잡혀도 괜찮은 옷 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "어제 길에서 본 옷이 너무 예뻐서 사진을 찍었어요. 이거랑 비슷한 거 찾을 수 있을까요? /products/12345.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "유튜브에서 본 스타일인데 캡처해놓은 게 있어요. 이런 느낌의 옷 찾아주세요! /products/67890.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "인스타그램에서 본 코디인데, 이 사진처럼 비슷한 옷을 추천해주실 수 있나요? /products/54321.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "쇼핑몰 광고에서 본 옷이 너무 마음에 들어요. 이거랑 비슷하면서 가격이 더 저렴한 거 있을까요? /products/98765.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "드라마에서 주인공이 입었던 옷인데, 그 사진으로 비슷한 상품 찾아줄 수 있어요? /products/11111.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구가 입고 온 옷이 진짜 예뻤어요. 사진 찍어왔는데, 같은 건 아니어도 비슷한 느낌의 옷이 있을까요? /products/22222.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외 쇼핑몰에서 본 옷인데, 직구는 좀 부담스러워서 국내에서 비슷한 제품 찾고 있어요. /products/33333.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "잡지에서 잘라둔 코디인데, 이런 느낌의 아이템들 추천해주시면 좋겠어요. /products/44444.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "작년에 구입한 옷인데 절판됐더라고요. 사진만 가지고 있는데, 이와 비슷한 디자인 찾을 수 있을까요? /products/55555.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "핀터레스트에 저장해둔 코디인데, 이 분위기를 그대로 재현할 수 있는 옷이 있을까요? /products/66666.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "여기서 사면 2주 안에 배송된다고 들었는데, 그게 맞는지 확인하고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "택배를 받았는데 제품에 문제가 있어요. 개봉하면 반품이 불가능한지 궁금합니다.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "도서산간 지역에 사는데, 배송비가 추가로 얼마 더 드는지 알고 싶어요.",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "친구가 선물해줬는데 영수증 없이도 교환이나 환불이 가능한지 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "세일 상품은 반품할 때 일반 상품이랑 같은 조건인지 아니면 다른 규정이 있는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외에서 구매한 제품인데 국내에서 반품할 때 절차가 어떻게 되는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "요즘 직구 많이 하는데, 관세 관련 안내가 있는지 여기는 어떤지 궁금해요.",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "적립금이 좀 쌓였는데, 이걸 현금처럼 자유롭게 쓸 수 있는지 알고 싶어요.",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "한 달 넘게 사용했는데, 이런 경우에도 교환이나 환불이 가능한가요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "명절 기간에는 배송이 지연된다고 들었는데, 정확히 언제부터 언제까지 늦어지는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "작년에 구매한 코트가 거의 새것 같은데, 필요한 분께 드리고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "다이어트를 성공해서 예전 옷들이 다 커버렸는데, 그냥 버리기엔 아깝고 필요한 분께 주고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "임산부 때 입었던 옷이 이제 필요 없어서, 정리하려고 해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외에서 사온 브랜드 옷이 스타일에 안 맞아서 좋은 가격에 판매하고 싶은데, 가능할까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "결혼식 때만 입은 정장이 앞으로는 안 입을 것 같아서 상태 좋은 걸 넘기고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "유행이 지나서 더 이상 안 입는 옷들이 있는데, 상태가 괜찮아서 버리기 아까워요. 올릴 수 있을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "아이가 금방 커버려서 한 번도 못 입힌 아동복이 있는데, 필요한 분께 저렴하게 드리고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "온라인으로 샀는데 색상이 마음에 안 들어서 교환 대신 중고로 판매하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "이사 준비 중이라서 옷이 너무 많아요. 상태 좋은 것들 위주로 한꺼번에 판매하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "헬스장을 그만두면서 운동복이 필요 없어졌는데, 거의 새것이라 누군가에게 쓰이면 좋겠어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "최근에 산 신발이 너무 편하고 예뻐서 다른 분들에게 추천하고 싶어요. 어떻게 후기를 남기면 좋을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "솔직히 가격 대비 품질이 아쉬워서 제 경험을 공유해서 다른 분들이 실수하지 않게 하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "사이즈 고민하시는 분들 위해서 제 체형과 착용 사진을 공유하고 싶은데 어떻게 하면 될까요?",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "한 달 정도 사용해보고 후기를 남기고 싶은데, 구매한 지 좀 됐어도 괜찮나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "이 옷을 사기 전에 후기가 없어서 고민했었는데, 제 경험을 다른 분들과 나누고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "세탁 후에 약간 변형이 있었는데, 이런 점도 다른 구매자분들이 알면 좋을 것 같아서 공유할게요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송이 아주 빠르고 포장도 완벽해서 칭찬 후기를 어디에 남기면 좋을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "실제 착용 사진과 함께 자세한 후기를 남겨서 비슷한 체형분들에게 도움이 되고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "교환 과정에서 고객 서비스가 정말 좋았는데, 이런 경험도 후기로 남길 수 있을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "선물로 받은 제품이 너무 마음에 들어서 추천 후기를 꼭 남기고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "생일 선물로 받은 상품권에 숫자 코드가 있는데, 이거 어디에 입력해야 할지 모르겠어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "회사 행사에서 받은 모바일 쿠폰 바코드 번호를 어떻게 등록해야 할까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "부모님이 주신 명절 상품권에 코드가 적혀 있는데, 등록하는 방법이 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "명절에 받은 상품권 여러 장을 한 번에 등록할 수 있는지, 아니면 하나씩 해야 하는지 알고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "경품으로 받은 모바일 상품권 유효기간이 임박해서 빨리 등록해야 하는데, 방법을 알려주세요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "카카오톡 선물함에 있는 상품권 코드 입력하는 곳이 어디인지 알고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "신용카드 포인트로 받은 상품권 코드 등록 방법이 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "직원 복지 포인트로 받은 온라인 상품권, 이 쇼핑몰에서 쓸 수 있는지 확인하고 싶어요.",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "결혼 축하로 받은 상품권 여러 장을 합쳐서 등록할 수 있는지 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "중고로 구매한 상품권이 일부 사용된 건지 확인하고 등록하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      }
+    ]
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T16:18:41.144911",
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 51,
+        "accuracy": 0.7286
+      }
+    },
+    "details": [
+      {
+        "input": "주문을 취소하고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "방금 결제한 걸 취소해주실 수 있나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "잘못 주문했는데, 취소할 수 있을까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "환불 요청하고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "반품할게요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사이즈를 바꾸고 싶어요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "다른 색으로 교환할 수 있을까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송 현황 좀 알려주세요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "택배 도착 예정일이 언제예요?",
+        "predicted_node": "final_generator",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "내 주문 목록 좀 보여줄래요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "봄철에 어울리는 옷 추천해줄래?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "데이트룩으로 입기 좋은 코디 좀 찾아줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "출근할 때 입을 정장 보여줄 수 있어?",
+        "predicted_node": "final_generator",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "운동할 때 입기 편한 바지 추천해줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "캐주얼한 아우터 어떤 거 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "여름에 입기 좋은 시원한 린넨 셔츠 있나?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "겨울철에 따뜻한 패딩 추천해 줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "가성비 좋은 니트 제품 알고 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "요즘 유행하는 와이드 팬츠 좀 보여줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "비즈니스 캐주얼 코디로 어떤 게 좋을까?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 사진이랑 비슷한 제품 좀 찾아줄래? /products/36505.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 스타일의 옷 또 보여줄 수 있어? /products/37940.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거랑 비슷한 제품 있나요? /products/58548.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "SNS에서 본 스타일인데, 비슷한 거 있으면 알려줘 /products/40591.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 옷과 비슷한 거 추천해 줘 /products/52510.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 느낌의 옷 더 찾아줄래? /products/55351.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거랑 비슷한 브랜드 제품은 어디서 사나요? /products/42974.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거와 같은 브랜드의 다른 제품도 있을까? /products/37940.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 사진 속 바지와 비슷한 제품 찾아줘 /products/55351.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 느낌의 코트 있어? /products/36526.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "환불은 어떻게 진행되죠?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송은 얼마나 걸리나요?",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "교환할 수 있는 기간이 언제까지인가요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "반품할 때 택배비는 누가 내야 해요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "포장을 뜯은 상품도 반품 가능한가요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "제주도에 배송할 때 추가 요금이 있나요?",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "무료 배송이 되려면 어떤 조건이 있어야 해요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "회원 등급에 따라 어떤 혜택이 있지?",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "적립금 사용에 대한 조건이 궁금해요.",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "주문한 상품 취소는 몇 일 내에 가능해요?",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "중고 물건 올리고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "안 쓰는 옷 좀 팔아야겠어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "사이즈가 안 맞아서 중고로 내놓고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "옷장 정리하면서 안 입는 것들 처분하려고 해요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "거의 새 같은 신발을 판매하려고 해요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "중고 판매 등록하는 방법 좀 알려주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사용하지 않는 가방을 팔고 싶어요",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "선물 받은 옷이 안 맞아서 중고로 판매할게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "작아진 옷을 중고로 거래하고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "한 번 입었던 원피스 팔고 싶어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "리뷰를 남기고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "후기를 작성하고 싶어",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "착용 샷과 함께 후기 올릴게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "별점은 어디서 줄 수 있나요?",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "구매 후기를 쓰는 곳이 어디예요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 제품에 대한 평가를 남기고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "주문한 옷에 대한 리뷰 쓸게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사용 후기를 남기려면 어떻게 해야 해?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품 별점과 간단한 평 올리고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송에 대한 후기를 작성하고 싶어요",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "상품권 등록 좀 해주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "기프트카드 번호를 입력하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "모바일 상품권 적용 방법 알려주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이벤트 당첨 코드는 어디에 넣어야 하나요?",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "회사에서 받은 포인트 코드 등록 부탁해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품권 번호 입력하는 곳이 어디인지 알려줘",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "기프트카드 잔액 어떻게 확인하죠?",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "쿠폰 코드 적용하는 방법이 궁금해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "선물 받은 상품권 사용할 수 있게 해주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "종이 상품권 온라인으로 등록할 수 있나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      }
+    ]
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T16:40:49.173509",
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 40,
+        "accuracy": 0.5714
+      }
+    },
+    "details": [
+      {
+        "input": "주문했는데 혹시 취소할 수 있을까요? 필요 없는 것 같아서요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송된 제품이랑 사진이랑 너무 다른데, 반품은 어떻게 하나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "아이에게 맞는 옷을 샀는데 입혀보니 안 맞아서 교환하고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "선물로 주문했는데 이미 같은 걸 가지고 있다고 하네요. 포장은 뜯었는데 환불 가능한가요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "배송 조회를 하고 싶은데, 제 주문 상태가 궁금해요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "사이즈를 잘못 선택한 것 같아서, 변경할 수 있는지 알고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "주문 취소를 하고 싶은데, 아직 배송 전이면 가능할까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "택배를 받았는데 색상이 마음에 안 들어서 다른 걸로 바꿀 수 있나요?",
+        "predicted_node": "final_generator",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "배송이 너무 지연되고 있어서 확인해보고 싶어요. 언제쯤 도착하나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "결제한 지 얼마 안 됐는데, 환불 절차가 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "이번 주말에 소개팅이 있는데, 세련되면서도 너무 튀지 않는 옷 추천해 줄 수 있어요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "다음 달 제주도로 여행 가는데, 사진 찍을 때 예쁘게 나올 수 있는 편한 옷이 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "요즘 직장 상사가 복장에 대해 신경 쓰라고 하셔서, 캐주얼하지 않으면서도 답답하지 않은 옷을 찾고 있어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "매일 아침 뭘 입을까 고민하는데, 아무거나 걸쳐도 괜찮은 기본템 있으면 좋겠어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구 결혼식에 하객으로 가야 하는데, 나중에 평소에도 입을 수 있는 옷 추천해 줄 수 있어요?",
+        "predicted_node": "final_generator",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "곧 면접이 있는데, 너무 딱딱하지 않으면서 신뢰감을 줄 수 있는 옷이 뭐가 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "체형이 통통한 편인데, 날씬해 보이면서도 편안한 옷 찾고 있어요. 추천해 주세요!",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "40대 남성인데, 너무 젊어 보이지 않고 올드하지 않은 적당한 캐주얼룩 찾아주세요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "키가 작아서 비율이 좋아 보이는 코디가 필요해요. 어떤 스타일이 나을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "재택근무할 때 편하면서도 갑자기 화상회의가 잡혀도 괜찮은 옷 있을까요?",
+        "predicted_node": "final_generator",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "어제 길에서 본 옷이 너무 예뻐서 사진을 찍었어요. 이거랑 비슷한 거 찾을 수 있을까요? /products/12345.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "유튜브에서 본 스타일인데 캡처해놓은 게 있어요. 이런 느낌의 옷 찾아주세요! /products/67890.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "인스타그램에서 본 코디인데, 이 사진처럼 비슷한 옷을 추천해주실 수 있나요? /products/54321.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "쇼핑몰 광고에서 본 옷이 너무 마음에 들어요. 이거랑 비슷하면서 가격이 더 저렴한 거 있을까요? /products/98765.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "드라마에서 주인공이 입었던 옷인데, 그 사진으로 비슷한 상품 찾아줄 수 있어요? /products/11111.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구가 입고 온 옷이 진짜 예뻤어요. 사진 찍어왔는데, 같은 건 아니어도 비슷한 느낌의 옷이 있을까요? /products/22222.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외 쇼핑몰에서 본 옷인데, 직구는 좀 부담스러워서 국내에서 비슷한 제품 찾고 있어요. /products/33333.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "잡지에서 잘라둔 코디인데, 이런 느낌의 아이템들 추천해주시면 좋겠어요. /products/44444.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "작년에 구입한 옷인데 절판됐더라고요. 사진만 가지고 있는데, 이와 비슷한 디자인 찾을 수 있을까요? /products/55555.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "핀터레스트에 저장해둔 코디인데, 이 분위기를 그대로 재현할 수 있는 옷이 있을까요? /products/66666.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "여기서 사면 2주 안에 배송된다고 들었는데, 그게 맞는지 확인하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "택배를 받았는데 제품에 문제가 있어요. 개봉하면 반품이 불가능한지 궁금합니다.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "도서산간 지역에 사는데, 배송비가 추가로 얼마 더 드는지 알고 싶어요.",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "친구가 선물해줬는데 영수증 없이도 교환이나 환불이 가능한지 궁금해요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "세일 상품은 반품할 때 일반 상품이랑 같은 조건인지 아니면 다른 규정이 있는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외에서 구매한 제품인데 국내에서 반품할 때 절차가 어떻게 되는지 알고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "요즘 직구 많이 하는데, 관세 관련 안내가 있는지 여기는 어떤지 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "적립금이 좀 쌓였는데, 이걸 현금처럼 자유롭게 쓸 수 있는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "한 달 넘게 사용했는데, 이런 경우에도 교환이나 환불이 가능한가요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "명절 기간에는 배송이 지연된다고 들었는데, 정확히 언제부터 언제까지 늦어지는지 알고 싶어요.",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "작년에 구매한 코트가 거의 새것 같은데, 필요한 분께 드리고 싶어요.",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "다이어트를 성공해서 예전 옷들이 다 커버렸는데, 그냥 버리기엔 아깝고 필요한 분께 주고 싶어요.",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "임산부 때 입었던 옷이 이제 필요 없어서, 정리하려고 해요.",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "해외에서 사온 브랜드 옷이 스타일에 안 맞아서 좋은 가격에 판매하고 싶은데, 가능할까요?",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "결혼식 때만 입은 정장이 앞으로는 안 입을 것 같아서 상태 좋은 걸 넘기고 싶어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "유행이 지나서 더 이상 안 입는 옷들이 있는데, 상태가 괜찮아서 버리기 아까워요. 올릴 수 있을까요?",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "아이가 금방 커버려서 한 번도 못 입힌 아동복이 있는데, 필요한 분께 저렴하게 드리고 싶어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "온라인으로 샀는데 색상이 마음에 안 들어서 교환 대신 중고로 판매하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "이사 준비 중이라서 옷이 너무 많아요. 상태 좋은 것들 위주로 한꺼번에 판매하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "헬스장을 그만두면서 운동복이 필요 없어졌는데, 거의 새것이라 누군가에게 쓰이면 좋겠어요.",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "최근에 산 신발이 너무 편하고 예뻐서 다른 분들에게 추천하고 싶어요. 어떻게 후기를 남기면 좋을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "솔직히 가격 대비 품질이 아쉬워서 제 경험을 공유해서 다른 분들이 실수하지 않게 하고 싶어요.",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "사이즈 고민하시는 분들 위해서 제 체형과 착용 사진을 공유하고 싶은데 어떻게 하면 될까요?",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "한 달 정도 사용해보고 후기를 남기고 싶은데, 구매한 지 좀 됐어도 괜찮나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "이 옷을 사기 전에 후기가 없어서 고민했었는데, 제 경험을 다른 분들과 나누고 싶어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "세탁 후에 약간 변형이 있었는데, 이런 점도 다른 구매자분들이 알면 좋을 것 같아서 공유할게요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "배송이 아주 빠르고 포장도 완벽해서 칭찬 후기를 어디에 남기면 좋을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "실제 착용 사진과 함께 자세한 후기를 남겨서 비슷한 체형분들에게 도움이 되고 싶어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "교환 과정에서 고객 서비스가 정말 좋았는데, 이런 경험도 후기로 남길 수 있을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "선물로 받은 제품이 너무 마음에 들어서 추천 후기를 꼭 남기고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "생일 선물로 받은 상품권에 숫자 코드가 있는데, 이거 어디에 입력해야 할지 모르겠어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "회사 행사에서 받은 모바일 쿠폰 바코드 번호를 어떻게 등록해야 할까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "부모님이 주신 명절 상품권에 코드가 적혀 있는데, 등록하는 방법이 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "명절에 받은 상품권 여러 장을 한 번에 등록할 수 있는지, 아니면 하나씩 해야 하는지 알고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "경품으로 받은 모바일 상품권 유효기간이 임박해서 빨리 등록해야 하는데, 방법을 알려주세요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "카카오톡 선물함에 있는 상품권 코드 입력하는 곳이 어디인지 알고 싶어요.",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "신용카드 포인트로 받은 상품권 코드 등록 방법이 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "직원 복지 포인트로 받은 온라인 상품권, 이 쇼핑몰에서 쓸 수 있는지 확인하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "결혼 축하로 받은 상품권 여러 장을 합쳐서 등록할 수 있는지 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "중고로 구매한 상품권이 일부 사용된 건지 확인하고 등록하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
         "correct": true
       }
     ]
