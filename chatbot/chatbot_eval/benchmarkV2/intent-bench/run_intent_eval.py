@@ -56,13 +56,14 @@ load_dotenv(_PROJECT_ROOT / ".env")
 # ── 프로젝트 import (dotenv 로드 이후) ─────────────────────
 
 import httpx  # noqa: E402
-from langchain_core.messages import HumanMessage  # noqa: E402
+from langchain_core.messages import HumanMessage, SystemMessage  # noqa: E402
 from langchain_openai import ChatOpenAI  # noqa: E402
 from pydantic import SecretStr  # noqa: E402
 
 from chatbot.src.core.config import settings  # noqa: E402
 import chatbot.src.graph.llm_providers as _llm_providers  # noqa: E402
-from chatbot.src.graph.nodes.planner import planner_node  # noqa: E402
+from chatbot.src.graph.llm_providers import make_chat_llm  # noqa: E402
+from chatbot.src.graph.nodes.planner import planner_node, PLANNER_SYSTEM_PROMPT  # noqa: E402
 from chatbot.src.schemas.planner import TaskIntent  # noqa: E402
 
 
@@ -135,6 +136,40 @@ def restart_ollama(model: str, base_url: str = "http://localhost:11434") -> None
     print(f"  [Ollama 재시작 완료] 메모리 초기화됨")
 
 
+def _extract_intents_from_text(text: str) -> list[str]:
+    """Raw 텍스트에서 TaskIntent 키워드를 매칭하여 추출."""
+    text_upper = text.upper()
+    found = []
+    for intent in TaskIntent:
+        if intent == TaskIntent.GENERAL_CHAT:
+            continue
+        if intent.value in text_upper:
+            found.append(intent.value)
+    return found
+
+
+def _retry_with_raw_llm(
+    user_input: str,
+    model: str,
+    provider: str,
+) -> list[str]:
+    """구조화된 출력 파싱 실패 시, raw LLM 호출로 TaskIntent 추출 재시도."""
+    try:
+        llm = make_chat_llm(provider=provider, model=model, temperature=0)
+        messages = [
+            SystemMessage(content=PLANNER_SYSTEM_PROMPT),
+            HumanMessage(content=user_input),
+        ]
+        response = llm.invoke(messages)
+        raw_text = response.content if hasattr(response, "content") else str(response)
+        intents = _extract_intents_from_text(raw_text)
+        if intents:
+            return [INTENT_TO_NODE.get(i, "final_generator") for i in intents]
+    except Exception:
+        pass
+    return []
+
+
 def predict_nodes(
     user_input: str,
     model: str = "gpt-4o-mini",
@@ -155,6 +190,13 @@ def predict_nodes(
         intent_str = intent.value if isinstance(intent, TaskIntent) else str(intent)
         node = INTENT_TO_NODE.get(intent_str, "final_generator")
         nodes.append(node)
+
+    # fallback: GENERAL_CHAT(final_generator)만 반환된 경우 raw LLM 호출로 재시도
+    if nodes == ["final_generator"]:
+        retry_nodes = _retry_with_raw_llm(user_input, model, provider)
+        if retry_nodes:
+            return retry_nodes
+
     return nodes
 
 
@@ -195,6 +237,7 @@ def run_evaluation(
     num_samples: int | None = None,
     batch_size: int | None = None,
     parallel: int = 1,
+    difficulty: str | None = None,
 ) -> dict:
     """전체 평가 실행."""
     if result_path is None:
@@ -203,12 +246,16 @@ def run_evaluation(
         result_path = result_dir / "result.json"
 
     samples = load_dataset(dataset_path)
+    if difficulty:
+        samples = [s for s in samples if s.get("difficulty") == difficulty]
     if num_samples:
         samples = samples[:num_samples]
 
     model_label = f"{provider}/{model}"
     print("=== Supervisor 라우팅 평가 시작 ===")
     print(f"  모델: {model_label}")
+    if difficulty:
+        print(f"  난이도 필터: {difficulty}")
     print(f"  샘플 수: {len(samples)}")
     if parallel > 1:
         print(f"  병렬 처리: {parallel}개씩")
@@ -279,6 +326,7 @@ def run_evaluation(
             correct = evaluate_sample(sample, predicted_nodes)
 
             pred_node = predicted_nodes[0] if predicted_nodes else "NONE"
+            difficulty = sample.get("difficulty", "easy")
             all_pred_nodes.append(pred_node)
             all_exp_nodes.append(sample["expected_node"])
 
@@ -286,12 +334,14 @@ def run_evaluation(
                 "input": sample["input"],
                 "predicted_node": pred_node,
                 "expected_node": sample["expected_node"],
+                "difficulty": difficulty,
                 "correct": correct,
             })
 
             status = "O" if correct else "X"
             print(
                 f"  [{idx}/{len(samples)}] {status}  "
+                f"[{difficulty}] "
                 f"기대: {sample['expected_node']}  예측: {pred_node}  "
                 f"입력: {sample['input'][:50]}..."
             )
@@ -302,6 +352,18 @@ def run_evaluation(
 
     total = len(details)
     correct_total = sum(1 for d in details if d["correct"])
+
+    # 난이도별 통계
+    diff_stats: dict[str, dict] = {}
+    for diff_level in ("easy", "hard"):
+        diff_samples = [d for d in details if d.get("difficulty") == diff_level]
+        if diff_samples:
+            diff_correct = sum(1 for d in diff_samples if d["correct"])
+            diff_stats[diff_level] = {
+                "total": len(diff_samples),
+                "correct": diff_correct,
+                "accuracy": round(diff_correct / len(diff_samples), 4),
+            }
 
     # 노드별 F1 (단일 샘플 기준)
     per_node_f1: dict = {}
@@ -340,6 +402,7 @@ def run_evaluation(
         "model": model_label,
         "timestamp": datetime.now().isoformat(),
         "elapsed_seconds": round(elapsed, 2),
+        "difficulty_filter": difficulty,
         "total_samples": total,
         "metrics": {
             "accuracy": round(correct_total / total, 4) if total else 0.0,
@@ -347,6 +410,7 @@ def run_evaluation(
             "macro_f1": round(macro_f1, 4),
             "confusion_matrix": confusion,
         },
+        "difficulty_breakdown": diff_stats,
         "summary": {
             "total": total,
             "correct": correct_total,
@@ -368,7 +432,9 @@ def run_evaluation(
     result_data = {
         "model": model_label,
         "timestamp": result["timestamp"],
+        "difficulty_filter": difficulty,
         "total_samples": total,
+        "difficulty_breakdown": diff_stats,
         "details": details,
     }
     data_history: list[dict] = []
@@ -387,8 +453,13 @@ def run_evaluation(
     print(f"  모델: {model_label}")
     print(f"  소요 시간: {elapsed:.1f}초")
     print(f"\n  [라우팅 정확도]")
-    print(f"    정확도: {result['metrics']['accuracy']:.2%} ({correct_total}/{total})")
+    print(f"    전체 정확도: {result['metrics']['accuracy']:.2%} ({correct_total}/{total})")
     print(f"    Macro F1: {macro_f1:.4f}")
+
+    if diff_stats:
+        print(f"\n  [난이도별 정확도]")
+        for diff_level, stats in sorted(diff_stats.items()):
+            print(f"    {diff_level}: {stats['accuracy']:.2%} ({stats['correct']}/{stats['total']})")
 
     if per_node_f1:
         print(f"\n  [노드별 F1]")
@@ -445,6 +516,11 @@ def run_evaluation(
 #   python run_intent_eval.py --parallel 10                          # OpenAI에 10개씩 동시 요청
 #   python run_intent_eval.py --parallel 5 --num-samples 50          # 5개씩 병렬로 50개만 평가
 #   python run_intent_eval.py --provider vllm --parallel 5           # Ollama에 5개씩 동시 요청, 매 청크 후 재시작
+#
+# [난이도 필터 (easy | hard)]
+#   python run_intent_eval.py --difficulty easy                      # easy 질문만 평가
+#   python run_intent_eval.py --difficulty hard                      # hard 질문만 평가
+#   python run_intent_eval.py --difficulty hard --parallel 10        # hard 질문만 10개씩 병렬 평가
 
 
 def main():
@@ -478,6 +554,10 @@ def main():
         help="병렬 처리 수 (기본: 1, 최대: 10)",
         metavar="[1-10]",
     )
+    parser.add_argument(
+        "--difficulty", type=str, default=None, choices=["easy", "hard"],
+        help="난이도 필터 (easy | hard, 기본: 전체)",
+    )
     args = parser.parse_args()
 
     # vllm 사용 시 Ollama 설정 고정
@@ -509,6 +589,7 @@ def main():
         num_samples=args.num_samples,
         batch_size=args.batch_size,
         parallel=args.parallel,
+        difficulty=args.difficulty,
     )
 
 
