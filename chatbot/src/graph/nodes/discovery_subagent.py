@@ -19,10 +19,11 @@ Discovery SubAgent 노드.
 
 import re
 import base64
+from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
-from langchain_core.messages import SystemMessage, AIMessage
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
 
 from chatbot.src.graph.state import GlobalAgentState
@@ -35,6 +36,10 @@ from chatbot.src.tools.recommendation_tools import (
 )
 from chatbot.src.infrastructure.openai import get_openai_client
 from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR
+
+
+CURRENT_FILE = Path(__file__).resolve()
+REPO_ROOT = CURRENT_FILE.parents[4]
 
 # ── 도구 목록 (TEXT 경로) ──────────────────────────────────
 
@@ -54,6 +59,10 @@ DISCOVERY_SYSTEM_PROMPT = """당신은 MOYEO 쇼핑몰의 Discovery SubAgent입�
 - `recommend_clothes`      : 카테고리/용도/계절 조합의 스타일 추천.
   예) "여름에 입을 캐주얼 상의", "파티용 드레스"
   단, 카테고리(상의/하의/원피스 등)가 불명확하면 도구를 호출하지 말고 먼저 질문하세요.
+
+[중요]
+- 사용자가 상품명/색상/카테고리를 이미 말했으면 되묻지 말고 먼저 `search_by_text_clip`을 호출하세요.
+- 한국어 질의도 바로 검색 도구를 호출해도 됩니다.
 
 [User Context]
 {user_context}
@@ -79,6 +88,14 @@ def _extract_top_k_from_text(text: str | None) -> int | None:
 
 
 def _load_image_bytes(image_url: str) -> bytes:
+    raw_path = Path(image_url).expanduser()
+    if raw_path.exists():
+        return raw_path.read_bytes()
+
+    repo_relative_path = (REPO_ROOT / image_url).resolve()
+    if repo_relative_path.exists():
+        return repo_relative_path.read_bytes()
+
     parsed = urlparse(image_url)
     if parsed.path.startswith("/uploads/chatbot/"):
         filename = parsed.path.rsplit("/", 1)[-1]
@@ -126,12 +143,92 @@ def discovery_subagent_node(state: GlobalAgentState) -> dict:
         return _text_search_pipeline(state, provider, model, task)
 
 
+def run_discovery_pipeline(
+    user_query: str,
+    image_url: str | None = None,
+    provider: str = "openai",
+    model: str = "gpt-4o-mini",
+    user_info: dict | None = None,
+) -> dict:
+    """평가/배치 실행용 Discovery 파이프라인 래퍼."""
+    task = (
+        TaskIntent.SEARCH_SIMILAR_IMAGE
+        if image_url
+        else TaskIntent.SEARCH_SIMILAR_TEXT
+    )
+
+    message_content = (user_query or "").strip()
+    if image_url:
+        if message_content:
+            message_content = f"{message_content}\n[image_url]: {image_url}"
+        else:
+            message_content = f"[image_url]: {image_url}"
+
+    state: GlobalAgentState = {
+        "messages": [HumanMessage(content=message_content)],
+        "pending_tasks": [],
+        "completed_tasks": [],
+        "current_active_task": task,
+        "order_context": {},
+        "search_context": {
+            "search_query": (user_query or "").strip(),
+            **({"image_url": image_url} if image_url else {}),
+        },
+        "ui_action_required": None,
+        "user_info": user_info or {"id": 1, "name": "평가 사용자"},
+        "llm_provider": provider,
+        "llm_model": model,
+        "agent_results": {},
+        "guardrail_passed": True,
+        "conversation_id": "discovery-eval",
+        "turn_id": "discovery-eval-turn",
+        "conversation_summary": None,
+    }
+
+    result = discovery_subagent_node(state)
+    search_context = {**state.get("search_context", {}), **result.get("search_context", {})}
+    messages = result.get("messages", [])
+    agent_results = result.get("agent_results", {})
+    answer_content = _get_last_ai_content(messages) or str(agent_results.get(task, "") or "")
+
+    return {
+        "task": task,
+        "messages": messages,
+        "search_context": search_context,
+        "retrieved_products": list(search_context.get("retrieved_products", [])),
+        "ui_action_required": result.get("ui_action_required"),
+        "answer_content": answer_content,
+        "agent_results": agent_results,
+    }
+
+
 # ── TEXT 경로 ──────────────────────────────────────────────
 
 def _text_search_pipeline(
     state: GlobalAgentState, provider: str, model: str, task: str | None
 ) -> dict:
     """텍스트 기반 상품 검색: ReAct 에이전트로 도구 선택."""
+    latest_query = _extract_latest_user_query(state.get("messages", []))
+    direct_result = _run_direct_text_search(latest_query)
+    if direct_result is not None:
+        retrieved_products = direct_result.get("products", [])
+        answer_text = _build_direct_search_answer(latest_query, retrieved_products)
+        answer_message = AIMessage(content=answer_text)
+        return {
+            "messages": [answer_message],
+            "search_context": {
+                **state.get("search_context", {}),
+                "search_query": latest_query,
+                "retrieved_products": retrieved_products,
+            },
+            "ui_action_required": "show_product_list" if retrieved_products else None,
+            "completed_tasks": state.get("completed_tasks", []) + ([task] if task else []),
+            "agent_results": {
+                **state.get("agent_results", {}),
+                task: answer_text,
+            },
+        }
+
     user_info = state.get("user_info", {})
     user_context = (
         f"User ID: {user_info.get('id', 'unknown')}, "
@@ -382,3 +479,44 @@ def _detect_image_search_mode(query: str) -> str:
         if keyword in lowered:
             return "opposite"
     return "similar"
+
+
+def _should_direct_text_search(query: str) -> bool:
+    if not query:
+        return False
+
+    direct_keywords = [
+        "추천", "찾아", "보여", "백팩", "가방", "신발", "운동화", "스포츠화",
+        "셔츠", "티셔츠", "원피스", "드레스", "자켓", "조끼", "청바지", "바지",
+        "쿠르타", "쿠르티", "모자", "비니",
+    ]
+    return any(keyword in query for keyword in direct_keywords)
+
+
+def _run_direct_text_search(query: str) -> dict | None:
+    if not _should_direct_text_search(query):
+        return None
+
+    try:
+        result = search_by_text_clip.invoke({"query": query, "top_k": 5})
+    except Exception:
+        return None
+
+    if not isinstance(result, dict):
+        return None
+    return result
+
+
+def _build_direct_search_answer(query: str, products: list[dict]) -> str:
+    if not products:
+        return f"'{query}' 조건으로 상품을 찾지 못했습니다. 다른 색상이나 표현으로 다시 찾아볼게요."
+
+    first_product = products[0]
+    name = str(first_product.get("name") or "상품")
+    category = str(first_product.get("category") or "").strip()
+    color = str(first_product.get("color") or "").strip()
+
+    details = [part for part in [category, color] if part]
+    if details:
+        return f"'{query}'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 {name} ({', '.join(details)})입니다."
+    return f"'{query}'와 관련된 상품을 찾았습니다. 가장 가까운 결과는 {name}입니다."
