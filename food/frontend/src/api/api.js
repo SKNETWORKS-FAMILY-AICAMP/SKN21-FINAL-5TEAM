@@ -1,4 +1,5 @@
-const BASE_URL = "http://localhost:8000/api";
+const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000";
+const BASE_URL = `${API_BASE}/api`;
 
 async function parseJSON(response) {
   const text = await response.text();
@@ -62,4 +63,48 @@ export async function fetchProducts() {
   const response = await fetch(`${BASE_URL}/products/`);
   const payload = await response.json().catch(() => null);
   return payload;
+}
+
+export async function fetchOrders() {
+  const response = await fetch(`${BASE_URL}/orders/`, {
+    method: "GET",
+    credentials: "include",
+  });
+  const { ok, data } = await parseJSON(response);
+
+  if (!ok) {
+    throw new Error(data?.detail || "주문 정보를 불러오는 데 실패했습니다.");
+  }
+
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchOrderDetail(orderId) {
+  const response = await fetch(`${BASE_URL}/orders/${orderId}/`, {
+    method: "GET",
+    credentials: "include",
+  });
+  const { ok, data } = await parseJSON(response);
+
+  if (!ok) {
+    throw new Error(data?.detail || "주문 상세를 불러오는 데 실패했습니다.");
+  }
+
+  return data;
+}
+
+export async function performOrderAction(orderId, action, extra = {}) {
+  const response = await fetch(`${BASE_URL}/orders/${orderId}/actions/`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...extra }),
+  });
+  const { ok, data } = await parseJSON(response);
+
+  if (!ok) {
+    throw new Error(data?.detail || "주문 요청 처리 중 오류가 발생했습니다.");
+  }
+
+  return data;
 }
