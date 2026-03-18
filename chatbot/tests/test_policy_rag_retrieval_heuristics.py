@@ -67,6 +67,20 @@ def test_build_query_variants_adds_payment_cancel_and_bank_refund_variants() -> 
     assert "무통장입금 주문 취소 환불 금액 입금 시점" in variants
 
 
+def test_build_query_variants_adds_tracking_and_address_change_variants() -> None:
+    tracking_variants = _build_query_variants(
+        "송장 번호나 배송 흐름은 어디서 볼 수 있어요?",
+        "송장 번호 배송 흐름 확인 방법",
+    )
+    assert "배송 조회 방법 송장 흐름 확인 경로" in tracking_variants
+
+    address_variants = _build_query_variants(
+        "배송 준비 단계에서는 받는 주소를 바꿀 수 있나요?",
+        "배송 준비 단계 주소 변경 가능 여부",
+    )
+    assert "배송지 주소 변경 가능 여부 송장 조회 상품준비중" in address_variants
+
+
 def test_infer_policy_categories_prioritizes_payment_for_payment_cancel_query() -> None:
     categories = _infer_policy_categories(
         "결제 후 며칠 안에 취소 가능해요?",
@@ -295,4 +309,82 @@ def test_policy_adjustment_prefers_return_doc_for_gift_return_query() -> None:
 
     assert _score_policy_adjustment(query, return_doc, "취소/교환/반품") > _score_policy_adjustment(
         query, difficult_doc, "취소/교환/반품"
+    )
+
+
+def test_policy_adjustment_prefers_tracking_guide_over_tracking_issue_doc() -> None:
+    query = "송장 번호나 배송 흐름은 어디서 볼 수 있어요?"
+    guide_doc = {
+        "collection": settings.COLLECTION_FAQ,
+        "text": "일반 배송 조회는 어떻게 하나요? 송장 흐름과 배송 조회 경로를 안내합니다.",
+        "meta": {
+            "question": "일반 배송 조회는 어떻게 하나요?",
+            "main_category": "배송",
+            "summary": "송장 흐름과 배송 조회 경로를 안내합니다.",
+        },
+    }
+    issue_doc = {
+        "collection": settings.COLLECTION_FAQ,
+        "text": "송장 흐름 확인이 안되고 있어요. 송장 흐름 오류 상황을 안내합니다.",
+        "meta": {
+            "question": "송장 흐름 확인이 안되고 있어요.",
+            "main_category": "배송",
+            "summary": "송장 흐름 오류 상황을 안내합니다.",
+        },
+    }
+
+    assert _score_policy_adjustment(query, guide_doc, "배송") > _score_policy_adjustment(
+        query, issue_doc, "배송"
+    )
+
+
+def test_policy_adjustment_prefers_defect_doc_for_compensation_query() -> None:
+    query = "제품이 불량이면 어떤 보상 기준이 적용돼요?"
+    defect_doc = {
+        "collection": settings.COLLECTION_FAQ,
+        "text": "상품을 받았는데 불량 같아요 어떻게 하나요? 불량 상품 교환/환불 절차를 안내합니다.",
+        "meta": {
+            "question": "상품을 받았는데 불량 같아요 어떻게 하나요?",
+            "main_category": "상품/AS 문의",
+            "summary": "불량 상품 교환/환불 절차를 안내합니다.",
+        },
+    }
+    fee_doc = {
+        "collection": settings.COLLECTION_FAQ,
+        "text": "교환/반품 비용은 무료인가요? 교환 배송비와 반품 배송비 부담 기준을 안내합니다.",
+        "meta": {
+            "question": "교환/반품 비용은 무료인가요?",
+            "main_category": "취소/교환/반품",
+            "summary": "교환 배송비와 반품 배송비 부담 기준을 안내합니다.",
+        },
+    }
+
+    assert _score_policy_adjustment(query, defect_doc, "상품/AS 문의") > _score_policy_adjustment(
+        query, fee_doc, "상품/AS 문의"
+    )
+
+
+def test_policy_adjustment_prefers_payment_method_doc_over_discount_doc() -> None:
+    query = "결제할 때 어떤 수단을 사용할 수 있나요?"
+    payment_doc = {
+        "collection": settings.COLLECTION_FAQ,
+        "text": "결제수단결제 방법에는 어떤 것들이 있나요? 카드, 무통장입금, 계좌이체를 안내합니다.",
+        "meta": {
+            "question": "결제수단결제 방법에는 어떤 것들이 있나요?",
+            "main_category": "구매/결제",
+            "summary": "카드, 무통장입금, 계좌이체를 안내합니다.",
+        },
+    }
+    discount_doc = {
+        "collection": settings.COLLECTION_FAQ,
+        "text": "구매 시 사용할 수 있는 할인 혜택은 어떤 게 있나요? 쿠폰과 적립금을 안내합니다.",
+        "meta": {
+            "question": "구매 시 사용할 수 있는 할인 혜택은 어떤 게 있나요?",
+            "main_category": "구매/결제",
+            "summary": "쿠폰과 적립금을 안내합니다.",
+        },
+    }
+
+    assert _score_policy_adjustment(query, payment_doc, "주문/결제") > _score_policy_adjustment(
+        query, discount_doc, "주문/결제"
     )

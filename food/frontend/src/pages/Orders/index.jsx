@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import styles from "./orders.module.css";
-
-const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000";
+import { fetchOrders, performOrderAction } from "../../api/api";
+import { useAuth } from "../../context/AuthContext";
 
 const ORDER_STATUS_MAP = {
   pending: "결제 대기",
@@ -10,6 +10,7 @@ const ORDER_STATUS_MAP = {
   shipping: "배송 중",
   shipped: "배송 완료",
   delivered: "배송 완료",
+  exchange_requested: "교환 접수",
   cancelled: "주문 취소",
   refunded: "환불 완료",
 };
@@ -21,6 +22,7 @@ const STATUS_COLOR_MAP = {
   shipping: "#00bcd4",
   shipped: "#3f51b5",
   delivered: "#4caf50",
+  exchange_requested: "#8e24aa",
   cancelled: "#f44336",
   refunded: "#795548",
 };
@@ -33,11 +35,18 @@ const statusOptions = [
   "shipping",
   "shipped",
   "delivered",
+  "exchange_requested",
   "cancelled",
   "refunded",
 ];
 
+const normalizeOrder = (order) => ({
+  ...order,
+  created_at: new Date(order.created_at),
+});
+
 const Orders = () => {
+  const { isAuthenticated } = useAuth();
   const [orders, setOrders] = useState([]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -49,22 +58,21 @@ const Orders = () => {
 
   useEffect(() => {
     let isMounted = true;
+
+    if (!isAuthenticated) {
+      setOrders([]);
+      setError("주문 조회는 로그인 후 이용할 수 있습니다.");
+      setLoading(false);
+      return () => {
+        isMounted = false;
+      };
+    }
+
     setLoading(true);
-    fetch(`${API_BASE}/api/orders/`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("주문 정보를 불러오는 데 실패했습니다.");
-        }
-        return response.json();
-      })
+    fetchOrders()
       .then((data) => {
         if (isMounted) {
-          setOrders(
-            data.map((order) => ({
-              ...order,
-              created_at: new Date(order.created_at),
-            }))
-          );
+          setOrders(data.map(normalizeOrder));
           setError(null);
         }
       })
@@ -82,7 +90,7 @@ const Orders = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isAuthenticated]);
 
   const filteredOrders = useMemo(() => {
     if (statusFilter === "all") {
@@ -99,6 +107,24 @@ const Orders = () => {
     setReviewRating(0);
     setReviewBody("");
     setReviewOrder(null);
+  };
+
+  const handleOrderAction = async (orderId, action) => {
+    try {
+      const payload = await performOrderAction(orderId, action);
+      if (payload?.order) {
+        const normalized = normalizeOrder(payload.order);
+        setOrders((prev) =>
+          prev.map((order) => (order.id === normalized.id ? normalized : order))
+        );
+        if (detailOrder?.id === normalized.id) {
+          setDetailOrder(normalized);
+        }
+      }
+      alert(payload?.message ?? "요청이 처리되었습니다.");
+    } catch (err) {
+      alert(err.message ?? "요청 처리 중 오류가 발생했습니다.");
+    }
   };
 
   if (loading) {
@@ -242,14 +268,28 @@ const Orders = () => {
                       리뷰 작성
                     </button>
                   )}
-                  {["paid", "preparing", "shipping"].includes(order.status) && (
+                  {order.available_actions?.can_cancel && (
                     <button
                       className={styles.cancelButton}
-                      onClick={() =>
-                        alert(`${order.id}번 주문 취소 요청을 서버에 보냈습니다.`)
-                      }
+                      onClick={() => handleOrderAction(order.id, "cancel")}
                     >
                       주문 취소
+                    </button>
+                  )}
+                  {order.available_actions?.can_refund && (
+                    <button
+                      className={styles.primaryButton}
+                      onClick={() => handleOrderAction(order.id, "refund")}
+                    >
+                      환불 요청
+                    </button>
+                  )}
+                  {order.available_actions?.can_exchange && (
+                    <button
+                      className={styles.primaryButton}
+                      onClick={() => handleOrderAction(order.id, "exchange")}
+                    >
+                      교환 요청
                     </button>
                   )}
                 </div>

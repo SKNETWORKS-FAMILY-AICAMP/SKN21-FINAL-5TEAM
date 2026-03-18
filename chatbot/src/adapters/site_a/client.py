@@ -21,6 +21,26 @@ class SiteAClient:
                 response = await client.request(method, url, headers=req_headers, params=params, json=json)
                 response.raise_for_status()
                 return response.json() if response.text else None
+            except httpx.HTTPStatusError as exc:
+                response = exc.response
+                message = None
+                try:
+                    payload = response.json()
+                    message = payload.get("detail") or payload.get("message")
+                except Exception:
+                    message = response.text or None
+
+                code = {
+                    400: "INVALID_INPUT",
+                    401: "UNAUTHORIZED",
+                    403: "FORBIDDEN",
+                    404: "NOT_FOUND",
+                }.get(response.status_code, "SITE_A_UPSTREAM_ERROR")
+                raise AdapterError(
+                    code,
+                    message or f"요청 실패: {exc}",
+                    {"url": url, "status_code": response.status_code},
+                ) from exc
             except httpx.HTTPError as exc:
                 raise AdapterError("SITE_A_UPSTREAM_ERROR", f"요청 실패: {exc}", {"url": url}) from exc
 
@@ -39,10 +59,21 @@ class SiteAClient:
     async def get_order(self, input_data: GetOrderStatusInput, headers: Dict[str, str]) -> Any:
         return await self._request("GET", f"/api/orders/{input_data.orderId}/", headers=headers)
 
+    async def list_orders(self, headers: Dict[str, str]) -> Any:
+        return await self._request("GET", "/api/orders/", headers=headers)
+
     async def get_delivery(self, input_data: GetDeliveryTrackingInput, headers: Dict[str, str]) -> Any:
         # site-a는 get_order와 동일한 엔드포인트 사용
         return await self.get_order(GetOrderStatusInput(orderId=input_data.orderId), headers)
 
     async def submit_order_action(self, input_data: SubmitOrderActionInput, headers: Dict[str, str]) -> Any:
-        action = "status" if input_data.actionType == "exchange" else input_data.actionType.value
-        return await self._request("POST", f"/api/orders/{input_data.orderId}/actions/", headers=headers, json={"action": action})
+        payload: Dict[str, Any] = {"action": input_data.actionType.value}
+        if input_data.reasonText:
+            payload["reason"] = input_data.reasonText
+
+        return await self._request(
+            "POST",
+            f"/api/orders/{input_data.orderId}/actions/",
+            headers=headers,
+            json=payload,
+        )

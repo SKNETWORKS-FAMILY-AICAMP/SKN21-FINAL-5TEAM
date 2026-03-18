@@ -245,12 +245,16 @@ def _score_policy_adjustment(query: str, passage: dict[str, Any], category: str 
     ):
         score -= 2.0
 
+    if query_has("송장", "배송 흐름") and query_has("어디", "경로", "확인", "볼 수", "조회"):
+        if doc_has("송장 흐름 확인이 안되고 있어요", "안되고 있어요"):
+            score -= 2.0
+
     if query_has("a/s", "as") and query_has("문의", "문의해야", "어디") and doc_has(
         "진행 상황", "확인할 수 있나요?"
     ):
         score -= 2.0
 
-    if query_has("결제수단", "결제 방법") and query_has("어떤", "종류", "쓸 수", "있어") and doc_has(
+    if query_has("결제수단", "결제 방법", "결제 수단") and query_has("어떤", "종류", "쓸 수", "있어", "사용할 수") and doc_has(
         "가상 계좌", "다른 결제 수단으로 선택이 되지 않아요"
     ):
         score -= 1.8
@@ -272,6 +276,8 @@ def _score_policy_adjustment(query: str, passage: dict[str, Any], category: str 
             score -= 2.2
         if doc_has("상품을 받았는데 반품하고 싶어요."):
             score -= 1.2
+        if doc_has("상품을 받았는데 불량 같아요", "불량(하자)", "오배송"):
+            score += 1.6
 
     keyword_rules = [
         (("제주", "도서산간"), ("제주", "도서산간"), 1.5),
@@ -294,7 +300,7 @@ def _score_policy_adjustment(query: str, passage: dict[str, Any], category: str 
         if query_has(*query_keywords):
             score += weight if doc_has(*doc_keywords) else -(weight * 0.2)
 
-    if query_has("결제수단", "무통장", "신용카드", "계좌이체"):
+    if query_has("결제수단", "결제 수단", "무통장", "신용카드", "계좌이체"):
         if collection == settings.COLLECTION_FAQ and doc_has("결제수단", "결제 방법"):
             score += 2.8
         if article_no == "11":
@@ -325,11 +331,19 @@ def _score_policy_adjustment(query: str, passage: dict[str, Any], category: str 
         if doc_has("배송 완료 상품을 받지 못했어요", "일부만 도착"):
             score -= 1.2
 
+    if query_has("송장", "배송 흐름") and query_has("어디", "경로", "볼 수", "확인", "조회"):
+        if doc_has("일반 배송 조회는 어떻게 하나요?", "배송 조회 경로", "송장 흐름"):
+            score += 2.6
+        if doc_has("송장 흐름 확인이 안되고 있어요."):
+            score -= 1.6
+
     if query_has("제주", "도서산간") and query_has("배송비", "추가"):
         if doc_has("제주", "도서산간", "추가 배송비"):
             score += 2.3
         if article_no == "13" and str(meta.get("paragraph", "")) == "2":
             score += 2.0
+        if doc_has("옵션별로 배송 방법이 다를 수 있나요?"):
+            score -= 1.3
 
     if query_has("교환", "반품", "환불") and query_has("배송비", "반품비", "택배비", "부담", "누가", "차감", "빠지"):
         if doc_has("교환/반품 비용은 무료인가요?", "반품 배송비", "교환 배송비"):
@@ -346,15 +360,19 @@ def _score_policy_adjustment(query: str, passage: dict[str, Any], category: str 
 
     if query_has("사은품") and query_has("반품", "동봉", "같이"):
         if doc_has("상품을 받았는데 반품하고 싶어요.", "사은품", "구성품"):
-            score += 2.2
+            score += 2.8
         if doc_has("교환(반품)이 어려운 경우가 있나요?"):
             score -= 1.8
+        if doc_has("상품을 받았는데 불량 같아요 어떻게 하나요?"):
+            score -= 2.0
 
     if query_has("반품") and query_has("기간", "며칠", "언제"):
         if doc_has("상품을 받았는데 반품하고 싶어요.", "받은 날로부터", "기간"):
             score += 2.4
         if article_no == "15" and str(meta.get("paragraph", "")) == "1":
             score += 2.0
+        if doc_has("상품은 보냈는데 언제 환불 되나요?", "상품은 보냈는데 언제 교환상품이 배송 되나요?"):
+            score -= 1.6
 
     if query_has("a/s", "as") and query_has("문의", "어디", "문의처"):
         if doc_has("a/s가 필요한 경우 어떻게 해야", "제휴 브랜드 상품은 a/s가 가능한가요?"):
@@ -378,7 +396,7 @@ def _score_policy_adjustment(query: str, passage: dict[str, Any], category: str 
 
     if query_has("하자", "불량"):
         if doc_has("상품을 받았는데 불량 같아요", "불량(하자)", "불량, 오배송"):
-            score += 2.0
+            score += 2.4
         if article_no == "15" and str(meta.get("paragraph", "")) == "4":
             score += 1.8
         if article_no == "16" and str(meta.get("paragraph", "")) == "3":
@@ -388,9 +406,9 @@ def _score_policy_adjustment(query: str, passage: dict[str, Any], category: str 
                 score += 2.4
         if query_has("보상", "어떻게 돼", "어떻게되", "처리"):
             if doc_has("상품을 받았는데 불량 같아요", "불량(하자)", "오배송"):
-                score += 1.8
+                score += 2.4
             if article_no in {"15", "16"}:
-                score += 1.2
+                score += 1.6
 
     if query_has("무통장", "무통장입금") and query_has("환불", "취소"):
         if doc_has("환불 금액", "입금되나요", "결제수단마다 환불 기간"):
@@ -406,17 +424,24 @@ def _score_policy_adjustment(query: str, passage: dict[str, Any], category: str 
         if doc_has("주문 취소환불 금액은 언제 입금되나요?"):
             score += 2.2
 
-    if query_has("결제수단", "결제 방법") and query_has("어떤", "종류", "쓸 수", "있어"):
+    if (
+        query_has("결제수단", "결제 수단", "결제 방법")
+        or (query_has("결제") and query_has("수단", "방법"))
+    ) and query_has("어떤", "종류", "쓸 수", "있어", "사용할 수"):
         if doc_has("결제수단결제 방법에는 어떤 것들이 있나요?", "결제 방법에는 어떤 것들"):
-            score += 3.0
+            score += 3.4
         if article_no == "11":
             score += 1.5
         if doc_has("가상 계좌", "다른 결제 수단으로 선택이 되지 않아요"):
-            score -= 1.2
+            score -= 1.8
+        if doc_has("할인 혜택", "쿠폰", "적립금"):
+            score -= 2.2
 
     if query_has("배송지", "주소") and query_has("상품 준비중", "상품준비중", "출고 후", "배송 출발", "출발한 뒤"):
         if doc_has("주소(옵션) 변경이 가능하지 않습니다", "상품준비중", "송장 조회"):
             score += 2.6
+        if doc_has("일반 배송 조회는 어떻게 하나요?"):
+            score += 1.6
         if doc_has("배송지 등록", "기본 배송지", "자주 사용하는 배송지"):
             score -= 2.2
 
