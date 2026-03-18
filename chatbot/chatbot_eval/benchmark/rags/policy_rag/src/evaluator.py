@@ -30,7 +30,10 @@ def evaluate(
     results: list[dict[str, Any]] = []
 
     for case in dataset:
-        result = evaluate_case(case=case, provider=provider, model=model)
+        try:
+            result = evaluate_case(case=case, provider=provider, model=model)
+        except Exception as exc:
+            result = build_error_result(case=case, error=str(exc))
         results.append(result)
 
     total = len(results)
@@ -114,4 +117,39 @@ def evaluate_case(
         "retrieval_items": retrieval_items,
         "documents": documents,
         "answer": pipeline_result.get("answer_content", ""),
+    }
+
+
+def build_error_result(case: dict[str, Any], error: str) -> dict[str, Any]:
+    """개별 케이스 실패 시에도 전체 리포트는 저장되도록 기본 결과를 만든다."""
+    return {
+        "id": case.get("id"),
+        "category": case.get("category"),
+        "user_query": str(case.get("user_query", "")),
+        "expected_query": str(case.get("expected_query", "")),
+        "expected_doc_keys": list(case.get("expected_doc_keys", [])),
+        "transformed_query": "",
+        "expected_phrases": list(case.get("expected_phrases", [])),
+        "query_eval": {
+            "passed": False,
+            "matched_keywords": [],
+            "keyword_recall": 0.0,
+            "expected_token_recall": 0.0,
+        },
+        "retrieval_eval": {
+            "mode": "doc_key" if case.get("expected_doc_keys") else "phrase",
+            "passed": False,
+            "matched_doc_keys": [],
+            "hit_at_1": 0,
+            "hit_at_3": 0,
+            "hit_at_5": 0,
+            "mrr": 0.0,
+            "document_count": 0,
+        },
+        "retrieval_error": error,
+        "used_fallback": False,
+        "retrieved_doc_keys": [],
+        "retrieval_items": [],
+        "documents": [],
+        "answer": "",
     }
