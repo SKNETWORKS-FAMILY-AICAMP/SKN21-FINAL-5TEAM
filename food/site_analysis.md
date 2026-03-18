@@ -21,4 +21,4 @@
 - widget injection point: global_layout (available: global_layout, orders_page)
 - media source: Django media (http://localhost:8000/media/)
 - security: bot protection 비활성, robots/CSP/CORS 제한 없음, rate limit 미설정
-- agent integration: 외부 retrieval 없음, 주문/결제 액션(get_order_status/pay_order/cancel_order/refund_order) 중심의 프론트 내장 챗봇 연동
+- agent integration: 외부 retrieval 없음, 주문/결제 액션(get_order_status/pay_order/cancel_order/refund_order/exchange_order) 중심의 챗봇 연동

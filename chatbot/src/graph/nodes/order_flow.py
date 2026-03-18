@@ -24,12 +24,13 @@ from chatbot.src.schemas.planner import TaskIntent
 from chatbot.src.tools.adapter_order_tools import (
     cancel_order_via_adapter as cancel_order,
     get_shipping_via_adapter as get_shipping_details,
+    get_user_orders_for_site,
+    register_exchange_via_adapter,
     register_return_via_adapter as register_return_request,
 )
 from chatbot.src.tools.order_tools import (
     change_product_option,
     register_exchange_request,
-    get_user_orders,
 )
 
 _ORDER_ACTIONS = {"cancel", "refund", "exchange", "shipping", "list_orders"}
@@ -41,6 +42,7 @@ _WAITING_UI_ACTIONS = {
 }
 _TERMINAL_SUCCESS_STATUSES = {
     "cancelled",
+    "exchange_requested",
     "updated",
     "refunded (return requested)",
     "refund_requested",
@@ -121,8 +123,10 @@ def order_list_subagent_node(state: GlobalAgentState) -> dict:
     user_info = state.get("user_info", {})
     user_id = user_info.get("id", 1)
 
-    payload = get_user_orders(
+    payload = get_user_orders_for_site(
         user_id=user_id,
+        site_id=user_info.get("site_id"),
+        access_token=user_info.get("access_token"),
         limit=10,
         days=30,
         requires_selection=False,
@@ -174,11 +178,12 @@ def shipping_subagent_node(state: GlobalAgentState) -> dict:
 def exchange_subagent_node(state: GlobalAgentState) -> dict:
     tool = _select_exchange_tool(state)
     tool_name = "change_option" if tool is change_product_option else "exchange"
+    include_site_context = tool is register_exchange_via_adapter
     return _run_order_action(
         state=state,
         action="exchange",
         tool=tool,
-        include_site_context=False,
+        include_site_context=include_site_context,
         tool_name=tool_name,
     )
 
@@ -337,9 +342,13 @@ def _build_ui_payload(action: str, result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _select_exchange_tool(state: GlobalAgentState):
+    site_id = state.get("user_info", {}).get("site_id")
     order_context = state.get("order_context", {})
     awaiting_resume_for = order_context.get("awaiting_resume_for")
     latest_user_message = _get_latest_user_message(state)
+
+    if site_id and site_id != "site-c":
+        return register_exchange_via_adapter
 
     if awaiting_resume_for == "new_option":
         return change_product_option

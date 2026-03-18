@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import styles from "./chatbot.module.css";
-
-const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000";
+import { fetchOrderDetail, fetchOrders, performOrderAction } from "../../api/api";
+import { useAuth } from "../../context/AuthContext";
 
 const STATUS_LABELS = {
   preparing: "상품 준비 중",
@@ -30,6 +30,7 @@ const extractOrderId = (text) => {
 };
 
 const Chatbot = () => {
+  const { isAuthenticated } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState([]);
@@ -43,12 +44,17 @@ const Chatbot = () => {
     let isMounted = true;
 
     const loadOrders = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/api/orders/`);
-        if (!response.ok) {
-          throw new Error("주문 정보를 불러오는 데 실패했습니다.");
+      if (!isAuthenticated) {
+        if (isMounted) {
+          setOrders([]);
+          setOrdersError(null);
+          setOrdersLoading(false);
         }
-        const data = await response.json();
+        return;
+      }
+
+      try {
+        const data = await fetchOrders();
         if (isMounted) {
           setOrders(data);
           setOrdersError(null);
@@ -66,12 +72,13 @@ const Chatbot = () => {
       }
     };
 
+    setOrdersLoading(true);
     loadOrders();
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     return () => {
@@ -110,33 +117,6 @@ const Chatbot = () => {
     });
   };
 
-  const fetchOrderDetail = async (orderId) => {
-    const response = await fetch(`${API_BASE}/api/orders/${orderId}/`);
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload?.detail ?? "주문 상세를 가져오지 못했습니다.");
-    }
-    return payload;
-  };
-
-  const performOrderAction = async (orderId, action) => {
-    const response = await fetch(`${API_BASE}/api/orders/${orderId}/actions/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ action }),
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload?.detail ?? "서버 요청 중 오류가 발생했습니다.");
-    }
-    if (payload?.order) {
-      updateOrderList(payload.order);
-    }
-    return payload;
-  };
-
   const describeOrderStatus = (order) => {
     if (!order) {
       return "현재 조회 가능한 주문이 없습니다.";
@@ -156,6 +136,9 @@ const Chatbot = () => {
     }
     try {
       const payload = await performOrderAction(target.id, action);
+      if (payload?.order) {
+        updateOrderList(payload.order);
+      }
       return (
         payload?.message ??
         `주문 ${target.id}에 대해 '${action}' 요청을 처리했습니다.`
@@ -180,7 +163,26 @@ const Chatbot = () => {
     }
   };
 
+  const describeOrderList = () => {
+    if (orders.length === 0) {
+      return "최근 주문 내역이 없습니다.";
+    }
+
+    const summary = orders
+      .slice(0, 3)
+      .map(
+        (order) =>
+          `${order.id}번 ${order.product?.name ?? "상품"} · ${translateStatus(order.status)}`
+      )
+      .join("\n");
+
+    return `최근 주문 내역입니다.\n${summary}`;
+  };
+
   const buildBotReply = async (text) => {
+    if (!isAuthenticated) {
+      return "주문 관련 기능은 로그인 후 이용할 수 있어요.";
+    }
     if (ordersLoading) {
       return "주문 정보를 불러오는 중입니다. 잠시만 기다려 주세요.";
     }
@@ -199,17 +201,23 @@ const Chatbot = () => {
     if (normalized.includes("환불")) {
       return handleOrderAction("refund", text);
     }
+    if (normalized.includes("교환")) {
+      return handleOrderAction("exchange", text);
+    }
     if (normalized.includes("배송")) {
       return handleDeliveryStatus(text);
+    }
+    if (normalized.includes("주문") && (normalized.includes("목록") || normalized.includes("내역"))) {
+      return describeOrderList();
     }
     if (normalized.includes("주문")) {
       return describeOrderStatus(findOrder(extractOrderId(text)));
     }
     if (normalized.includes("안녕") || normalized.includes("hi")) {
-      return "안녕하세요! 결제, 주문 취소, 환불, 배송 문의를 도와드릴 수 있어요.";
+      return "안녕하세요! 주문 조회, 취소, 환불, 교환, 배송 문의를 도와드릴 수 있어요.";
     }
 
-    return "죄송합니다. 주문/결제/배송 관련된 요청을 알려주시면 도움을 드릴게요.";
+    return "죄송합니다. 주문 조회, 취소, 환불, 교환, 배송 관련 요청을 알려주시면 도움을 드릴게요.";
   };
 
   const sendMessage = () => {
