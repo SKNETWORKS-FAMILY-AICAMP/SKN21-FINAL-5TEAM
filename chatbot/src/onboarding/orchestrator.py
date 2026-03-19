@@ -36,6 +36,7 @@ from .recovery_planner import build_recovery_plan
 from .run_generator import generate_run_bundle
 from .run_resume import analyze_run_checkpoint
 from .runtime_completion_runner import run_runtime_completion
+from .runtime_repair_toolkit import repair_python_import_from_traceback
 from .slack_bridge import InMemorySlackBridge
 from .smoke_runner import load_smoke_plan, run_smoke_tests, summarize_smoke_results
 from .runtime_runner import prepare_runtime_workspace, simulate_runtime_merge
@@ -1799,6 +1800,7 @@ def _run_runtime_completion_with_retries(
             runtime_workspace=runtime_workspace,
             recovery_payload=recovery_payload,
             backend_evaluation=backend_evaluation,
+            runtime_completion_result=latest_result,
         )
         attempt_record["repair_applied"] = applied
         if not applied:
@@ -1822,6 +1824,7 @@ def _apply_repair_actions(
     runtime_workspace: Path,
     recovery_payload: dict[str, Any],
     backend_evaluation: dict[str, Any],
+    runtime_completion_result: dict[str, Any] | None = None,
 ) -> bool:
     applied = False
     for action in recovery_payload.get("repair_actions") or []:
@@ -1836,6 +1839,11 @@ def _apply_repair_actions(
             applied = _repair_frontend_mount_target(runtime_workspace) or applied
         elif action_name == "repair_shared_widget_import":
             applied = _repair_shared_widget_import(runtime_workspace) or applied
+        elif action_name == "repair_backend_entrypoint":
+            applied = _repair_backend_entrypoint(
+                runtime_workspace=runtime_workspace,
+                runtime_completion_result=runtime_completion_result,
+            ) or applied
     return applied
 
 
@@ -1930,6 +1938,23 @@ def _repair_shared_widget_import(runtime_workspace: Path) -> bool:
         widget_path.write_text(updated, encoding="utf-8")
         repaired = True
     return repaired
+
+
+def _repair_backend_entrypoint(
+    *,
+    runtime_workspace: Path,
+    runtime_completion_result: dict[str, Any] | None,
+) -> bool:
+    backend_probe = (runtime_completion_result or {}).get("backend_probe") or {}
+    stderr = str(backend_probe.get("stderr") or "")
+    if not stderr.strip():
+        return False
+
+    repair_result = repair_python_import_from_traceback(
+        workspace_root=runtime_workspace,
+        stderr=stderr,
+    )
+    return bool(repair_result.get("applied", False))
 
 
 def _publish_run_event(

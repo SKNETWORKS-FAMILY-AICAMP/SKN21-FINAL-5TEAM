@@ -1527,7 +1527,7 @@ def test_runtime_completion_backend_import_resolution_failed_maps_to_repair_acti
     assert import_failure["repair_actions"][0]["action"] == "repair_shared_widget_import"
 
     assert backend_import_failure["classification"] == "backend_import_resolution_failed"
-    assert backend_import_failure["should_retry"] is False
+    assert backend_import_failure["should_retry"] is True
     assert backend_import_failure["repair_actions"][0]["action"] == "repair_backend_entrypoint"
 
     assert mount_failure["classification"] == "chatbot_mount_missing"
@@ -1537,6 +1537,52 @@ def test_runtime_completion_backend_import_resolution_failed_maps_to_repair_acti
     assert dev_boot_failure["classification"] == "frontend_dev_server_boot_failed"
     assert dev_boot_failure["should_retry"] is True
     assert dev_boot_failure["repair_actions"][0]["action"] == "repair_frontend_dev_bootstrap"
+
+
+def test_apply_repair_actions_repair_backend_entrypoint_rewrites_django_import(tmp_path: Path):
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-backend-import-repair" / "workspace"
+    urls_path = runtime_workspace / "backend" / "foodshop" / "urls.py"
+    chat_auth_path = runtime_workspace / "backend" / "chat_auth.py"
+
+    urls_path.parent.mkdir(parents=True, exist_ok=True)
+    chat_auth_path.parent.mkdir(parents=True, exist_ok=True)
+    urls_path.write_text(
+        "from backend.chat_auth import chat_auth_token\n"
+        "urlpatterns = [chat_auth_token]\n",
+        encoding="utf-8",
+    )
+    chat_auth_path.write_text(
+        "def chat_auth_token(request):\n"
+        "    return None\n",
+        encoding="utf-8",
+    )
+
+    applied = orchestrator_module._apply_repair_actions(
+        runtime_workspace=runtime_workspace,
+        recovery_payload={
+            "repair_actions": [
+                {
+                    "action": "repair_backend_entrypoint",
+                    "target_path": "backend",
+                }
+            ]
+        },
+        backend_evaluation={"framework": "django"},
+        runtime_completion_result={
+            "failure_reason": "django_urlconf_import_failed",
+            "backend_probe": {
+                "stderr": (
+                    'Traceback (most recent call last):\n'
+                    f'  File "{urls_path}", line 1, in <module>\n'
+                    "    from backend.chat_auth import chat_auth_token\n"
+                    "ModuleNotFoundError: No module named 'backend'\n"
+                )
+            },
+        },
+    )
+
+    assert applied is True
+    assert urls_path.read_text(encoding="utf-8").startswith("from chat_auth import chat_auth_token\n")
 
 
 def test_run_onboarding_generation_runs_runtime_completion_loop_only_when_enabled(tmp_path: Path, monkeypatch):

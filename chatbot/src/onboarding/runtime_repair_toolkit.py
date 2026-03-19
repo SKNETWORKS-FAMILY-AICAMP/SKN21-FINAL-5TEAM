@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Iterable
+from typing import Any
 
 
 def resolve_python_module_candidates(*, workspace_root: str | Path, module_name: str) -> list[Path]:
@@ -80,6 +80,94 @@ def rewrite_python_import_line(
     return changed
 
 
+def repair_python_import_from_traceback(
+    *,
+    workspace_root: str | Path,
+    stderr: str,
+) -> dict[str, Any]:
+    workspace = Path(workspace_root)
+    repair_targets = extract_python_import_targets_from_traceback(
+        workspace_root=workspace,
+        stderr=stderr,
+    )
+    repairs: list[dict[str, str]] = []
+
+    for target in repair_targets:
+        caller_file = target["caller_file"]
+        broken_import = target["broken_import"]
+        replacement_import = choose_runtime_import_replacement(
+            workspace_root=workspace,
+            caller_file=caller_file,
+            broken_import=broken_import,
+        )
+        if not replacement_import or replacement_import == broken_import:
+            continue
+        changed = rewrite_python_import_line(
+            file_path=caller_file,
+            broken_import=broken_import,
+            replacement_import=replacement_import,
+        )
+        if changed:
+            repairs.append(
+                {
+                    "caller_file": str(caller_file),
+                    "broken_import": broken_import,
+                    "replacement_import": replacement_import,
+                }
+            )
+
+    return {
+        "applied": bool(repairs),
+        "repairs": repairs,
+    }
+
+
+def extract_python_import_targets_from_traceback(
+    *,
+    workspace_root: str | Path,
+    stderr: str,
+) -> list[dict[str, Path | str]]:
+    workspace = Path(workspace_root).resolve()
+    current_file: Path | None = None
+    targets: list[dict[str, Path | str]] = []
+    seen: set[tuple[Path, str]] = set()
+
+    for raw_line in stderr.splitlines():
+        file_match = re.match(r'^\s*File "(?P<path>[^"]+\.py)", line \d+, in .*$' , raw_line)
+        if file_match:
+            candidate = Path(file_match.group("path")).resolve()
+            try:
+                candidate.relative_to(workspace)
+            except ValueError:
+                current_file = None
+            else:
+                current_file = candidate
+            continue
+
+        if current_file is None:
+            continue
+
+        import_match = re.match(
+            r"^\s*(?:from|import)\s+(?P<module>[A-Za-z0-9_.]+)(?:\s+import\b.*)?$",
+            raw_line,
+        )
+        if not import_match:
+            continue
+        broken_import = import_match.group("module")
+        key = (current_file, broken_import)
+        if key in seen:
+            continue
+        seen.add(key)
+        targets.append(
+            {
+                "caller_file": current_file,
+                "broken_import": broken_import,
+            }
+        )
+
+    return targets
+
+
 def _module_matches(module_path: str, module_name: str) -> bool:
     return (
         module_path == module_name
@@ -107,12 +195,15 @@ def _module_path_for_file(workspace_root: Path, path: Path) -> str | None:
 
 
 def _rewrite_exact_import_statement(line: str, broken_import: str, replacement_import: str) -> str:
-    from_match = re.match(r"^(?P<prefix>\s*from\s+)(?P<module>[A-Za-z0-9_.]+)(?P<suffix>\s+import\b.*)$", line)
-    if from_match and from_match.group("module") == broken_import:
-        return f"{from_match.group('prefix')}{replacement_import}{from_match.group('suffix')}"
+    line_ending = "\n" if line.endswith("\n") else ""
+    line_body = line[:-1] if line_ending else line
 
-    import_match = re.match(r"^(?P<prefix>\s*import\s+)(?P<module>[A-Za-z0-9_.]+)(?P<suffix>\b.*)$", line)
+    from_match = re.match(r"^(?P<prefix>\s*from\s+)(?P<module>[A-Za-z0-9_.]+)(?P<suffix>\s+import\b.*)$", line_body)
+    if from_match and from_match.group("module") == broken_import:
+        return f"{from_match.group('prefix')}{replacement_import}{from_match.group('suffix')}{line_ending}"
+
+    import_match = re.match(r"^(?P<prefix>\s*import\s+)(?P<module>[A-Za-z0-9_.]+)(?P<suffix>\b.*)$", line_body)
     if import_match and import_match.group("module") == broken_import:
-        return f"{import_match.group('prefix')}{replacement_import}{import_match.group('suffix')}"
+        return f"{import_match.group('prefix')}{replacement_import}{import_match.group('suffix')}{line_ending}"
 
     return line

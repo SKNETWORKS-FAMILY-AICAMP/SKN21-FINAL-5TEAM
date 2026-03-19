@@ -1814,6 +1814,119 @@ def test_run_onboarding_generation_runtime_completion_repairs_shared_widget_impo
     assert attempts_payload[0]["classification"] == "frontend_import_resolution_failed"
 
 
+def test_run_onboarding_generation_runtime_completion_backend_import_repair(
+    tmp_path: Path, monkeypatch
+):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+    runtime_workspace = runtime_root / "food" / "food-run-runtime-backend-import-repair" / "workspace"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text("def login(request):\n    return None\n", encoding="utf-8")
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() { return <main>Home</main>; }\n",
+        encoding="utf-8",
+    )
+
+    urls_path = runtime_workspace / "backend" / "foodshop" / "urls.py"
+    chat_auth_path = runtime_workspace / "backend" / "chat_auth.py"
+    urls_path.parent.mkdir(parents=True, exist_ok=True)
+    chat_auth_path.parent.mkdir(parents=True, exist_ok=True)
+    urls_path.write_text(
+        "from backend.chat_auth import chat_auth_token\n"
+        "urlpatterns = [chat_auth_token]\n",
+        encoding="utf-8",
+    )
+    chat_auth_path.write_text(
+        "def chat_auth_token(request):\n"
+        "    return None\n",
+        encoding="utf-8",
+    )
+    runtime_app = runtime_workspace / "frontend" / "src" / "App.js"
+    runtime_app.parent.mkdir(parents=True, exist_ok=True)
+    runtime_app.write_text(
+        "export default function App() { return <main>Home</main>; }\n",
+        encoding="utf-8",
+    )
+
+    from chatbot.src.onboarding import orchestrator as orchestrator_module
+
+    monkeypatch.setattr(orchestrator_module, "prepare_runtime_workspace", lambda **_: runtime_workspace)
+
+    def fake_simulate_runtime_merge(**kwargs):
+        path = Path(kwargs["report_root"]) / "merge-simulation.json"
+        path.write_text(json.dumps({"passed": True}), encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(orchestrator_module, "simulate_runtime_merge", fake_simulate_runtime_merge)
+
+    def fake_validation_jobs(*, run_id: str, runtime_workspace: Path, report_root: Path, event_store):
+        report_root.mkdir(parents=True, exist_ok=True)
+        backend_path = report_root / "backend-evaluation.json"
+        frontend_path = report_root / "frontend-evaluation.json"
+        backend_path.write_text(json.dumps({"passed": True, "framework": "django"}), encoding="utf-8")
+        frontend_path.write_text(json.dumps({"passed": True, "framework": "react"}), encoding="utf-8")
+        (report_root / "frontend-build-validation.json").write_text(json.dumps({}), encoding="utf-8")
+        return {"backend": backend_path, "frontend": frontend_path}
+
+    monkeypatch.setattr(orchestrator_module, "_run_validation_evaluation_jobs", fake_validation_jobs)
+    monkeypatch.setattr(orchestrator_module, "load_smoke_plan", lambda *_: type("Plan", (), {"steps": []})())
+    monkeypatch.setattr(orchestrator_module, "_run_validation_with_retries", lambda **_: _successful_smoke_results())
+
+    completion_attempts = iter(
+        [
+            {
+                "passed": False,
+                "failure_reason": "backend_import_resolution_failed",
+                "attempt_count": 1,
+                "backend_probe": {
+                    "status": "boot_failed",
+                    "stderr": (
+                        'Traceback (most recent call last):\n'
+                        f'  File "{urls_path}", line 1, in <module>\n'
+                        "    from backend.chat_auth import chat_auth_token\n"
+                        "ModuleNotFoundError: No module named 'backend'\n"
+                    ),
+                },
+                "frontend_probe": {"status": "ready"},
+                "mount_probe": {"passed": False},
+            },
+            {
+                "passed": True,
+                "failure_reason": None,
+                "attempt_count": 1,
+                "backend_probe": {"status": "ready"},
+                "frontend_probe": {"status": "ready"},
+                "mount_probe": {"passed": True},
+            },
+        ]
+    )
+    monkeypatch.setattr(orchestrator_module, "run_runtime_completion", lambda **kwargs: next(completion_attempts))
+
+    result = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-runtime-backend-import-repair",
+        agent_version="test-v1",
+        approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
+        enable_runtime_completion_loop=True,
+    )
+
+    attempts_payload = json.loads((Path(result["run_root"]) / "reports" / "runtime-completion-attempts.json").read_text(encoding="utf-8"))
+    approved_patch = (Path(result["run_root"]) / "reports" / "approved.patch").read_text(encoding="utf-8")
+
+    assert result["current_state"] == "completed"
+    assert urls_path.read_text(encoding="utf-8").startswith("from chat_auth import chat_auth_token\n")
+    assert attempts_payload[0]["classification"] == "backend_import_resolution_failed"
+    assert attempts_payload[0]["repair_applied"] is True
+    assert attempts_payload[-1]["passed"] is True
+    assert "from chat_auth import chat_auth_token" in approved_patch
+
+
 def test_run_onboarding_generation_writes_debug_trace_and_file_activity(tmp_path: Path):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"

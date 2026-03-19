@@ -13,6 +13,8 @@ _RECOVERABLE_CLASSIFICATIONS = {
     "frontend_dev_server_boot_failed",
     "frontend_readiness_failed",
     "backend_server_boot_failed",
+    "backend_import_resolution_failed",
+    "django_urlconf_import_failed",
     "backend_readiness_failed",
     "chatbot_mount_missing",
     "chatbot_status_not_rendered",
