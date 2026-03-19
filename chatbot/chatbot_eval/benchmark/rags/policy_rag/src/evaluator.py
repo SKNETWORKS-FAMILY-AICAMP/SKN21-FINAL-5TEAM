@@ -22,8 +22,11 @@ def evaluate(
     provider: str = "openai",
     model: str = "gpt-4o-mini",
     limit: int | None = None,
+    offset: int = 0,
 ) -> dict[str, Any]:
     dataset = load_jsonl(dataset_path)
+    if offset:
+        dataset = dataset[offset:]
     if limit is not None:
         dataset = dataset[:limit]
 
