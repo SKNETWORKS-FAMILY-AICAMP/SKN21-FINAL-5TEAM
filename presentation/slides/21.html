@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>목차</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
+<style>body {
+    margin: 0;
+    padding: 0;
+    font-family: "Noto Sans KR", sans-serif;
+    background-color: #fff
+    }
+.slide-container {
+    width: 1280px;
+    height: 720px;
+    display: flex;
+    position: relative;
+    background-color: #fff;
+    overflow: hidden
+    }
+.left-content {
+    width: 35%;
+    height: 100%;
+    padding: 80px 60px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    z-index: 10
+    }
+.right-content {
+    width: 65%;
+    height: 100%;
+    padding: 80px 60px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    z-index: 10
+    }
+.heading-small {
+    font-family: "Montserrat", sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    color: #666;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 3px
+    }
+.heading-large {
+    font-family: "Montserrat", "Noto Sans KR", sans-serif;
+    font-weight: 900;
+    font-size: 72px;
+    line-height: 1;
+    color: #000;
+    margin-bottom: 30px
+    }
+.accent-line {
+    width: 80px;
+    height: 6px;
+    background-color: #000;
+    margin-bottom: 40px
+    }
+.content-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(6, auto);
+    grid-auto-flow: column;
+    column-gap: 60px;
+    width: 100%
+    }
+.content-item {
+    display: flex;
+    align-items: center;
+    padding: 18px 0;
+    border-bottom: 1px solid #f0f0f0;
+    transition: all 0.3s ease;
+    position: relative
+    }
+.content-item.done {
+    opacity: 0.6    
+    }
+.content-item.done::after {
+    content: "";
+    position: absolute;
+    left: -10px;
+    right: -10px;
+    top: 50%;
+    height: 2px;
+    background-color: #000;
+    transform: scaleX(0);
+    transform-origin: left;
+    animation: drawLine 1.2s cubic-bezier(0.65, 0, 0.35, 1) forwards
+    }
+@keyframes drawLine {
+    to {
+        transform: scaleX(1)
+        }
+    }
+.item-number {
+    font-family: "Montserrat", sans-serif;
+    font-weight: 900;
+    font-size: 32px;
+    color: #e0e0e0;
+    margin-right: 20px;
+    min-width: 50px;
+    line-height: 1
+    }
+.item-text {
+    font-family: "Noto Sans KR", sans-serif;
+    font-weight: 600;
+    font-size: 18px;
+    color: #000;
+    letter-spacing: 0.5px
+    }
+.circle-bg {
+    position: absolute;
+    width: 350px;
+    height: 350px;
+    border: 60px solid #f5f5f5;
+    border-radius: 50%;
+    bottom: -100px;
+    right: -100px;
+    z-index: 0
+    }
+.dots-pattern {
+    position: absolute;
+    top: 60px;
+    right: 60px;
+    display: flex;
+    gap: 10px
+    }
+.dot {
+    width: 8px;
+    height: 8px;
+    background-color: #000;
+    border-radius: 50%
+    }</style>
+</head>
+<body>
+<div class="slide-container">
+<div class="circle-bg"></div>
+<div class="dots-pattern">
+<div class="dot"></div>
+<div class="dot"></div>
+<div class="dot"></div>
+</div>
+<!-- Left Content -->
+<div class="left-content">
+<div>
+<p class="heading-small">CONTENTS</p>
+<h1 class="heading-large">목차</h1>
+<div class="accent-line"></div>
+<p style="font-size: 16px;
+color: #999;
+line-height: 1.8">
+AI 고객상담 챗봇 웹사이트 제작<br/>프로젝트의 전체 개요
+</p>
+</div>
+</div>
+<!-- Right Content -->
+<div class="right-content">
+<div class="content-list">
+<div class="content-item done">
+<span class="item-number">01</span>
+<span class="item-text">문제 정의</span>
+</div>
+<div class="content-item done">
+<span class="item-number">02</span>
+<span class="item-text">챗봇 필요성 분석</span>
+</div>
+<div class="content-item done">
+<span class="item-number">03</span>
+<span class="item-text">웹사이트 아키텍처</span>
+</div>
+<div class="content-item done">
+<span class="item-number">04</span>
+<span class="item-text">챗봇 프레임워크</span>
+</div>
+<div class="content-item done">
+<span class="item-number">05</span>
+<span class="item-text">프로젝트 타임라인</span>
+</div>
+<div class="content-item done">
+<span class="item-number">06</span>
+<span class="item-text">마일스톤</span>
+</div>
+<div class="content-item">
+<span class="item-number">07</span>
+<span class="item-text">데이터베이스 설계</span>
+</div>
+<div class="content-item">
+<span class="item-number">08</span>
+<span class="item-text">백엔드 API 개발</span>
+</div>
+<div class="content-item">
+<span class="item-number">09</span>
+<span class="item-text">프론트엔드 UI제작</span>
+</div>
+<div class="content-item">
+<span class="item-number">10</span>
+<span class="item-text">LLM 모델 튜닝</span>
+</div>
+<div class="content-item">
+<span class="item-number">11</span>
+<span class="item-text">품질 보증 및 테스트</span>
+</div>
+<div class="content-item">
+<span class="item-number">12</span>
+<span class="item-text">최종 시연 및 결론</span>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

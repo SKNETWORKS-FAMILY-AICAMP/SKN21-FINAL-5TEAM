@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .role_runner import RoleRunner
 
@@ -19,6 +19,7 @@ class GeneratorEvalInput(BaseModel):
 class GeneratorEvalExpected(BaseModel):
     proposed_files: list[str]
     proposed_patches: list[str]
+    target_paths: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -44,6 +45,8 @@ class GeneratorEvalResult(BaseModel):
     extra_files: list[str]
     missing_patches: list[str]
     extra_patches: list[str]
+    missing_targets: list[str]
+    extra_targets: list[str]
     forbidden_hits: list[str]
     actual: dict[str, list[str]]
 
@@ -66,18 +69,23 @@ def evaluate_generator_proposal(
     *,
     proposed_files: list[str],
     proposed_patches: list[str],
+    target_paths: list[str] | None = None,
 ) -> GeneratorEvalResult:
     expected_files = fixture.expected.proposed_files
     expected_patches = fixture.expected.proposed_patches
+    expected_targets = fixture.expected.target_paths
+    actual_targets = list(target_paths or [])
 
     missing_files = [item for item in expected_files if item not in proposed_files]
     extra_files = [item for item in proposed_files if item not in expected_files]
     missing_patches = [item for item in expected_patches if item not in proposed_patches]
     extra_patches = [item for item in proposed_patches if item not in expected_patches]
+    missing_targets = [item for item in expected_targets if item not in actual_targets]
+    extra_targets = [item for item in actual_targets if item not in expected_targets]
 
     forbidden_hits = [
         item
-        for item in [*proposed_files, *proposed_patches]
+        for item in [*proposed_files, *proposed_patches, *actual_targets]
         if any(token in item for token in fixture.forbidden)
     ]
 
@@ -99,10 +107,13 @@ def evaluate_generator_proposal(
         extra_files=extra_files,
         missing_patches=missing_patches,
         extra_patches=extra_patches,
+        missing_targets=missing_targets,
+        extra_targets=extra_targets,
         forbidden_hits=forbidden_hits,
         actual={
             "proposed_files": proposed_files,
             "proposed_patches": proposed_patches,
+            "target_paths": actual_targets,
         },
     )
 
@@ -129,6 +140,7 @@ def run_generator_eval(
                 fixture,
                 proposed_files=list(message.metadata.get("proposed_files") or []),
                 proposed_patches=list(message.metadata.get("proposed_patches") or []),
+                target_paths=list(message.metadata.get("target_paths") or []),
             )
         )
 

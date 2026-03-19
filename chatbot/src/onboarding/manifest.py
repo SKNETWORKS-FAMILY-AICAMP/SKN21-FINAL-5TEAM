@@ -18,7 +18,9 @@ class OverlayManifest(BaseModel):
     analysis: dict[str, Any]
     generated_files: list[str]
     patch_targets: list[str]
+    frontend_artifacts: list[dict[str, Any]] = []
     docker: dict[str, Any]
+    credentials: dict[str, str] = {}
     tests: dict[str, Any]
     status: Literal["generated", "applied", "approved", "rejected"]
 

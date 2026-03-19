@@ -28,6 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--generated-root")
     parser.add_argument("--runtime-root")
     parser.add_argument("--agent-version", default="dev")
+    parser.add_argument("--use-llm-roles", action="store_true")
+    parser.add_argument("--generate-llm-patch-draft", action="store_true")
+    parser.add_argument("--llm-provider", default="openai")
+    parser.add_argument("--llm-model", default="gpt-5-mini")
     return parser
 
 
@@ -104,6 +108,10 @@ def main() -> int:
             generated_root=args.generated_root,
             runtime_root=args.runtime_root,
             agent_version=args.agent_version,
+            use_llm_roles=args.use_llm_roles,
+            generate_llm_patch_draft=args.generate_llm_patch_draft,
+            llm_provider=args.llm_provider,
+            llm_model=args.llm_model,
             logger=_default_logger(),
         ),
     )
@@ -144,6 +152,10 @@ def _build_resume_runner(
     generated_root: str | None,
     runtime_root: str | None,
     agent_version: str,
+    use_llm_roles: bool,
+    generate_llm_patch_draft: bool,
+    llm_provider: str,
+    llm_model: str,
     logger,
 ):
     if not all([site, source_root, generated_root, runtime_root]):
@@ -153,27 +165,37 @@ def _build_resume_runner(
         logger.info(
             "gateway auto-resuming run=%s after %s approval", run_id, approval_type
         )
+        command = [
+            sys.executable,
+            "chatbot/scripts/run_onboarding_generation.py",
+            "--site",
+            str(site),
+            "--source-root",
+            str(source_root),
+            "--generated-root",
+            str(generated_root),
+            "--runtime-root",
+            str(runtime_root),
+            "--resume-run-id",
+            run_id,
+            "--agent-version",
+            agent_version,
+            "--approval-store-root",
+            str(approval_store_root),
+            "--slack-channel",
+            channel,
+            "--llm-provider",
+            llm_provider,
+            "--llm-model",
+            llm_model,
+        ]
+        if use_llm_roles:
+            command.append("--use-llm-roles")
+        if generate_llm_patch_draft:
+            command.append("--generate-llm-patch-draft")
+
         result = subprocess.run(
-            [
-                sys.executable,
-                "chatbot/scripts/run_onboarding_generation.py",
-                "--site",
-                str(site),
-                "--source-root",
-                str(source_root),
-                "--generated-root",
-                str(generated_root),
-                "--runtime-root",
-                str(runtime_root),
-                "--resume-run-id",
-                run_id,
-                "--agent-version",
-                agent_version,
-                "--approval-store-root",
-                str(approval_store_root),
-                "--slack-channel",
-                channel,
-            ],
+            command,
             cwd=ROOT,
             capture_output=True,
             text=True,

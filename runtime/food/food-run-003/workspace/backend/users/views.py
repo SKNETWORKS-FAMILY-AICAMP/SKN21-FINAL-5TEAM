@@ -95,6 +95,7 @@ def login(request):
 
     expires_at = timezone.now() + timedelta(days=SESSION_TOKEN_EXPIRE_DAYS)
     SessionToken.objects.filter(user=user, is_active=True).update(is_active=False)
+    SessionToken.objects.filter(user=user, is_active=False).delete()
     token_value = uuid.uuid4().hex
     session = SessionToken.objects.create(user=user, token=token_value, expires_at=expires_at)
 
@@ -118,6 +119,7 @@ def logout(request):
     session = _find_active_session(request)
     if session:
         session.mark_inactive()
+        SessionToken.objects.filter(user=session.user, is_active=False).delete()
 
     response = JsonResponse({"ok": True})
     response.delete_cookie(
