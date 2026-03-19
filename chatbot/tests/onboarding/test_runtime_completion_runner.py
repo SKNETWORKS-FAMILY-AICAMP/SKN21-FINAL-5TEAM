@@ -319,3 +319,184 @@ def test_runtime_completion_runner_classifies_shared_widget_import_failure(tmp_p
     assert result["failure_reason"] == "frontend_import_resolution_failed"
     assert result["frontend_probe"]["failure_reason"] == "frontend_import_resolution_failed"
     assert "Can't resolve '@shared-chatbot/ChatbotWidget'" in result["frontend_probe"]["stderr"]
+
+
+def test_runtime_completion_runner_classifies_backend_import_resolution_failure(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-017"
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-017" / "workspace"
+
+    (runtime_workspace / "backend").mkdir(parents=True)
+    (runtime_workspace / "backend" / "manage.py").write_text("print('django')\n", encoding="utf-8")
+    (runtime_workspace / "frontend" / "src").mkdir(parents=True)
+    (runtime_workspace / "frontend" / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "food-frontend",
+                "scripts": {
+                    "start": "react-scripts start",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _BackendProcess:
+        pid = 6101
+        returncode = 1
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            return None
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def kill(self):
+            return None
+
+        def communicate(self, timeout=None):
+            return (
+                "",
+                "ModuleNotFoundError: No module named 'backend'\n",
+            )
+
+    class _FrontendProcess:
+        pid = 6102
+        returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            self.returncode = 0
+            return 0
+
+        def kill(self):
+            self.returncode = -9
+
+        def communicate(self, timeout=None):
+            return "", ""
+
+    launched = iter([_BackendProcess(), _FrontendProcess()])
+
+    with patch(
+        "chatbot.src.onboarding.runtime_completion_runner._launch_server_process",
+        side_effect=lambda command, cwd: next(launched),
+    ), patch(
+        "chatbot.src.onboarding.runtime_completion_runner._probe_http_ready",
+        return_value={
+            "passed": True,
+            "url": "http://127.0.0.1:3000",
+            "status_code": 200,
+            "attempts": 1,
+            "error": None,
+        },
+    ):
+        result = run_runtime_completion(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            site="food",
+            run_id="food-run-017",
+        )
+
+    assert result["passed"] is False
+    assert result["failure_reason"] == "backend_import_resolution_failed"
+    assert result["backend_probe"]["failure_reason"] == "backend_import_resolution_failed"
+    assert "No module named 'backend'" in result["backend_probe"]["stderr"]
+
+
+def test_runtime_completion_runner_classifies_django_urlconf_import_failure(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-018"
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-018" / "workspace"
+
+    (runtime_workspace / "backend").mkdir(parents=True)
+    (runtime_workspace / "backend" / "manage.py").write_text("print('django')\n", encoding="utf-8")
+    (runtime_workspace / "frontend" / "src").mkdir(parents=True)
+    (runtime_workspace / "frontend" / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "food-frontend",
+                "scripts": {
+                    "start": "react-scripts start",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _BackendProcess:
+        pid = 6103
+        returncode = 1
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            return None
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def kill(self):
+            return None
+
+        def communicate(self, timeout=None):
+            return (
+                "",
+                "Traceback (most recent call last):\n"
+                '  File "/workspace/backend/foodshop/urls.py", line 4, in <module>\n'
+                "    from backend.chat_auth import chat_auth_token\n"
+                "ModuleNotFoundError: No module named 'backend'\n",
+            )
+
+    class _FrontendProcess:
+        pid = 6104
+        returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            self.returncode = 0
+            return 0
+
+        def kill(self):
+            self.returncode = -9
+
+        def communicate(self, timeout=None):
+            return "", ""
+
+    launched = iter([_BackendProcess(), _FrontendProcess()])
+
+    with patch(
+        "chatbot.src.onboarding.runtime_completion_runner._launch_server_process",
+        side_effect=lambda command, cwd: next(launched),
+    ), patch(
+        "chatbot.src.onboarding.runtime_completion_runner._probe_http_ready",
+        return_value={
+            "passed": True,
+            "url": "http://127.0.0.1:3000",
+            "status_code": 200,
+            "attempts": 1,
+            "error": None,
+        },
+    ):
+        result = run_runtime_completion(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            site="food",
+            run_id="food-run-018",
+        )
+
+    assert result["passed"] is False
+    assert result["failure_reason"] == "django_urlconf_import_failed"
+    assert result["backend_probe"]["failure_reason"] == "django_urlconf_import_failed"
+    assert "urls.py" in result["backend_probe"]["stderr"]

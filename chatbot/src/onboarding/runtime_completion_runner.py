@@ -507,6 +507,14 @@ def _classify_probe_failure_reason(
     default_reason: str,
 ) -> str:
     combined = f"{stdout}\n{stderr}"
+    if probe_name == "backend" and _is_django_urlconf_import_failure(combined):
+        return "django_urlconf_import_failed"
     if probe_name == "frontend" and "@shared-chatbot/ChatbotWidget" in combined and "Can't resolve" in combined:
         return "frontend_import_resolution_failed"
+    if probe_name == "backend" and "ModuleNotFoundError" in combined and "No module named 'backend'" in combined:
+        return "backend_import_resolution_failed"
     return default_reason
+
+
+def _is_django_urlconf_import_failure(combined: str) -> bool:
+    return "urls.py" in combined and "No module named 'backend'" in combined

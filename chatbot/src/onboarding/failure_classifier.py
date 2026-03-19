@@ -57,6 +57,24 @@ def classify_onboarding_failure(
                 }
             ],
         },
+        "backend_import_resolution_failed": {
+            "repairable": True,
+            "repair_actions": [
+                {
+                    "action": "repair_backend_entrypoint",
+                    "target_path": "backend",
+                }
+            ],
+        },
+        "django_urlconf_import_failed": {
+            "repairable": True,
+            "repair_actions": [
+                {
+                    "action": "repair_backend_entrypoint",
+                    "target_path": "backend",
+                }
+            ],
+        },
         "backend_readiness_failed": {
             "repairable": True,
             "repair_actions": [

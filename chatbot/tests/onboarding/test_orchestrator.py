@@ -1492,10 +1492,17 @@ def test_run_onboarding_generation_stops_when_frontend_evaluation_is_invalid(tmp
     assert result["runtime_failure_summary"]["frontend"] == "frontend mount invalid"
 
 
-def test_runtime_completion_failure_signatures_map_to_repair_actions():
+def test_runtime_completion_backend_import_resolution_failed_maps_to_repair_actions():
     import_failure = build_recovery_plan(
         {
             "failure_signature": "frontend_import_resolution_failed:Can't resolve @shared-chatbot/ChatbotWidget",
+            "retry_count": 0,
+            "retry_budget": 2,
+        }
+    )
+    backend_import_failure = build_recovery_plan(
+        {
+            "failure_signature": "backend_import_resolution_failed:ModuleNotFoundError No module named backend",
             "retry_count": 0,
             "retry_budget": 2,
         }
@@ -1518,6 +1525,10 @@ def test_runtime_completion_failure_signatures_map_to_repair_actions():
     assert import_failure["classification"] == "frontend_import_resolution_failed"
     assert import_failure["should_retry"] is True
     assert import_failure["repair_actions"][0]["action"] == "repair_shared_widget_import"
+
+    assert backend_import_failure["classification"] == "backend_import_resolution_failed"
+    assert backend_import_failure["should_retry"] is False
+    assert backend_import_failure["repair_actions"][0]["action"] == "repair_backend_entrypoint"
 
     assert mount_failure["classification"] == "chatbot_mount_missing"
     assert mount_failure["should_retry"] is True
