@@ -1624,6 +1624,97 @@ def test_run_onboarding_generation_exports_llm_patch_when_recommended(tmp_path: 
     assert approved_patch == llm_patch
 
 
+def test_run_onboarding_generation_runtime_completion_repairs_runtime_workspace_and_reexports(
+    tmp_path: Path, monkeypatch
+):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+    runtime_workspace = runtime_root / "food" / "food-run-runtime-completion" / "workspace"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    source_app = source_root / "frontend" / "src" / "App.js"
+    source_app.write_text(
+        "export default function App() { return <main>Home</main>; }\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "users" / "views.py").write_text("def login(request):\n    return None\n", encoding="utf-8")
+
+    runtime_app = runtime_workspace / "frontend" / "src" / "App.js"
+    runtime_app.parent.mkdir(parents=True, exist_ok=True)
+    runtime_app.write_text(source_app.read_text(encoding="utf-8"), encoding="utf-8")
+
+    from chatbot.src.onboarding import orchestrator as orchestrator_module
+
+    monkeypatch.setattr(orchestrator_module, "prepare_runtime_workspace", lambda **_: runtime_workspace)
+
+    def fake_simulate_runtime_merge(**kwargs):
+        path = Path(kwargs["report_root"]) / "merge-simulation.json"
+        path.write_text(json.dumps({"passed": True}), encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(orchestrator_module, "simulate_runtime_merge", fake_simulate_runtime_merge)
+
+    def fake_validation_jobs(*, run_id: str, runtime_workspace: Path, report_root: Path, event_store):
+        report_root.mkdir(parents=True, exist_ok=True)
+        backend_path = report_root / "backend-evaluation.json"
+        frontend_path = report_root / "frontend-evaluation.json"
+        backend_path.write_text(json.dumps({"passed": True, "framework": "django"}), encoding="utf-8")
+        frontend_path.write_text(json.dumps({"passed": True, "framework": "react"}), encoding="utf-8")
+        (report_root / "frontend-build-validation.json").write_text(json.dumps({}), encoding="utf-8")
+        return {"backend": backend_path, "frontend": frontend_path}
+
+    monkeypatch.setattr(orchestrator_module, "_run_validation_evaluation_jobs", fake_validation_jobs)
+    monkeypatch.setattr(orchestrator_module, "load_smoke_plan", lambda *_: type("Plan", (), {"steps": []})())
+    monkeypatch.setattr(orchestrator_module, "_run_validation_with_retries", lambda **_: _successful_smoke_results())
+
+    completion_attempts = iter(
+        [
+            {
+                "passed": False,
+                "failure_reason": "chatbot_mount_missing",
+                "attempt_count": 1,
+                "backend_probe": {"status": "ready"},
+                "frontend_probe": {"status": "ready"},
+                "mount_probe": {"passed": False},
+            },
+            {
+                "passed": True,
+                "failure_reason": None,
+                "attempt_count": 1,
+                "backend_probe": {"status": "ready"},
+                "frontend_probe": {"status": "ready"},
+                "mount_probe": {"passed": True},
+            },
+        ]
+    )
+    monkeypatch.setattr(orchestrator_module, "run_runtime_completion", lambda **kwargs: next(completion_attempts))
+
+    result = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-runtime-completion",
+        agent_version="test-v1",
+        approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
+        enable_runtime_completion_loop=True,
+    )
+
+    export_metadata = json.loads((Path(result["run_root"]) / "reports" / "export-metadata.json").read_text(encoding="utf-8"))
+    approved_patch = (Path(result["run_root"]) / "reports" / "approved.patch").read_text(encoding="utf-8")
+    attempts_payload = json.loads((Path(result["run_root"]) / "reports" / "runtime-completion-attempts.json").read_text(encoding="utf-8"))
+
+    assert result["current_state"] == "completed"
+    assert source_app.read_text(encoding="utf-8") == "export default function App() { return <main>Home</main>; }\n"
+    assert "SharedChatbotWidget" in runtime_app.read_text(encoding="utf-8")
+    assert "frontend/src/App.js" in export_metadata["changed_files"]
+    assert "SharedChatbotWidget" in approved_patch
+    assert attempts_payload[-1]["passed"] is True
+    assert attempts_payload[0]["classification"] == "chatbot_mount_missing"
+
+
 def test_run_onboarding_generation_writes_debug_trace_and_file_activity(tmp_path: Path):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"

@@ -86,6 +86,46 @@ def test_export_runtime_patch_skips_non_utf8_files(tmp_path: Path):
     assert metadata["changed_files"] == []
 
 
+def test_export_runtime_patch_skips_runtime_dependency_and_build_artifacts(tmp_path: Path):
+    source_root = tmp_path / "source"
+    runtime_workspace = tmp_path / "runtime" / "food" / "run-001" / "workspace"
+    report_root = tmp_path / "generated" / "food" / "run-001" / "reports"
+
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (runtime_workspace / "frontend" / "src").mkdir(parents=True)
+    (runtime_workspace / "backend" / ".venv" / "bin").mkdir(parents=True)
+    (runtime_workspace / "frontend" / "node_modules" / ".cache" / "babel-loader").mkdir(parents=True)
+    report_root.mkdir(parents=True)
+
+    (source_root / "frontend" / "src" / "App.js").write_text("export default function App() { return null; }\n", encoding="utf-8")
+    (runtime_workspace / "frontend" / "src" / "App.js").write_text(
+        "export default function App() { return <div id=\"chat-root\" />; }\n",
+        encoding="utf-8",
+    )
+    (runtime_workspace / "backend" / ".venv" / "bin" / "python").write_text("shim\n", encoding="utf-8")
+    (runtime_workspace / "frontend" / "node_modules" / ".cache" / "babel-loader" / "cache.json").write_text(
+        "{\"compiled\":true}\n",
+        encoding="utf-8",
+    )
+
+    patch_path = export_runtime_patch(
+        source_root=source_root,
+        runtime_workspace=runtime_workspace,
+        report_root=report_root,
+        patch_name="approved.patch",
+    )
+
+    content = patch_path.read_text(encoding="utf-8")
+    metadata = json.loads((report_root / "export-metadata.json").read_text(encoding="utf-8"))
+
+    assert "frontend/src/App.js" in metadata["changed_files"]
+    assert "backend/.venv/bin/python" not in metadata["changed_files"]
+    assert "frontend/node_modules/.cache/babel-loader/cache.json" not in metadata["changed_files"]
+    assert "--- a/frontend/src/App.js" in content
+    assert "backend/.venv/bin/python" not in content
+    assert "frontend/node_modules/.cache/babel-loader/cache.json" not in content
+
+
 def test_export_patch_artifact_copies_selected_patch_and_marks_llm_source(tmp_path: Path):
     report_root = tmp_path / "generated" / "food" / "run-001" / "reports"
     source_patch = tmp_path / "generated" / "food" / "run-001" / "patches" / "llm-proposed.patch"
@@ -140,3 +180,51 @@ def test_export_runtime_patch_records_recovery_provenance(tmp_path: Path):
         "recovery_artifact_path": str(report_root / "recovery-plan.json"),
         "final_recovery_source": "response_schema_mismatch",
     }
+
+
+def test_export_runtime_patch_overwrites_metadata_after_runtime_completion_reexport(tmp_path: Path):
+    source_root = tmp_path / "source"
+    runtime_workspace = tmp_path / "runtime" / "food" / "run-003" / "workspace"
+    report_root = tmp_path / "generated" / "food" / "run-003" / "reports"
+
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (runtime_workspace / "frontend" / "src").mkdir(parents=True)
+    report_root.mkdir(parents=True)
+
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() { return <main>Home</main>; }\n",
+        encoding="utf-8",
+    )
+    (runtime_workspace / "frontend" / "src" / "App.js").write_text(
+        "export default function App() { return <main>Home</main>; }\n",
+        encoding="utf-8",
+    )
+
+    export_runtime_patch(
+        source_root=source_root,
+        runtime_workspace=runtime_workspace,
+        report_root=report_root,
+        patch_name="approved.patch",
+    )
+
+    first_metadata = json.loads((report_root / "export-metadata.json").read_text(encoding="utf-8"))
+    assert first_metadata["changed_files"] == []
+
+    (runtime_workspace / "frontend" / "src" / "App.js").write_text(
+        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
+        "export default function App() { return <><main>Home</main><SharedChatbotWidget /></>; }\n",
+        encoding="utf-8",
+    )
+
+    export_runtime_patch(
+        source_root=source_root,
+        runtime_workspace=runtime_workspace,
+        report_root=report_root,
+        patch_name="approved.patch",
+    )
+
+    second_metadata = json.loads((report_root / "export-metadata.json").read_text(encoding="utf-8"))
+    approved_patch = (report_root / "approved.patch").read_text(encoding="utf-8")
+
+    assert second_metadata["changed_files"] == ["frontend/src/App.js"]
+    assert "SharedChatbotWidget" in approved_patch

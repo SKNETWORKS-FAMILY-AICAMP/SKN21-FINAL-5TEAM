@@ -8,7 +8,7 @@ from collections import defaultdict
 from collections import defaultdict
 from typing import Any, Callable
 
-from .agent_contracts import RecoveryAttempt, RunState
+from .agent_contracts import AgentMessage, RecoveryAttempt, RunState
 from .agent_orchestrator import AgentOrchestrator
 from .approval_store import ApprovalStore
 from .backend_evaluator import evaluate_backend_workspace
@@ -35,6 +35,7 @@ from .recovery_artifacts import write_recovered_smoke_plan
 from .recovery_planner import build_recovery_plan
 from .run_generator import generate_run_bundle
 from .run_resume import analyze_run_checkpoint
+from .runtime_completion_runner import run_runtime_completion
 from .slack_bridge import InMemorySlackBridge
 from .smoke_runner import load_smoke_plan, run_smoke_tests, summarize_smoke_results
 from .runtime_runner import prepare_runtime_workspace, simulate_runtime_merge
@@ -70,6 +71,7 @@ def run_onboarding_generation(
     llm_provider: str = "openai",
     llm_model: str = "gpt-4o-mini",
     generate_llm_patch_draft: bool = False,
+    enable_runtime_completion_loop: bool = False,
     llm_patch_factory: Any | None = None,
     terminal_logger: Callable[[str], None] | None = None,
     event_store: RedisRunJobStore | None = None,
@@ -452,6 +454,10 @@ def run_onboarding_generation(
         message=analyzer_message,
     )
 
+    has_explicit_analysis_decision = _has_explicit_approval_decision(
+        decisions=approvals,
+        approval_type="analysis",
+    )
     if bridge is not None:
         bridge.post_agent_message(
             event=active_role_runner.build_event(
@@ -463,35 +469,35 @@ def run_onboarding_generation(
             ),
             message=analyzer_message,
         )
-
-        analysis_request = agent.request_analysis_approval(
-            summary="Analysis is ready for review",
-            recommended_option="approve",
-        )
-        should_publish_analysis_request = True
-        if approval_store is not None:
-            existing = approval_store.get_decision(run_id=run_id, approval_type="analysis")
-            if existing is None:
-                approval_store.create_request(
-                    run_id=run_id,
-                    approval_type="analysis",
-                    blocked_job_id=str(analysis_request.get("blocked_job_id") or ""),
-                )
-            else:
-                should_publish_analysis_request = existing["status"] == "pending"
-        _publish_approval_requested_event(event_store, run_id, analysis_request)
-        if should_publish_analysis_request:
-            bridge.post_approval_request(
-                run_id=run_id,
-                approval_type=analysis_request["approval_type"],
+        if not has_explicit_analysis_decision:
+            analysis_request = agent.request_analysis_approval(
                 summary="Analysis is ready for review",
                 recommended_option="approve",
-                risk_if_approved="downstream plan depends on this analysis",
-                risk_if_rejected="run stops before generation",
-                available_actions=["approve", "reject"],
             )
+            should_publish_analysis_request = True
+            if approval_store is not None:
+                existing = approval_store.get_decision(run_id=run_id, approval_type="analysis")
+                if existing is None:
+                    approval_store.create_request(
+                        run_id=run_id,
+                        approval_type="analysis",
+                        blocked_job_id=str(analysis_request.get("blocked_job_id") or ""),
+                    )
+                else:
+                    should_publish_analysis_request = existing["status"] == "pending"
+            _publish_approval_requested_event(event_store, run_id, analysis_request)
+            if should_publish_analysis_request:
+                bridge.post_approval_request(
+                    run_id=run_id,
+                    approval_type=analysis_request["approval_type"],
+                    summary="Analysis is ready for review",
+                    recommended_option="approve",
+                    risk_if_approved="downstream plan depends on this analysis",
+                    risk_if_rejected="run stops before generation",
+                    available_actions=["approve", "reject"],
+                )
 
-    elif approvals is not None or approval_store is not None:
+    elif not has_explicit_analysis_decision and (approvals is not None or approval_store is not None):
         agent.request_analysis_approval(
             summary="Analysis is ready for review",
             recommended_option="approve",
@@ -510,6 +516,12 @@ def run_onboarding_generation(
         decisions=approvals,
         approval_store=approval_store,
     )
+    if bridge is not None and has_explicit_analysis_decision and approval_result is not None:
+        bridge.record_approval_decision(
+            run_id=run_id,
+            approval_type="analysis",
+            decision=approval_result,
+        )
     _emit_stage_event(
         run_root=run_root,
         run_id=run_id,
@@ -736,7 +748,11 @@ def run_onboarding_generation(
         details={"proposed_files": len(proposed_files), "proposed_patches": len(proposed_patches)},
     )
 
-    if bridge is not None:
+    has_explicit_apply_decision = _has_explicit_approval_decision(
+        decisions=approvals,
+        approval_type="apply",
+    )
+    if bridge is not None and not has_explicit_apply_decision:
         apply_request = agent.request_apply_approval(
             summary="Overlay bundle is ready to apply",
             recommended_option="approve",
@@ -763,7 +779,7 @@ def run_onboarding_generation(
                 risk_if_rejected="run stops before validation",
                 available_actions=["approve", "reject"],
             )
-    else:
+    elif not has_explicit_apply_decision:
         agent.request_apply_approval(
             summary="Overlay bundle is ready to apply",
             recommended_option="approve",
@@ -782,6 +798,12 @@ def run_onboarding_generation(
         decisions=approvals,
         approval_store=approval_store,
     )
+    if bridge is not None and has_explicit_apply_decision and approval_result is not None:
+        bridge.record_approval_decision(
+            run_id=run_id,
+            approval_type="apply",
+            decision=approval_result,
+        )
     if approval_result != "approved":
         return finalize_result(runtime_workspace=None)
 
@@ -972,13 +994,11 @@ def run_onboarding_generation(
         details={"passed": bool(smoke_summary["passed"])},
     )
 
+    has_explicit_export_decision = _has_explicit_approval_decision(
+        decisions=approvals,
+        approval_type="export",
+    )
     if bridge is not None:
-        export_request, should_publish_export_request = _prepare_export_approval_request(
-            agent=agent,
-            run_id=run_id,
-            approval_store=approval_store,
-            event_store=event_store,
-        )
         bridge.post_agent_message(
             event=active_role_runner.build_event(
                 run_id=run_id,
@@ -989,17 +1009,24 @@ def run_onboarding_generation(
             ),
             message=validator_message,
         )
-        if should_publish_export_request:
-            bridge.post_approval_request(
+        if not has_explicit_export_decision:
+            export_request, should_publish_export_request = _prepare_export_approval_request(
+                agent=agent,
                 run_id=run_id,
-                approval_type=export_request["approval_type"],
-                summary="Export bundle is ready",
-                recommended_option="approve",
-                risk_if_approved="patch export may still need manual review",
-                risk_if_rejected="run remains local only",
-                available_actions=["approve", "reject"],
+                approval_store=approval_store,
+                event_store=event_store,
             )
-    else:
+            if should_publish_export_request:
+                bridge.post_approval_request(
+                    run_id=run_id,
+                    approval_type=export_request["approval_type"],
+                    summary="Export bundle is ready",
+                    recommended_option="approve",
+                    risk_if_approved="patch export may still need manual review",
+                    risk_if_rejected="run remains local only",
+                    available_actions=["approve", "reject"],
+                )
+    elif not has_explicit_export_decision:
         _prepare_export_approval_request(
             agent=agent,
             run_id=run_id,
@@ -1013,6 +1040,12 @@ def run_onboarding_generation(
         decisions=approvals,
         approval_store=approval_store,
     )
+    if bridge is not None and has_explicit_export_decision and approval_result is not None:
+        bridge.record_approval_decision(
+            run_id=run_id,
+            approval_type="export",
+            decision=approval_result,
+        )
     if approval_result != "approved":
         return finalize_result(runtime_workspace=runtime_workspace)
 
@@ -1071,6 +1104,20 @@ def run_onboarding_generation(
         message="export completed",
         details={"export_source": export_source, "metadata_path": str(run_root / "reports" / "export-metadata.json")},
     )
+    if enable_runtime_completion_loop and runtime_workspace is not None:
+        completion_result = _run_runtime_completion_with_retries(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            source_root=Path(source_root),
+            site=site,
+            run_id=run_id,
+            agent=agent,
+            terminal_logger=terminal_logger,
+            strategy_provenance=strategy_provenance,
+        )
+        if not completion_result.get("passed", False):
+            agent.state = RunState.HUMAN_REVIEW_REQUIRED
+            return finalize_result(runtime_workspace=runtime_workspace)
 
     return finalize_result(runtime_workspace=runtime_workspace)
 
@@ -1145,6 +1192,17 @@ def _apply_approval_decision(
         return "rejected"
 
     raise ValueError(f"Unsupported approval decision for {approval_type}: {decision}")
+
+
+def _has_explicit_approval_decision(
+    *,
+    decisions: dict[str, str] | None,
+    approval_type: str,
+) -> bool:
+    if decisions is None:
+        return False
+    value = decisions.get(approval_type)
+    return value is not None and bool(str(value).strip())
 
 
 def _prepare_export_approval_request(
@@ -1506,6 +1564,7 @@ def _build_run_result(
         "backend_evaluation_path": str(run_root / "reports" / "backend-evaluation.json"),
         "frontend_evaluation_path": str(run_root / "reports" / "frontend-evaluation.json"),
         "frontend_build_validation_path": str(run_root / "reports" / "frontend-build-validation.json"),
+        "runtime_completion_path": str(run_root / "reports" / "runtime-completion.json"),
         "recovery_artifact_path": str(run_root / "reports" / "recovery-plan.json"),
         "recovery_attempts_path": str(run_root / "reports" / "recovery-attempts.json"),
         "recovered_smoke_plan_path": str(run_root / "reports" / "recovered-smoke-plan.json"),
@@ -1666,6 +1725,98 @@ def _attempt_runtime_validation_repair(
     return applied
 
 
+def _run_runtime_completion_with_retries(
+    *,
+    run_root: Path,
+    runtime_workspace: Path,
+    source_root: Path,
+    site: str,
+    run_id: str,
+    agent: AgentOrchestrator,
+    terminal_logger: Callable[[str], None] | None,
+    strategy_provenance: dict[str, str],
+) -> dict[str, Any]:
+    backend_evaluation = _read_json_if_exists(run_root / "reports" / "backend-evaluation.json") or {}
+    frontend_evaluation = _read_json_if_exists(run_root / "reports" / "frontend-evaluation.json") or {}
+    retry_budget = max(1, agent.retry_budget - agent.retry_count)
+    attempts_payload: list[dict[str, Any]] = []
+    latest_result: dict[str, Any] = {
+        "passed": False,
+        "failure_reason": "runtime_completion_not_started",
+    }
+
+    for attempt_index in range(1, retry_budget + 1):
+        latest_result = run_runtime_completion(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            site=site,
+            run_id=run_id,
+            terminal_logger=terminal_logger,
+        )
+        attempt_record: dict[str, Any] = {
+            "attempt": attempt_index,
+            "passed": bool(latest_result.get("passed", False)),
+            "failure_reason": latest_result.get("failure_reason"),
+            "backend_probe_status": (latest_result.get("backend_probe") or {}).get("status"),
+            "frontend_probe_status": (latest_result.get("frontend_probe") or {}).get("status"),
+            "mount_probe_passed": (latest_result.get("mount_probe") or {}).get("passed"),
+        }
+        attempts_payload.append(attempt_record)
+        if latest_result.get("passed", False):
+            recovery_provenance = _read_recovery_provenance(run_root)
+            if attempts_payload and attempts_payload[-1].get("classification"):
+                recovery_provenance = {
+                    **recovery_provenance,
+                    "final_recovery_source": str(attempts_payload[-1]["classification"]),
+                }
+            export_runtime_patch(
+                source_root=source_root,
+                runtime_workspace=runtime_workspace,
+                report_root=run_root / "reports",
+                strategy_provenance=strategy_provenance,
+                recovery_provenance=recovery_provenance,
+            )
+            _write_runtime_completion_attempts(run_root=run_root, attempts=attempts_payload)
+            return latest_result
+
+        recovery_payload = build_recovery_plan(
+            {
+                "failure_signature": str(latest_result.get("failure_reason") or "runtime_completion_failed"),
+                "retry_count": attempt_index - 1,
+                "retry_budget": retry_budget,
+                "failed_results": [],
+                "backend_evaluation": backend_evaluation,
+                "frontend_evaluation": frontend_evaluation,
+            }
+        )
+        attempt_record["classification"] = recovery_payload.get("classification")
+        attempt_record["should_retry"] = recovery_payload.get("should_retry", False)
+        attempt_record["repair_actions"] = recovery_payload.get("repair_actions") or []
+
+        if not recovery_payload.get("should_retry", False):
+            break
+        applied = _apply_repair_actions(
+            runtime_workspace=runtime_workspace,
+            recovery_payload=recovery_payload,
+            backend_evaluation=backend_evaluation,
+        )
+        attempt_record["repair_applied"] = applied
+        if not applied:
+            break
+
+    _write_runtime_completion_attempts(run_root=run_root, attempts=attempts_payload)
+    return latest_result
+
+
+def _write_runtime_completion_attempts(*, run_root: Path, attempts: list[dict[str, Any]]) -> None:
+    path = run_root / "reports" / "runtime-completion-attempts.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(attempts, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def _apply_repair_actions(
     *,
     runtime_workspace: Path,
@@ -1681,6 +1832,8 @@ def _apply_repair_actions(
             target_path.parent.mkdir(parents=True, exist_ok=True)
             target_path.write_text(_build_runtime_chat_auth_stub(framework), encoding="utf-8")
             applied = True
+        elif action_name == "repair_frontend_mount_target":
+            applied = _repair_frontend_mount_target(runtime_workspace) or applied
     return applied
 
 
@@ -1706,6 +1859,46 @@ def _build_runtime_chat_auth_stub(framework: str) -> str:
         "def chat_auth_token(request):\n"
         '    return JsonResponse({"authenticated": True, "access_token": "runtime-token"})\n'
     )
+
+
+def _repair_frontend_mount_target(runtime_workspace: Path) -> bool:
+    frontend_src = runtime_workspace / "frontend" / "src"
+    if not frontend_src.exists():
+        frontend_src = runtime_workspace / "src"
+    frontend_src.mkdir(parents=True, exist_ok=True)
+
+    widget_path = frontend_src / "chatbot" / "SharedChatbotWidget.jsx"
+    widget_path.parent.mkdir(parents=True, exist_ok=True)
+    if not widget_path.exists():
+        widget_path.write_text(
+            "export default function SharedChatbotWidget() {\n"
+            '  return <div data-chatbot-status="authenticated">Chat ready</div>;\n'
+            "}\n",
+            encoding="utf-8",
+        )
+
+    mount_candidates = [
+        frontend_src / "App.js",
+        frontend_src / "App.jsx",
+        frontend_src / "main.jsx",
+        frontend_src / "main.js",
+    ]
+    mount_path = next((path for path in mount_candidates if path.exists()), frontend_src / "App.js")
+    content = mount_path.read_text(encoding="utf-8") if mount_path.exists() else ""
+    if 'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";' not in content:
+        content = 'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n' + content
+    if "<SharedChatbotWidget />" not in content:
+        if "return <main>Home</main>;" in content:
+            content = content.replace(
+                "return <main>Home</main>;",
+                "return <><main>Home</main><SharedChatbotWidget /></>;",
+            )
+        elif "return null;" in content:
+            content = content.replace("return null;", "return <SharedChatbotWidget />;")
+        else:
+            content = content.rstrip() + "\n\nexport function RuntimeCompletionMountRepair() { return <SharedChatbotWidget />; }\n"
+    mount_path.write_text(content, encoding="utf-8")
+    return True
 
 
 def _publish_run_event(
@@ -1826,6 +2019,17 @@ def _read_runtime_failure_summary(run_root: Path) -> dict[str, str]:
         reason = str(frontend_build_payload.get("bootstrap_failure_reason") or "").strip()
         if reason:
             summary["frontend"] = reason
+
+    completion_path = run_root / "reports" / "runtime-completion.json"
+    if completion_path.exists():
+        try:
+            completion_payload = json.loads(completion_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            completion_payload = {}
+        if completion_payload and not completion_payload.get("passed", True):
+            reason = str(completion_payload.get("failure_reason") or "").strip()
+            if reason:
+                summary["completion"] = reason
 
     return summary
 
