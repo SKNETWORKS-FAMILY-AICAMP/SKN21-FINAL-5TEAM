@@ -4,262 +4,33 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>챗봇 아키텍처</title>
-<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
-<link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet"/>
-<style>body {
-    margin: 0;
-    padding: 0;
-    font-family: "Noto Sans KR", sans-serif;
-    background-color: #fff
-    }
-.slide-container {
-    width: 1280px;
-    height: 720px;
-    display: flex;
-    position: relative;
-    background-color: #fff;
-    overflow: hidden
-    }
-.left-content {
-    width: 35%;
-    height: 100%;
-    padding: 60px 50px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: relative;
-    z-index: 10
-    }
-.right-content {
-    width: 65%;
-    height: 100%;
-    padding: 60px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: relative;
-    z-index: 10
-    }
-.heading-medium {
-    font-family: "Montserrat", sans-serif;
-    font-weight: 700;
-    font-size: 22px;
-    color: #999;
-    margin-bottom: 10px;
-    text-transform: uppercase;
-    letter-spacing: 3px
-    }
-.heading-large {
-    font-family: "Montserrat", "Noto Sans KR", sans-serif;
-    font-weight: 900;
-    font-size: 56px;
-    line-height: 1.1;
-    color: #000;
-    margin-bottom: 30px
-    }
-.accent-bar {
-    width: 80px;
-    height: 6px;
-    background-color: #000;
-    margin-bottom: 30px
-    }
-.body-text {
-    font-family: "Noto Sans KR", sans-serif;
-    font-size: 18px;
-    color: #666;
-    line-height: 1.8
-    }
-.architecture-flow {
-    display: flex;
-    flex-direction: column;
-    gap: 20px
-    }
-.flow-step {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    position: relative
-    }
-.step-number {
-    width: 50px;
-    height: 50px;
-    background-color: #000;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-family: "Montserrat", sans-serif;
-    font-weight: 900;
-    font-size: 24px;
-    flex-shrink: 0
-    }
-.step-content {
-    flex: 1;
-    background-color: #f8f8f8;
-    padding: 20px 25px;
-    border-radius: 8px;
-    border-left: 4px solid #000
-    }
-.step-title {
-    font-family: "Montserrat", "Noto Sans KR", sans-serif;
-    font-weight: 700;
-    font-size: 18px;
-    color: #000;
-    margin-bottom: 8px
-    }
-.step-desc {
-    font-family: "Noto Sans KR", sans-serif;
-    font-size: 14px;
-    color: #666;
-    line-height: 1.5
-    }
-.step-arrow {
-    position: absolute;
-    left: 25px;
-    top: 60px;
-    color: #ccc;
-    font-size: 24px
-    }
-.component-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 15px;
-    margin-top: 20px
-    }
-.component-item {
-    background-color: #f8f8f8;
-    padding: 15px;
-    border-radius: 6px;
-    text-align: center
-    }
-.component-icon {
-    font-size: 28px;
-    color: #000;
-    margin-bottom: 8px
-    }
-.component-name {
-    font-family: "Noto Sans KR", sans-serif;
-    font-weight: 600;
-    font-size: 13px;
-    color: #333
-    }
-.circle-decoration {
-    position: absolute;
-    border-radius: 50%;
-    z-index: 0
-    }
-.circle-1 {
-    width: 200px;
-    height: 200px;
-    border: 20px solid #f5f5f5;
-    top: -60px;
-    left: -60px;
-    opacity: 0.5
-    }
-.circle-2 {
-    width: 150px;
-    height: 150px;
-    border: 15px solid #f5f5f5;
-    bottom: 80px;
-    right: -40px;
-    opacity: 0.3
-    }
-.pattern-dots {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-image: radial-gradient(#000 1px, transparent 1px);
-    background-size: 25px 25px;
-    opacity: 0.02;
-    z-index: 0
-    }</style>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="theme.css" rel="stylesheet"/>
 </head>
 <body>
-<div class="slide-container">
-<div class="pattern-dots"></div>
-<div class="circle-decoration circle-1"></div>
-<div class="circle-decoration circle-2"></div>
-
-<!-- Left Content -->
-<div class="left-content">
-<div style="position: relative;
-z-index: 2">
-<p class="heading-medium">CHATBOT ARCHITECTURE</p>
-<h1 class="heading-large">챗봇<br/>아키텍처</h1>
+<main class="slide">
+<div class="deco-ring"></div>
+<div class="deco-orb"></div>
+<div class="topbar">
+<p class="eyebrow">Architecture</p>
+<span class="page-number">06</span>
+</div>
+<section class="hero">
+<h1>신뢰도는 생성 품질보다<br/>파이프라인 실패율 관리의 문제</h1>
 <div class="accent-bar"></div>
-<p class="body-text">
-AI 챗봇 시스템의 핵심 구조와 NLP 처리 과정을 다이어그램으로 시각화합니다.
-</p>
-</div>
-</div>
-
-<!-- Right Content -->
-<div class="right-content">
-<div style="position: relative;
-z-index: 2">
-<div class="architecture-flow">
-<!-- Step 1 -->
-<div class="flow-step">
-<div class="step-number">1</div>
-<div class="step-content">
-<h3 class="step-title">자연어 이해 (NLU)</h3>
-<p class="step-desc">사용자 입력 분석 및 의도 파악</p>
-</div>
-<i class="fas fa-arrow-down step-arrow"></i>
-</div>
-
-<!-- Step 2 -->
-<div class="flow-step">
-<div class="step-number">2</div>
-<div class="step-content">
-<h3 class="step-title">대화 관리 (DM)</h3>
-<p class="step-desc">컨텍스트 유지 및 대화 흐름 제어</p>
-</div>
-<i class="fas fa-arrow-down step-arrow"></i>
-</div>
-
-<!-- Step 3 -->
-<div class="flow-step">
-<div class="step-number">3</div>
-<div class="step-content">
-<h3 class="step-title">자연어 생성 (NLG)</h3>
-<p class="step-desc">적절한 응답 생성 및 출력</p>
-</div>
-</div>
-</div>
-
-<div class="component-grid">
-<div class="component-item">
-<i class="fas fa-brain component-icon"></i>
-<div class="component-name">AI 모델</div>
-</div>
-<div class="component-item">
-<i class="fas fa-database component-icon"></i>
-<div class="component-name">지식 베이스</div>
-</div>
-<div class="component-item">
-<i class="fas fa-code component-icon"></i>
-<div class="component-name">API 연동</div>
-</div>
-<div class="component-item">
-<i class="fas fa-cog component-icon"></i>
-<div class="component-name">로직 엔진</div>
-</div>
-<div class="component-item">
-<i class="fas fa-users component-icon"></i>
-<div class="component-name">사용자 관리</div>
-</div>
-<div class="component-item">
-<i class="fas fa-chart-line component-icon"></i>
-<div class="component-name">분석 도구</div>
-</div>
-</div>
-</div>
-</div>
-</div>
+<p class="lead">의도 해석, 툴 호출, 실행, RAG, 응답 생성으로 분리한 평가 가능 구조</p>
+</section>
+<section class="flow" style="grid-template-columns:repeat(5, minmax(0, 1fr)); margin-top:24px;">
+<article class="flow-step"><span class="index">1</span><h3>User Query</h3><p>문의 수집, 세션·사용자 상태 전달</p></article>
+<article class="flow-step"><span class="index">2</span><h3>Intent Layer</h3><p>의도 해석, 액션 필요 여부 판단</p></article>
+<article class="flow-step"><span class="index">3</span><h3>Tool Policy</h3><p>대상 툴 선택, 파라미터 구성</p></article>
+<article class="flow-step"><span class="index">4</span><h3>Execution / RAG</h3><p>상태 조회, 정책 검색, 근거 확보</p></article>
+<article class="flow-step"><span class="index">5</span><h3>Response</h3><p>실행 결과 정리, 다음 행동 제안</p></article>
+</section>
+<section class="grid-2" style="margin-top:14px;">
+<article class="card"><p class="card-label">Evaluation Point</p><h3>평가 분리 필요</h3><p>의도 오류, 툴 오류, 근거 오류를 다른 문제로 분리</p></article>
+<article class="card dark"><p class="card-label">Design Principle</p><h3>실패 지점 측정 가능 구조</h3><p>오류 유형 분리와 전후 비교 가능성 중심 설계</p></article>
+</section>
+</main>
 </body>
 </html>
