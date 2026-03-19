@@ -5,7 +5,7 @@
 - frontend framework: React 18 (CRA, CSR)
 - backend framework: Django REST Framework (Django 4.2 계열)
 - routing structure: /, /login, /mypage, /orders (+ backend API: /api/products/, /api/orders/, /api/users/login/)
-- page types: home, login, orders, mypage, chatbot
+- page types: home, login, orders, mypage
 - login method: email/password + session cookie
 - session storage: httpOnly cookie (`session_token`)
 - token location: cookie
@@ -18,7 +18,7 @@
 - public apis: /api/products/, /api/orders/, /api/orders/{order_id}/, /api/orders/{order_id}/actions/, /api/users/login/
 - protected apis: /api/users/me/, /api/users/logout/
 - db type/core tables: SQLite3 / auth_user, products_product, orders_order, users_sessiontoken
-- widget injection point: global_layout (available: global_layout, orders_page)
+- widget injection point: none
 - media source: Django media (http://localhost:8000/media/)
 - security: bot protection 비활성, robots/CSP/CORS 제한 없음, rate limit 미설정
-- agent integration: 외부 retrieval 없음, 주문/결제 액션(get_order_status/pay_order/cancel_order/refund_order/exchange_order) 중심의 챗봇 연동
+- agent integration: 외부 retrieval 없음
