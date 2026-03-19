@@ -28,10 +28,13 @@ from langgraph.types import Command
 import orjson
 
 from chatbot.src.graph.workflow import graph_app
+from chatbot.src.adapters.base import AdapterError
+from chatbot.src.adapters import setup as adapter_setup
+from chatbot.src.graph.llm_providers import resolve_llm_runtime_policy
 from chatbot.src.infrastructure.conversation_logger import SessionConversationLogger
 from chatbot.src.schemas.chat import ChatRequest, FeedbackRequest, ReviewDraftRequest
 from chatbot.src.tools.service_tools import generate_review_draft
-from ecommerce.backend.app.core.auth import get_current_user
+from ecommerce.backend.app.core.auth import get_current_user, get_current_user_optional
 from ecommerce.backend.app.router.users.models import User
 from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR
 
@@ -43,6 +46,7 @@ class OrjsonResponse(JSONResponse):
 
 
 router = APIRouter(default_response_class=OrjsonResponse)
+SHARED_WIDGET_SITE_ID = "site-c"
 
 # ── 노드 진행 상태 메시지 ─────────────────────────────────────────────────────
 NODE_STATUS_MESSAGES: dict[str, str] = {
@@ -233,6 +237,14 @@ def _build_metadata(final_state: dict) -> dict:
     }
 
 
+def _resolve_chat_runtime_policy(request: ChatRequest, previous_state: dict) -> tuple[str, str]:
+    policy = resolve_llm_runtime_policy(
+        provider=request.provider or previous_state.get("llm_provider"),
+        model=request.model or previous_state.get("llm_model"),
+    )
+    return policy.provider, policy.model
+
+
 def _get_fallback_text(final_state: dict) -> str | None:
     """
     LLM 토큰 스트리밍이 없었을 때 마지막 AIMessage 텍스트 반환.
@@ -397,6 +409,25 @@ def _extract_interrupt_payloads_from_snapshot(snapshot: Any) -> list[dict]:
     return payloads
 
 
+def _build_shared_chat_response(final_state: dict, conversation_id: str) -> dict[str, Any]:
+    metadata = _build_metadata(final_state)
+    ui_action_required = metadata.get("ui_action_required")
+    ui_payload = None
+    if isinstance(ui_action_required, str) and ui_action_required.strip():
+        ui_payload = _get_state_ui_payload(final_state, ui_action_required)
+
+    return {
+        "answer": _get_fallback_text(final_state) or "",
+        "conversation_id": conversation_id,
+        "completed_tasks": metadata.get("completed_tasks", []),
+        "ui_action_required": ui_action_required,
+        "awaiting_interrupt": False,
+        "interrupts": _extract_interrupt_payloads(final_state),
+        "state": metadata.get("state", {}),
+        "ui_payload": ui_payload,
+    }
+
+
 def _build_current_state(
     request: ChatRequest,
     current_user: User,
@@ -406,10 +437,20 @@ def _build_current_state(
     conversation_id: str,
     turn_id: str,
     access_token: str | None = None,
+    site_id: str | None = None,
 ) -> dict:
     """요청/이전 상태 기반 GlobalAgentState 구성."""
     history = _deserialize_messages(previous_state.get("messages", []))
     normalized_message, search_context_update = _preprocess_user_message(request.message)
+    effective_site_id = (
+        site_id
+        or request.site_id
+        or previous_state.get("user_info", {}).get("site_id")
+    )
+    effective_access_token = (
+        access_token
+        or previous_state.get("user_info", {}).get("access_token")
+    )
     turn_defaults = {
         "pending_tasks": [],
         "completed_tasks": [],
@@ -437,8 +478,8 @@ def _build_current_state(
             "id": current_user.id,
             "name": current_user.name,
             "email": current_user.email,
-            "site_id": request.site_id,
-            "access_token": access_token,
+            "site_id": effective_site_id,
+            "access_token": effective_access_token,
         },
         "llm_provider": provider,
         "llm_model": model,
@@ -572,6 +613,32 @@ async def upload_chat_image(
     return {"url": str(image_url)}
 
 
+@router.post("/auth-token")
+async def chat_auth_token(
+    request: Request,
+    current_user: User | None = Depends(get_current_user_optional),
+):
+    access_token = request.cookies.get("access_token") or request.cookies.get("session_token")
+    if not access_token or current_user is None:
+        return {
+            "authenticated": False,
+            "site_id": SHARED_WIDGET_SITE_ID,
+            "access_token": "",
+            "user": None,
+        }
+
+    return {
+        "authenticated": True,
+        "site_id": SHARED_WIDGET_SITE_ID,
+        "access_token": access_token,
+        "user": {
+            "id": str(current_user.id),
+            "email": current_user.email,
+            "name": current_user.name,
+        },
+    }
+
+
 
 # ── 스트리밍 엔드포인트 ────────────────────────────────────────────────────────
 @router.post("/stream")
@@ -585,13 +652,15 @@ async def chat_streaming_endpoint(
     async def event_generator():
         try:
             previous_state: dict = request.previous_state or {}
-            provider = (
-                (request.provider or previous_state.get("llm_provider") or "openai")
-                .strip().lower()
-            )
-            model = (request.model or previous_state.get("llm_model") or "gpt-4o-mini").strip()
+            provider, model = _resolve_chat_runtime_policy(request, previous_state)
             conversation_id = previous_state.get("conversation_id") or f"conv_{uuid4().hex[:12]}"
             turn_id = f"turn_{uuid4().hex[:12]}"
+            try:
+                resolved_adapter = adapter_setup.resolve_site_adapter(
+                    request.site_id or previous_state.get("user_info", {}).get("site_id")
+                )
+            except AdapterError as exc:
+                raise HTTPException(status_code=400, detail=exc.message) from exc
 
             pending_interrupt = previous_state.get("pending_interrupt")
 
@@ -646,9 +715,11 @@ async def chat_streaming_endpoint(
                     conversation_id=conversation_id,
                     turn_id=turn_id,
                     access_token=(
-                        http_request.cookies.get("access_token")
+                        request.access_token
+                        or http_request.cookies.get("access_token")
                         or http_request.cookies.get("session_token")
                     ),
+                    site_id=resolved_adapter.site_id,
                 )
                 stream_input = current_state
 
@@ -834,6 +905,51 @@ async def chat_streaming_endpoint(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )
+
+
+@router.post("/")
+def chat_json_endpoint(
+    http_request: Request,
+    request: ChatRequest,
+    current_user: User = Depends(get_current_user),
+):
+    previous_state: dict = request.previous_state or {}
+    provider, model = _resolve_chat_runtime_policy(request, previous_state)
+    conversation_id = previous_state.get("conversation_id") or f"conv_{uuid4().hex[:12]}"
+    turn_id = f"turn_{uuid4().hex[:12]}"
+
+    resolved_adapter = adapter_setup.resolve_site_adapter(
+        request.site_id or previous_state.get("user_info", {}).get("site_id")
+    )
+
+    current_state = _build_current_state(
+        request=request,
+        current_user=current_user,
+        previous_state=previous_state,
+        provider=provider,
+        model=model,
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+        access_token=(
+            request.access_token
+            or http_request.cookies.get("access_token")
+            or http_request.cookies.get("session_token")
+        ),
+        site_id=resolved_adapter.site_id,
+    )
+
+    final_state = graph_app.invoke(
+        current_state,
+        config=_build_stream_config(
+            current_user=current_user,
+            provider=provider,
+            model=model,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+        ),
+    )
+
+    return _build_shared_chat_response(final_state, conversation_id)
 
 
 @router.post("/feedback")
