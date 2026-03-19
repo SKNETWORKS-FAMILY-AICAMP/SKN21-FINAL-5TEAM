@@ -1,10 +1,8 @@
 """
 Supervisor 라우팅 평가 실행기.
 
-supervisor_eval_dataset.jsonl을 로드하여 planner_node를 호출하고,
-supervisor의 _INTENT_TO_NODE 매핑으로 라우팅 결과를 시뮬레이션하여
-4개 subagent(order_intent_router, discovery_subagent, policy_rag_subagent,
-form_action_subagent)로 정확하게 라우팅되는지 평가합니다.
+supervisor_eval_dataset.jsonl을 로드하여 planner_node와 supervisor 라우팅 로직만 호출하고,
+현재 chatbot 서버 아키텍처의 planner → supervisor 분기 결과를 평가합니다.
 
 단일 의도만 평가하며, result.json에는 details 없이 메트릭만 누적 저장합니다.
 """
@@ -14,6 +12,8 @@ import json
 import subprocess
 import sys
 import time
+import uuid
+import torch
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -56,15 +56,14 @@ load_dotenv(_PROJECT_ROOT / ".env")
 # ── 프로젝트 import (dotenv 로드 이후) ─────────────────────
 
 import httpx  # noqa: E402
-from langchain_core.messages import HumanMessage, SystemMessage  # noqa: E402
+from langchain_core.messages import HumanMessage  # noqa: E402
 from langchain_openai import ChatOpenAI  # noqa: E402
 from pydantic import SecretStr  # noqa: E402
 
 from chatbot.src.core.config import settings  # noqa: E402
 import chatbot.src.graph.llm_providers as _llm_providers  # noqa: E402
-from chatbot.src.graph.llm_providers import make_chat_llm  # noqa: E402
-from chatbot.src.graph.nodes.planner import planner_node, PLANNER_SYSTEM_PROMPT  # noqa: E402
-from chatbot.src.schemas.planner import TaskIntent  # noqa: E402
+from chatbot.src.graph.nodes.planner import planner_node  # noqa: E402
+from chatbot.src.graph.nodes.supervisor import route_after_supervisor, supervisor_node  # noqa: E402
 
 
 # 평가 전체에서 단일 httpx 클라이언트 공유 (호출마다 새 클라이언트 생성 시 연결 누적으로 hang 발생)
@@ -90,7 +89,23 @@ def _make_vllm_llm_no_pool(model: str, temperature: float = 0) -> ChatOpenAI:
 
 _llm_providers.make_vllm_llm = _make_vllm_llm_no_pool
 
+_DEFAULT_EVAL_USER = {
+    "id": 1,
+    "name": "Intent Eval User",
+    "email": "intent-eval@example.com",
+    "site_id": "site_a",
+    "access_token": None,
+}
 
+_ORDER_ROUTE_ALIASES = {
+    "order_entry",
+    "order_intent_router",
+    "cancel_subagent",
+    "refund_subagent",
+    "exchange_subagent",
+    "shipping_subagent",
+    "order_list_subagent",
+}
 # ── 데이터셋 로드 ─────────────────────────────────────────
 
 
@@ -105,16 +120,20 @@ def load_dataset(path: Path) -> list[dict]:
     return samples
 
 
-# ── Planner 호출 → 노드 라우팅 시뮬레이션 ─────────────────
+# ── Planner + Supervisor route-only 평가 ──────────────────
 
 
 def restart_ollama(model: str, base_url: str = "http://localhost:11434") -> None:
     """Ollama 서버 프로세스를 완전히 재시작하여 누적된 메모리를 초기화합니다."""
     print("  [Ollama 재시작] 서버 종료 중...")
-    subprocess.run(
-        ["taskkill", "//F", "//IM", "ollama.exe", "//T"],
-        capture_output=True,
-    )
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "//F", "//IM", "ollama.exe", "//T"],
+            capture_output=True,
+        )
+    else:
+        # Mac/Linux
+        subprocess.run(["pkill", "-f", "ollama"], capture_output=True)
     time.sleep(2)
 
     # 트레이 앱(ollama app.exe)이 자동으로 ollama.exe를 재시작함
@@ -136,38 +155,55 @@ def restart_ollama(model: str, base_url: str = "http://localhost:11434") -> None
     print(f"  [Ollama 재시작 완료] 메모리 초기화됨")
 
 
-def _extract_intents_from_text(text: str) -> list[str]:
-    """Raw 텍스트에서 TaskIntent 키워드를 매칭하여 추출."""
-    text_upper = text.upper()
-    found = []
-    for intent in TaskIntent:
-        if intent == TaskIntent.GENERAL_CHAT:
-            continue
-        if intent.value in text_upper:
-            found.append(intent.value)
-    return found
+def _build_eval_state(user_input: str, model: str, provider: str) -> dict:
+    conversation_id = f"intent-eval-{uuid.uuid4().hex[:12]}"
+    turn_id = f"turn-{uuid.uuid4().hex[:12]}"
+    state = {
+        "messages": [HumanMessage(content=user_input)],
+        "pending_tasks": [],
+        "completed_tasks": [],
+        "current_active_task": None,
+        "order_context": {},
+        "search_context": {},
+        "ui_action_required": None,
+        "agent_results": {},
+        "guardrail_passed": True,
+        "user_info": dict(_DEFAULT_EVAL_USER),
+        "llm_provider": provider,
+        "llm_model": model,
+        "conversation_id": conversation_id,
+        "turn_id": turn_id,
+        "conversation_summary": None,
+    }
+    return state
 
 
-def _retry_with_raw_llm(
+def _normalize_routed_node(node_name: str) -> str:
+    if node_name in _ORDER_ROUTE_ALIASES:
+        return "order_intent_router"
+    return node_name
+
+
+def _predict_nodes_via_route_only(
     user_input: str,
     model: str,
     provider: str,
 ) -> list[str]:
-    """구조화된 출력 파싱 실패 시, raw LLM 호출로 TaskIntent 추출 재시도."""
-    try:
-        llm = make_chat_llm(provider=provider, model=model, temperature=0)
-        messages = [
-            SystemMessage(content=PLANNER_SYSTEM_PROMPT),
-            HumanMessage(content=user_input),
-        ]
-        response = llm.invoke(messages)
-        raw_text = response.content if hasattr(response, "content") else str(response)
-        intents = _extract_intents_from_text(raw_text)
-        if intents:
-            return [INTENT_TO_NODE.get(i, "final_generator") for i in intents]
-    except Exception:
-        pass
-    return []
+    state = _build_eval_state(user_input, model, provider)
+
+    planner_result = planner_node(state)
+    state = {
+        **state,
+        **planner_result,
+    }
+
+    supervisor_result = supervisor_node(state)
+    routed_state = {
+        **state,
+        **supervisor_result,
+    }
+    routed_node = route_after_supervisor(routed_state)
+    return [_normalize_routed_node(routed_node)]
 
 
 def predict_nodes(
@@ -175,29 +211,8 @@ def predict_nodes(
     model: str = "gpt-4o-mini",
     provider: str = "openai",
 ) -> list[str]:
-    """planner_node 호출 (function calling 방식)으로 예측."""
-    state = {
-        "messages": [HumanMessage(content=user_input)],
-        "llm_provider": provider,
-        "llm_model": model,
-        "conversation_summary": None,
-    }
-    result = planner_node(state)
-    predicted_intents = result.get("pending_tasks", [])
-
-    nodes = []
-    for intent in predicted_intents:
-        intent_str = intent.value if isinstance(intent, TaskIntent) else str(intent)
-        node = INTENT_TO_NODE.get(intent_str, "final_generator")
-        nodes.append(node)
-
-    # fallback: GENERAL_CHAT(final_generator)만 반환된 경우 raw LLM 호출로 재시도
-    if nodes == ["final_generator"]:
-        retry_nodes = _retry_with_raw_llm(user_input, model, provider)
-        if retry_nodes:
-            return retry_nodes
-
-    return nodes
+    """planner와 supervisor 라우팅 코드만 호출해 첫 분기 노드를 추출."""
+    return _predict_nodes_via_route_only(user_input, model, provider)
 
 
 # ── 샘플별 평가 ──────────────────────────────────────────
@@ -275,13 +290,21 @@ def run_evaluation(
         global_offset = chunk_start  # 전체 샘플 기준 인덱스 오프셋
 
         # Ollama 재시작 (vllm 사용 시)
-        # 병렬 처리: 매 청크마다 재시작 (parallel개 동시 요청 후 VRAM 해제)
-        # 순차 처리: batch_size 간격으로 재시작
         if provider == "vllm" and chunk_start > 0:
             if parallel > 1 or (batch_size and chunk_start % batch_size == 0):
                 print(f"\n  [{chunk_start}개 처리 완료] Ollama 재시작 중...")
                 restart_ollama(model)
                 print()
+
+        # local(Transformers) 사용 시 모델 누적 메모리 방지를 위해 대기 (필요 시)
+        if provider == "local" and chunk_start > 0:
+            # 로컬은 현재 프로세스 내에서 로드되므로 재시작이 어려움. 대신 gc.collect() 등 고려 가능.
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
 
         # 청크 내 샘플을 병렬로 predict_nodes 호출
         chunk_results: list[tuple[int, dict, list[str]]] = []
@@ -317,8 +340,8 @@ def run_evaluation(
                 chunk_results.append((j, sample, predicted_nodes))
 
         # vllm(Ollama) 사용 시 청크 간 대기 (연결 리소스 고갈 방지)
-        if provider == "vllm":
-            time.sleep(1)
+        if provider in ["vllm", "local"]:
+            time.sleep(0.5)
 
         # 결과 처리 및 출력
         for j, sample, predicted_nodes in chunk_results:
@@ -527,7 +550,7 @@ def main():
     parser = argparse.ArgumentParser(description="Supervisor 라우팅 평가 실행")
     parser.add_argument(
         "--provider", type=str, default="openai",
-        help="LLM 프로바이더 (openai | vllm, 기본: openai)",
+        help="LLM 프로바이더 (openai | vllm | local, 기본: openai)",
     )
     parser.add_argument(
         "--model", type=str, default=None,
@@ -570,6 +593,8 @@ def main():
         model = args.model
     elif args.provider == "vllm":
         model = "qwen3:0.6b"
+    elif args.provider == "local":
+        model = "Qwen/Qwen2.5-1.5B-Instruct"
     else:
         model = settings.OPENAI_MODEL
 

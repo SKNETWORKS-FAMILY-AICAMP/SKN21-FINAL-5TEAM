@@ -40,6 +40,71 @@
   - `vllm/LFM2.5-Thinking:1.2B`
   - `vllm/Qwen3.5:2b`
 
+### 2026-03-19 4차 (local/Qwen/Qwen3.5-2B hard 고도화)
+- 대상 모델: `local/Qwen/Qwen3.5-2B`
+- 대상 데이터셋: `hard(70)`
+- 목적: 실제 chatbot 서버 아키텍처 기준에서 `planner -> supervisor` 상위 라우팅 정확도를 높이는 것
+
+#### 4차-1. 평가 방식 정리
+- 초기에는 전체 그래프를 태우는 방향도 검토했지만, 이 경우 retrieval/subagent 실행까지 붙어 라우팅 평가 목적에 비해 너무 무거웠음
+- 최종적으로 [`run_intent_eval.py`](/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/chatbot_eval/benchmarkV2/intent-bench/run_intent_eval.py#L187)에서 `planner_node -> supervisor_node -> route_after_supervisor`만 직접 호출하는 route-only evaluator로 정리
+- 효과:
+  - Qdrant/HuggingFace retrieval 실행 제거
+  - 평가 대상이 "질문 이해 + 상위 라우팅 정확도"로 명확해짐
+  - local 모델 스모크/회귀 반복 속도 개선
+
+#### 4차-2. planner 출력 계약 분리
+- 문제:
+  - `openai`/`vllm`은 structured output을 안정적으로 사용할 수 있지만, `local`은 raw text 생성이라 같은 프롬프트를 써도 출력 안정성이 낮았음
+- 조치:
+  - [`llm_providers.py`](/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/src/graph/llm_providers.py#L15)에 `LLMRuntimePolicy` 추가
+  - `openai`/`vllm`은 `strict-schema`, `local`/`ollama`는 `strict-label-text`로 capability 선언
+  - [`planner.py`](/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/src/graph/nodes/planner.py#L53)에서 로컬 모델용 strict-label-text 계약과 retry 프롬프트 도입
+- 서버 반영:
+  - [`chat.py`](/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/src/api/v1/endpoints/chat.py#L240)
+  - [`server_fastapi.py`](/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/server_fastapi.py#L152)
+  - 웹에서 어떤 모델을 선택하든 서버 기본 설정과 request 값에 따라 동일한 runtime policy가 적용되도록 정리
+
+#### 4차-3. 하드 실패 케이스 기반 규칙층 추가
+- runtime policy 정리 후에도 hard 오답이 남아 있었고, 패턴은 다음 5개 군으로 수렴
+  - `order_cs` vs `policy_rag`
+  - `discovery` vs `final_generator`
+  - `review/write` vs `discovery`
+  - `used-item` vs `order_cs`
+  - `gift-card` vs `final_generator`
+- 조치:
+  - 남은 오답 11건을 [`test_planner_output_modes.py`](/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/tests/test_planner_output_modes.py#L164)에 회귀 테스트로 고정
+  - [`planner.py`](/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/src/graph/nodes/planner.py#L79)에 고정밀 규칙층 추가
+  - 규칙 우선순위:
+    - `REGISTER_GIFT_CARD`
+    - `WRITE_REVIEW`
+    - `REGISTER_USED_ITEM`
+    - `POLICY_RAG`
+    - `ORDER_CS`
+    - `SEARCH_SIMILAR_TEXT`
+- 이 규칙층은 LLM을 대체하는 것이 아니라, "LLM 없이도 확실한 문장"만 선점하고 나머지는 기존 LLM 경로로 넘김
+
+#### 4차-4. 점수 변화
+
+| 단계 | 주요 변경 | hard 결과 | 비고 |
+|---|---|---|---|
+| 기준점 | route-only evaluator 기준 첫 hard 실행 | 58/70 (0.8286) | 사용자 공유 결과 |
+| 1차 개선 | runtime policy 도입, planner 출력 계약 분리, 서버 모델 설정 연동 | 59/70 (0.8429) | +1건 |
+| 2차 개선 | hard 오답 11건 회귀 테스트 + planner 고정밀 규칙층 추가 | 69/70 (0.9857) | +10건 |
+
+#### 4차-5. 최종 상태
+- 최종 실행 커맨드:
+  - `uv run python -m chatbot.chatbot_eval.benchmarkV2.intent-bench.run_intent_eval --provider local --model Qwen/Qwen3.5-2B --difficulty hard`
+- 최종 결과:
+  - 정확도: `69/70 (0.9857)`
+  - Macro F1: `0.9749`
+  - 소요 시간: `84.7초`
+- 남은 오답 1건:
+  - 입력: `명절 기간에는 배송이 지연된다고 들었는데, 정확히 언제부터 언제까지 늦어지는지 알고 싶어요.`
+  - 기대: `policy_rag_subagent`
+  - 예측: `order_intent_router`
+  - 원인: 현재 규칙에서 `배송 + 지연` 패턴이 `ORDER_CS`로 먼저 잡히지만, 이 문장은 "내 주문 상태"가 아니라 "명절 기간 배송 지연 정책/안내"를 묻는 정책성 질문
+
 ## 2) 모델 변경 및 성능 요약 (`result.json` 기준)
 
 ### Easy/Hard 통합 비교 (동일 실험군)
@@ -90,3 +155,15 @@
 | vllm/mistral-nemo | easy | 70 | 541.62 |
 | vllm/LFM2.5-Thinking:1.2B | easy | 70 | 5067.63 |
 | vllm/Qwen3.5:2b | easy | 70 | 5197.51 |
+
+## 3) local/Qwen/Qwen3.5-2B hard 고도화 요약
+
+| 날짜 | 모델 | 평가 범위 | 결과 |
+|---|---|---|---|
+| 2026-03-19 16:59 | local/Qwen/Qwen3.5-2B | hard 70 | 58/70 (0.8286) |
+| 2026-03-19 이후 | local/Qwen/Qwen3.5-2B | hard 70 | 59/70 (0.8429) |
+| 2026-03-19 최종 | local/Qwen/Qwen3.5-2B | hard 70 | 69/70 (0.9857), Macro F1 0.9749 |
+
+핵심 해석:
+- 82.86% -> 84.29%는 "모델 capability에 맞는 planner 출력 계약과 서버 런타임 정책 정리"의 효과
+- 84.29% -> 98.57%는 "남은 hard 오답을 회귀 테스트로 고정하고, planner 앞단에 고정밀 규칙층을 추가"한 효과

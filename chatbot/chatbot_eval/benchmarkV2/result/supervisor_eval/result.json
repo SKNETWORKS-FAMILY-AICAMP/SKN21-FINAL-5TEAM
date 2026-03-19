@@ -1507,5 +1507,597 @@
       "total": 70,
       "correct": 0
     }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:09:58.095893",
+    "elapsed_seconds": 576.76,
+    "difficulty_filter": "hard",
+    "total_samples": 140,
+    "metrics": {
+      "accuracy": 0.4286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.9643,
+          "recall": 0.675,
+          "f1": 0.7941,
+          "support": 40
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.25,
+          "f1": 0.4,
+          "support": 60
+        },
+        "order_intent_router": {
+          "precision": 0.4,
+          "recall": 0.9,
+          "f1": 0.5538,
+          "support": 20
+        },
+        "policy_rag_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 20
+        },
+        "macro_avg": {
+          "precision": 0.4729,
+          "recall": 0.365,
+          "f1": 0.3496
+        }
+      },
+      "macro_f1": 0.3496,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 18,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "order_intent_router": 10,
+          "discovery_subagent": 27,
+          "final_generator": 3
+        },
+        "policy_rag_subagent": {
+          "order_intent_router": 11,
+          "final_generator": 9
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 15,
+          "order_intent_router": 6,
+          "final_generator": 38,
+          "discovery_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 30,
+        "accuracy": 0.4286
+      },
+      "hard": {
+        "total": 70,
+        "correct": 30,
+        "accuracy": 0.4286
+      }
+    },
+    "summary": {
+      "total": 140,
+      "correct": 60
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:25:38.420648",
+    "elapsed_seconds": 37.86,
+    "difficulty_filter": "hard",
+    "total_samples": 1,
+    "metrics": {
+      "accuracy": 0.0,
+      "per_node_f1": {
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "order_intent_router": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 1
+        },
+        "macro_avg": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "macro_f1": 0.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 1,
+        "correct": 0,
+        "accuracy": 0.0
+      }
+    },
+    "summary": {
+      "total": 1,
+      "correct": 0
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:37:49.151930",
+    "elapsed_seconds": 20.9,
+    "difficulty_filter": "hard",
+    "total_samples": 1,
+    "metrics": {
+      "accuracy": 1.0,
+      "per_node_f1": {
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 1
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 1,
+        "correct": 1,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 1,
+      "correct": 1
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:42:32.424660",
+    "elapsed_seconds": 982.41,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.0,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "macro_f1": 0.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "final_generator": 10
+        },
+        "discovery_subagent": {
+          "final_generator": 20
+        },
+        "policy_rag_subagent": {
+          "final_generator": 10
+        },
+        "form_action_subagent": {
+          "final_generator": 30
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 0,
+        "accuracy": 0.0
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 0
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:49:30.688274",
+    "elapsed_seconds": 8.67,
+    "difficulty_filter": "hard",
+    "total_samples": 1,
+    "metrics": {
+      "accuracy": 1.0,
+      "per_node_f1": {
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 1
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 1,
+        "correct": 1,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 1,
+      "correct": 1
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:59:09.820221",
+    "elapsed_seconds": 121.89,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.8571,
+          "recall": 0.9,
+          "f1": 0.878,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8333,
+          "f1": 0.9091,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.7778,
+          "recall": 0.7,
+          "f1": 0.7368,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.687,
+          "recall": 0.6467,
+          "f1": 0.6648
+        }
+      },
+      "macro_f1": 0.6648,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "policy_rag_subagent": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 18,
+          "final_generator": 2
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 7,
+          "order_intent_router": 1,
+          "final_generator": 2
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 25,
+          "order_intent_router": 1,
+          "discovery_subagent": 3,
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 58,
+        "accuracy": 0.8286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 58
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T17:13:40.538655",
+    "elapsed_seconds": 126.17,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8429,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.8571,
+          "recall": 0.9,
+          "f1": 0.878,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8333,
+          "f1": 0.9091,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8,
+          "recall": 0.8889,
+          "f1": 0.8421,
+          "support": 9
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8889,
+          "recall": 0.7273,
+          "f1": 0.8,
+          "support": 11
+        },
+        "macro_avg": {
+          "precision": 0.7092,
+          "recall": 0.6699,
+          "f1": 0.6858
+        }
+      },
+      "macro_f1": 0.6858,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "policy_rag_subagent": 1
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 8,
+          "order_intent_router": 1,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 18,
+          "final_generator": 2
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 25,
+          "order_intent_router": 1,
+          "discovery_subagent": 3,
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 59,
+        "accuracy": 0.8429
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 59
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T17:19:48.108770",
+    "elapsed_seconds": 84.66,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.9857,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.9,
+          "recall": 1.0,
+          "f1": 0.9474,
+          "support": 9
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 0.9091,
+          "f1": 0.9524,
+          "support": 11
+        },
+        "macro_avg": {
+          "precision": 0.975,
+          "recall": 0.9773,
+          "f1": 0.9749
+        }
+      },
+      "macro_f1": 0.9749,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 9
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 10,
+          "order_intent_router": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 30
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 69,
+        "accuracy": 0.9857
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 69
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T17:25:47.218784",
+    "elapsed_seconds": 134.57,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8714,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 0.95,
+          "f1": 0.9744,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8667,
+          "f1": 0.9286,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8889,
+          "recall": 0.8,
+          "f1": 0.8421,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7378,
+          "recall": 0.6833,
+          "f1": 0.709
+        }
+      },
+      "macro_f1": 0.709,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "policy_rag_subagent": 1,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 19,
+          "final_generator": 1
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 8,
+          "final_generator": 1,
+          "order_intent_router": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 26,
+          "final_generator": 3,
+          "policy_rag_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 61,
+        "accuracy": 0.8714
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 61
+    }
   }
 ]
