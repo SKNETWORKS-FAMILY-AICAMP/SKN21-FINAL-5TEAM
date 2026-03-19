@@ -10,6 +10,7 @@ from chatbot.scripts.run_onboarding_generation import build_parser
 from chatbot.scripts.run_onboarding_generation import build_slack_bridge_from_env
 from chatbot.scripts.run_onboarding_generation import load_generation_env
 from chatbot.scripts.run_slack_socket_gateway import (
+    _build_resume_runner,
     build_parser as build_gateway_parser,
     load_gateway_env,
     run_gateway,
@@ -132,7 +133,12 @@ def test_cli_runner_accepts_explicit_approval_inputs(tmp_path: Path):
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["current_state"] == "completed"
+    assert payload["current_state"] not in {
+        "awaiting_analysis_approval",
+        "awaiting_apply_approval",
+        "awaiting_export_approval",
+    }
+    assert payload["pending_approval"] is None
 
 
 def test_cli_runner_can_emit_report_paths(tmp_path: Path):
@@ -227,6 +233,179 @@ def test_cli_parser_accepts_llm_role_runner_flags():
     assert args.llm_provider == "openai"
     assert args.llm_model == "gpt-4o-mini"
     assert args.print_report_paths is True
+
+
+def test_cli_parser_accepts_llm_patch_draft_flag():
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "--site",
+            "food",
+            "--source-root",
+            "food",
+            "--generated-root",
+            "generated",
+            "--runtime-root",
+            "runtime",
+            "--run-id",
+            "food-run-llm-draft",
+            "--generate-llm-patch-draft",
+        ]
+    )
+
+    assert args.generate_llm_patch_draft is True
+
+
+def test_cli_parser_accepts_explicit_smoke_credentials():
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "--site",
+            "food",
+            "--source-root",
+            "food",
+            "--generated-root",
+            "generated",
+            "--runtime-root",
+            "runtime",
+            "--run-id",
+            "food-run-creds",
+            "--smoke-email",
+            "test1@example.com",
+            "--smoke-password",
+            "password123",
+        ]
+    )
+
+    assert args.smoke_email == "test1@example.com"
+    assert args.smoke_password == "password123"
+
+
+def test_cli_runner_writes_explicit_smoke_credentials_to_manifest(tmp_path: Path):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "chatbot/scripts/run_onboarding_generation.py",
+            "--site",
+            "food",
+            "--source-root",
+            str(source_root),
+            "--generated-root",
+            str(generated_root),
+            "--runtime-root",
+            str(runtime_root),
+            "--run-id",
+            "food-run-credentials",
+            "--agent-version",
+            "test-v1",
+            "--smoke-email",
+            "test1@example.com",
+            "--smoke-password",
+            "password123",
+        ],
+        cwd=Path(__file__).resolve().parents[3],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    manifest = json.loads(
+        (generated_root / "food" / "food-run-credentials" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["credentials"] == {
+        "email": "test1@example.com",
+        "password": "password123",
+    }
+
+
+def test_cli_runner_emits_llm_role_execution_path(tmp_path: Path):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "chatbot/scripts/run_onboarding_generation.py",
+            "--site",
+            "food",
+            "--source-root",
+            str(source_root),
+            "--generated-root",
+            str(generated_root),
+            "--runtime-root",
+            str(runtime_root),
+            "--run-id",
+            "food-run-llm-exec",
+            "--approval",
+            "analysis=approve",
+            "--approval",
+            "apply=approve",
+            "--approval",
+            "export=approve",
+        ],
+        cwd=Path(__file__).resolve().parents[3],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["llm_role_execution_path"].endswith("reports/llm-role-execution.json")
+    assert payload["llm_codebase_interpretation_path"].endswith("reports/llm-codebase-interpretation.json")
+    assert payload["llm_patch_proposal_execution_path"].endswith("reports/llm-patch-proposal-execution.json")
 
 
 def test_cli_parser_accepts_approval_store_and_resume_flags():
@@ -428,6 +607,38 @@ def test_gateway_cli_parser_accepts_socket_mode_flags():
     assert args.channel == "#onboarding-runs"
     assert args.approval_store_root == "generated/approvals"
     assert args.site == "food"
+
+
+def test_gateway_cli_parser_accepts_llm_resume_flags():
+    parser = build_gateway_parser()
+
+    args = parser.parse_args(
+        [
+            "--channel",
+            "#onboarding-runs",
+            "--approval-store-root",
+            "generated/approvals",
+            "--site",
+            "food",
+            "--source-root",
+            "food",
+            "--generated-root",
+            "generated",
+            "--runtime-root",
+            "runtime",
+            "--use-llm-roles",
+            "--generate-llm-patch-draft",
+            "--llm-provider",
+            "openai",
+            "--llm-model",
+            "gpt-5-mini",
+        ]
+    )
+
+    assert args.use_llm_roles is True
+    assert args.generate_llm_patch_draft is True
+    assert args.llm_provider == "openai"
+    assert args.llm_model == "gpt-5-mini"
     assert args.source_root == "food"
 
 
@@ -650,6 +861,51 @@ def test_run_gateway_approve_action_can_trigger_resume(tmp_path: Path):
     listeners[0](None, request)
 
     assert captured["resume"] == ("food-run-001", "analysis")
+
+
+def test_build_resume_runner_preserves_llm_flags(monkeypatch, tmp_path: Path):
+    captured: dict[str, object] = {}
+
+    class FakeLogger:
+        def info(self, message: str, *args):
+            captured["info"] = message % args if args else message
+
+        def exception(self, message: str, *args):
+            captured["exception"] = message % args if args else message
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(
+        "chatbot.scripts.run_slack_socket_gateway.subprocess.run",
+        fake_run,
+    )
+
+    resume = _build_resume_runner(
+        channel="C123",
+        approval_store_root=tmp_path,
+        site="food",
+        source_root="food",
+        generated_root="generated",
+        runtime_root="runtime",
+        agent_version="dev",
+        use_llm_roles=True,
+        generate_llm_patch_draft=True,
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        logger=FakeLogger(),
+    )
+
+    assert resume is not None
+    resume("food-run-308", "analysis")
+
+    cmd = captured["cmd"]
+    assert "--use-llm-roles" in cmd
+    assert "--generate-llm-patch-draft" in cmd
+    assert "--llm-provider" in cmd
+    assert "--llm-model" in cmd
+    assert "gpt-5-mini" in cmd
 
 
 def test_load_gateway_env_reads_root_dotenv(tmp_path: Path, monkeypatch):

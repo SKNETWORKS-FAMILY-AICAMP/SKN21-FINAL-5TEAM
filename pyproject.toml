@@ -24,6 +24,7 @@ dependencies = [
     "pydantic-settings>=2.12.0",
     "pymysql>=1.1.2",
     "python-dotenv>=1.2.1",
+    "redis>=5.2.1",
     "qdrant-client>=1.16.2",
     "sqlalchemy>=2.0.46",
     "torch>=2.7.0",
@@ -42,6 +43,7 @@ dependencies = [
     "slack-sdk>=3.36.0",
     "curl-cffi>=0.14.0",
     "vite>=1.5.2",
+    "django>=6.0.3",
 ]
 
 [dependency-groups]
