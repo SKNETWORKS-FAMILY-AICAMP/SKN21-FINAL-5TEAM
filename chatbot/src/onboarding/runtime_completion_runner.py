@@ -393,11 +393,17 @@ def _run_single_server_probe(*, plan: dict[str, Any], probe_name: str) -> dict[s
 
     if process.poll() is not None:
         stdout, stderr = _collect_process_output(process)
+        failure_reason = _classify_probe_failure_reason(
+            probe_name=probe_name,
+            stdout=stdout,
+            stderr=stderr,
+            default_reason=f"{probe_name}_server_boot_failed",
+        )
         return {
             "plan": plan,
             "passed": False,
             "status": "boot_failed",
-            "failure_reason": f"{probe_name}_server_boot_failed",
+            "failure_reason": failure_reason,
             "stdout": stdout,
             "stderr": stderr,
             "pid": getattr(process, "pid", None),
@@ -491,3 +497,16 @@ def _probe_http_ready(
         "attempts": attempts,
         "error": last_error or "readiness probe failed",
     }
+
+
+def _classify_probe_failure_reason(
+    *,
+    probe_name: str,
+    stdout: str,
+    stderr: str,
+    default_reason: str,
+) -> str:
+    combined = f"{stdout}\n{stderr}"
+    if probe_name == "frontend" and "@shared-chatbot/ChatbotWidget" in combined and "Can't resolve" in combined:
+        return "frontend_import_resolution_failed"
+    return default_reason

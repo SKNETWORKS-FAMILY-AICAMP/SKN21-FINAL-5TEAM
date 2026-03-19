@@ -230,3 +230,92 @@ def test_runtime_completion_runner_mount_probe_records_unsupported_browser_envir
     mount_probe_payload = json.loads((run_root / "reports" / "runtime-mount-probe.json").read_text(encoding="utf-8"))
     assert mount_probe_payload["failure_reason"] == "mount_probe_environment_unsupported"
     assert mount_probe_payload["lightweight_probe"]["mount_file"] == "frontend/src/App.js"
+
+
+def test_runtime_completion_runner_classifies_shared_widget_import_failure(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-016"
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-016" / "workspace"
+
+    (runtime_workspace / "backend").mkdir(parents=True)
+    (runtime_workspace / "backend" / "manage.py").write_text("print('django')\n", encoding="utf-8")
+    (runtime_workspace / "frontend" / "src").mkdir(parents=True)
+    (runtime_workspace / "frontend" / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "food-frontend",
+                "scripts": {
+                    "start": "react-scripts start",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _BackendProcess:
+        pid = 5101
+        returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            self.returncode = 0
+            return 0
+
+        def kill(self):
+            self.returncode = -9
+
+        def communicate(self, timeout=None):
+            return "backend ok\n", ""
+
+    class _FrontendProcess:
+        pid = 5102
+        returncode = 1
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            return None
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def kill(self):
+            return None
+
+        def communicate(self, timeout=None):
+            return (
+                "",
+                "Module not found: Error: Can't resolve '@shared-chatbot/ChatbotWidget' in '/workspace/frontend/src/chatbot'\n",
+            )
+
+    launched = iter([_BackendProcess(), _FrontendProcess()])
+
+    with patch(
+        "chatbot.src.onboarding.runtime_completion_runner._launch_server_process",
+        side_effect=lambda command, cwd: next(launched),
+    ), patch(
+        "chatbot.src.onboarding.runtime_completion_runner._probe_http_ready",
+        return_value={
+            "passed": True,
+            "url": "http://127.0.0.1:8000/api/chat/auth-token",
+            "status_code": 200,
+            "attempts": 1,
+            "error": None,
+        },
+    ):
+        result = run_runtime_completion(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            site="food",
+            run_id="food-run-016",
+        )
+
+    assert result["passed"] is False
+    assert result["failure_reason"] == "frontend_import_resolution_failed"
+    assert result["frontend_probe"]["failure_reason"] == "frontend_import_resolution_failed"
+    assert "Can't resolve '@shared-chatbot/ChatbotWidget'" in result["frontend_probe"]["stderr"]

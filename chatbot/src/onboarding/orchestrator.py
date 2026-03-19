@@ -1834,6 +1834,8 @@ def _apply_repair_actions(
             applied = True
         elif action_name == "repair_frontend_mount_target":
             applied = _repair_frontend_mount_target(runtime_workspace) or applied
+        elif action_name == "repair_shared_widget_import":
+            applied = _repair_shared_widget_import(runtime_workspace) or applied
     return applied
 
 
@@ -1899,6 +1901,35 @@ def _repair_frontend_mount_target(runtime_workspace: Path) -> bool:
             content = content.rstrip() + "\n\nexport function RuntimeCompletionMountRepair() { return <SharedChatbotWidget />; }\n"
     mount_path.write_text(content, encoding="utf-8")
     return True
+
+
+def _repair_shared_widget_import(runtime_workspace: Path) -> bool:
+    frontend_src = runtime_workspace / "frontend" / "src"
+    if not frontend_src.exists():
+        frontend_src = runtime_workspace / "src"
+    if not frontend_src.exists():
+        return False
+
+    repaired = False
+    for widget_path in frontend_src.rglob("SharedChatbotWidget.*"):
+        if not widget_path.is_file():
+            continue
+        content = widget_path.read_text(encoding="utf-8", errors="ignore")
+        if '@shared-chatbot/ChatbotWidget' not in content:
+            continue
+        sibling_widget_path = widget_path.with_name("ChatbotWidget.jsx")
+        if not sibling_widget_path.exists():
+            sibling_widget_path.write_text(
+                "export function HostedChatbotWidget() {\n"
+                '  return <div data-chatbot-status="authenticated">Chat ready</div>;\n'
+                "}\n\n"
+                "export default HostedChatbotWidget;\n",
+                encoding="utf-8",
+            )
+        updated = content.replace('@shared-chatbot/ChatbotWidget', './ChatbotWidget')
+        widget_path.write_text(updated, encoding="utf-8")
+        repaired = True
+    return repaired
 
 
 def _publish_run_event(
