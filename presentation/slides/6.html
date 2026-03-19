@@ -3,243 +3,32 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>솔루션 개요</title>
-<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
-<link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet"/>
-<style>body {
-    margin: 0;
-    padding: 0;
-    font-family: "Noto Sans KR", sans-serif;
-    background-color: #fff
-    }
-.slide-container {
-    width: 1280px;
-    height: 720px;
-    display: flex;
-    position: relative;
-    background-color: #fff;
-    overflow: hidden
-    }
-.left-content {
-    width: 35%;
-    height: 100%;
-    padding: 60px 50px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: relative;
-    z-index: 10
-    }
-.right-content {
-    width: 65%;
-    height: 100%;
-    padding: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    z-index: 10
-    }
-.heading-medium {
-    font-family: "Montserrat", sans-serif;
-    font-weight: 700;
-    font-size: 22px;
-    color: #999;
-    margin-bottom: 10px;
-    text-transform: uppercase;
-    letter-spacing: 2px
-    }
-.heading-large {
-    font-family: "Montserrat", "Noto Sans KR", sans-serif;
-    font-weight: 900;
-    font-size: 58px;
-    line-height: 1.1;
-    color: #000;
-    margin-bottom: 30px
-    }
-.accent-bar {
-    width: 80px;
-    height: 6px;
-    background-color: #000;
-    margin-bottom: 30px
-    }
-.body-text {
-    font-family: "Noto Sans KR", sans-serif;
-    font-size: 18px;
-    color: #666;
-    line-height: 1.8
-    }
-.architecture-box {
-    background-color: #f8f8f8;
-    border-radius: 12px;
-    padding: 50px 40px;
-    width: 100%;
-    max-width: 750px;
-    position: relative
-    }
-.flow-container {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 30px;
-    margin-bottom: 40px
-    }
-.layer-box {
-    flex: 1;
-    text-align: center;
-    padding: 25px 15px;
-    border-radius: 8px;
-    background-color: #fff;
-    border: 2px solid #e0e0e0;
-    transition: all 0.3s ease
-    }
-.layer-box:hover {
-    border-color: #000;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1)
-    }
-.layer-icon {
-    font-size: 36px;
-    color: #000;
-    margin-bottom: 12px
-    }
-.layer-title {
-    font-family: "Montserrat", "Noto Sans KR", sans-serif;
-    font-weight: 700;
-    font-size: 16px;
-    color: #000;
-    margin-bottom: 6px
-    }
-.layer-desc {
-    font-family: "Noto Sans KR", sans-serif;
-    font-size: 13px;
-    color: #999
-    }
-.arrow-right {
-    font-size: 32px;
-    color: #ccc
-    }
-.feature-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 20px;
-    margin-top: 30px
-    }
-.feature-item {
-    text-align: center;
-    padding: 20px;
-    background-color: #fff;
-    border-radius: 6px
-    }
-.feature-icon {
-    width: 50px;
-    height: 50px;
-    background-color: #000;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 12px;
-    color: #fff;
-    font-size: 20px
-    }
-.feature-text {
-    font-family: "Noto Sans KR", sans-serif;
-    font-weight: 600;
-    font-size: 15px;
-    color: #000
-    }
-.circle-accent {
-    position: absolute;
-    border-radius: 50%;
-    z-index: 0
-    }
-.circle-1 {
-    width: 200px;
-    height: 200px;
-    border: 20px solid #f0f0f0;
-    top: -50px;
-    left: -50px;
-    opacity: 0.3
-    }
-.circle-2 {
-    width: 150px;
-    height: 150px;
-    border: 15px solid #f0f0f0;
-    bottom: -30px;
-    right: -30px;
-    opacity: 0.3
-    }</style>
+<title>개발 여정과 범위</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="theme.css" rel="stylesheet"/>
 </head>
 <body>
-<div class="slide-container">
-<div class="circle-accent circle-1"></div>
-<div class="circle-accent circle-2"></div>
-
-<!-- Left Content -->
-<div class="left-content">
-<div style="position: relative;
-z-index: 2">
-<p class="heading-medium">SOLUTION OVERVIEW</p>
-<h1 class="heading-large">솔루션<br/>개요</h1>
+<main class="slide">
+<div class="deco-ring"></div>
+<div class="deco-orb"></div>
+<div class="topbar">
+<p class="eyebrow">Build Journey</p>
+<span class="page-number">05</span>
+</div>
+<section class="hero">
+<h1>프로젝트 확장 방식,<br/>기능 추가보다 가설 검증 순서</h1>
 <div class="accent-bar"></div>
-<p class="body-text">
-AI 챗봇 기반 웹사이트 플랫폼의 전체 아키텍처와 핵심 구성 요소를 제시합니다.
-</p>
-</div>
-</div>
-
-<!-- Right Content -->
-<div class="right-content">
-<div class="architecture-box">
-<div class="flow-container">
-<div class="layer-box">
-<div class="layer-icon"><i class="fas fa-user"></i></div>
-<div class="layer-title">사용자 인터페이스</div>
-<div class="layer-desc">웹/모바일 챗봇 UI</div>
-</div>
-<i class="fas fa-chevron-right arrow-right"></i>
-<div class="layer-box">
-<div class="layer-icon"><i class="fas fa-robot"></i></div>
-<div class="layer-title">AI 챗봇 엔진</div>
-<div class="layer-desc">NLP/NLU 처리</div>
-</div>
-<i class="fas fa-chevron-right arrow-right"></i>
-<div class="layer-box">
-<div class="layer-icon"><i class="fas fa-database"></i></div>
-<div class="layer-title">백엔드 시스템</div>
-<div class="layer-desc">API 서버 & DB</div>
-</div>
-</div>
-
-<div class="feature-grid">
-<div class="feature-item">
-<div class="feature-icon"><i class="fas fa-comments"></i></div>
-<div class="feature-text">실시간 대화</div>
-</div>
-<div class="feature-item">
-<div class="feature-icon"><i class="fas fa-brain"></i></div>
-<div class="feature-text">지속 학습</div>
-</div>
-<div class="feature-item">
-<div class="feature-icon"><i class="fas fa-shield-alt"></i></div>
-<div class="feature-text">보안 강화</div>
-</div>
-<div class="feature-item">
-<div class="feature-icon"><i class="fas fa-chart-bar"></i></div>
-<div class="feature-text">데이터 분석</div>
-</div>
-<div class="feature-item">
-<div class="feature-icon"><i class="fas fa-mobile-alt"></i></div>
-<div class="feature-text">반응형 디자인</div>
-</div>
-<div class="feature-item">
-<div class="feature-icon"><i class="fas fa-plug"></i></div>
-<div class="feature-text">API 연동</div>
-</div>
-</div>
-</div>
-</div>
-</div>
+<p class="lead">웹 환경 구축, 수정 효과 검증, 다른 웹사이트 적용 가능성 확인까지 이어지는 단계적 확장</p>
+</section>
+<section class="timeline">
+<div class="timeline-step"><strong>01. 주제 선정</strong><span>온라인 쇼핑 도메인 결정</span></div>
+<div class="timeline-step"><strong>02. 액션 정의</strong><span>주문·배송·취소·환불 범위 정의</span></div>
+<div class="timeline-step"><strong>03. 서비스 구축</strong><span>웹사이트 개발, 챗봇 mount 환경 구성</span></div>
+<div class="timeline-step"><strong>04. 실험과 수정</strong><span>실패 케이스 기반 프롬프트·흐름 개선</span></div>
+<div class="timeline-step"><strong>05. 평가셋 구축</strong><span>의도·툴 호출·RAG 분리 평가 구조</span></div>
+<div class="timeline-step"><strong>06. 고도화</strong><span>RAG·아키텍처 개선, 전후 재검증</span></div>
+<div class="timeline-step"><strong>07. SaaS 확장</strong><span>다중 웹사이트 자동 연동 범위 확장</span></div>
+</section>
+</main>
 </body>
 </html>
