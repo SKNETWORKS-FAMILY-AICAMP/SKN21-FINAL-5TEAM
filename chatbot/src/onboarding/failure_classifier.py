@@ -18,6 +18,85 @@ def classify_onboarding_failure(
     backend_errors = [str(item) for item in backend_route_wiring.get("validation_errors") or []]
     frontend_artifact = frontend_evaluation.get("frontend_artifact") or {}
     frontend_errors = [str(item) for item in frontend_artifact.get("validation_errors") or []]
+    normalized_signature = str(failure_signature or "").strip()
+
+    runtime_completion_classes = {
+        "frontend_import_resolution_failed": {
+            "repairable": True,
+            "repair_actions": [
+                {
+                    "action": "repair_shared_widget_import",
+                    "target_path": "frontend/src/chatbot/SharedChatbotWidget.jsx",
+                }
+            ],
+        },
+        "frontend_dev_server_boot_failed": {
+            "repairable": True,
+            "repair_actions": [
+                {
+                    "action": "repair_frontend_dev_bootstrap",
+                    "target_path": "frontend/package.json",
+                }
+            ],
+        },
+        "frontend_readiness_failed": {
+            "repairable": True,
+            "repair_actions": [
+                {
+                    "action": "repair_frontend_dev_bootstrap",
+                    "target_path": "frontend/package.json",
+                }
+            ],
+        },
+        "backend_server_boot_failed": {
+            "repairable": True,
+            "repair_actions": [
+                {
+                    "action": "repair_backend_entrypoint",
+                    "target_path": "backend",
+                }
+            ],
+        },
+        "backend_readiness_failed": {
+            "repairable": True,
+            "repair_actions": [
+                {
+                    "action": "repair_backend_entrypoint",
+                    "target_path": "backend",
+                }
+            ],
+        },
+        "chatbot_mount_missing": {
+            "repairable": True,
+            "repair_actions": [
+                {
+                    "action": "repair_frontend_mount_target",
+                    "target_path": "frontend/src",
+                }
+            ],
+        },
+        "chatbot_status_not_rendered": {
+            "repairable": True,
+            "repair_actions": [
+                {
+                    "action": "repair_frontend_mount_target",
+                    "target_path": "frontend/src",
+                }
+            ],
+        },
+        "mount_probe_environment_unsupported": {
+            "repairable": False,
+            "repair_actions": [],
+        },
+    }
+    signature_head, _, _ = normalized_signature.partition(":")
+    if signature_head in runtime_completion_classes:
+        payload = runtime_completion_classes[signature_head]
+        return {
+            "classification": signature_head,
+            "repairable": payload["repairable"],
+            "repair_actions": payload["repair_actions"],
+        }
 
     if "missing chat auth import target" in backend_errors:
         return {
@@ -65,7 +144,6 @@ def classify_onboarding_failure(
             ],
         }
 
-    normalized_signature = str(failure_signature or "").strip()
     if normalized_signature.startswith("response_schema_mismatch"):
         return {
             "classification": "response_schema_mismatch",

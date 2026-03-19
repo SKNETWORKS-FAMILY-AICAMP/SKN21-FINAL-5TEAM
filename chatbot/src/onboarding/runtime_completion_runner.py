@@ -48,10 +48,21 @@ def run_runtime_completion(
         "passed": False,
         "status": "not_started",
     }
-    raw_failure_reason = probe_payload.get("failure_reason")
-    failure_reason = str(raw_failure_reason) if raw_failure_reason else None
     attempt_count = int(probe_payload.get("attempt_count") or 1)
-    passed = bool(probe_payload.get("passed", False))
+    server_probes_passed = bool(probe_payload.get("passed", False))
+    mount_probe = _run_mount_probe(
+        runtime_workspace=workspace,
+        frontend_probe=frontend_probe,
+    ) if server_probes_passed else _build_skipped_mount_probe()
+    mount_probe_path = reports_root / "runtime-mount-probe.json"
+    mount_probe_path.write_text(
+        json.dumps(mount_probe, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    raw_failure_reason = probe_payload.get("failure_reason") or mount_probe.get("failure_reason")
+    failure_reason = str(raw_failure_reason) if raw_failure_reason else None
+    passed = server_probes_passed and bool(mount_probe.get("passed", False))
 
     server_probe_report = {
         "run_id": run_id,
@@ -62,6 +73,7 @@ def run_runtime_completion(
         "frontend": frontend_probe,
         "passed": passed,
         "failure_reason": failure_reason,
+        "mount_probe": mount_probe,
     }
     server_probe_path = reports_root / "runtime-server-probes.json"
     server_probe_path.write_text(
@@ -78,8 +90,10 @@ def run_runtime_completion(
         "failure_reason": failure_reason,
         "backend_probe": backend_probe,
         "frontend_probe": frontend_probe,
+        "mount_probe": mount_probe,
         "report_path": str(reports_root / "runtime-completion.json"),
         "server_probe_report_path": str(server_probe_path),
+        "mount_probe_report_path": str(mount_probe_path),
     }
     completion_path = reports_root / "runtime-completion.json"
     completion_path.write_text(
@@ -211,6 +225,120 @@ def _run_server_probes_placeholder(context: dict[str, Any]) -> dict[str, Any]:
             "passed": False,
             "status": "not_started",
         },
+    }
+
+
+def _run_mount_probe(
+    *,
+    runtime_workspace: Path,
+    frontend_probe: dict[str, Any],
+) -> dict[str, Any]:
+    page_url = str(
+        (frontend_probe.get("readiness") or {}).get("url")
+        or (frontend_probe.get("plan") or {}).get("readiness_url")
+        or "http://127.0.0.1:3000"
+    )
+    lightweight_probe = _run_lightweight_mount_probe(
+        runtime_workspace=runtime_workspace,
+        page_url=page_url,
+    )
+    if not lightweight_probe.get("wiring_detected", False):
+        return {
+            "passed": False,
+            "failure_reason": "chatbot_mount_missing",
+            "lightweight_probe": lightweight_probe,
+            "browser_probe": {
+                "status": "skipped",
+                "reason": "lightweight_mount_probe_failed",
+            },
+        }
+
+    browser_probe = _run_browser_mount_probe(page_url)
+    status = str(browser_probe.get("status") or "")
+    if status == "unsupported_environment":
+        return {
+            "passed": False,
+            "failure_reason": "mount_probe_environment_unsupported",
+            "lightweight_probe": lightweight_probe,
+            "browser_probe": browser_probe,
+        }
+    if status not in {"loading", "authenticated", "unauthenticated", "error"}:
+        return {
+            "passed": False,
+            "failure_reason": "chatbot_status_not_rendered",
+            "lightweight_probe": lightweight_probe,
+            "browser_probe": browser_probe,
+        }
+    return {
+        "passed": True,
+        "failure_reason": None,
+        "lightweight_probe": lightweight_probe,
+        "browser_probe": browser_probe,
+    }
+
+
+def _build_skipped_mount_probe() -> dict[str, Any]:
+    return {
+        "passed": False,
+        "failure_reason": "mount_probe_skipped",
+        "lightweight_probe": {
+            "mount_file": None,
+            "widget_file": None,
+            "wiring_detected": False,
+            "page_url": None,
+            "status_attribute_present": False,
+        },
+        "browser_probe": {
+            "status": "skipped",
+            "reason": "server_probes_failed",
+        },
+    }
+
+
+def _run_lightweight_mount_probe(*, runtime_workspace: Path, page_url: str) -> dict[str, Any]:
+    frontend_root = runtime_workspace / "frontend"
+    if not frontend_root.exists():
+        frontend_root = runtime_workspace
+
+    mount_file: Path | None = None
+    widget_file: Path | None = None
+    for candidate in sorted(frontend_root.rglob("*")):
+        if not candidate.is_file():
+            continue
+        if candidate.name.startswith("SharedChatbotWidget"):
+            widget_file = widget_file or candidate
+            continue
+        if candidate.suffix not in {".js", ".jsx", ".ts", ".tsx", ".vue"}:
+            continue
+        text = candidate.read_text(encoding="utf-8", errors="ignore")
+        if "SharedChatbotWidget" in text:
+            mount_file = candidate
+            break
+
+    wiring_detected = False
+    if mount_file is not None:
+        content = mount_file.read_text(encoding="utf-8", errors="ignore")
+        wiring_detected = "import SharedChatbotWidget" in content and "<SharedChatbotWidget" in content
+
+    status_attribute_present = False
+    if widget_file is not None:
+        widget_content = widget_file.read_text(encoding="utf-8", errors="ignore")
+        status_attribute_present = "data-chatbot-status" in widget_content
+
+    return {
+        "mount_file": str(mount_file.relative_to(runtime_workspace)) if mount_file else None,
+        "widget_file": str(widget_file.relative_to(runtime_workspace)) if widget_file else None,
+        "wiring_detected": wiring_detected,
+        "page_url": page_url,
+        "status_attribute_present": status_attribute_present,
+    }
+
+
+def _run_browser_mount_probe(page_url: str) -> dict[str, Any]:
+    return {
+        "status": "unsupported_environment",
+        "page_url": page_url,
+        "reason": "browser_probe_not_configured",
     }
 
 

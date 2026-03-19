@@ -150,6 +150,23 @@ def test_runtime_completion_runner_readiness_records_server_probe_outputs(tmp_pa
     ), patch(
         "chatbot.src.onboarding.runtime_completion_runner._probe_http_ready",
         side_effect=_fake_probe,
+    ), patch(
+        "chatbot.src.onboarding.runtime_completion_runner._run_mount_probe",
+        return_value={
+            "passed": True,
+            "failure_reason": None,
+            "lightweight_probe": {
+                "mount_file": "frontend/src/App.js",
+                "widget_file": "frontend/src/chatbot/SharedChatbotWidget.jsx",
+                "wiring_detected": True,
+                "page_url": "http://127.0.0.1:3000",
+            },
+            "browser_probe": {
+                "status": "authenticated",
+                "selector": "[data-chatbot-status]",
+                "value": "authenticated",
+            },
+        },
     ):
         result = run_runtime_completion(
             run_root=run_root,
@@ -171,3 +188,45 @@ def test_runtime_completion_runner_readiness_records_server_probe_outputs(tmp_pa
     assert probe_payload["passed"] is True
     assert probe_payload["backend"]["readiness"]["status_code"] == 200
     assert probe_payload["frontend"]["stdout"] == "frontend boot ok\n"
+
+
+def test_runtime_completion_runner_mount_probe_records_unsupported_browser_environment(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-015"
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-015" / "workspace"
+
+    (runtime_workspace / "frontend" / "src" / "chatbot").mkdir(parents=True)
+    (runtime_workspace / "frontend" / "src" / "chatbot" / "SharedChatbotWidget.jsx").write_text(
+        "export default function SharedChatbotWidget() { return <div data-chatbot-status=\"authenticated\">Chat</div>; }\n",
+        encoding="utf-8",
+    )
+    (runtime_workspace / "frontend" / "src" / "App.js").write_text(
+        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
+        "export default function App() { return <SharedChatbotWidget />; }\n",
+        encoding="utf-8",
+    )
+
+    with patch(
+        "chatbot.src.onboarding.runtime_completion_runner._run_server_probes",
+        return_value={
+            "attempt_count": 1,
+            "passed": True,
+            "failure_reason": None,
+            "backend": {"passed": True, "status": "ready", "plan": {"command": ["python"]}},
+            "frontend": {"passed": True, "status": "ready", "plan": {"command": ["npm"]}},
+        },
+    ):
+        result = run_runtime_completion(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            site="food",
+            run_id="food-run-015",
+        )
+
+    assert result["passed"] is False
+    assert result["failure_reason"] == "mount_probe_environment_unsupported"
+    assert result["mount_probe"]["lightweight_probe"]["wiring_detected"] is True
+    assert result["mount_probe"]["browser_probe"]["status"] == "unsupported_environment"
+
+    mount_probe_payload = json.loads((run_root / "reports" / "runtime-mount-probe.json").read_text(encoding="utf-8"))
+    assert mount_probe_payload["failure_reason"] == "mount_probe_environment_unsupported"
+    assert mount_probe_payload["lightweight_probe"]["mount_file"] == "frontend/src/App.js"

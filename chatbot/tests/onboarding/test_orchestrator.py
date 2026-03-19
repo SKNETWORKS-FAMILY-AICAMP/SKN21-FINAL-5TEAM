@@ -1,4 +1,5 @@
 import sys
+import typing
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -9,6 +10,7 @@ from typing import Any, Callable
 import pytest
 
 from chatbot.src.onboarding.approval_store import ApprovalStore
+from chatbot.src.onboarding.recovery_planner import build_recovery_plan
 from chatbot.src.onboarding.slack_bridge import InMemorySlackBridge
 
 
@@ -55,6 +57,7 @@ class _FakeRedis:
 from chatbot.src.onboarding.orchestrator import run_onboarding_generation
 from chatbot.src.onboarding.redis_store import RedisRunJobStore
 from chatbot.src.onboarding.role_runner import RoleRunner
+from chatbot.src.onboarding import orchestrator as orchestrator_module
 
 
 def _successful_smoke_results() -> list[dict]:
@@ -213,6 +216,12 @@ def _build_simple_role_runner(
     return RoleRunner(responders=responders)
 
 
+def test_run_validation_with_retries_type_hints_resolve_agent_message():
+    hints = typing.get_type_hints(orchestrator_module._run_validation_with_retries)
+
+    assert hints["run_role_with_events"] == Callable[..., orchestrator_module.AgentMessage] | None
+
+
 def test_run_onboarding_generation_creates_run_bundle_and_runtime_workspace(tmp_path: Path):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"
@@ -285,6 +294,51 @@ def test_run_onboarding_generation_creates_run_bundle_and_runtime_workspace(tmp_
     smoke_summary = json.loads((run_root / "reports" / "smoke-summary.json").read_text(encoding="utf-8"))
     assert smoke_summary["passed"] is True
     assert smoke_summary["required_failures"] == []
+
+
+def test_run_onboarding_generation_exposes_runtime_completion_loop_path_placeholder(tmp_path: Path):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    original_run_smoke_tests = orchestrator_module.run_smoke_tests
+    orchestrator_module.run_smoke_tests = lambda **_: _successful_smoke_results()
+    try:
+        result = run_onboarding_generation(
+            site="food",
+            source_root=source_root,
+            generated_root=generated_root,
+            runtime_root=runtime_root,
+            run_id="food-run-runtime-loop",
+            agent_version="test-v1",
+            approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
+        )
+    finally:
+        orchestrator_module.run_smoke_tests = original_run_smoke_tests
+
+    assert result["runtime_completion_path"].endswith("reports/runtime-completion.json")
 
 
 def test_run_onboarding_generation_uses_session_native_chain_for_cookie_auth(tmp_path: Path, monkeypatch):
@@ -1007,6 +1061,9 @@ def test_run_onboarding_generation_records_frontend_provenance(tmp_path: Path):
     frontend_artifact = frontend_artifacts[0]
     assert frontend_artifact["source"] in {"llm", "recovered_llm", "hard_fallback"}
     assert "SharedChatbotWidget" in frontend_artifact["path"]
+    frontend_widget_content = (run_root / frontend_artifact["path"]).read_text(encoding="utf-8")
+    assert '@shared-chatbot/ChatbotWidget' in frontend_widget_content
+    assert "HostedChatbotWidget" in frontend_widget_content
     patch_content = (run_root / "patches" / "frontend_widget_mount.patch").read_text(encoding="utf-8")
     assert "SharedChatbotWidget" in patch_content
     build_report_path = result.get("frontend_build_validation_path")
@@ -1252,6 +1309,79 @@ def test_run_onboarding_generation_resume_export_stage_creates_and_posts_export_
     assert approval_messages[-1]["message"]["approval_type"] == "export"
 
 
+def test_run_onboarding_generation_skips_slack_approval_requests_when_explicit_decisions_exist(
+    tmp_path: Path, monkeypatch
+):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    def fake_run_validation_jobs(*, run_id, runtime_workspace, report_root, event_store):
+        report_root.mkdir(parents=True, exist_ok=True)
+        backend_path = report_root / "backend-evaluation.json"
+        frontend_path = report_root / "frontend-evaluation.json"
+        backend_path.write_text(json.dumps({"passed": True}), encoding="utf-8")
+        frontend_path.write_text(json.dumps({"passed": True}), encoding="utf-8")
+        (report_root / "frontend-build-validation.json").write_text(
+            json.dumps({"bootstrap_failure_reason": ""}),
+            encoding="utf-8",
+        )
+        return {"backend": backend_path, "frontend": frontend_path}
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.run_smoke_tests",
+        lambda **_: _successful_session_smoke_results(),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator._run_validation_evaluation_jobs",
+        fake_run_validation_jobs,
+    )
+
+    bridge = InMemorySlackBridge(channel="#onboarding")
+
+    result = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-slack-auto-approve",
+        agent_version="test-v1",
+        slack_bridge=bridge,
+        approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
+    )
+
+    approval_messages = [
+        message
+        for message in bridge.messages
+        if message["message"].get("kind") == "approval_request"
+    ]
+
+    assert result["current_state"] == "completed"
+    assert approval_messages == []
+
+
 def test_run_onboarding_generation_emits_structured_smoke_results(tmp_path: Path):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"
@@ -1360,6 +1490,42 @@ def test_run_onboarding_generation_stops_when_frontend_evaluation_is_invalid(tmp
 
     assert result["current_state"] == "human_review_required"
     assert result["runtime_failure_summary"]["frontend"] == "frontend mount invalid"
+
+
+def test_runtime_completion_failure_signatures_map_to_repair_actions():
+    import_failure = build_recovery_plan(
+        {
+            "failure_signature": "frontend_import_resolution_failed:Can't resolve @shared-chatbot/ChatbotWidget",
+            "retry_count": 0,
+            "retry_budget": 2,
+        }
+    )
+    mount_failure = build_recovery_plan(
+        {
+            "failure_signature": "chatbot_mount_missing:mount file missing SharedChatbotWidget",
+            "retry_count": 0,
+            "retry_budget": 2,
+        }
+    )
+    dev_boot_failure = build_recovery_plan(
+        {
+            "failure_signature": "frontend_dev_server_boot_failed:react-scripts start exited early",
+            "retry_count": 0,
+            "retry_budget": 2,
+        }
+    )
+
+    assert import_failure["classification"] == "frontend_import_resolution_failed"
+    assert import_failure["should_retry"] is True
+    assert import_failure["repair_actions"][0]["action"] == "repair_shared_widget_import"
+
+    assert mount_failure["classification"] == "chatbot_mount_missing"
+    assert mount_failure["should_retry"] is True
+    assert mount_failure["repair_actions"][0]["action"] == "repair_frontend_mount_target"
+
+    assert dev_boot_failure["classification"] == "frontend_dev_server_boot_failed"
+    assert dev_boot_failure["should_retry"] is True
+    assert dev_boot_failure["repair_actions"][0]["action"] == "repair_frontend_dev_bootstrap"
 
 
 def test_run_onboarding_generation_observability_emits_stage_lifecycle_events(tmp_path: Path, monkeypatch):
