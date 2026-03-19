@@ -136,6 +136,42 @@ function _getExplicitMessageKey(message: KeyedMessage): string | undefined {
   return rawKey === undefined || rawKey === null ? undefined : String(rawKey);
 }
 
+function _stableSerializeMessageValue(value: unknown): string {
+  if (value === null) {
+    return 'null';
+  }
+
+  if (value === undefined) {
+    return 'undefined';
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => _stableSerializeMessageValue(item)).join(',')}]`;
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey));
+
+    return `{${entries
+      .map(([entryKey, entryValue]) => `${entryKey}:${_stableSerializeMessageValue(entryValue)}`)
+      .join(',')}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function _getStableMessageKey(message: KeyedMessage & { type: string; role?: string }): string {
+  const explicitKey = _getExplicitMessageKey(message);
+  if (explicitKey) {
+    return explicitKey;
+  }
+
+  const { id: _id, message_id: _messageId, messageKey: _messageKey, ...rest } = message;
+  return _stableSerializeMessageValue(rest);
+}
+
 function _hasSharedWidgetCapability(
   capabilities: SharedWidgetCapabilities | undefined,
   capability: SharedWidgetCapability,
@@ -584,32 +620,16 @@ export function ChatbotWidget<TMessage extends { type: string; role?: string }>(
   messageListClassName,
 }: ChatbotWidgetProps<TMessage>) {
   const productPurchaseEnabled = _hasSharedWidgetCapability(capabilities, 'products_purchase');
-
-  const messageKeyMapRef = React.useRef(new WeakMap<object, string>());
-  const nextMessageKeyRef = React.useRef(0);
-
-  const getRenderKey = (message: TMessage) => {
-    const explicitKey = _getExplicitMessageKey(message as TMessage & KeyedMessage);
-    if (explicitKey) {
-      return explicitKey;
-    }
-
-    const cachedKey = messageKeyMapRef.current.get(message);
-    if (cachedKey) {
-      return cachedKey;
-    }
-
-    const generatedKey = `${message.type}-${nextMessageKeyRef.current}`;
-    nextMessageKeyRef.current += 1;
-    messageKeyMapRef.current.set(message, generatedKey);
-    return generatedKey;
-  };
+  const messageKeyCounts = new Map<string, number>();
 
   return (
     <div className={[styles.widgetRoot, className].filter(Boolean).join(' ')}>
       <div className={[styles.widgetMessageList, messageListClassName].filter(Boolean).join(' ')}>
       {messages.map((message, index) => {
-        const renderKey = getRenderKey(message);
+        const keyBase = _getStableMessageKey(message as TMessage & KeyedMessage & { type: string; role?: string });
+        const occurrence = messageKeyCounts.get(keyBase) ?? 0;
+        messageKeyCounts.set(keyBase, occurrence + 1);
+        const renderKey = `${keyBase}:${occurrence}`;
 
         if (_isOrderListMessage(message)) {
           return (

@@ -285,6 +285,252 @@ process.stdout.write(JSON.stringify({ markup }));
     assert "바로 구매" not in payload["markup"]
 
 
+def test_shared_widget_preserves_child_state_across_cloned_message_rerenders(tmp_path: Path) -> None:
+    output = _run_shared_widget_typescript(
+        tmp_path,
+        entry_name="render_shared_widget_cloned_messages.tsx",
+        bootstrap_name="run_render_shared_widget_cloned_messages.cjs",
+        tsconfig_name="tsconfig.shared-widget-cloned-messages.json",
+        source="""
+import React from "react";
+import { createRoot } from "react-dom/client";
+import { ChatbotWidget } from "@shared-chatbot/ChatbotWidget";
+
+declare const process: {
+  stdout: {
+    write: (chunk: string) => void;
+  };
+  exit: (code?: number) => void;
+};
+
+class NodeBase {
+  nodeType: number;
+  ownerDocument: DocumentNode | null;
+  parentNode: NodeBase | null;
+  childNodes: NodeBase[];
+  private listeners: Record<string, Array<(...args: unknown[]) => void>>;
+
+  constructor(nodeType: number, ownerDocument: DocumentNode | null) {
+    this.nodeType = nodeType;
+    this.ownerDocument = ownerDocument;
+    this.parentNode = null;
+    this.childNodes = [];
+    this.listeners = {};
+  }
+
+  appendChild(child: NodeBase) {
+    child.parentNode = this;
+    this.childNodes.push(child);
+    return child;
+  }
+
+  insertBefore(child: NodeBase, before: NodeBase | null) {
+    child.parentNode = this;
+    const index = before ? this.childNodes.indexOf(before) : -1;
+    if (index === -1) {
+      this.childNodes.push(child);
+    } else {
+      this.childNodes.splice(index, 0, child);
+    }
+    return child;
+  }
+
+  removeChild(child: NodeBase) {
+    const index = this.childNodes.indexOf(child);
+    if (index !== -1) {
+      this.childNodes.splice(index, 1);
+      child.parentNode = null;
+    }
+    return child;
+  }
+
+  addEventListener(type: string, listener: (...args: unknown[]) => void) {
+    (this.listeners[type] ||= []).push(listener);
+  }
+
+  removeEventListener(type: string, listener: (...args: unknown[]) => void) {
+    this.listeners[type] = (this.listeners[type] || []).filter((item) => item !== listener);
+  }
+
+  get firstChild() {
+    return this.childNodes[0] || null;
+  }
+
+  get textContent(): string {
+    return this.childNodes.map((child) => child.textContent).join("");
+  }
+
+  set textContent(value: string) {
+    this.childNodes = [new TextNode(String(value), this.ownerDocument)];
+  }
+}
+
+class ElementNode extends NodeBase {
+  tagName: string;
+  nodeName: string;
+  style: Record<string, string>;
+  attributes: Record<string, string>;
+  namespaceURI: string;
+
+  constructor(tagName: string, ownerDocument: DocumentNode) {
+    super(1, ownerDocument);
+    this.tagName = tagName.toUpperCase();
+    this.nodeName = this.tagName;
+    this.style = {};
+    this.attributes = {};
+    this.namespaceURI = "http://www.w3.org/1999/xhtml";
+  }
+
+  setAttribute(name: string, value: string) {
+    this.attributes[name] = String(value);
+  }
+
+  removeAttribute(name: string) {
+    delete this.attributes[name];
+  }
+}
+
+class TextNode extends NodeBase {
+  nodeValue: string;
+
+  constructor(text: string, ownerDocument: DocumentNode | null) {
+    super(3, ownerDocument);
+    this.nodeValue = text;
+  }
+
+  get textContent(): string {
+    return this.nodeValue;
+  }
+
+  set textContent(value: string) {
+    this.nodeValue = String(value);
+  }
+}
+
+class DocumentNode extends NodeBase {
+  defaultView: WindowShape | null;
+  documentElement: ElementNode;
+  body: ElementNode;
+  activeElement: ElementNode;
+
+  constructor() {
+    super(9, null);
+    this.ownerDocument = this;
+    this.defaultView = null;
+    this.documentElement = new ElementNode("html", this);
+    this.body = new ElementNode("body", this);
+    this.activeElement = this.body;
+    this.appendChild(this.documentElement);
+    this.documentElement.appendChild(this.body);
+  }
+
+  createElement(tag: string) {
+    return new ElementNode(tag, this);
+  }
+
+  createTextNode(text: string) {
+    return new TextNode(text, this);
+  }
+}
+
+type WindowShape = {
+  document: DocumentNode;
+  navigator: { userAgent: string };
+  HTMLElement: typeof ElementNode;
+  HTMLIFrameElement: typeof ElementNode;
+  SVGElement: typeof ElementNode;
+  Element: typeof ElementNode;
+  Node: typeof NodeBase;
+  Text: typeof TextNode;
+};
+
+const documentNode = new DocumentNode();
+const windowNode: WindowShape = {
+  document: documentNode,
+  navigator: { userAgent: "node" },
+  HTMLElement: ElementNode,
+  HTMLIFrameElement: class HTMLIFrameElement extends ElementNode {},
+  SVGElement: ElementNode,
+  Element: ElementNode,
+  Node: NodeBase,
+  Text: TextNode,
+};
+
+documentNode.defaultView = windowNode;
+
+globalThis.document = documentNode as unknown as Document;
+globalThis.window = windowNode as unknown as Window & typeof globalThis;
+Object.defineProperty(globalThis, "navigator", {
+  configurable: true,
+  value: windowNode.navigator,
+});
+globalThis.HTMLElement = windowNode.HTMLElement as unknown as typeof HTMLElement;
+globalThis.HTMLIFrameElement = windowNode.HTMLIFrameElement as unknown as typeof HTMLIFrameElement;
+globalThis.Element = windowNode.Element as unknown as typeof Element;
+globalThis.Node = windowNode.Node as unknown as typeof Node;
+globalThis.Text = windowNode.Text as unknown as typeof Text;
+
+let mountCount = 0;
+
+function ProductSelectionProbe({ name }: { name: string }) {
+  const [selection] = React.useState(() => {
+    mountCount += 1;
+    return `${name}-selection-${mountCount}`;
+  });
+
+  return <div>{selection}</div>;
+}
+
+const baseMessages = [
+  {
+    type: "product_list",
+    message: "추천 상품",
+    products: [{ id: 1, name: "테스트 상품", price: 12000 }],
+  },
+];
+
+const clonedMessages = baseMessages.map((message) => ({
+  ...message,
+  products: message.products.map((product) => ({ ...product })),
+}));
+
+const container = documentNode.createElement("div");
+documentNode.body.appendChild(container);
+const root = createRoot(container as unknown as Element);
+
+function render(messages: typeof baseMessages) {
+  root.render(
+    <ChatbotWidget
+      messages={messages}
+      renderProductList={(message) => <ProductSelectionProbe name={message.products[0].name} />}
+    />,
+  );
+}
+
+render(baseMessages);
+
+setTimeout(() => {
+  const firstText = container.textContent;
+  render(clonedMessages);
+
+  setTimeout(() => {
+        process.stdout.write(
+          JSON.stringify({
+            firstText,
+            secondText: container.textContent,
+            selection_preserved: mountCount === 1,
+            mountCount,
+          }),
+        );
+  }, 0);
+}, 0);
+        """,
+    )
+
+    result = json.loads(output)
+    assert result["selection_preserved"] is True
+
+
 def test_shared_widget_source_avoids_site_specific_fallbacks_and_index_keys() -> None:
     product_list_source = (
         REPO_ROOT / "chatbot" / "frontend" / "shared_widget" / "ProductListUI.tsx"
