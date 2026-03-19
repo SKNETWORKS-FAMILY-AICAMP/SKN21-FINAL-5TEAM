@@ -345,6 +345,57 @@ def test_simulate_candidate_patch_merge_writes_llm_patch_report(tmp_path: Path):
     assert payload["applied_patch_artifacts"] == ["patches/llm-proposed.patch"]
 
 
+def test_simulate_candidate_patch_merge_reports_invalid_proposed_patch(tmp_path: Path):
+    source_root = tmp_path / "source"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+
+    run_root = generated_root / "food" / "run-proposed"
+    (run_root / "patches").mkdir(parents=True)
+    (run_root / "patches" / "proposed.patch").write_text(
+        "not a valid patch\n",
+        encoding="utf-8",
+    )
+
+    manifest = OverlayManifest.model_validate(
+        {
+            "run_id": "run-proposed",
+            "site": "food",
+            "source_root": str(source_root),
+            "created_at": "2026-03-19T12:00:00+09:00",
+            "agent_version": "v1",
+            "analysis": {},
+            "generated_files": [],
+            "patch_targets": [],
+            "docker": {},
+            "tests": {},
+            "status": "generated",
+        }
+    )
+
+    report_path = simulate_candidate_patch_merge(
+        manifest=manifest,
+        generated_run_root=run_root,
+        runtime_root=runtime_root,
+        report_root=run_root / "reports",
+        patch_artifact="patches/proposed.patch",
+        report_name="proposed-patch-simulation.json",
+    )
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert report_path.name == "proposed-patch-simulation.json"
+    assert payload["candidate_patch"] == "patches/proposed.patch"
+    assert payload["passed"] is False
+    assert payload["failed_patch_artifacts"]
+    assert payload["failed_patch_artifacts"][0]["path"] == "patches/proposed.patch"
+
+
 def test_simulate_runtime_merge_emits_observability_events(tmp_path: Path):
     source_root = tmp_path / "source"
     generated_root = tmp_path / "generated"

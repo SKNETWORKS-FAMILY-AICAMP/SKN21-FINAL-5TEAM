@@ -617,13 +617,19 @@ def test_run_onboarding_generation_runtime_repair_emits_repair_loop_event(tmp_pa
     monkeypatch.setattr(orchestrator_module, "_run_validation_evaluation_jobs", fake_validation_jobs)
     monkeypatch.setattr(orchestrator_module, "load_smoke_plan", lambda *_: type("Plan", (), {"steps": []})())
     monkeypatch.setattr(orchestrator_module, "_run_validation_with_retries", lambda **_: _successful_smoke_results())
+    export_calls: list[dict[str, object]] = []
+
+    def fake_export_runtime_patch(**kwargs):
+        export_calls.append(kwargs)
+        return (Path(kwargs["report_root"]) / "export-metadata.json").write_text(
+            json.dumps({"patch_path": "approved.patch"}),
+            encoding="utf-8",
+        )
+
     monkeypatch.setattr(
         orchestrator_module,
         "export_runtime_patch",
-        lambda **kwargs: (Path(kwargs["report_root"]) / "export-metadata.json").write_text(
-            json.dumps({"patch_path": "approved.patch"}),
-            encoding="utf-8",
-        ),
+        fake_export_runtime_patch,
     )
 
     role_runner = RoleRunner(
@@ -692,6 +698,10 @@ def test_run_onboarding_generation_runtime_repair_emits_repair_loop_event(tmp_pa
 
     assert result["current_state"] == "completed"
     assert any(event["component"] == "repair_loop" for event in recovery_events)
+    assert export_calls
+    assert export_calls[0]["strategy_provenance"]["backend_strategy"] in {"django", "unknown"}
+    assert export_calls[0]["strategy_provenance"]["frontend_strategy"] == "react"
+    assert export_calls[0]["recovery_provenance"]["final_recovery_source"] == "missing_import_target"
 
 
 def test_run_onboarding_generation_writes_diagnostic_report_for_structural_failure(tmp_path: Path, monkeypatch):
