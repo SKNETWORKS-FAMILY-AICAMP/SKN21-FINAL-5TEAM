@@ -9,6 +9,7 @@ from chatbot.src.onboarding.approval_store import ApprovalStore
 from chatbot.scripts.run_onboarding_generation import build_parser
 from chatbot.scripts.run_onboarding_generation import build_slack_bridge_from_env
 from chatbot.scripts.run_onboarding_generation import load_generation_env
+from chatbot.scripts.run_onboarding_generation import main as run_onboarding_generation_main
 from chatbot.scripts.run_slack_socket_gateway import (
     _build_resume_runner,
     build_parser as build_gateway_parser,
@@ -203,6 +204,51 @@ def test_cli_runner_can_emit_report_paths(tmp_path: Path):
     assert payload["smoke_summary_path"].endswith("reports/smoke-summary.json")
     assert payload["diagnostic_report_path"].endswith("reports/diagnostic-report.json")
     assert payload["export_metadata_path"].endswith("reports/export-metadata.json")
+
+
+def test_cli_runner_preserves_repaired_run_fields(monkeypatch, capsys):
+    monkeypatch.setattr("chatbot.scripts.run_onboarding_generation.load_generation_env", lambda: None)
+    monkeypatch.setattr("chatbot.scripts.run_onboarding_generation.build_onboarding_event_store", lambda redis_url: None)
+    monkeypatch.setattr("chatbot.scripts.run_onboarding_generation.close_onboarding_event_store", lambda store: None)
+    monkeypatch.setattr(
+        "chatbot.scripts.run_onboarding_generation.run_onboarding_generation",
+        lambda **kwargs: {
+            "run_root": "/tmp/generated/food/food-run-repair",
+            "runtime_workspace": "/tmp/runtime/food/food-run-repair/workspace",
+            "current_state": "completed",
+            "export_metadata_path": "/tmp/generated/food/food-run-repair/reports/export-metadata.json",
+            "recovery_artifact_path": "/tmp/generated/food/food-run-repair/reports/recovery-plan.json",
+            "final_recovery_source": "missing_import_target",
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_onboarding_generation.py",
+            "--site",
+            "food",
+            "--source-root",
+            "/tmp/source",
+            "--generated-root",
+            "/tmp/generated",
+            "--runtime-root",
+            "/tmp/runtime",
+            "--run-id",
+            "food-run-repair",
+            "--agent-version",
+            "test-v1",
+        ],
+    )
+
+    exit_code = run_onboarding_generation_main()
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["current_state"] == "completed"
+    assert payload["export_metadata_path"].endswith("reports/export-metadata.json")
+    assert payload["recovery_artifact_path"].endswith("reports/recovery-plan.json")
+    assert payload["final_recovery_source"] == "missing_import_target"
 
 
 def test_cli_parser_accepts_llm_role_runner_flags():
