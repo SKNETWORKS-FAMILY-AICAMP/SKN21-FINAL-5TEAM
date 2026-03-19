@@ -846,7 +846,7 @@ async def submit_chat_feedback(
     if not session_logger.file_path.exists():
         raise HTTPException(status_code=404, detail="대화 로그를 찾을 수 없습니다.")
 
-    finalized = session_logger.finalize_feedback(request.feedback_label)
+    finalized = session_logger.record_feedback(request.feedback_label)
     return {
         "conversation_id": finalized["conversation_id"],
         "status": finalized["status"],

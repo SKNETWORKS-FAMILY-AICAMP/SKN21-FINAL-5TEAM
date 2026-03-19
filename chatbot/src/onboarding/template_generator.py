@@ -2,7 +2,16 @@ from __future__ import annotations
 
 import difflib
 import json
+import os
 from pathlib import Path
+from typing import Any
+
+from .backend_integration import build_backend_route_patch, choose_backend_route_target
+from .frontend_generator import (
+    generate_frontend_widget_artifact as _generate_frontend_widget_artifact,
+    resolve_widget_path as resolve_frontend_widget_path,
+)
+from .tool_registry_generator import generate_backend_tool_registry
 
 
 SITE_ID_BY_NAME = {
@@ -11,18 +20,66 @@ SITE_ID_BY_NAME = {
     "ecommerce": "site-c",
 }
 
+LOCAL_CHAT_TOKEN_HELPER = """import base64
+import hashlib
+import hmac
+import json
+import time
+
+
+def issue_bridge_token(
+    *,
+    user_id: str,
+    site_id: str,
+    secret: str,
+    name: str,
+    email: str,
+    scopes: list[str],
+    expires_in_seconds: int,
+) -> str:
+    payload = {
+        "user_id": user_id,
+        "site_id": site_id,
+        "name": name,
+        "email": email,
+        "scopes": scopes,
+        "exp": int(time.time()) + expires_in_seconds,
+    }
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    signature = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()
+    return (
+        base64.urlsafe_b64encode(body).decode("utf-8").rstrip("=")
+        + "."
+        + base64.urlsafe_b64encode(signature).decode("utf-8").rstrip("=")
+    )
+
+
+def issue_chat_token(**kwargs) -> str:
+    return issue_bridge_token(**kwargs)
+"""
+
 
 def _load_manifest(run_root: str | Path) -> dict:
     root = Path(run_root)
     return json.loads((root / "manifest.json").read_text(encoding="utf-8"))
 
 
+def _read_source_lines_for_diff(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] = f"{lines[-1]}\n"
+    return lines
+
+
 def _build_food_chat_auth_template(site_id: str) -> str:
     return f"""from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 
-from chatbot.src.auth.chat_token import issue_chat_token
 from users.models import SessionToken
+
+{LOCAL_CHAT_TOKEN_HELPER}
 
 
 @require_POST
@@ -62,7 +119,7 @@ def chat_auth_token(request):
 def _build_bilyeo_chat_auth_template(site_id: str) -> str:
     return f"""from flask import Blueprint, jsonify, session
 
-from chatbot.src.auth.chat_token import issue_chat_token
+{LOCAL_CHAT_TOKEN_HELPER}
 
 
 chat_auth_bp = Blueprint("chat_auth", __name__)
@@ -99,7 +156,7 @@ def _build_ecommerce_chat_auth_template(site_id: str) -> str:
     return f"""from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
-from chatbot.src.auth.chat_token import issue_chat_token
+{LOCAL_CHAT_TOKEN_HELPER}
 
 
 router = APIRouter(tags=["chat-auth"])
@@ -142,7 +199,7 @@ def _build_chat_auth_template(site: str, site_id: str) -> str:
         return _build_bilyeo_chat_auth_template(site_id)
     if site == "ecommerce":
         return _build_ecommerce_chat_auth_template(site_id)
-    return f"""from chatbot.src.auth.chat_token import issue_chat_token
+    return f"""{LOCAL_CHAT_TOKEN_HELPER}
 
 
 def chat_auth_token(request):
@@ -168,6 +225,30 @@ def generate_chat_auth_template(run_root: str | Path) -> Path:
     output_path = root / "files" / "backend" / "chat_auth.py"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(_build_chat_auth_template(site, site_id), encoding="utf-8")
+    return output_path
+
+
+def generate_backend_route_patch(run_root: str | Path) -> Path:
+    root = Path(run_root)
+    manifest = _load_manifest(root)
+    analysis = manifest.get("analysis") or {}
+    strategy = str(analysis.get("backend_strategy") or (analysis.get("framework") or {}).get("backend") or "unknown")
+    target_file = choose_backend_route_target(list(analysis.get("backend_route_targets") or []))
+    output_path = root / "patches" / "backend_chat_auth_route.patch"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not target_file or strategy == "unknown":
+        output_path.write_text("", encoding="utf-8")
+        return output_path
+
+    source_root = Path(str(manifest.get("source_root") or "")).expanduser()
+    source_file = source_root / target_file
+    source_lines = _read_source_lines_for_diff(source_file)
+    patch = build_backend_route_patch(
+        strategy=strategy,
+        target_file=target_file,
+        source_lines=source_lines,
+    )
+    output_path.write_text(patch, encoding="utf-8")
     return output_path
 
 
@@ -494,30 +575,91 @@ def generate_product_adapter_template(run_root: str | Path) -> Path:
     return output_path
 
 
-def _build_frontend_mount_patch(target_file: str) -> str:
+def _merge_frontend_widget_proposal(
+    manifest: dict[str, Any],
+    explicit_proposal: dict[str, Any] | None,
+) -> dict[str, Any]:
+    analysis = manifest.get("analysis") or {}
+    merged: dict[str, Any] = {}
+    base_proposal = analysis.get("frontend_widget_proposal")
+    if isinstance(base_proposal, dict):
+        merged.update(base_proposal)
+    if explicit_proposal:
+        merged.update(explicit_proposal)
+    return merged
+
+
+def generate_frontend_widget_artifact(
+    run_root: str | Path,
+    proposal: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    root = Path(run_root)
+    manifest = _load_manifest(root)
+    merged_proposal = _merge_frontend_widget_proposal(manifest, proposal)
+    return _generate_frontend_widget_artifact(
+        run_root=run_root,
+        proposal=merged_proposal,
+        manifest=manifest,
+    )
+
+
+_KNOWN_WIDGET_IMPORT_EXTENSIONS = (".js", ".jsx", ".ts", ".tsx", ".vue")
+
+
+def _strip_widget_extension(path: str) -> str:
+    for extension in _KNOWN_WIDGET_IMPORT_EXTENSIONS:
+        if path.endswith(extension):
+            return path[: -len(extension)]
+    return path
+
+
+def _build_widget_import_path(widget_path: str, target_file: str) -> str:
+    target_dir = Path(target_file).parent
+    relative_path = os.path.relpath(widget_path, start=str(target_dir))
+    normalized = Path(relative_path).as_posix()
+    if not normalized.startswith(".") and not normalized.startswith("/"):
+        normalized = f"./{normalized}"
+    return _strip_widget_extension(normalized)
+
+
+def _build_frontend_mount_patch(target_file: str, widget_import_path: str) -> str:
     return f"""--- a/{target_file}
 +++ b/{target_file}
 @@
-+import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";
++import SharedChatbotWidget from "{widget_import_path}";
 @@
 +      <SharedChatbotWidget />
 """
 
 
-def generate_frontend_mount_patch(run_root: str | Path) -> Path:
+def generate_frontend_mount_patch(
+    run_root: str | Path,
+    widget_path: str | None = None,
+) -> Path:
     root = Path(run_root)
     manifest = _load_manifest(root)
     analysis = manifest.get("analysis", {})
     mount_points = analysis.get("frontend_mount_points") or []
-    target_file = str(mount_points[0]).strip() if mount_points else "frontend/src/App.js"
+    mount_targets = analysis.get("frontend_mount_targets") or []
+    frontend_strategy = str(analysis.get("frontend_strategy") or "unknown")
+    target_candidates = list(mount_points) + list(mount_targets)
+    target_file = str(target_candidates[0]).strip() if target_candidates else (
+        "frontend/src/App.vue" if frontend_strategy == "vue" else "frontend/src/App.js"
+    )
     source_root = Path(str(manifest.get("source_root") or "")).expanduser()
+    resolved_widget_path = widget_path or resolve_frontend_widget_path(manifest=manifest)
+    widget_import_path = _build_widget_import_path(resolved_widget_path, target_file)
 
     output_path = root / "patches" / "frontend_widget_mount.patch"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     source_file = source_root / target_file
     if source_file.exists():
-        source_lines = source_file.read_text(encoding="utf-8").splitlines(keepends=True)
-        updated_lines = _build_frontend_mount_updated_lines(source_lines, target_file)
+        source_lines = _read_source_lines_for_diff(source_file)
+        updated_lines = _build_frontend_mount_updated_lines(
+            source_lines,
+            target_file,
+            widget_import_path,
+        )
         diff = difflib.unified_diff(
             source_lines,
             updated_lines,
@@ -526,23 +668,64 @@ def generate_frontend_mount_patch(run_root: str | Path) -> Path:
         )
         output_path.write_text("".join(diff), encoding="utf-8")
     else:
-        output_path.write_text(_build_frontend_mount_patch(target_file), encoding="utf-8")
+        output_path.write_text(_build_frontend_mount_patch(target_file, widget_import_path), encoding="utf-8")
     return output_path
 
 
-def _build_frontend_mount_updated_lines(source_lines: list[str], target_file: str) -> list[str]:
+def _build_frontend_mount_updated_lines(
+    source_lines: list[str],
+    target_file: str,
+    widget_import_path: str,
+) -> list[str]:
+    from .patch_planner import _build_react_mount_updated_lines
+
     updated_lines = list(source_lines)
     lower = target_file.lower()
     if lower.endswith(".vue"):
         widget_line = "  <SharedChatbotWidget />\n"
+        import_line = f'import SharedChatbotWidget from "{widget_import_path}";\n'
+        if import_line not in updated_lines:
+            updated_lines.append("\n<script setup>\n")
+            updated_lines.append(import_line)
+            updated_lines.append("</script>\n")
+        template_close = next((index for index, line in enumerate(updated_lines) if "</template>" in line), None)
         if widget_line not in updated_lines:
-            updated_lines.extend(["\n", "<template>\n", widget_line, "</template>\n"])
+            if template_close is not None:
+                updated_lines.insert(template_close, widget_line)
+            else:
+                updated_lines.extend(["\n", "<template>\n", widget_line, "</template>\n"])
         return updated_lines
 
-    import_line = 'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
-    if import_line not in updated_lines:
-        updated_lines = [import_line] + updated_lines
-    widget_line = "  <SharedChatbotWidget />\n"
-    if widget_line not in updated_lines:
-        updated_lines.extend(["\n", widget_line])
-    return updated_lines
+    single_line_return_index = next(
+        (
+            index
+            for index, line in enumerate(updated_lines)
+            if line.strip().startswith("return <") and line.strip().endswith(">;")
+        ),
+        None,
+    )
+    if single_line_return_index is not None:
+        indent = updated_lines[single_line_return_index].split("return", 1)[0]
+        return_line = updated_lines[single_line_return_index].strip()
+        jsx_expression = return_line[len("return ") : -1]
+        import_line = f'import SharedChatbotWidget from "{widget_import_path}";\n'
+        if import_line not in updated_lines:
+            updated_lines = [import_line] + updated_lines
+            single_line_return_index += 1
+        updated_lines[single_line_return_index : single_line_return_index + 1] = [
+            f"{indent}return (\n",
+            f"{indent}  <>\n",
+            f"{indent}    {jsx_expression}\n",
+            f"{indent}    <SharedChatbotWidget />\n",
+            f"{indent}  </>\n",
+            f"{indent});\n",
+        ]
+        return updated_lines
+
+    react_lines = _build_react_mount_updated_lines(updated_lines)
+    if widget_import_path != "./chatbot/SharedChatbotWidget":
+        react_lines = [
+            line.replace('./chatbot/SharedChatbotWidget', widget_import_path)
+            for line in react_lines
+        ]
+    return react_lines

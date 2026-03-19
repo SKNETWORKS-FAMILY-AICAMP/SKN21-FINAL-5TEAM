@@ -3,219 +3,46 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>챗봇 프레임워크 선택 이유</title>
-<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
-<link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet"/>
-<style>body {
-    margin: 0;
-    padding: 0;
-    font-family: "Noto Sans KR", sans-serif;
-    background-color: #fff
-    }
-.slide-container {
-    width: 1280px;
-    height: 720px;
-    display: flex;
-    position: relative;
-    background-color: #fff;
-    overflow: hidden
-    }
-.left-content {
-    width: 35%;
-    height: 100%;
-    padding: 60px 50px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: relative;
-    z-index: 10
-    }
-.right-content {
-    width: 65%;
-    height: 100%;
-    padding: 60px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: relative;
-    z-index: 10
-    }
-.heading-medium {
-    font-family: "Montserrat", sans-serif;
-    font-weight: 700;
-    font-size: 22px;
-    color: #999;
-    margin-bottom: 10px;
-    text-transform: uppercase;
-    letter-spacing: 3px
-    }
-.heading-large {
-    font-family: "Montserrat", "Noto Sans KR", sans-serif;
-    font-weight: 900;
-    font-size: 52px;
-    line-height: 1.1;
-    color: #000;
-    margin-bottom: 30px
-    }
-.accent-bar {
-    width: 80px;
-    height: 6px;
-    background-color: #000;
-    margin-bottom: 30px
-    }
-.body-text {
-    font-family: "Noto Sans KR", sans-serif;
-    font-size: 18px;
-    color: #666;
-    line-height: 1.8
-    }
-.comparison-table {
-    width: 100%;
-    border-collapse: collapse;
-    background-color: #fafafa
-    }
-.comparison-table th {
-    background-color: #000;
-    color: #fff;
-    padding: 20px 15px;
-    font-family: "Montserrat", sans-serif;
-    font-weight: 700;
-    font-size: 16px;
-    text-align: left;
-    text-transform: uppercase;
-    letter-spacing: 1px
-    }
-.comparison-table td {
-    padding: 18px 15px;
-    border-bottom: 1px solid #e0e0e0;
-    font-size: 14px;
-    color: #333
-    }
-.comparison-table tr:hover {
-    background-color: #f0f0f0
-    }
-.comparison-table .framework-name {
-    font-family: "Montserrat", sans-serif;
-    font-weight: 700;
-    font-size: 16px;
-    color: #000
-    }
-.check-icon {
-    color: #000;
-    font-size: 18px
-    }
-.cross-icon {
-    color: #ccc;
-    font-size: 18px
-    }
-.highlight-row {
-    background-color: #f5f5f5
-    }
-.circle-decoration {
-    position: absolute;
-    border-radius: 50%;
-    z-index: 0
-    }
-.circle-1 {
-    width: 200px;
-    height: 200px;
-    border: 20px solid #f5f5f5;
-    bottom: -80px;
-    left: -80px;
-    opacity: 0.5
-    }
-.circle-2 {
-    width: 150px;
-    height: 150px;
-    border: 15px solid #f5f5f5;
-    top: 60px;
-    right: -60px;
-    opacity: 0.3
-    }
-.pattern-dots {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-image: radial-gradient(#000 1px, transparent 1px);
-    background-size: 25px 25px;
-    opacity: 0.02;
-    z-index: 0
-    }</style>
+<title>왜 평가 데이터셋이 필요했나</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="theme.css" rel="stylesheet"/>
 </head>
 <body>
-<div class="slide-container">
-<div class="pattern-dots"></div>
-<div class="circle-decoration circle-1"></div>
-<div class="circle-decoration circle-2"></div>
-
-<!-- Left Content -->
-<div class="left-content">
-<div style="position: relative;
-z-index: 2">
-<p class="heading-medium">FRAMEWORK SELECTION</p>
-<h1 class="heading-large">선택 이유</h1>
+<main class="slide">
+<div class="deco-ring"></div>
+<div class="deco-orb"></div>
+<div class="topbar">
+<p class="eyebrow">Evaluation Need</p>
+<span class="page-number">07</span>
+</div>
+<section class="hero">
+<h1>문제는 수정 자체가 아니라<br/>개선 정도를 말할 수 없다는 점</h1>
 <div class="accent-bar"></div>
-<p class="body-text">
-다양한 챗봇 프레임워크를 비교 분석하여 프로젝트에 최적화된 솔루션을 선정했습니다.
-</p>
-</div>
-</div>
-
-<!-- Right Content -->
-<div class="right-content">
-<table class="comparison-table">
-<thead>
-<tr>
-<th style="width: 25%">프레임워크</th>
-<th style="width: 15%">난이도</th>
-<th style="width: 15%">확장성</th>
-<th style="width: 15%">커스터마이징</th>
-<th style="width: 30%">특징</th>
-</tr>
-</thead>
-<tbody>
-<tr class="highlight-row">
-<td class="framework-name"><i class="fas fa-check-circle" style="color: #000;
-margin-right: 8px"></i>Dialogflow</td>
-<td><i class="fas fa-circle check-icon"></i></td>
-<td><i class="fas fa-circle check-icon"></i></td>
-<td><i class="fas fa-circle check-icon"></i></td>
-<td>Google Cloud 기반, 강력한 NLU</td>
-</tr>
-<tr>
-<td class="framework-name">Microsoft Bot Framework</td>
-<td><i class="fas fa-circle check-icon"></i></td>
-<td><i class="fas fa-circle check-icon"></i></td>
-<td><i class="fas fa-circle check-icon"></i></td>
-<td>Azure 통합, 다양한 채널 지원</td>
-</tr>
-<tr>
-<td class="framework-name">Rasa</td>
-<td><i class="fas fa-circle cross-icon"></i></td>
-<td><i class="fas fa-circle check-icon"></i></td>
-<td><i class="fas fa-circle check-icon"></i></td>
-<td>오픈소스, 높은 유연성</td>
-</tr>
-<tr>
-<td class="framework-name">IBM Watson</td>
-<td><i class="fas fa-circle check-icon"></i></td>
-<td><i class="fas fa-circle check-icon"></i></td>
-<td><i class="fas fa-circle cross-icon"></i></td>
-<td>기업용 AI 서비스, 안정적</td>
-</tr>
-<tr>
-<td class="framework-name">Amazon Lex</td>
-<td><i class="fas fa-circle check-icon"></i></td>
-<td><i class="fas fa-circle check-icon"></i></td>
-<td><i class="fas fa-circle cross-icon"></i></td>
-<td>AWS 통합, 음성 인식 지원</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
+<p class="lead">정성적 수정 기록만으로는 아키텍처 선택 근거 부족</p>
+</section>
+<section class="banner">
+<article class="quote-box dark">
+<p class="card-label">Turning Point</p>
+<p class="big-quote">좋아진 것 같다는 감각만으로는<br/>아키텍처 선택 근거 부족</p>
+</article>
+</section>
+<section class="grid-2" style="margin-top:16px;">
+<article class="card">
+<p class="card-label">Why It Was Necessary</p>
+<h3>평가셋 구축 필요</h3>
+<ul class="list">
+<li>정성 테스트만으로는 전후 비교 한계</li>
+<li>부분 개선이 전체 체감 품질을 왜곡 가능</li>
+<li>실패 지점 미분리 시 개선 방향 불명확</li>
+</ul>
+</article>
+<article class="card">
+<p class="card-label">Design Choice</p>
+<h3>구성 요소별 분리 평가</h3>
+<p>의도 해석, 툴 호출, RAG를 분리해 실제 효과가 난 개선 지점 식별</p>
+</article>
+</section>
+<p class="footnote">Research note: tool-using agent와 grounded response는 단일 점수보다 오류 유형 분리가 중요</p>
+</main>
 </body>
 </html>

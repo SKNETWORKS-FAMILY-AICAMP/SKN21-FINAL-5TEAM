@@ -3,194 +3,51 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>문제 정의</title>
-<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
-<link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet"/>
-<style>body {
-    margin: 0;
-    padding: 0;
-    font-family: "Noto Sans KR", sans-serif;
-    background-color: #fff
-    }
-.slide-container {
-    width: 1280px;
-    height: 720px;
-    display: flex;
-    position: relative;
-    background-color: #fff;
-    overflow: hidden
-    }
-.left-content {
-    width: 40%;
-    height: 100%;
-    padding: 80px 60px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: relative;
-    z-index: 10
-    }
-.right-content {
-    width: 60%;
-    height: 100%;
-    padding: 80px 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    z-index: 10
-    }
-.heading-medium {
-    font-family: "Montserrat", sans-serif;
-    font-weight: 700;
-    font-size: 22px;
-    color: #999;
-    margin-bottom: 10px;
-    text-transform: uppercase;
-    letter-spacing: 3px
-    }
-.heading-large {
-    font-family: "Montserrat", "Noto Sans KR", sans-serif;
-    font-weight: 900;
-    font-size: 68px;
-    line-height: 1.1;
-    color: #000;
-    margin-bottom: 30px
-    }
-.accent-bar {
-    width: 80px;
-    height: 6px;
-    background-color: #000;
-    margin-bottom: 40px
-    }
-.body-text {
-    font-family: "Noto Sans KR", sans-serif;
-    font-size: 18px;
-    color: #666;
-    line-height: 1.8
-    }
-.problem-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 30px;
-    width: 100%
-    }
-.problem-card {
-    background-color: #f8f8f8;
-    padding: 40px 30px;
-    border-radius: 0;
-    position: relative;
-    transition: all 0.3s ease
-    }
-.problem-card:hover {
-    background-color: #000;
-    color: #fff
-    }
-.problem-card:hover .problem-icon {
-    color: #fff
-    }
-.problem-card:hover .problem-title {
-    color: #fff
-    }
-.problem-icon {
-    font-size: 40px;
-    color: #000;
-    margin-bottom: 20px
-    }
-.problem-title {
-    font-family: "Noto Sans KR", sans-serif;
-    font-weight: 700;
-    font-size: 20px;
-    color: #000;
-    margin-bottom: 15px
-    }
-.problem-desc {
-    font-family: "Noto Sans KR", sans-serif;
-    font-size: 14px;
-    color: #666;
-    line-height: 1.6
-    }
-.circle-decoration {
-    position: absolute;
-    border-radius: 50%;
-    z-index: 0
-    }
-.circle-1 {
-    width: 200px;
-    height: 200px;
-    border: 20px solid #f0f0f0;
-    top: 50px;
-    right: 50px;
-    opacity: 0.5
-    }
-.circle-2 {
-    width: 120px;
-    height: 120px;
-    border: 15px solid #f0f0f0;
-    bottom: 100px;
-    left: -60px;
-    opacity: 0.3
-    }
-.pattern-dots {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-image: radial-gradient(#000 1px, transparent 1px);
-    background-size: 25px 25px;
-    opacity: 0.02;
-    z-index: 0
-    }</style>
+<title>왜 고객상담 문제인가</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="theme.css" rel="stylesheet"/>
 </head>
 <body>
-<div class="slide-container">
-<div class="pattern-dots"></div>
-<div class="circle-decoration circle-1"></div>
-<div class="circle-decoration circle-2"></div>
-<!-- Left Content -->
-<div class="left-content">
-<div style="position: relative;
-z-index: 2">
-<p class="heading-medium">PROBLEM DEFINITION</p>
-<h1 class="heading-large">문제<br/>정의</h1>
+<main class="slide">
+<div class="deco-ring"></div>
+<div class="deco-orb"></div>
+<div class="topbar">
+<p class="eyebrow">Problem</p>
+<span class="page-number">03</span>
+</div>
+<section class="hero">
+<h1>고객상담,<br/>“답변 생성”보다 “즉시 처리”가 중요한 문제</h1>
 <div class="accent-bar"></div>
-<p class="body-text">
-현재 고객 서비스 환경에서 발생하는 주요 문제들과 AI 챗봇 도입의 필요성을 분석합니다.
-</p>
+<p class="lead">반복 문의 집중, 높은 즉시성 요구, 상담 정확도보다 처리 완료 여부로 체감되는 서비스 품질</p>
+</section>
+<section class="cards" style="margin-top:26px;">
+<article class="card dark" style="grid-column:span 5;">
+<p class="card-label">Critical Gap</p>
+<h3>답변보다 문제 해결</h3>
+<p>주문 조회, 배송 상태 확인, 취소 가능 여부, 환불 절차 안내 중심의 액션형 상담</p>
+</article>
+<article class="card" style="grid-column:span 7;">
+<p class="card-label">Operational Pressure</p>
+<div class="dense-grid-2">
+<div>
+<h3 style="font-size:18px;">반복 문의 집중</h3>
+<p>대량 유입되는 유사 문의, 처리량과 직결되는 운영 비용</p>
+</div>
+<div>
+<h3 style="font-size:18px;">품질 편차</h3>
+<p>상담 경험과 숙련도에 따라 달라지는 품질과 해결률</p>
+</div>
+<div>
+<h3 style="font-size:18px;">즉시성 요구</h3>
+<p>지연 응답보다 더 치명적인 실패한 처리 경험</p>
+</div>
+<div>
+<h3 style="font-size:18px;">학습 비용</h3>
+<p>정책, 시스템, 시나리오 학습이 동시에 필요한 온보딩 비용</p>
 </div>
 </div>
-<!-- Right Content -->
-<div class="right-content">
-<div class="problem-grid" style="position: relative;
-z-index: 2">
-<!-- Problem 1 -->
-<div class="problem-card">
-<i class="fas fa-clock problem-icon"></i>
-<h3 class="problem-title">24시간 대응 한계</h3>
-<p class="problem-desc">고객 문의에 신속하게 대응하지 못하여 만족도 저하</p>
-</div>
-<!-- Problem 2 -->
-<div class="problem-card">
-<i class="fas fa-users problem-icon"></i>
-<h3 class="problem-title">인건비 증가</h3>
-<p class="problem-desc">상담 인력 확충으로 인한 운영 비용 지속 증가</p>
-</div>
-<!-- Problem 3 -->
-<div class="problem-card">
-<i class="fas fa-chart-line problem-icon"></i>
-<h3 class="problem-title">불균등한 서비스 품질</h3>
-<p class="problem-desc">상담원 개인 역량 차이로 일관된 서비스 제공 어려움</p>
-</div>
-<!-- Problem 4 -->
-<div class="problem-card">
-<i class="fas fa-database problem-icon"></i>
-<h3 class="problem-title">데이터 활용 부족</h3>
-<p class="problem-desc">고객 문의 데이터를 체계적으로 분석하지 못함</p>
-</div>
-</div>
-</div>
-</div>
+</article>
+</section>
+</main>
 </body>
 </html>
