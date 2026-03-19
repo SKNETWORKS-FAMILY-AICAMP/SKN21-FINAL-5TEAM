@@ -909,5 +909,603 @@
       "total": 70,
       "correct": 40
     }
+  },
+  {
+    "model": "vllm/gemma2:2b",
+    "timestamp": "2026-03-19T11:40:25.454196",
+    "elapsed_seconds": 307.62,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.7407,
+          "recall": 1.0,
+          "f1": 0.8511,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.9,
+          "f1": 0.9474,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8333,
+          "recall": 0.5,
+          "f1": 0.625,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8571,
+          "recall": 0.6,
+          "f1": 0.7059,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.6862,
+          "recall": 0.6,
+          "f1": 0.6259
+        }
+      },
+      "macro_f1": 0.6259,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 5,
+          "policy_rag_subagent": 1,
+          "discovery_subagent": 3,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6,
+          "discovery_subagent": 2,
+          "final_generator": 1,
+          "order_intent_router": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 27,
+          "discovery_subagent": 2,
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 58,
+        "accuracy": 0.8286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 58
+    }
+  },
+  {
+    "model": "vllm/llama3.2:3b",
+    "timestamp": "2026-03-19T11:45:28.567049",
+    "elapsed_seconds": 257.97,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.6286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 0.55,
+          "f1": 0.7097,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.6667,
+          "f1": 0.8,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.2857,
+          "recall": 1.0,
+          "f1": 0.4444,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.75,
+          "recall": 0.3,
+          "f1": 0.4286,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7589,
+          "recall": 0.6292,
+          "f1": 0.5957
+        }
+      },
+      "macro_f1": 0.5957,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 10
+        },
+        "discovery_subagent": {
+          "order_intent_router": 9,
+          "discovery_subagent": 11
+        },
+        "policy_rag_subagent": {
+          "order_intent_router": 7,
+          "policy_rag_subagent": 3
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 20,
+          "order_intent_router": 9,
+          "policy_rag_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 44,
+        "accuracy": 0.6286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 44
+    }
+  },
+  {
+    "model": "vllm/granite3.1-dense:2b",
+    "timestamp": "2026-03-19T11:50:03.957333",
+    "elapsed_seconds": 245.88,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.7286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.6452,
+          "recall": 1.0,
+          "f1": 0.7843,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.6,
+          "f1": 0.75,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.5714,
+          "recall": 0.8,
+          "f1": 0.6667,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.7143,
+          "recall": 0.5,
+          "f1": 0.5882,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7327,
+          "recall": 0.725,
+          "f1": 0.6973
+        }
+      },
+      "macro_f1": 0.6973,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "discovery_subagent": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "order_intent_router": 4,
+          "discovery_subagent": 1,
+          "policy_rag_subagent": 5
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 18,
+          "discovery_subagent": 8,
+          "order_intent_router": 2,
+          "policy_rag_subagent": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 51,
+        "accuracy": 0.7286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 51
+    }
+  },
+  {
+    "model": "vllm/llama3.1",
+    "timestamp": "2026-03-19T11:56:32.996968",
+    "elapsed_seconds": 343.98,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.9857,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.9667,
+          "f1": 0.9831,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.8,
+          "recall": 0.7933,
+          "f1": 0.7966
+        }
+      },
+      "macro_f1": 0.7966,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 10
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 10
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 29,
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 69,
+        "accuracy": 0.9857
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 69
+    }
+  },
+  {
+    "model": "vllm/phi4-mini",
+    "timestamp": "2026-03-19T12:01:27.555232",
+    "elapsed_seconds": 251.56,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.7571,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.6897,
+          "recall": 1.0,
+          "f1": 0.8163,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.7,
+          "f1": 0.8235,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.5455,
+          "recall": 0.6,
+          "f1": 0.5714,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.6667,
+          "recall": 0.6,
+          "f1": 0.6316,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7255,
+          "recall": 0.725,
+          "f1": 0.7107
+        }
+      },
+      "macro_f1": 0.7107,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 6,
+          "discovery_subagent": 2,
+          "policy_rag_subagent": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6,
+          "order_intent_router": 3,
+          "discovery_subagent": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 21,
+          "discovery_subagent": 6,
+          "order_intent_router": 2,
+          "policy_rag_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 53,
+        "accuracy": 0.7571
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 53
+    }
+  },
+  {
+    "model": "vllm/mistral-nemo",
+    "timestamp": "2026-03-19T12:13:11.311634",
+    "elapsed_seconds": 541.62,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.9,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.9091,
+          "recall": 1.0,
+          "f1": 0.9524,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8667,
+          "f1": 0.9286,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.7692,
+          "recall": 1.0,
+          "f1": 0.8696,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.7778,
+          "recall": 0.7,
+          "f1": 0.7368,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.864,
+          "recall": 0.8917,
+          "f1": 0.8719
+        }
+      },
+      "macro_f1": 0.8719,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 10
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 7,
+          "order_intent_router": 3
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 26,
+          "discovery_subagent": 2,
+          "policy_rag_subagent": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 63,
+        "accuracy": 0.9
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 63
+    }
+  },
+  {
+    "model": "vllm/LFM2.5-Thinking:1.2B",
+    "timestamp": "2026-03-19T13:40:23.754301",
+    "elapsed_seconds": 5067.63,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.3571,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.5263,
+          "recall": 0.5,
+          "f1": 0.5128,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.2333,
+          "f1": 0.3784,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.3182,
+          "recall": 0.7,
+          "f1": 0.4375,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 0.1,
+          "f1": 0.1818,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.5689,
+          "recall": 0.3067,
+          "f1": 0.3021
+        }
+      },
+      "macro_f1": 0.3021,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 7,
+          "discovery_subagent": 1,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "final_generator": 7,
+          "discovery_subagent": 10,
+          "order_intent_router": 3
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 1,
+          "order_intent_router": 3,
+          "final_generator": 6
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 7,
+          "order_intent_router": 9,
+          "discovery_subagent": 8,
+          "final_generator": 6
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 25,
+        "accuracy": 0.3571
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 25
+    }
+  },
+  {
+    "model": "vllm/Qwen3.5:2b",
+    "timestamp": "2026-03-19T15:27:17.298661",
+    "elapsed_seconds": 5197.51,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.0,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "macro_f1": 0.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "final_generator": 10
+        },
+        "discovery_subagent": {
+          "final_generator": 20
+        },
+        "policy_rag_subagent": {
+          "final_generator": 10
+        },
+        "form_action_subagent": {
+          "final_generator": 30
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 0,
+        "accuracy": 0.0
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 0
+    }
   }
 ]
