@@ -13,7 +13,13 @@ if str(ROOT) not in sys.path:
 
 from chatbot.src.onboarding.approval_store import ApprovalStore
 from chatbot.src.onboarding.orchestrator import run_onboarding_generation
+from chatbot.src.onboarding.redis_runtime import (
+    build_onboarding_event_store,
+    close_onboarding_event_store,
+)
 from chatbot.src.onboarding.slack_bridge import SlackWebBridge
+from chatbot.src.core.config import settings
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -25,10 +31,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-root", required=True)
     parser.add_argument("--run-id")
     parser.add_argument("--resume-run-id")
+    parser.add_argument("--smoke-username")
+    parser.add_argument("--smoke-email", default="test1@example.com")
+    parser.add_argument("--smoke-password", default="password123")
     parser.add_argument("--agent-version", default="dev")
     parser.add_argument("--use-llm-roles", action="store_true")
+    parser.add_argument("--generate-llm-patch-draft", action="store_true")
     parser.add_argument("--llm-provider", default="openai")
-    parser.add_argument("--llm-model", default="gpt-4o-mini")
+    parser.add_argument("--llm-model", default="gpt-5-mini")
     parser.add_argument("--print-report-paths", action="store_true")
     parser.add_argument("--slack-channel")
     parser.add_argument("--approval-store-root")
@@ -44,7 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
 def build_slack_bridge_from_env(
     *, channel: str, web_client_factory=None
 ) -> SlackWebBridge | None:
-    coordinator_token = os.getenv("SLACK_COORDINATOR_BOT_TOKEN") or os.getenv("SLACK_BOT_TOKEN")
+    coordinator_token = os.getenv("SLACK_COORDINATOR_BOT_TOKEN") or os.getenv(
+        "SLACK_BOT_TOKEN"
+    )
     if not coordinator_token:
         return None
 
@@ -90,6 +102,15 @@ def main() -> int:
     if not effective_run_id:
         parser.error("one of --run-id or --resume-run-id is required")
     approvals = parse_approvals(args.approval)
+    onboarding_credentials = {
+        key: value
+        for key, value in {
+            "username": args.smoke_username,
+            "email": args.smoke_email,
+            "password": args.smoke_password,
+        }.items()
+        if value
+    }
     slack_bridge = (
         build_slack_bridge_from_env(channel=args.slack_channel)
         if args.slack_channel
@@ -100,21 +121,32 @@ def main() -> int:
         if args.approval_store_root
         else None
     )
-
-    result = run_onboarding_generation(
-        site=args.site,
-        source_root=args.source_root,
-        generated_root=args.generated_root,
-        runtime_root=args.runtime_root,
-        run_id=effective_run_id,
-        agent_version=args.agent_version,
-        slack_bridge=slack_bridge,
-        approval_decisions=approvals if approvals else None,
-        approval_store=approval_store,
-        use_llm_roles=args.use_llm_roles,
-        llm_provider=args.llm_provider,
-        llm_model=args.llm_model,
+    event_store = build_onboarding_event_store(
+        redis_url=settings.ONBOARDING_REDIS_URL,
     )
+
+    try:
+        result = run_onboarding_generation(
+            site=args.site,
+            source_root=args.source_root,
+            generated_root=args.generated_root,
+            runtime_root=args.runtime_root,
+            run_id=effective_run_id,
+            agent_version=args.agent_version,
+            slack_bridge=slack_bridge,
+            approval_decisions=approvals if approvals else None,
+            approval_store=approval_store,
+            use_llm_roles=args.use_llm_roles,
+            generate_llm_patch_draft=args.generate_llm_patch_draft,
+            llm_provider=args.llm_provider,
+            llm_model=args.llm_model,
+            terminal_logger=lambda message: print(message, file=sys.stderr, flush=True),
+            event_store=event_store,
+            onboarding_credentials=onboarding_credentials or None,
+            resume_from_existing=bool(args.resume_run_id),
+        )
+    finally:
+        close_onboarding_event_store(event_store)
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

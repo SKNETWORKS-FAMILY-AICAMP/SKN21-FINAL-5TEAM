@@ -4,12 +4,13 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from chatbot.src.onboarding.generator_eval import run_generator_eval
-from chatbot.src.onboarding.role_runner import RoleRunner, build_llm_role_runner
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from chatbot.src.onboarding.generator_eval import run_generator_eval
+from chatbot.src.onboarding.role_runner import RoleRunner, build_llm_role_runner
 
 
 def build_parser() -> argparse.ArgumentParser:

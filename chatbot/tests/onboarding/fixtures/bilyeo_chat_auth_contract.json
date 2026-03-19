@@ -1,0 +1,47 @@
+{
+  "site": "bilyeo",
+  "backend": {
+    "framework": "flask",
+    "auth_style": "session",
+    "route_registration_points": [
+      "backend/app.py"
+    ],
+    "auth_source_paths": [
+      "backend/routes/auth.py"
+    ],
+    "user_resolver_paths": [
+      "backend/routes/auth.py"
+    ]
+  },
+  "frontend": {
+    "framework": "vue",
+    "app_shell_path": "frontend/src/App.vue",
+    "router_boundary_path": "frontend/src/App.vue",
+    "api_client_paths": [
+      "frontend/src/api/client.js"
+    ],
+    "widget_mount_points": [
+      "frontend/src/App.vue"
+    ]
+  },
+  "chat_auth": {
+    "endpoint_path": "/api/chat/auth-token",
+    "method": "POST",
+    "authenticated_field": "authenticated",
+    "access_token_field": "access_token"
+  },
+  "product_adapter": {
+    "enabled": true,
+    "client_path": "backend/product_adapter_client.py",
+    "api_base_paths": [
+      "/api/items"
+    ]
+  },
+  "order_adapter": {
+    "enabled": true,
+    "client_path": "backend/order_adapter_client.py",
+    "api_base_paths": [
+      "/api/orders"
+    ]
+  }
+}
