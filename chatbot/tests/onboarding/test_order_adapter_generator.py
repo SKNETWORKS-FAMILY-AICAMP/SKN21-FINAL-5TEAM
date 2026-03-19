@@ -113,3 +113,36 @@ def test_generate_order_adapter_template_for_ecommerce_includes_user_id_paths(tm
     assert '.format(user_id=user_id)' in content
     assert 'f"{self.base_url}{order_base}/{order_id}"' in content
     assert 'f"{self.base_url}{order_base}/{order_id}/cancel"' in content
+
+
+def test_generate_order_adapter_template_exposes_list_get_and_action_contract(tmp_path: Path):
+    run_root = tmp_path / "generated" / "shop" / "shop-run-001"
+    run_root.mkdir(parents=True)
+
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "shop-run-001",
+                "site": "food",
+                "source_root": "/workspace/shop",
+                "created_at": "2026-03-15T12:00:00+09:00",
+                "agent_version": "test-v1",
+                "analysis": {"order_api": ["/api/orders/"]},
+                "generated_files": [],
+                "patch_targets": [],
+                "frontend_artifacts": [],
+                "docker": {},
+                "tests": {},
+                "status": "generated",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    content = generate_order_adapter_template(run_root).read_text(encoding="utf-8")
+
+    assert "async def list_orders" in content
+    assert "async def get_order" in content
+    assert "async def submit_order_action" in content
+    assert "headers: dict | None = None" in content

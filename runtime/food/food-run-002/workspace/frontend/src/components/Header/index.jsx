@@ -34,9 +34,6 @@ const Header = () => {
         <Link to="/orders" style={styles.link}>
           상품목록
         </Link>
-        <Link to="/mypage" style={styles.link}>
-          마이
-        </Link>
         {isAuthenticated ? (
           <button
             type="button"

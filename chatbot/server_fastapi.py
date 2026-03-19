@@ -49,6 +49,8 @@ _bootstrap_legacy_import_alias()
 
 from chatbot.src.core.config import settings  # noqa: E402
 from chatbot.src.graph.workflow import graph_app  # noqa: E402
+from chatbot.src.api.v1.endpoints.onboarding_runs import router as onboarding_runs_router  # noqa: E402
+from chatbot.src.onboarding.redis_runtime import build_onboarding_event_store, close_onboarding_event_store  # noqa: E402
 
 
 class ChatRequest(BaseModel):
@@ -214,6 +216,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(onboarding_runs_router, prefix=settings.API_V1_STR)
+
+
+@app.on_event("startup")
+async def _startup_onboarding_event_store() -> None:
+    app.state.onboarding_event_store = build_onboarding_event_store(
+        redis_url=settings.ONBOARDING_REDIS_URL,
+    )
+
+
+@app.on_event("shutdown")
+async def _shutdown_onboarding_event_store() -> None:
+    close_onboarding_event_store(getattr(app.state, "onboarding_event_store", None))
 
 
 @app.get("/health")

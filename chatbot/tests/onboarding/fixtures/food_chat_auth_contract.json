@@ -1,0 +1,47 @@
+{
+  "site": "food",
+  "backend": {
+    "framework": "django",
+    "auth_style": "session_cookie",
+    "route_registration_points": [
+      "backend/foodshop/urls.py"
+    ],
+    "auth_source_paths": [
+      "backend/users/views.py"
+    ],
+    "user_resolver_paths": [
+      "backend/users/views.py"
+    ]
+  },
+  "frontend": {
+    "framework": "react",
+    "app_shell_path": "frontend/src/App.js",
+    "router_boundary_path": "frontend/src/App.js",
+    "api_client_paths": [
+      "frontend/src/api/api.js"
+    ],
+    "widget_mount_points": [
+      "frontend/src/App.js"
+    ]
+  },
+  "chat_auth": {
+    "endpoint_path": "/api/chat/auth-token",
+    "method": "POST",
+    "authenticated_field": "authenticated",
+    "access_token_field": "access_token"
+  },
+  "product_adapter": {
+    "enabled": true,
+    "client_path": "backend/product_adapter_client.py",
+    "api_base_paths": [
+      "/api/products/"
+    ]
+  },
+  "order_adapter": {
+    "enabled": true,
+    "client_path": "backend/order_adapter_client.py",
+    "api_base_paths": [
+      "/api/orders/"
+    ]
+  }
+}

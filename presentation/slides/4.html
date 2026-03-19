@@ -3,217 +3,54 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>문제 분석 통계</title>
-<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
-<link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet"/>
-<style>body {
-    margin: 0;
-    padding: 0;
-    font-family: "Noto Sans KR", sans-serif;
-    background-color: #fff
-    }
-.slide-container {
-    width: 1280px;
-    height: 720px;
-    display: flex;
-    position: relative;
-    background-color: #fff;
-    overflow: hidden
-    }
-.left-content {
-    width: 45%;
-    height: 100%;
-    padding: 60px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: relative;
-    z-index: 10
-    }
-.right-content {
-    width: 55%;
-    height: 100%;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
-    gap: 20px;
-    padding: 40px 60px;
-    position: relative;
-    z-index: 10
-    }
-.heading-medium {
-    font-family: "Montserrat", sans-serif;
-    font-weight: 700;
-    font-size: 22px;
-    color: #999;
-    margin-bottom: 10px;
-    text-transform: uppercase;
-    letter-spacing: 2px
-    }
-.heading-large {
-    font-family: "Montserrat", "Noto Sans KR", sans-serif;
-    font-weight: 900;
-    font-size: 58px;
-    line-height: 1.1;
-    color: #000;
-    margin-bottom: 30px
-    }
-.accent-bar {
-    width: 80px;
-    height: 6px;
-    background-color: #000;
-    margin-bottom: 30px
-    }
-.body-text {
-    font-family: "Noto Sans KR", sans-serif;
-    font-size: 18px;
-    color: #666;
-    line-height: 1.8
-    }
-.stat-card {
-    background-color: #f5f5f5;
-    border-radius: 8px;
-    padding: 35px 30px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: relative;
-    overflow: hidden
-    }
-.stat-number {
-    font-family: "Montserrat", sans-serif;
-    font-weight: 900;
-    font-size: 72px;
-    line-height: 1;
-    color: #000;
-    margin-bottom: 10px
-    }
-.stat-unit {
-    font-family: "Montserrat", sans-serif;
-    font-weight: 700;
-    font-size: 32px;
-    color: #000;
-    margin-left: 5px
-    }
-.stat-label {
-    font-family: "Noto Sans KR", sans-serif;
-    font-weight: 600;
-    font-size: 18px;
-    color: #666;
-    margin-bottom: 5px
-    }
-.stat-desc {
-    font-family: "Noto Sans KR", sans-serif;
-    font-size: 14px;
-    color: #999;
-    line-height: 1.4
-    }
-.chart-circle {
-    position: relative;
-    width: 180px;
-    height: 180px;
-    margin: 20px auto 15px
-    }
-.chart-circle svg {
-    transform: rotate(-90deg)
-    }
-.circle-bg {
-    fill: none;
-    stroke: #e0e0e0;
-    stroke-width: 12
-    }
-.circle-progress {
-    fill: none;
-    stroke: #000;
-    stroke-width: 12;
-    stroke-linecap: round;
-    stroke-dasharray: 502;
-    stroke-dashoffset: 0;
-    transition: stroke-dashoffset 0.5s ease
-    }
-.circle-accent {
-    position: absolute;
-    border-radius: 50%;
-    z-index: 0
-    }
-.circle-1 {
-    width: 250px;
-    height: 250px;
-    border: 30px solid #f5f5f5;
-    bottom: -50px;
-    left: -50px;
-    opacity: 0.5
-    }
-.circle-2 {
-    width: 180px;
-    height: 180px;
-    border: 25px solid #f5f5f5;
-    top: 40px;
-    right: -40px;
-    opacity: 0.3
-    }</style>
+<title>왜 온라인 쇼핑, 왜 Action Agent인가</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="theme.css" rel="stylesheet"/>
 </head>
 <body>
-<div class="slide-container">
-<div class="circle-accent circle-1"></div>
-<div class="circle-accent circle-2"></div>
-
-<!-- Left Content -->
-<div class="left-content">
-<div style="position: relative;
-z-index: 2">
-<p class="heading-medium">PROBLEM ANALYSIS</p>
-<h1 class="heading-large">문제 분석<br/>통계</h1>
+<main class="slide">
+<div class="deco-ring"></div>
+<div class="deco-orb"></div>
+<div class="topbar">
+<p class="eyebrow">Decision</p>
+<span class="page-number">04</span>
+</div>
+<section class="hero">
+<h1>온라인 쇼핑,<br/>Action Agent 검증에 적합한 도메인</h1>
 <div class="accent-bar"></div>
-<p class="body-text">
-현재 고객 서비스 환경에서 파악된 주요 문제들을 데이터로 시각화하여 분석한 결과입니다.
-</p>
+<p class="lead">명확한 도메인 액션, 정의 가능한 평가 기준</p>
+</section>
+<section class="split">
+<article class="panel dark">
+<p class="card-label">FAQ Chatbot vs Action Agent</p>
+<table class="table" style="color:#f8fafc;">
+<tr><th>FAQ형</th><td>정답 문장 생성 중심</td></tr>
+<tr><th>Action형</th><td>의도 파악 → 툴 선택 → 실행</td></tr>
+<tr><th>평가 기준</th><td>답변 품질 + 처리 성공률</td></tr>
+</table>
+<div class="tag-row">
+<span class="tag">Intent</span>
+<span class="tag">Tool Call</span>
+<span class="tag">Execution</span>
 </div>
+</article>
+<div class="stack">
+<article class="card">
+<p class="card-label">Shopping Scenarios</p>
+<h3>명확한 도메인 액션</h3>
+<ul class="list">
+<li>주문 조회, 배송 상태 확인, 환불 정책 안내</li>
+<li>취소 가능 여부 판단, 계정/포인트 관련 처리</li>
+<li>상품·주문 정보가 동시에 필요한 복합 문의</li>
+</ul>
+</article>
+<article class="card">
+<p class="card-label">Why It Matters</p>
+<h3>명확한 평가 기준</h3>
+<p>정답 여부, 툴 선택 적절성, 잘못된 액션 방지 기준 정의</p>
+</article>
 </div>
-
-<!-- Right Content - Stats Grid -->
-<div class="right-content">
-<!-- Stat 1 -->
-<div class="stat-card">
-<div class="stat-label">평균 응답 시간</div>
-<div class="stat-number">4.5<span class="stat-unit">시간</span></div>
-<div class="stat-desc">고객 문의 접수 후 평균 응답 소요 시간</div>
-</div>
-
-<!-- Stat 2 -->
-<div class="stat-card">
-<div class="chart-circle">
-<svg width="180" height="180">
-<circle class="circle-bg" cx="90" cy="90" r="80"></circle>
-<circle class="circle-progress" cx="90" cy="90" r="80" style="stroke-dashoffset: 150.6"></circle>
-</svg>
-</div>
-<div class="stat-label">고객 만족도</div>
-<div class="stat-number">65<span class="stat-unit">%</span></div>
-<div class="stat-desc">현재 서비스 만족도 조사 결과</div>
-</div>
-
-<!-- Stat 3 -->
-<div class="stat-card">
-<div class="stat-label">연간 인건비 증가율</div>
-<div class="stat-number">23<span class="stat-unit">%</span></div>
-<div class="stat-desc">지난 3년간 상담 인력 비용 상승률</div>
-</div>
-
-<!-- Stat 4 -->
-<div class="stat-card">
-<div class="chart-circle">
-<svg width="180" height="180">
-<circle class="circle-bg" cx="90" cy="90" r="80"></circle>
-<circle class="circle-progress" cx="90" cy="90" r="80" style="stroke-dashoffset: 200.8"></circle>
-</svg>
-</div>
-<div class="stat-label">야간 문의 비중</div>
-<div class="stat-number">38<span class="stat-unit">%</span></div>
-<div class="stat-desc">업무 시간 외 접수되는 고객 문의 비율</div>
-</div>
-</div>
-</div>
+</section>
+</main>
 </body>
 </html>
