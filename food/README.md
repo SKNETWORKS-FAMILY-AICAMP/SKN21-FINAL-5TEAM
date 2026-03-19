@@ -21,7 +21,6 @@
 - 주문 취소
 - 환불 요청
 - 교환 요청
-- 주문/환불/교환 관련 프론트 내장 챗봇 UI
 
 ## 디렉토리 구조
 
@@ -33,7 +32,6 @@
   - `seed/`: 초기 데이터 스크립트와 CSV
 - `frontend/`
   - `src/pages/`: 로그인, 상품, 주문 페이지
-  - `src/components/chatbot/`: 주문 챗봇 UI
   - `src/context/`: 인증 상태 관리
 
 ## 실행 방법
@@ -110,4 +108,3 @@ uv run python food/backend/manage.py test orders
 
 - 백엔드 마이그레이션 후 서버를 띄우는 순서를 권장합니다.
 - CORS는 기본적으로 `http://localhost:3000`을 허용합니다.
-- 프론트 챗봇과 주문 페이지는 동일한 주문 API를 사용합니다.

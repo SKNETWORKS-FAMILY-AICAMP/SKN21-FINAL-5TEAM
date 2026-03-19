@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
+from .debug_logging import append_onboarding_event
 from .manifest import OverlayManifest
+from .onboarding_ignore import DEFAULT_IGNORED_PARTS
 
 
 class OverlayPatchApplyError(Exception):
     pass
+
+
+def _ignore_runtime_copy_directory(_: str, names: list[str]) -> set[str]:
+    return {name for name in names if name in DEFAULT_IGNORED_PARTS}
 
 
 def prepare_runtime_workspace(
@@ -17,17 +24,18 @@ def prepare_runtime_workspace(
     manifest: OverlayManifest,
     generated_run_root: str | Path,
     runtime_root: str | Path,
+    workspace_name: str = "workspace",
 ) -> Path:
     source_root = Path(manifest.source_root)
     generated_root = Path(generated_run_root)
     runtime_base = Path(runtime_root)
-    workspace = runtime_base / manifest.site / manifest.run_id / "workspace"
+    workspace = runtime_base / manifest.site / manifest.run_id / workspace_name
 
     if workspace.exists():
         shutil.rmtree(workspace)
 
     workspace.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source_root, workspace)
+    shutil.copytree(source_root, workspace, ignore=_ignore_runtime_copy_directory)
 
     overlay_files_root = generated_root / "files"
     if overlay_files_root.exists():
@@ -56,17 +64,10 @@ def apply_overlay_patches(
         if not patch_path.exists():
             raise OverlayPatchApplyError(f"Patch file not found: {patch_path}")
 
-        result = subprocess.run(
-            ["git", "apply", "--inaccurate-eof", str(patch_path.resolve())],
-            cwd=workspace,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            stderr = (result.stderr or "").strip()
+        failure = _apply_patch_file(patch_path=patch_path, workspace=workspace)
+        if failure is not None:
             raise OverlayPatchApplyError(
-                f"Failed to apply patch {patch_path.name}: {stderr or 'unknown error'}"
+                f"Failed to apply patch {patch_path.name}: {str(failure.get('error') or 'unknown error')}"
             )
 
 
@@ -81,6 +82,17 @@ def simulate_runtime_merge(
     workspace = Path(runtime_workspace)
     reports = Path(report_root)
     reports.mkdir(parents=True, exist_ok=True)
+    append_onboarding_event(
+        report_root=reports,
+        run_id=manifest.run_id,
+        component="runtime_runner",
+        stage="validation",
+        event="simulation_started",
+        severity="info",
+        summary="runtime merge simulation started",
+        source="system",
+        details={"workspace_root": str(workspace)},
+    )
 
     patch_artifacts = sorted(set(list(manifest.patch_targets) + _discover_simulation_patch_artifacts(generated_root)))
     skipped_patch_artifacts = _filter_redundant_patch_artifacts(patch_artifacts)
@@ -98,15 +110,22 @@ def simulate_runtime_merge(
                 }
             )
             continue
-        error = _apply_patch_file(patch_path=patch_path, workspace=workspace)
-        if error is None:
+        failure = _apply_patch_file(patch_path=patch_path, workspace=workspace)
+        if failure is None:
             applied_patch_artifacts.append(relative_patch_path)
             continue
-        failed_patch_artifacts.append(
-            {
-                "path": relative_patch_path,
-                "error": error,
-            }
+        failed_patch_artifacts.append({"path": relative_patch_path, **failure})
+        append_onboarding_event(
+            report_root=reports,
+            run_id=manifest.run_id,
+            component="runtime_runner",
+            stage="validation",
+            event="hard_fallback_used",
+            severity="warn",
+            summary="runtime merge patch failed",
+            source="hard_fallback",
+            recovery={"applied": False, "reason": str(failure.get("error") or "patch_apply_failed")},
+            details={"patch_artifact": relative_patch_path, "target_files": failure.get("target_files") or []},
         )
 
     payload = {
@@ -127,6 +146,67 @@ def simulate_runtime_merge(
     }
     output_path = reports / "merge-simulation.json"
     output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    append_onboarding_event(
+        report_root=reports,
+        run_id=manifest.run_id,
+        component="runtime_runner",
+        stage="validation",
+        event="simulation_completed",
+        severity="info" if payload["passed"] else "warn",
+        summary="runtime merge simulation completed",
+        source="runtime",
+        details={
+            "passed": payload["passed"],
+            "applied_patch_count": len(applied_patch_artifacts),
+            "failed_patch_count": len(failed_patch_artifacts),
+            "report_path": str(output_path),
+        },
+    )
+    return output_path
+
+
+def simulate_candidate_patch_merge(
+    *,
+    manifest: OverlayManifest,
+    generated_run_root: str | Path,
+    runtime_root: str | Path,
+    report_root: str | Path,
+    patch_artifact: str,
+    report_name: str,
+) -> Path:
+    workspace = prepare_runtime_workspace(
+        manifest=manifest,
+        generated_run_root=generated_run_root,
+        runtime_root=runtime_root,
+        workspace_name=Path(report_name).stem.replace(".", "-") + "-workspace",
+    )
+    generated_root = Path(generated_run_root)
+    reports = Path(report_root)
+    reports.mkdir(parents=True, exist_ok=True)
+    patch_path = generated_root / patch_artifact
+    failed_patch_artifacts: list[dict[str, object]] = []
+    applied_patch_artifacts: list[str] = []
+
+    if not patch_path.exists():
+        failed_patch_artifacts.append({"path": patch_artifact, "error": "patch file not found"})
+    else:
+        failure = _apply_patch_file(patch_path=patch_path, workspace=workspace)
+        if failure is None:
+            applied_patch_artifacts.append(patch_artifact)
+        else:
+            failed_patch_artifacts.append({"path": patch_artifact, **failure})
+
+    payload = {
+        "run_id": manifest.run_id,
+        "site": manifest.site,
+        "workspace_root": str(workspace),
+        "candidate_patch": patch_artifact,
+        "applied_patch_artifacts": applied_patch_artifacts,
+        "failed_patch_artifacts": failed_patch_artifacts,
+        "passed": len(failed_patch_artifacts) == 0,
+    }
+    output_path = reports / report_name
+    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return output_path
 
 
@@ -138,16 +218,17 @@ def _discover_simulation_patch_artifacts(generated_root: Path) -> list[str]:
         path.relative_to(generated_root).as_posix()
         for path in patches_root.rglob("*.patch")
         if path.is_file()
+        and path.name not in {"llm-proposed.patch", "proposed.patch"}
     )
 
 
-def _apply_patch_file(*, patch_path: Path, workspace: Path) -> str | None:
+def _apply_patch_file(*, patch_path: Path, workspace: Path) -> dict[str, object] | None:
     attempts = [
-        ["git", "apply", "--inaccurate-eof", str(patch_path.resolve())],
-        ["patch", "-p1", "-N", "-i", str(patch_path.resolve())],
+        ("git apply", ["git", "apply", "--inaccurate-eof", str(patch_path.resolve())]),
+        ("patch", ["patch", "-p1", "-N", "-i", str(patch_path.resolve())]),
     ]
-    errors: list[str] = []
-    for command in attempts:
+    errors: list[dict[str, str]] = []
+    for tool_name, command in attempts:
         result = subprocess.run(
             command,
             cwd=workspace,
@@ -157,12 +238,34 @@ def _apply_patch_file(*, patch_path: Path, workspace: Path) -> str | None:
         )
         if result.returncode == 0:
             return None
-        errors.append((result.stderr or result.stdout or "unknown error").strip())
-    return "\n".join(error for error in errors if error) or "unknown error"
+        errors.append(
+            {
+                "tool": tool_name,
+                "message": (result.stderr or result.stdout or "unknown error").strip() or "unknown error",
+            }
+        )
+
+    messages = [error["message"] for error in errors if error["message"]]
+    return {
+        "tool": errors[-1]["tool"] if errors else "unknown",
+        "error": "\n".join(messages) or "unknown error",
+        "attempts": errors,
+        "target_files": _extract_patch_target_files(patch_path),
+    }
 
 
 def _filter_redundant_patch_artifacts(patch_artifacts: list[str]) -> list[str]:
     skipped: list[str] = []
     if "patches/proposed.patch" in patch_artifacts and "patches/frontend_widget_mount.patch" in patch_artifacts:
         skipped.append("patches/frontend_widget_mount.patch")
+    if "patches/proposed.patch" in patch_artifacts and "patches/backend_chat_auth_route.patch" in patch_artifacts:
+        skipped.append("patches/backend_chat_auth_route.patch")
     return skipped
+
+
+def _extract_patch_target_files(patch_path: Path) -> list[str]:
+    content = patch_path.read_text(encoding="utf-8")
+    targets: list[str] = []
+    for match in re.finditer(r"^\+\+\+ b/(.+)$", content, re.MULTILINE):
+        targets.append(match.group(1))
+    return targets

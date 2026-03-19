@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "openai"  # openai | huggingface | vllm
     HF_MODEL_ID: str = "Qwen/Qwen3-0.6B"
     HF_QUANTIZATION: str = "auto"  # auto | none | bnb-4bit | bnb-8bit | dynamic-int8
+    ONBOARDING_LLM_INPUT_COST_PER_1M: float = 0.0
+    ONBOARDING_LLM_OUTPUT_COST_PER_1M: float = 0.0
+    ONBOARDING_LLM_CACHED_INPUT_COST_PER_1M: float = 0.0
+    ONBOARDING_INTERNAL_API_TOKEN: str = ""
+    ONBOARDING_REDIS_URL: str = ""
 
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
     EMBEDDING_DIM: int = 1024

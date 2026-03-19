@@ -5,6 +5,15 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .integration_contracts import (
+    BackendContract,
+    ChatAuthContract,
+    FrontendContract,
+    OrderAdapterContract,
+    ProductAdapterContract,
+    SiteIntegrationContract,
+)
+
 
 class RunState(str, Enum):
     QUEUED = "queued"
@@ -37,7 +46,7 @@ class AgentMessage(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     risk: str
     next_action: str
-    blocking_issue: str
+    blocking_issue: str | None = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
@@ -49,5 +58,16 @@ class RunEvent(BaseModel):
     state: RunState
     payload: dict[str, Any]
     created_at: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RecoveryAttempt(BaseModel):
+    retry_count: int
+    failure_signature: str
+    classification: str | None = None
+    should_retry: bool
+    stop_reason: str | None = None
+    recovery_artifact_path: str | None = None
 
     model_config = ConfigDict(extra="forbid")

@@ -1,0 +1,32 @@
+{
+  "failure_signature": "missing_import_target:chat-auth-token",
+  "retry_count": 0,
+  "retry_budget": 2,
+  "failed_results": [
+    {
+      "step": "chat-auth-token",
+      "step_id": "chat-auth-token",
+      "required": true,
+      "category": "auth",
+      "timed_out": false,
+      "returncode": 1,
+      "stdout": "",
+      "stderr": "missing chat auth import target"
+    }
+  ],
+  "backend_evaluation": {
+    "framework": "django",
+    "route_wiring": {
+      "validation_errors": [
+        "missing chat auth import target"
+      ],
+      "detected_registration_point": "backend/foodshop/urls.py"
+    }
+  },
+  "frontend_evaluation": {
+    "framework": "react",
+    "frontend_artifact": {
+      "validation_errors": []
+    }
+  }
+}

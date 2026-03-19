@@ -2,7 +2,6 @@ import React from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 import Header from "./components/Header";
-import Chatbot from "./components/chatbot";
 import ProductsPage from "./pages/Products";
 import LoginPage from "./pages/Login";
 import Orders from "./pages/Orders";
@@ -21,7 +20,6 @@ function App() {
             <Route path="/orders" element={<Orders />} />
           </Routes>
         </main>
-        <Chatbot />
       </BrowserRouter>
     </AuthProvider>
   );

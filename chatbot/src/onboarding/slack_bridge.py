@@ -27,6 +27,30 @@ ROLE_SUMMARY_PREFIX = {
     "Diagnostician": "장애 분석 결과를 공유합니다.",
 }
 
+RUN_STATE_LABELS = {
+    "queued": "준비 중",
+    "analyzing": "구조 확인 중",
+    "awaiting_analysis_approval": "분석 검토 대기",
+    "planning": "변경 계획 정리 중",
+    "generating": "변경안 생성 중",
+    "awaiting_apply_approval": "적용 승인 대기",
+    "applying": "변경 적용 중",
+    "validating": "실행 검증 중",
+    "diagnosing": "원인 분석 중",
+    "awaiting_export_approval": "내보내기 승인 대기",
+    "exporting": "결과 정리 중",
+    "completed": "온보딩 준비 완료",
+    "human_review_required": "사람 검토 필요",
+    "failed": "진행 중단",
+    "rejected": "승인 보류",
+}
+
+APPROVAL_LABELS = {
+    "analysis": "분석",
+    "apply": "적용",
+    "export": "내보내기",
+}
+
 
 @dataclass
 class InMemorySlackBridge:
@@ -52,8 +76,8 @@ class InMemorySlackBridge:
                 "site": site,
                 "source_root": source_root,
                 "goal": goal,
-                "current_state": current_state.value,
-                "approval_status": approval_status,
+                "current_state": _display_run_state(current_state.value),
+                "approval_status": _display_approval_status(approval_status),
             },
         }
         self.messages.append(payload)
@@ -99,7 +123,7 @@ class InMemorySlackBridge:
                 "available_actions": available_actions,
                 "actions": [
                     {
-                        "text": "Approve",
+                        "text": "진행",
                         "value": json.dumps(
                             {
                                 "run_id": run_id,
@@ -111,7 +135,7 @@ class InMemorySlackBridge:
                         ),
                     },
                     {
-                        "text": "Reject",
+                        "text": "보류",
                         "value": json.dumps(
                             {
                                 "run_id": run_id,
@@ -211,7 +235,7 @@ class SlackWebBridge(InMemorySlackBridge):
                     "fields": [
                         {"type": "mrkdwn", "text": f"*Run ID*\n`{run_id}`"},
                         {"type": "mrkdwn", "text": f"*사이트*\n`{site}`"},
-                        {"type": "mrkdwn", "text": f"*상태*\n`{current_state.value}`"},
+                        {"type": "mrkdwn", "text": f"*상태*\n`{_display_run_state(current_state.value)}`"},
                         {"type": "mrkdwn", "text": f"*목표*\n{goal}"},
                     ],
                 },
@@ -219,7 +243,7 @@ class SlackWebBridge(InMemorySlackBridge):
                     "type": "context",
                     "elements": [
                         {"type": "mrkdwn", "text": f"source root: `{source_root}`"},
-                        {"type": "mrkdwn", "text": f"approval: `{approval_status}`"},
+                        {"type": "mrkdwn", "text": f"승인 상태: `{_display_approval_status(approval_status)}`"},
                     ],
                 },
             ],
@@ -269,6 +293,7 @@ class SlackWebBridge(InMemorySlackBridge):
             available_actions=available_actions,
         )
         approval_value = payload["message"]["approval_type"]
+        approval_label = _display_approval_type(approval_value)
         request_id = payload["message"]["request_id"]
         blocks = [
             {
@@ -276,28 +301,31 @@ class SlackWebBridge(InMemorySlackBridge):
             },
             {
                 "type": "header",
-                "text": {"type": "plain_text", "text": f"Approval Required: {approval_value}"},
+                "text": {"type": "plain_text", "text": f"승인 확인: {approval_label}"},
             },
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*요약*\n{_localize_approval_summary(summary)}\n\n*권장 응답*\n`{recommended_option}`",
+                    "text": (
+                        f"*왜 필요한가*\n{_localize_approval_summary(summary)}\n\n"
+                        f"*권장 응답*\n`{_display_recommended_option(recommended_option)}`"
+                    ),
                 },
             },
             {
-                "type": "context",
-                "elements": [
-                    {"type": "mrkdwn", "text": f"승인 시 영향: {risk_if_approved}"},
-                    {"type": "mrkdwn", "text": f"거절 시 영향: {risk_if_rejected}"},
-                ],
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*다음 단계*\n승인하면 진행하고, 거절하면 현재 단계에서 중단됩니다.",
+                },
             },
             {
                 "type": "actions",
                 "elements": [
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "Approve"},
+                        "text": {"type": "plain_text", "text": "진행"},
                         "style": "primary",
                         "value": json.dumps(
                             {
@@ -311,7 +339,7 @@ class SlackWebBridge(InMemorySlackBridge):
                     },
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "Reject"},
+                        "text": {"type": "plain_text", "text": "보류"},
                         "style": "danger",
                         "value": json.dumps(
                             {
@@ -330,7 +358,7 @@ class SlackWebBridge(InMemorySlackBridge):
             run_id=run_id,
             persona_name="Approval Gate",
             icon_emoji=":rotating_light:",
-            text=f"승인 필요: {approval_value}",
+            text=f"승인 확인: {approval_label}",
             blocks=blocks,
         )
         return payload
@@ -385,7 +413,7 @@ class SlackWebBridge(InMemorySlackBridge):
             run_id=run_id,
             persona_name="Run Reporter",
             icon_emoji=":bookmark_tabs:",
-            text=f"실행 요약: {current_state}",
+            text=f"최종 결과: {_display_run_state(current_state)}",
             blocks=_build_summary_blocks(
                 current_state=current_state,
                 pending_approval=pending_approval,
@@ -446,63 +474,54 @@ def _build_agent_blocks(
     message: AgentMessage,
 ) -> list[dict[str, Any]]:
     localized_summary = _localize_agent_summary(message)
+    proposed_files = list(message.metadata.get("proposed_files") or [])
+    proposed_patches = list(message.metadata.get("proposed_patches") or [])
     blocks: list[dict[str, Any]] = [
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"{emoji} *{role} 요약*\n{localized_summary}",
+                "text": f"{emoji} *요약*\n{localized_summary}",
             },
         },
-        {
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": f"event: `{event_type}`"},
-                {"type": "mrkdwn", "text": f"state: `{state}`"},
-                {"type": "mrkdwn", "text": f"risk: `{message.risk}`"},
-                {"type": "mrkdwn", "text": f"confidence: `{message.confidence:.2f}`"},
-            ],
-        },
     ]
-    if message.evidence:
-        evidence_lines = "\n".join(f"- {item}" for item in message.evidence[:4])
-        blocks.append(
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*상세 근거*\n{evidence_lines}"},
-            }
-        )
-    metadata_lines = _build_metadata_lines(message.metadata)
-    if metadata_lines:
-        blocks.append(
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": "*상세 산출물*\n" + "\n".join(metadata_lines)},
-            }
-        )
+
+    evidence_lines = "\n".join(f"- {item}" for item in message.evidence[:2]) or "- 상세 근거 없음"
     blocks.append(
         {
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": f"next: {message.next_action}"},
-                {"type": "mrkdwn", "text": f"blocking: {message.blocking_issue}"},
-            ],
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*핵심 근거*\n{evidence_lines}"},
+        }
+    )
+
+    target_items = [Path(item).name for item in (proposed_files + proposed_patches)[:3]]
+    if target_items:
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*대상 파일*\n" + ", ".join(f"`{item}`" for item in target_items),
+                },
+            }
+        )
+
+    failure_reason = _derive_failure_reason(message)
+    if failure_reason:
+        blocks.append(
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*실패 원인*\n{failure_reason}"},
+            }
+        )
+
+    blocks.append(
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*다음 액션*\n{message.next_action}"},
         }
     )
     return blocks
-
-
-def _build_metadata_lines(metadata: dict[str, Any]) -> list[str]:
-    lines: list[str] = []
-    proposed_files = list(metadata.get("proposed_files") or [])
-    proposed_patches = list(metadata.get("proposed_patches") or [])
-    if proposed_files:
-        lines.append("files: " + ", ".join(f"`{Path(item).name}`" for item in proposed_files[:3]))
-    if proposed_patches:
-        lines.append("patches: " + ", ".join(f"`{Path(item).name}`" for item in proposed_patches[:3]))
-    if metadata.get("should_retry") is not None:
-        lines.append(f"retry suggested: `{bool(metadata['should_retry'])}`")
-    return lines
 
 
 def _build_summary_blocks(
@@ -511,36 +530,51 @@ def _build_summary_blocks(
     pending_approval: dict[str, Any] | None,
     artifacts: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    artifact_lines = []
+    patch_proposal_lines: list[str] = []
     for label, value in artifacts.items():
-        if value:
-            artifact_lines.append(f"*{label}*\n`{value}`")
+        if value and label == "patch_proposal":
+            patch_proposal_lines = _build_patch_proposal_lines(Path(value))
+
     blocks: list[dict[str, Any]] = [
         {
             "type": "divider",
         },
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": "실행 요약"},
+            "text": {"type": "plain_text", "text": "최종 요약"},
         },
         {
             "type": "section",
             "fields": [
-                {"type": "mrkdwn", "text": f"*상태*\n`{current_state}`"},
+                {"type": "mrkdwn", "text": f"*상태*\n`{_display_run_state(current_state)}`"},
                 {
                     "type": "mrkdwn",
-                    "text": (
-                        f"*대기 중 승인*\n`{(pending_approval or {}).get('approval_type', 'none')}`"
-                    ),
+                    "text": f"*대기 중 승인*\n`{_display_pending_approval(pending_approval)}`",
                 },
             ],
         },
     ]
-    if artifact_lines:
+    if patch_proposal_lines:
         blocks.append(
             {
                 "type": "section",
-                "fields": [{"type": "mrkdwn", "text": line} for line in artifact_lines[:6]],
+                "fields": [{"type": "mrkdwn", "text": line} for line in patch_proposal_lines[:3]],
+            }
+        )
+    runtime_failure_lines = _build_runtime_failure_lines(artifacts)
+    if runtime_failure_lines:
+        blocks.append(
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "*런타임 준비 실패*\n" + "\n".join(runtime_failure_lines[:2])},
+            }
+        )
+    report_links = _build_report_link_lines(artifacts)
+    if report_links:
+        blocks.append(
+            {
+                "type": "section",
+                "fields": [{"type": "mrkdwn", "text": line} for line in report_links[:2]],
             }
         )
     return blocks
@@ -562,4 +596,113 @@ def _localize_approval_summary(summary: str) -> str:
 
 def _localize_decision_text(*, approval_value: str, decision: str) -> str:
     decision_label = "승인" if decision == "approve" else "거절"
-    return f"`{approval_value}` 단계에 대해 `{decision_label}` 결정이 기록되었습니다."
+    return f"`{_display_approval_type(approval_value)}` 단계에 대해 `{decision_label}` 결정이 기록되었습니다."
+
+
+def _build_patch_proposal_lines(path: Path) -> list[str]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    target_files = list(payload.get("target_files") or [])
+    supporting_generated_files = list(payload.get("supporting_generated_files") or [])
+    analysis_summary = payload.get("analysis_summary") or {}
+
+    generated_text = ", ".join(f"`{Path(item).name}`" for item in supporting_generated_files[:3]) or "none"
+    target_text = ", ".join(f"`{item.get('path', 'unknown')}`" for item in target_files[:3]) or "none"
+
+    reason_parts: list[str] = []
+    auth_style = analysis_summary.get("auth_style")
+    if auth_style:
+        reason_parts.append(f"auth={auth_style}")
+    mount_points = list(analysis_summary.get("frontend_mount_points") or [])
+    if mount_points:
+        reason_parts.append(f"mount={mount_points[0]}")
+    route_prefixes = list(analysis_summary.get("route_prefixes") or [])
+    if route_prefixes:
+        reason_parts.append(f"route_prefix={route_prefixes[0]}")
+
+    reason_text = ", ".join(reason_parts) or "탐지된 코드 구조를 기준으로 산출물을 선택했습니다."
+
+    return [
+        f"*만든 것*\n{generated_text}",
+        f"*수정 대상*\n{target_text}",
+        f"*핵심 판단*\n{reason_text}",
+    ]
+
+
+def _build_report_link_lines(artifacts: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    for label in ("backend_evaluation", "frontend_evaluation", "smoke_results", "recovery_plan"):
+        value = artifacts.get(label)
+        if value:
+            lines.append(f"*보고서*\n`{value}`")
+            break
+    return lines
+
+
+def _build_runtime_failure_lines(artifacts: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+
+    backend_path = artifacts.get("backend_evaluation")
+    if backend_path:
+        try:
+            payload = json.loads(Path(backend_path).read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+        backend_bootstrap = payload.get("backend_bootstrap") or {}
+        if backend_bootstrap.get("bootstrap_attempted") and not backend_bootstrap.get("bootstrap_passed", False):
+            reason = str(backend_bootstrap.get("bootstrap_failure_reason") or "").strip()
+            if reason:
+                lines.append(f"- backend: {reason}")
+
+    frontend_path = artifacts.get("frontend_build_validation")
+    if frontend_path:
+        try:
+            payload = json.loads(Path(frontend_path).read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+        reason = str(payload.get("bootstrap_failure_reason") or "").strip()
+        if reason:
+            lines.append(f"- frontend: {reason}")
+
+    return lines
+
+
+def _derive_failure_reason(message: AgentMessage) -> str | None:
+    if message.role != "Diagnostician":
+        return None
+    if message.blocking_issue and str(message.blocking_issue).strip().lower() not in {"", "none"}:
+        return str(message.blocking_issue)
+    if message.evidence:
+        return message.evidence[0]
+    return None
+
+
+def _display_run_state(state: str) -> str:
+    return RUN_STATE_LABELS.get(state, state)
+
+
+def _display_approval_type(approval_type: str) -> str:
+    return APPROVAL_LABELS.get(approval_type, approval_type)
+
+
+def _display_approval_status(status: str) -> str:
+    if status == "not_requested":
+        return "대기 없음"
+    return _display_approval_type(status)
+
+
+def _display_pending_approval(pending_approval: dict[str, Any] | None) -> str:
+    if not pending_approval:
+        return "없음"
+    return _display_approval_type(str(pending_approval.get("approval_type", "없음")))
+
+
+def _display_recommended_option(option: str) -> str:
+    mapping = {
+        "approve": "진행",
+        "reject": "보류",
+    }
+    return mapping.get(option, option)
