@@ -36,7 +36,7 @@ from .recovery_planner import build_recovery_plan
 from .run_generator import generate_run_bundle
 from .run_resume import analyze_run_checkpoint
 from .runtime_completion_runner import run_runtime_completion
-from .runtime_repair_toolkit import repair_python_import_from_traceback
+from .runtime_repair_toolkit import repair_python_import_from_traceback, rewrite_javascript_module_specifier
 from .slack_bridge import InMemorySlackBridge
 from .smoke_runner import load_smoke_plan, run_smoke_tests, summarize_smoke_results
 from .runtime_runner import prepare_runtime_workspace, simulate_runtime_merge
@@ -1934,9 +1934,11 @@ def _repair_shared_widget_import(runtime_workspace: Path) -> bool:
                 "export default HostedChatbotWidget;\n",
                 encoding="utf-8",
             )
-        updated = content.replace('@shared-chatbot/ChatbotWidget', './ChatbotWidget')
-        widget_path.write_text(updated, encoding="utf-8")
-        repaired = True
+        repaired = rewrite_javascript_module_specifier(
+            file_path=widget_path,
+            broken_import='@shared-chatbot/ChatbotWidget',
+            replacement_import='./ChatbotWidget',
+        ) or repaired
     return repaired
 
 

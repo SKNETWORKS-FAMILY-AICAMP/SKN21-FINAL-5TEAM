@@ -80,6 +80,28 @@ def rewrite_python_import_line(
     return changed
 
 
+def rewrite_javascript_module_specifier(
+    *,
+    file_path: str | Path,
+    broken_import: str,
+    replacement_import: str,
+) -> bool:
+    path = Path(file_path)
+    original_lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    rewritten_lines: list[str] = []
+    changed = False
+
+    for line in original_lines:
+        updated = _rewrite_javascript_module_specifier_line(line, broken_import, replacement_import)
+        if updated != line:
+            changed = True
+        rewritten_lines.append(updated)
+
+    if changed:
+        path.write_text("".join(rewritten_lines), encoding="utf-8")
+    return changed
+
+
 def repair_python_import_from_traceback(
     *,
     workspace_root: str | Path,
@@ -205,5 +227,26 @@ def _rewrite_exact_import_statement(line: str, broken_import: str, replacement_i
     import_match = re.match(r"^(?P<prefix>\s*import\s+)(?P<module>[A-Za-z0-9_.]+)(?P<suffix>\b.*)$", line_body)
     if import_match and import_match.group("module") == broken_import:
         return f"{import_match.group('prefix')}{replacement_import}{import_match.group('suffix')}{line_ending}"
+
+    return line
+
+
+def _rewrite_javascript_module_specifier_line(
+    line: str,
+    broken_import: str,
+    replacement_import: str,
+) -> str:
+    line_ending = "\n" if line.endswith("\n") else ""
+    line_body = line[:-1] if line_ending else line
+    patterns = [
+        rf'^(?P<prefix>\s*import\b.*?\bfrom\s+["\'])(?P<module>{re.escape(broken_import)})(?P<suffix>["\'].*)$',
+        rf'^(?P<prefix>\s*export\b.*?\bfrom\s+["\'])(?P<module>{re.escape(broken_import)})(?P<suffix>["\'].*)$',
+        rf'^(?P<prefix>.*\brequire\(\s*["\'])(?P<module>{re.escape(broken_import)})(?P<suffix>["\']\s*\).*)$',
+    ]
+
+    for pattern in patterns:
+        match = re.match(pattern, line_body)
+        if match:
+            return f"{match.group('prefix')}{replacement_import}{match.group('suffix')}{line_ending}"
 
     return line

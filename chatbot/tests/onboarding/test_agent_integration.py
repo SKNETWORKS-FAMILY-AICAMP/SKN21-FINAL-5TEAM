@@ -1734,6 +1734,7 @@ def test_run_onboarding_generation_runtime_completion_repairs_shared_widget_impo
     widget_path = runtime_workspace / "frontend" / "src" / "chatbot" / "SharedChatbotWidget.jsx"
     widget_path.parent.mkdir(parents=True, exist_ok=True)
     widget_path.write_text(
+        '// preserve @shared-chatbot/ChatbotWidget alias comment\n'
         'import { HostedChatbotWidget } from "@shared-chatbot/ChatbotWidget";\n'
         "export default function SharedChatbotWidget() {\n"
         "  return <HostedChatbotWidget />;\n"
@@ -1809,6 +1810,7 @@ def test_run_onboarding_generation_runtime_completion_repairs_shared_widget_impo
 
     assert result["current_state"] == "completed"
     assert 'from "./ChatbotWidget"' in widget_path.read_text(encoding="utf-8")
+    assert "// preserve @shared-chatbot/ChatbotWidget alias comment" in widget_path.read_text(encoding="utf-8")
     assert vendored_widget.exists()
     assert "HostedChatbotWidget" in vendored_widget.read_text(encoding="utf-8")
     assert attempts_payload[0]["classification"] == "frontend_import_resolution_failed"
