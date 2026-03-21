@@ -1093,6 +1093,7 @@ def _llm_patch_proposal_system_prompt() -> str:
         "Select target_files conservatively from codebase_map.candidate_edit_targets only.\n"
         "Do not invent file paths.\n"
         "Prefer the smallest safe set of files needed for auth route, backend registration, and frontend mount.\n"
+        "For frontend mount targets, include insertion_hint.mount_context and prefer outside_routes when a React app uses <Routes>.\n"
     )
 
 
@@ -1354,7 +1355,8 @@ def _llm_patch_proposal_retry_human_payload(
             "previous_patch_proposal": previous_patch_proposal,
             "guardrail_rejection": guardrail_rejection,
             "allowed_target_paths": strategy_allowlist,
-            "instruction": "Return only corrected JSON patch proposal that avoids the rejected target and uses a valid source seam target.",
+            "allowed_mount_contexts": ["outside_routes", "root_fragment", "app_shell"],
+            "instruction": "Return only corrected JSON patch proposal that avoids the rejected target and uses a valid source seam target. Do not place order-cs-widget inside <Routes>.",
         },
         ensure_ascii=False,
         indent=2,
@@ -1407,6 +1409,13 @@ def _build_llm_patch_proposal_target_rejection(
                 "path": target.path,
                 "reason": "invalid_strategy_target_path",
                 "message": f"invalid strategy target path: {target.path}",
+            }
+        mount_context = str((target.insertion_hint or {}).get("mount_context") or "").strip()
+        if mount_context == "inside_routes":
+            return {
+                "path": target.path,
+                "reason": "routes_child_violation",
+                "message": f"invalid mount context for {target.path}: inside_routes would place order-cs-widget inside <Routes>",
             }
     return None
 
@@ -1792,6 +1801,13 @@ def _build_react_mount_updated_lines(
     if widget_line in updated_lines:
         return updated_lines
 
+    mount_context = str((insertion_hint or {}).get("mount_context") or "").strip()
+    if mount_context == "outside_routes":
+        outside_routes_index = _find_outside_routes_insert_index(updated_lines, insertion_hint)
+        if outside_routes_index is not None:
+            updated_lines.insert(outside_routes_index, widget_line)
+            return updated_lines
+
     hinted_index = _find_simple_hint_insert_index(updated_lines, insertion_hint)
     if hinted_index is not None:
         updated_lines.insert(hinted_index, widget_line)
@@ -1944,6 +1960,26 @@ def _find_react_mount_insert_index(lines: list[str]) -> int | None:
         if stripped in {"</BrowserRouter>", "</Routes>", "</main>", "</div>"}:
             return index
     return None
+
+
+def _find_outside_routes_insert_index(
+    lines: list[str],
+    insertion_hint: dict[str, Any] | None,
+) -> int | None:
+    anchor_index = _find_hint_anchor_index(lines, insertion_hint)
+    if anchor_index is not None:
+        position = str((insertion_hint or {}).get("position") or "after")
+        return anchor_index if position == "before" else anchor_index + 1
+
+    browser_router_close_index = _find_first_line_index(lines, "</BrowserRouter>")
+    if browser_router_close_index is not None:
+        return browser_router_close_index
+
+    routes_close_index = _find_first_line_index(lines, "</Routes>")
+    if routes_close_index is not None:
+        return routes_close_index + 1
+
+    return _find_react_mount_insert_index(lines)
 
 
 def _find_auth_view_insert_index(lines: list[str]) -> int | None:

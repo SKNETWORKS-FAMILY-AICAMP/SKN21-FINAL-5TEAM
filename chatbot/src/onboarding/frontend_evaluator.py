@@ -94,6 +94,26 @@ def evaluate_frontend_workspace(
                 recovery={"applied": True, "reason": "frontend_validation_recovery"},
                 details={"validation_errors": validation_errors, "notes": recovery_notes},
             )
+        elif recovery.get("status") == "retryable_planning":
+            source = "recovered_llm"
+            mount_path = (
+                Path(recovery["mount_path"])
+                if recovery.get("mount_path")
+                else mount_path
+            )
+            recovery_notes = recovery.get("notes", [])
+            append_onboarding_event(
+                report_root=reports,
+                run_id=run_id,
+                component="frontend_evaluator",
+                stage="validation",
+                event="recovery_applied",
+                severity="info",
+                summary="frontend validation identified retryable planning issue",
+                source=source,
+                recovery={"applied": True, "reason": "frontend_retryable_planning_issue"},
+                details={"validation_errors": validation_errors, "notes": recovery_notes},
+            )
         else:
             source = "hard_fallback"
             recovery_notes = recovery.get("notes", [])

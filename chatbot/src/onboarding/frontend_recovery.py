@@ -22,13 +22,11 @@ def attempt_frontend_recovery(
 ) -> dict[str, Any]:
     notes: list[str] = []
     resolved_mount = mount_candidate
-    unrecoverable_errors = {
-        "routes child violation",
-    }
-
-    if any(error in unrecoverable_errors for error in errors):
-        notes.append("frontend validation hit unrecoverable guardrail")
-        return _hard_fallback(notes, errors)
+    if "routes child violation" in errors:
+        if resolved_mount is None:
+            resolved_mount = _discover_mount_in_workspace(workspace)
+        notes.append("retryable mount context planning issue")
+        return _retryable_planning(resolved_mount, notes, errors)
 
     if resolved_mount is None:
         resolved_mount = _discover_mount_in_workspace(workspace)
@@ -108,4 +106,13 @@ def _hard_fallback(notes: list[str], errors: list[str]) -> dict[str, Any]:
         "notes": notes + ["errors: " + "; ".join(errors)],
         "widget_path": None,
         "mount_path": None,
+    }
+
+
+def _retryable_planning(mount: Path | None, notes: list[str], errors: list[str]) -> dict[str, Any]:
+    return {
+        "status": "retryable_planning",
+        "notes": notes + ["errors: " + "; ".join(errors)],
+        "widget_path": None,
+        "mount_path": str(mount) if mount else None,
     }

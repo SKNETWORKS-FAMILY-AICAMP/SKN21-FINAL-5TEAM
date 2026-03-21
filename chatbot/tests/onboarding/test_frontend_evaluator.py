@@ -218,6 +218,28 @@ def test_evaluate_frontend_workspace_records_routes_child_failure_signature(tmp_
     assert payload["failure_signature"] == "frontend_mount_violation:routes_child_violation"
 
 
+def test_evaluate_frontend_workspace_marks_routes_child_as_retryable_planning_issue(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    report_root = tmp_path / "reports"
+    _write_react_mount(
+        workspace,
+        include_bundle_bootstrap=True,
+        include_widget_usage=True,
+        inside_routes=True,
+    )
+
+    payload = json.loads(
+        evaluate_frontend_workspace(runtime_workspace=workspace, report_root=report_root).read_text(encoding="utf-8")
+    )
+
+    frontend_artifact = payload["frontend_artifact"]
+    assert payload["passed"] is False
+    assert frontend_artifact["source"] == "recovered_llm"
+    assert frontend_artifact["validation_status"] == "invalid"
+    assert "routes child violation" in frontend_artifact["validation_errors"]
+    assert "retryable mount context planning issue" in frontend_artifact["recovery_notes"]
+
+
 def test_evaluate_frontend_workspace_ignores_build_artifact_mount_candidates(tmp_path: Path):
     workspace = tmp_path / "workspace"
     report_root = tmp_path / "reports"

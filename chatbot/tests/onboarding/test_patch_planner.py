@@ -834,6 +834,127 @@ def test_write_llm_first_patch_proposal_retries_after_build_artifact_rejection(t
     assert "guardrail_rejection" in retry_prompt
 
 
+def test_write_llm_first_patch_proposal_retries_after_inside_routes_mount_context_rejection(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "patch-proposal.json"
+    execution_path = tmp_path / "reports" / "llm-patch-proposal-execution.json"
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        'import { Routes } from "react-router-dom";\n'
+        "export default function App() {\n"
+        "  return (\n"
+        "    <Routes>\n"
+        "      <main>Home</main>\n"
+        "    </Routes>\n"
+        "  );\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    codebase_map = {
+        "integration_contract": {
+            "site": "food",
+            "frontend": {
+                "framework": "react",
+                "app_shell_path": "frontend/src/App.js",
+                "router_boundary_path": "frontend/src/App.js",
+                "widget_mount_points": ["frontend/src/App.js"],
+            },
+        },
+        "candidate_edit_targets": [
+            {"path": "frontend/src/App.js", "reason": "react app shell"},
+        ],
+        "frontend_mount_targets": [{"path": "frontend/src/App.js", "reason": "app shell"}],
+    }
+
+    class RetryingLLM:
+        def __init__(self) -> None:
+            self.calls: list[list[object]] = []
+
+        def invoke(self, messages):
+            self.calls.append(messages)
+            if len(self.calls) == 1:
+                return type(
+                    "LLMResponse",
+                    (),
+                    {
+                        "content": json.dumps(
+                            {
+                                "target_files": [
+                                    {
+                                        "path": "frontend/src/App.js",
+                                        "reason": "react app shell",
+                                        "intent": "mount chatbot widget",
+                                        "insertion_hint": {
+                                            "anchor_text": "<Routes>",
+                                            "position": "after",
+                                            "mount_context": "inside_routes",
+                                        },
+                                    }
+                                ],
+                                "supporting_generated_files": ["patches/frontend_widget_mount.patch"],
+                                "recommended_outputs": ["frontend_patch"],
+                                "analysis_summary": {
+                                    "frontend_mount_points": ["frontend/src/App.js"],
+                                },
+                            }
+                        )
+                    },
+                )()
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "target_files": [
+                                {
+                                    "path": "frontend/src/App.js",
+                                    "reason": "react app shell",
+                                    "intent": "mount chatbot widget",
+                                    "insertion_hint": {
+                                        "anchor_text": "</Routes>",
+                                        "position": "after",
+                                        "mount_context": "outside_routes",
+                                    },
+                                }
+                            ],
+                            "supporting_generated_files": ["patches/frontend_widget_mount.patch"],
+                            "recommended_outputs": ["frontend_patch"],
+                            "analysis_summary": {
+                                "frontend_mount_points": ["frontend/src/App.js"],
+                            },
+                        }
+                    )
+                },
+            )()
+
+    llm = RetryingLLM()
+    write_llm_first_patch_proposal(
+        source_root=source_root,
+        analysis={"integration_contract": codebase_map["integration_contract"]},
+        codebase_map=codebase_map,
+        recommended_outputs=["frontend_patch"],
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: llm,
+    )
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+    retry_prompt = str(llm.calls[1][1].content)
+
+    assert payload["target_files"][0]["insertion_hint"]["mount_context"] == "outside_routes"
+    assert execution["source"] == "recovered_llm"
+    assert execution["rejection_reason"] == {
+        "path": "frontend/src/App.js",
+        "reason": "routes_child_violation",
+        "message": "invalid mount context for frontend/src/App.js: inside_routes would place order-cs-widget inside <Routes>",
+    }
+    assert execution["retry_attempt_count"] == 1
+    assert "inside_routes" in retry_prompt
+    assert "outside_routes" in retry_prompt
+
+
 def test_write_llm_first_patch_proposal_recovery_normalizes_single_target_shape(tmp_path: Path):
     source_root = tmp_path / "source"
     output_path = tmp_path / "reports" / "patch-proposal.json"
@@ -1264,3 +1385,59 @@ def test_write_llm_first_patch_proposal_includes_file_samples_in_prompt(tmp_path
     assert "file_samples" in prompt
     assert "def login(request):" in prompt
     assert payload["target_files"][0]["insertion_hint"]["anchor_text"] == "def login(request):"
+
+
+def test_write_unified_diff_draft_respects_outside_routes_mount_context(tmp_path: Path):
+    source_root = tmp_path / "source"
+    run_root = tmp_path / "generated"
+    proposal_path = run_root / "reports" / "patch-proposal.json"
+    output_path = run_root / "patches" / "frontend_widget_mount.patch"
+
+    target_file = source_root / "frontend" / "src" / "App.js"
+    target_file.parent.mkdir(parents=True)
+    target_file.write_text(
+        'import { BrowserRouter, Routes, Route } from "react-router-dom";\n\n'
+        "export default function App() {\n"
+        "  return (\n"
+        "    <BrowserRouter>\n"
+        "      <Routes>\n"
+        "        <Route path=\"/\" element={<main>Home</main>} />\n"
+        "      </Routes>\n"
+        "    </BrowserRouter>\n"
+        "  );\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    proposal_path.parent.mkdir(parents=True, exist_ok=True)
+    proposal_path.write_text(
+        json.dumps(
+            {
+                "target_files": [
+                    {
+                        "path": "frontend/src/App.js",
+                        "reason": "app shell",
+                        "intent": "mount chatbot widget",
+                        "insertion_hint": {
+                            "anchor_text": "</Routes>",
+                            "position": "after",
+                            "mount_context": "outside_routes",
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    write_unified_diff_draft(
+        source_root=source_root,
+        generated_run_root=run_root,
+        proposal_path=proposal_path,
+        output_path=output_path,
+    )
+
+    content = output_path.read_text(encoding="utf-8")
+    assert "       </Routes>\n+      <order-cs-widget />\n     </BrowserRouter>\n" in content
+    assert "+      <order-cs-widget />\n" in content
+    assert "+        <order-cs-widget />\n" not in content
