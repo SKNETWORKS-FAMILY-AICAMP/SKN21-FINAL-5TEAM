@@ -14,6 +14,7 @@ from .agent_contracts import AgentMessage, RecoveryAttempt, RunState
 from .agent_orchestrator import AgentOrchestrator
 from .approval_store import ApprovalStore
 from .backend_evaluator import evaluate_backend_workspace
+from .backend_integration import CHAT_AUTH_BOOTSTRAP_PATH
 from .codebase_mapper import (
     build_llm_codebase_interpretation_factory,
     write_codebase_map,
@@ -2388,22 +2389,22 @@ def _build_runtime_chat_auth_stub(framework: str) -> str:
         return (
             'from flask import Blueprint, jsonify\n\n'
             'chat_auth_bp = Blueprint("chat_auth", __name__)\n\n'
-            '@chat_auth_bp.route("/api/chat/auth-token", methods=["POST"])\n'
+            f'@chat_auth_bp.route("{CHAT_AUTH_BOOTSTRAP_PATH}", methods=["POST"])\n'
             'def chat_auth_token():\n'
-            '    return jsonify({"authenticated": True, "access_token": "runtime-token"})\n'
+            '    return jsonify({"authenticated": True, "site_id": "site-unknown", "access_token": "runtime-token", "user": {"id": "runtime-user", "email": "", "name": "Runtime User"}})\n'
         )
     if framework == "fastapi":
         return (
             "from fastapi import APIRouter\n\n"
             'router = APIRouter(tags=["chat-auth"])\n\n'
-            '@router.post("/api/chat/auth-token")\n'
+            f'@router.post("{CHAT_AUTH_BOOTSTRAP_PATH}")\n'
             "def chat_auth_token():\n"
-            '    return {"authenticated": True, "access_token": "runtime-token"}\n'
+            '    return {"authenticated": True, "site_id": "site-unknown", "access_token": "runtime-token", "user": {"id": "runtime-user", "email": "", "name": "Runtime User"}}\n'
         )
     return (
         "from django.http import JsonResponse\n\n"
         "def chat_auth_token(request):\n"
-        '    return JsonResponse({"authenticated": True, "access_token": "runtime-token"})\n'
+        '    return JsonResponse({"authenticated": True, "site_id": "site-unknown", "access_token": "runtime-token", "user": {"id": "runtime-user", "email": "", "name": "Runtime User"}})\n'
     )
 
 

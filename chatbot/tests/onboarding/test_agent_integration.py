@@ -1,12 +1,28 @@
 import json
+import os
 import sys
 import threading
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
+os.environ.setdefault("QDRANT_API_KEY", "test-key")
+
+fake_langchain_ollama = ModuleType("langchain_ollama")
+
+
+class _FakeChatOllama:
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+
+fake_langchain_ollama.ChatOllama = _FakeChatOllama
+sys.modules.setdefault("langchain_ollama", fake_langchain_ollama)
 
 from chatbot.src.onboarding.approval_store import ApprovalStore
 from chatbot.src.onboarding.orchestrator import run_onboarding_generation
@@ -1170,7 +1186,12 @@ def test_run_onboarding_generation_materializes_only_generator_proposals(tmp_pat
     )
 
     run_root = generated_root / "food" / "food-run-006"
+    chat_auth_content = (run_root / "files" / "backend" / "chat_auth.py").read_text(encoding="utf-8")
+
     assert (run_root / "files" / "backend" / "chat_auth.py").exists()
+    assert '"site_id": "site-a"' in chat_auth_content
+    assert '"access_token": token' in chat_auth_content
+    assert '"user": {' in chat_auth_content
     assert not (run_root / "files" / "backend" / "order_adapter_client.py").exists()
     assert not (run_root / "files" / "backend" / "product_adapter_client.py").exists()
     assert (run_root / "patches" / "frontend_widget_mount.patch").exists()

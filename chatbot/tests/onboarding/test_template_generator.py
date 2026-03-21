@@ -103,6 +103,51 @@ def test_generate_chat_auth_template_for_food_uses_repo_local_primitives(tmp_pat
     assert "def issue_chat_token" in content or "def issue_bridge_token" in content
 
 
+def test_generate_chat_auth_template_returns_site_scoped_bootstrap_contract(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-bootstrap"
+    run_root.mkdir(parents=True)
+
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "food-run-bootstrap",
+                "site": "food",
+                "source_root": "/workspace/food",
+                "created_at": "2026-03-21T12:00:00+09:00",
+                "agent_version": "test-v1",
+                "analysis": {
+                    "backend_strategy": "django",
+                    "integration_contract": {
+                        "backend": {
+                            "framework": "django",
+                            "auth_style": "session_cookie",
+                            "auth_source_paths": ["backend/users/views.py"],
+                            "route_registration_points": ["backend/users/urls.py"],
+                        }
+                    },
+                },
+                "generated_files": [],
+                "patch_targets": [],
+                "docker": {},
+                "tests": {},
+                "status": "generated",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    content = generate_chat_auth_template(run_root).read_text(encoding="utf-8")
+
+    assert '"authenticated": True' in content
+    assert '"site_id": "site-a"' in content
+    assert '"access_token": token' in content
+    assert '"user": {' in content
+    assert '"id": str(user.id)' in content
+    assert '"email": user.email' in content
+    assert '"name": user.get_full_name() or user.username' in content
+
+
 def test_generate_chat_auth_template_for_bilyeo_site_uses_site_b(tmp_path: Path):
     run_root = tmp_path / "generated" / "bilyeo" / "bilyeo-run-001"
     run_root.mkdir(parents=True)
@@ -134,6 +179,7 @@ def test_generate_chat_auth_template_for_bilyeo_site_uses_site_b(tmp_path: Path)
     assert 'session.get("user_id")' in content
     assert 'session.get("email")' in content
     assert "issue_chat_token" in content
+    assert '"user": {' in content
 
 
 def test_generate_chat_auth_template_for_ecommerce_site_uses_access_token_cookie(tmp_path: Path):
@@ -172,6 +218,7 @@ def test_generate_chat_auth_template_for_ecommerce_site_uses_access_token_cookie
     assert 'request.cookies.get("access_token")' in content
     assert "crud.get_user_by_email" not in content
     assert "get_current_user" not in content
+    assert '"user": {' in content
 
 
 def test_generate_frontend_widget_artifact_writes_widget_file(tmp_path: Path):
