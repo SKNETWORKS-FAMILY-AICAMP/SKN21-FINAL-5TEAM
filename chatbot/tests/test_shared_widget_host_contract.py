@@ -15,12 +15,12 @@ def _load_runtime_module():
     return importlib.import_module("chatbot.src.onboarding.shared_widget_runtime")
 
 
-def test_site_a_shared_widget_runtime_uses_shared_host_contract():
+def test_shared_widget_runtime_exposes_host_bootstrap_contract():
     module = _load_runtime_module()
 
     payload = module.build_widget_runtime_payload(site="food")
 
-    assert payload["site"] == "food"
-    assert payload["widget_bundle_path"] == "/widget.js"
-    assert payload["widget_element_tag"] == "order-cs-widget"
+    assert "chatbot_server_base_url" in payload
+    assert payload["auth_bootstrap_path"] == "/api/chat/auth-token"
+    assert payload["mount_mode"] == "floating_launcher"
     assert "site_id" not in payload
