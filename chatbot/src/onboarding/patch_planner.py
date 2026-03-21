@@ -3,8 +3,6 @@ from __future__ import annotations
 import difflib
 import json
 import re
-import shutil
-import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
@@ -23,7 +21,8 @@ from .debug_logging import (
 )
 from .frontend_generator import build_frontend_mount_contract
 from .framework_strategies import build_strategy_allowlist, select_strategy_target_candidates
-from .runtime_runner import _apply_patch_file
+
+_UNIFIED_DIFF_HUNK_HEADER_RE = re.compile(r"^@@ -\d+(,\d+)? \+\d+(,\d+)? @@")
 
 
 class PatchProposalTarget(BaseModel):
@@ -82,6 +81,10 @@ def write_llm_first_patch_proposal(
     fallback_reason = "llm_exception"
     recovery_reason: str | None = None
     hard_fallback_reason: str | None = "llm_exception"
+    raw_response_content: str | None = None
+    parsed_payload: Any = None
+    error_type: str | None = None
+    error_message: str | None = None
     report_root = Path(output_path).parent
     append_onboarding_event(
         report_root=report_root,
@@ -124,35 +127,31 @@ def write_llm_first_patch_proposal(
             model=model or getattr(llm, "model_name", None),
             usage=extract_llm_usage(response),
         )
-        raw_payload = json.loads(str(response.content))
+        raw_response_content = str(response.content)
+        raw_payload = json.loads(raw_response_content)
+        parsed_payload = raw_payload
         try:
             llm_payload = PatchProposalPayload.model_validate(raw_payload)
         except ValidationError:
-            recovered = _recover_patch_proposal_payload(raw_payload)
+            recovered = _recover_patch_proposal_payload(
+                raw_payload,
+                analysis=analysis,
+                codebase_map=codebase_map,
+                recommended_outputs=recommended_outputs,
+                fallback_payload=fallback_payload,
+            )
             if recovered is None:
                 raise
             raw_payload, recovery_reason = recovered
+            parsed_payload = raw_payload
             llm_payload = PatchProposalPayload.model_validate(raw_payload)
             source = "recovered_llm"
             hard_fallback_reason = None
-        try:
-            _validate_llm_patch_proposal_targets(
-                llm_payload=llm_payload,
-                codebase_map=codebase_map,
-                recommended_outputs=recommended_outputs,
-            )
-        except ValueError:
-            recovered = _recover_patch_proposal_targets(
-                llm_payload=llm_payload,
-                codebase_map=codebase_map,
-                recommended_outputs=recommended_outputs,
-            )
-            if recovered is None:
-                raise
-            llm_payload, target_recovery_reason = recovered
-            source = "recovered_llm"
-            recovery_reason = target_recovery_reason
-            hard_fallback_reason = None
+        _validate_llm_patch_proposal_targets(
+            llm_payload=llm_payload,
+            codebase_map=codebase_map,
+            recommended_outputs=recommended_outputs,
+        )
         payload = llm_payload.model_dump(mode="json")
         if source != "recovered_llm":
             source = "llm"
@@ -160,18 +159,26 @@ def write_llm_first_patch_proposal(
         if source == "llm":
             recovery_reason = None
         hard_fallback_reason = None
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
         fallback_reason = "invalid_llm_response"
         hard_fallback_reason = "invalid_llm_response"
-    except ValidationError:
+        error_type = "invalid_llm_response"
+        error_message = str(exc)
+    except ValidationError as exc:
         fallback_reason = "invalid_llm_payload"
         hard_fallback_reason = "invalid_llm_payload"
-    except ValueError:
+        error_type = "invalid_llm_payload"
+        error_message = str(exc)
+    except ValueError as exc:
         fallback_reason = "invalid_target_selection"
         hard_fallback_reason = "invalid_target_selection"
-    except Exception:
+        error_type = "invalid_target_selection"
+        error_message = str(exc)
+    except Exception as exc:
         fallback_reason = "llm_exception"
         hard_fallback_reason = "llm_exception"
+        error_type = "llm_exception"
+        error_message = str(exc)
 
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -192,6 +199,21 @@ def write_llm_first_patch_proposal(
         ),
         encoding="utf-8",
     )
+    debug_payload = {
+        "status": source,
+        "fallback_reason": fallback_reason,
+        "recovery_reason": recovery_reason,
+        "hard_fallback_reason": hard_fallback_reason,
+        "raw_response": raw_response_content,
+        "parsed_payload": parsed_payload,
+        "error_type": error_type,
+        "error_message": error_message,
+    }
+    debug_path = write_llm_debug_artifact(
+        report_root=execution_path.parent,
+        name="patch-proposal",
+        payload=debug_payload,
+    )
     append_onboarding_event(
         report_root=execution_path.parent,
         run_id="unknown",
@@ -202,6 +224,18 @@ def write_llm_first_patch_proposal(
         summary="patch proposal execution artifact written",
         source=source,
         details={"artifact_kind": "execution_metadata", "output_path": str(execution_path)},
+    )
+    append_onboarding_event(
+        report_root=execution_path.parent,
+        run_id="unknown",
+        component="patch_planner",
+        stage="planning",
+        event="artifact_written",
+        severity="info",
+        summary="patch proposal debug artifact written",
+        source=source,
+        details={"artifact_kind": "llm_debug"},
+        debug_artifact_path=str(debug_path),
     )
     if source in {"recovered_llm", "hard_fallback"}:
         append_generation_log(
@@ -247,6 +281,7 @@ def write_llm_first_patch_proposal(
             source=source,
             recovery={"applied": source == "recovered_llm", "reason": recovery_reason} if source == "recovered_llm" else None,
             details={"output_path": str(path)},
+            debug_artifact_path=str(debug_path),
         )
     else:
         append_onboarding_event(
@@ -260,7 +295,23 @@ def write_llm_first_patch_proposal(
             source="hard_fallback",
             recovery={"applied": False, "reason": hard_fallback_reason},
             details={"failure_reason": hard_fallback_reason, "output_path": str(path)},
+            debug_artifact_path=str(debug_path),
         )
+    append_generation_log(
+        report_root=execution_path.parent,
+        level="INFO" if source == "llm" else "WARN",
+        component="patch_planner",
+        event="llm_patch_proposal_completed" if source == "llm" else "llm_patch_proposal_recovered" if source == "recovered_llm" else "llm_patch_proposal_hard_fallback",
+        message="llm patch proposal finished" if source == "llm" else "llm patch proposal recovered" if source == "recovered_llm" else "llm patch proposal used hard fallback",
+        details={
+            "source": source,
+            "fallback_reason": fallback_reason,
+            "recovery_reason": recovery_reason,
+            "hard_fallback_reason": hard_fallback_reason,
+            "debug_path": str(debug_path),
+            "execution_path": str(execution_path),
+        },
+    )
     return path
 
 
@@ -297,24 +348,22 @@ def write_llm_patch_draft(
         details={"output_path": str(output_path), "provider": provider or "unknown", "model": model or "unknown"},
     )
     llm = llm_factory()
-    response = llm.invoke(
-        [
-            SystemMessage(content=_llm_patch_system_prompt()),
-            HumanMessage(
-                content=json.dumps(
-                    {
-                        "source_root": str(source_root),
-                        "analysis": analysis,
-                        "codebase_map": codebase_map,
-                        "patch_proposal": patch_proposal,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            ),
-        ]
-    )
-    raw_content = str(response.content)
+    initial_messages = [
+        SystemMessage(content=_llm_patch_system_prompt()),
+        HumanMessage(
+            content=json.dumps(
+                {
+                    "source_root": str(source_root),
+                    "analysis": analysis,
+                    "codebase_map": codebase_map,
+                    "patch_proposal": patch_proposal,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        ),
+    ]
+    response = llm.invoke(initial_messages)
     append_llm_usage(
         report_root=report_root,
         component="llm_patch_draft",
@@ -322,36 +371,75 @@ def write_llm_patch_draft(
         model=model or getattr(llm, "model_name", None),
         usage=extract_llm_usage(response),
     )
-    content, recovery_reason = _normalize_llm_patch_content(raw_content)
+
+    attempts: list[dict[str, Any]] = []
+    first_raw_content = str(response.content)
+    first_attempt = _prepare_llm_patch_attempt(first_raw_content, patch_proposal=patch_proposal)
+    attempts.append(first_attempt)
+    final_attempt = first_attempt
+
+    retry_validation_error: dict[str, str] | None = None
+    if first_attempt["validation_error"] is not None and first_attempt["validation_error"]["reason"] == "invalid_patch_format":
+        retry_messages = [
+            SystemMessage(content=_llm_patch_system_prompt()),
+            HumanMessage(
+                content=_llm_patch_retry_human_payload(
+                    source_root=source_root,
+                    analysis=analysis,
+                    codebase_map=codebase_map,
+                    patch_proposal=patch_proposal,
+                    previous_patch=first_attempt["normalized_response"],
+                    validation_error=first_attempt["validation_error"],
+                )
+            ),
+        ]
+        retry_response = llm.invoke(retry_messages)
+        append_llm_usage(
+            report_root=report_root,
+            component="llm_patch_draft",
+            provider=provider,
+            model=model or getattr(llm, "model_name", None),
+            usage=extract_llm_usage(retry_response),
+        )
+        retry_attempt = _prepare_llm_patch_attempt(str(retry_response.content), patch_proposal=patch_proposal)
+        attempts.append(retry_attempt)
+        final_attempt = retry_attempt
+        retry_validation_error = retry_attempt["validation_error"]
+
+    content = str(final_attempt["normalized_response"])
+    recovery_reason = final_attempt["recovery_reason"]
     debug_payload: dict[str, Any] = {
         "status": "recovered_llm" if recovery_reason else "llm",
+        "final_status": "recovered_llm" if recovery_reason else "llm",
         "fallback_reason": None,
         "recovery_reason": recovery_reason,
         "hard_fallback_reason": None,
-        "raw_response": raw_content,
+        "raw_response": first_raw_content,
         "normalized_response": content,
         "error_type": None,
         "error_message": None,
+        "attempt_count": len(attempts),
+        "retry_error_type": retry_validation_error["reason"] if retry_validation_error is not None else None,
+        "retry_error_message": retry_validation_error["message"] if retry_validation_error is not None else None,
     }
     execution_payload = {
         "source": "recovered_llm" if recovery_reason else "llm",
         "fallback_reason": None,
         "recovery_reason": recovery_reason,
         "hard_fallback_reason": None,
+        "attempt_count": len(attempts),
     }
-    validation_error = _validate_llm_patch_content(
-        content,
-        patch_proposal=patch_proposal,
-        source_root=source_root,
-    )
+    validation_error = final_attempt["validation_error"]
     if validation_error is not None:
         execution_payload = {
             "source": "hard_fallback",
             "fallback_reason": validation_error["reason"],
             "recovery_reason": None,
             "hard_fallback_reason": validation_error["reason"],
+            "attempt_count": len(attempts),
         }
         debug_payload["status"] = "hard_fallback"
+        debug_payload["final_status"] = "hard_fallback"
         debug_payload["fallback_reason"] = validation_error["reason"]
         debug_payload["recovery_reason"] = None
         debug_payload["hard_fallback_reason"] = validation_error["reason"]
@@ -361,6 +449,12 @@ def write_llm_patch_draft(
             reason=validation_error["reason"],
             message=validation_error["message"],
         )
+    elif len(attempts) == 2 and first_attempt["validation_error"] is not None:
+        execution_payload["source"] = "recovered_llm"
+        execution_payload["recovery_reason"] = "invalid_patch_format_retry_succeeded"
+        debug_payload["status"] = "recovered_llm"
+        debug_payload["final_status"] = "recovered_llm"
+        debug_payload["recovery_reason"] = "invalid_patch_format_retry_succeeded"
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -573,12 +667,6 @@ def build_patch_proposal(
         else:
             selected_targets = strategy_selected_targets
     if strategy_allowlist:
-        if llm_codebase_interpretation:
-            selected_targets = [
-                target
-                for target in selected_targets
-                if str(target.get("path") or "") in strategy_allowlist
-            ]
         invalid_targets = [
             str(target.get("path") or "")
             for target in selected_targets
@@ -960,6 +1048,9 @@ def _normalize_llm_patch_content(content: str) -> tuple[str, str | None]:
     if removed_redundant_hunk_marker:
         text = "\n".join(cleaned_lines)
         recovery_reasons.append("patch_redundant_hunk_marker_removed")
+    text, salvage_recovery_reason = _salvage_valid_unified_diff_sections(text)
+    if salvage_recovery_reason is not None:
+        recovery_reasons.append(salvage_recovery_reason)
     if text and not text.endswith("\n"):
         text = f"{text}\n"
         recovery_reasons.append("patch_trailing_newline_added")
@@ -967,6 +1058,7 @@ def _normalize_llm_patch_content(content: str) -> tuple[str, str | None]:
     for candidate in [
         "patch_fences_removed",
         "patch_redundant_hunk_marker_removed",
+        "patch_invalid_trailing_file_section_removed",
         "patch_trailing_newline_added",
     ]:
         if candidate in recovery_reasons:
@@ -975,25 +1067,243 @@ def _normalize_llm_patch_content(content: str) -> tuple[str, str | None]:
     return text, recovery_reason
 
 
+def _salvage_valid_unified_diff_sections(content: str) -> tuple[str, str | None]:
+    sections = _split_unified_diff_sections(content)
+    if len(sections) < 2:
+        return content, None
+
+    valid_sections: list[str] = []
+    encountered_invalid_section = False
+    for section in sections:
+        if _is_valid_unified_diff_section(section):
+            valid_sections.append(section)
+            continue
+        encountered_invalid_section = True
+        break
+
+    if valid_sections and encountered_invalid_section:
+        return "\n".join(valid_sections).rstrip() + "\n", "patch_invalid_trailing_file_section_removed"
+    return content, None
+
+
+def _split_unified_diff_sections(content: str) -> list[str]:
+    sections: list[list[str]] = []
+    current: list[str] = []
+    for line in content.splitlines():
+        if line.startswith("--- a/"):
+            if current:
+                sections.append(current)
+            current = [line]
+            continue
+        if current:
+            current.append(line)
+    if current:
+        sections.append(current)
+    return ["\n".join(section) for section in sections]
+
+
+def _is_valid_unified_diff_section(section: str) -> bool:
+    lines = section.splitlines()
+    if len(lines) < 3:
+        return False
+    if not lines[0].startswith("--- a/") or not lines[1].startswith("+++ b/"):
+        return False
+    hunk_headers = [line for line in lines if line.startswith("@@")]
+    if not hunk_headers or not all(_UNIFIED_DIFF_HUNK_HEADER_RE.match(line) for line in hunk_headers):
+        return False
+    return _section_hunks_match_declared_counts(lines[2:])
+
+
+def _section_hunks_match_declared_counts(lines: list[str]) -> bool:
+    index = 0
+    saw_hunk = False
+    while index < len(lines):
+        line = lines[index]
+        if not line.startswith("@@"):
+            index += 1
+            continue
+
+        saw_hunk = True
+        header_match = re.match(r"^@@ -(?P<old_start>\d+)(,(?P<old_count>\d+))? \+(?P<new_start>\d+)(,(?P<new_count>\d+))? @@", line)
+        if header_match is None:
+            return False
+
+        old_count = int(header_match.group("old_count") or "1")
+        new_count = int(header_match.group("new_count") or "1")
+        old_seen = 0
+        new_seen = 0
+        index += 1
+
+        while index < len(lines) and not lines[index].startswith("@@"):
+            diff_line = lines[index]
+            if diff_line.startswith("\\ No newline at end of file"):
+                index += 1
+                continue
+            if not diff_line:
+                return False
+            prefix = diff_line[0]
+            if prefix == " ":
+                old_seen += 1
+                new_seen += 1
+            elif prefix == "-":
+                old_seen += 1
+            elif prefix == "+":
+                new_seen += 1
+            else:
+                return False
+            index += 1
+
+        if old_seen != old_count or new_seen != new_count:
+            return False
+
+    return saw_hunk
+
+
+def _prepare_llm_patch_attempt(
+    raw_content: str,
+    *,
+    patch_proposal: dict[str, Any],
+) -> dict[str, Any]:
+    normalized_content, recovery_reason = _normalize_llm_patch_content(raw_content)
+    validation_error = _validate_llm_patch_content(normalized_content, patch_proposal=patch_proposal)
+    return {
+        "raw_response": raw_content,
+        "normalized_response": normalized_content,
+        "recovery_reason": recovery_reason,
+        "validation_error": validation_error,
+    }
+
+
+def _llm_patch_retry_human_payload(
+    *,
+    source_root: str | Path,
+    analysis: dict[str, Any],
+    codebase_map: dict[str, Any],
+    patch_proposal: dict[str, Any],
+    previous_patch: str,
+    validation_error: dict[str, str],
+) -> str:
+    return json.dumps(
+        {
+            "source_root": str(source_root),
+            "analysis": analysis,
+            "codebase_map": codebase_map,
+            "patch_proposal": patch_proposal,
+            "allowed_target_files": [str(item.get("path") or "") for item in (patch_proposal.get("target_files") or [])],
+            "previous_patch": previous_patch,
+            "validation_error": validation_error,
+            "instruction": "Return only corrected unified diff text for the allowed target files.",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
 def _recover_patch_proposal_payload(
     payload: dict[str, Any],
+    *,
+    analysis: dict[str, Any],
+    codebase_map: dict[str, Any],
+    recommended_outputs: list[str],
+    fallback_payload: dict[str, Any],
 ) -> tuple[dict[str, Any], str] | None:
+    if not isinstance(payload, dict):
+        return None
+
     normalized = dict(payload)
     recovery_applied = False
+    alias_map = {
+        "targetFiles": "target_files",
+        "supportingGeneratedFiles": "supporting_generated_files",
+        "supportingFiles": "supporting_generated_files",
+        "generatedFiles": "supporting_generated_files",
+        "recommendedOutputs": "recommended_outputs",
+        "outputs": "recommended_outputs",
+        "analysisSummary": "analysis_summary",
+        "summary": "analysis_summary",
+    }
+    for source_key, target_key in alias_map.items():
+        if source_key in normalized and target_key not in normalized:
+            normalized[target_key] = normalized.pop(source_key)
+            recovery_applied = True
 
     target_files = normalized.get("target_files")
     if isinstance(target_files, dict):
         normalized["target_files"] = [target_files]
         recovery_applied = True
+        target_files = normalized["target_files"]
+    elif isinstance(target_files, str):
+        normalized["target_files"] = [target_files]
+        recovery_applied = True
+        target_files = normalized["target_files"]
+
+    candidates_by_path = {
+        str(item.get("path") or ""): item
+        for item in (codebase_map.get("candidate_edit_targets") or [])
+        if str(item.get("path") or "")
+    }
+    if isinstance(target_files, list):
+        normalized_targets: list[Any] = []
+        target_recovered = False
+        for item in target_files:
+            if isinstance(item, str):
+                candidate = candidates_by_path.get(item, {})
+                normalized_targets.append(
+                    {
+                        "path": item,
+                        "reason": str(candidate.get("reason") or ""),
+                        "intent": _infer_intent(
+                            path=item,
+                            analysis=analysis,
+                            recommended_outputs=recommended_outputs,
+                        ),
+                    }
+                )
+                target_recovered = True
+                continue
+            if isinstance(item, dict):
+                path = str(item.get("path") or "")
+                if not path:
+                    normalized_targets.append(item)
+                    continue
+                candidate = candidates_by_path.get(path, {})
+                normalized_item = dict(item)
+                if not normalized_item.get("reason"):
+                    normalized_item["reason"] = str(candidate.get("reason") or "")
+                    target_recovered = True
+                if not normalized_item.get("intent"):
+                    normalized_item["intent"] = _infer_intent(
+                        path=path,
+                        analysis=analysis,
+                        recommended_outputs=recommended_outputs,
+                    )
+                    target_recovered = True
+                normalized_targets.append(normalized_item)
+                continue
+            normalized_targets.append(item)
+        if target_recovered:
+            normalized["target_files"] = normalized_targets
+            recovery_applied = True
 
     supporting_generated_files = normalized.get("supporting_generated_files")
     if isinstance(supporting_generated_files, str):
         normalized["supporting_generated_files"] = [supporting_generated_files]
         recovery_applied = True
+    elif not isinstance(supporting_generated_files, list):
+        normalized["supporting_generated_files"] = list(fallback_payload.get("supporting_generated_files") or [])
+        recovery_applied = True
 
     recommended_outputs = normalized.get("recommended_outputs")
     if isinstance(recommended_outputs, str):
         normalized["recommended_outputs"] = [recommended_outputs]
+        recovery_applied = True
+    elif not isinstance(recommended_outputs, list):
+        normalized["recommended_outputs"] = list(fallback_payload.get("recommended_outputs") or [])
+        recovery_applied = True
+
+    analysis_summary = normalized.get("analysis_summary")
+    if not isinstance(analysis_summary, dict):
+        normalized["analysis_summary"] = dict(fallback_payload.get("analysis_summary") or {})
         recovery_applied = True
 
     if recovery_applied:
@@ -1001,49 +1311,10 @@ def _recover_patch_proposal_payload(
     return None
 
 
-def _recover_patch_proposal_targets(
-    *,
-    llm_payload: PatchProposalPayload,
-    codebase_map: dict[str, Any],
-    recommended_outputs: list[str] | None = None,
-) -> tuple[PatchProposalPayload, str] | None:
-    valid_paths = {
-        str(item.get("path") or "")
-        for item in (codebase_map.get("candidate_edit_targets") or [])
-    }
-    strategy_allowlist = build_strategy_allowlist(
-        integration_contract=codebase_map.get("integration_contract") or {},
-        recommended_outputs=recommended_outputs or [],
-        codebase_map=codebase_map,
-    )
-    filtered_targets: list[PatchProposalTarget] = []
-    seen: set[str] = set()
-    for target in llm_payload.target_files:
-        if target.path in seen:
-            continue
-        if target.path not in valid_paths:
-            continue
-        if strategy_allowlist and target.path not in strategy_allowlist:
-            continue
-        filtered_targets.append(target)
-        seen.add(target.path)
-        if len(filtered_targets) >= 6:
-            break
-    if not filtered_targets:
-        return None
-    normalized = llm_payload.model_copy(
-        update={
-            "target_files": filtered_targets,
-        }
-    )
-    return normalized, "patch_proposal_targets_filtered"
-
-
 def _validate_llm_patch_content(
     content: str,
     *,
     patch_proposal: dict[str, Any],
-    source_root: str | Path,
 ) -> dict[str, str] | None:
     if not content.strip():
         return {"reason": "invalid_patch_format", "message": "empty patch content"}
@@ -1054,7 +1325,7 @@ def _validate_llm_patch_content(
     invalid_hunks = [
         line
         for line in content.splitlines()
-        if line.startswith("@@") and re.match(r"^@@ -\d+(,\d+)? \+\d+(,\d+)? @@", line) is None
+        if line.startswith("@@") and _UNIFIED_DIFF_HUNK_HEADER_RE.match(line) is None
     ]
     if invalid_hunks:
         return {
@@ -1077,42 +1348,7 @@ def _validate_llm_patch_content(
             "message": f"patch references files outside proposal: {', '.join(invalid_targets)}",
         }
 
-    patch_apply_error = _check_patch_applies_cleanly(
-        content=content,
-        source_root=source_root,
-        target_files=target_files,
-    )
-    if patch_apply_error is not None:
-        return {
-            "reason": "invalid_patch_format",
-            "message": patch_apply_error,
-        }
-
     return None
-
-
-def _check_patch_applies_cleanly(
-    *,
-    content: str,
-    source_root: str | Path,
-    target_files: list[str],
-) -> str | None:
-    root = Path(source_root)
-    with tempfile.TemporaryDirectory() as temp_dir:
-        workspace = Path(temp_dir) / "workspace"
-        workspace.mkdir(parents=True, exist_ok=True)
-        for relative_path in target_files:
-            source_path = root / relative_path
-            destination = workspace / relative_path
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            if source_path.exists():
-                shutil.copy2(source_path, destination)
-        patch_path = Path(temp_dir) / "candidate.patch"
-        patch_path.write_text(content, encoding="utf-8")
-        failure = _apply_patch_file(patch_path=patch_path, workspace=workspace)
-        if failure is None:
-            return None
-        return str(failure.get("error") or "patch does not apply cleanly")
 
 
 def _extract_patch_targets_from_content(content: str) -> list[str]:
@@ -1491,14 +1727,11 @@ def _find_list_closing_index(lines: list[str], *, start_index: int) -> int | Non
 
 
 def _find_react_mount_insert_index(lines: list[str]) -> int | None:
-    fallback_index: int | None = None
     for index, line in enumerate(lines):
         stripped = line.strip()
-        if stripped in {"</main>", "</BrowserRouter>", "</div>", "</>"}:
+        if stripped in {"</BrowserRouter>", "</Routes>", "</main>", "</div>"}:
             return index
-        if stripped == "</Routes>" and fallback_index is None:
-            fallback_index = index
-    return fallback_index
+    return None
 
 
 def _find_auth_view_insert_index(lines: list[str]) -> int | None:
