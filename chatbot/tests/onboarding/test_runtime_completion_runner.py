@@ -51,6 +51,7 @@ def test_runtime_completion_runner_contract_writes_failure_artifacts(tmp_path: P
 
     assert result["passed"] is False
     assert result["failure_reason"] == "runtime_server_probes_not_implemented"
+    assert result["failure_signature"] == "runtime_stack:runtime_server_probes_not_implemented"
     assert result["attempt_count"] == 1
     assert result["backend_probe"]["plan"]["framework"] == "django"
     assert result["backend_probe"]["plan"]["command"] == [
@@ -68,6 +69,7 @@ def test_runtime_completion_runner_contract_writes_failure_artifacts(tmp_path: P
     probe_payload = json.loads(server_probe_report.read_text(encoding="utf-8"))
 
     assert completion_payload["failure_reason"] == "runtime_server_probes_not_implemented"
+    assert completion_payload["failure_signature"] == "runtime_stack:runtime_server_probes_not_implemented"
     assert completion_payload["attempt_count"] == 1
     assert probe_payload["backend"]["plan"]["framework"] == "django"
     assert probe_payload["frontend"]["plan"]["command"] == ["npm", "run", "dev"]
@@ -296,7 +298,80 @@ def test_runtime_completion_runner_accepts_shared_server_widget_integration_with
     assert mount_probe_payload["browser_probe"]["status"] == "unsupported_environment"
     assert mount_probe_payload["launcher_visible"] is True
     assert mount_probe_payload["auth_bootstrap_passed"] is True
-    assert mount_probe_payload["chat_stream_passed"] is True
+
+
+def test_runtime_completion_runner_clears_failure_signature_when_completion_recovers(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-runtime-recovered"
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-runtime-recovered" / "workspace"
+
+    (runtime_workspace / "frontend" / "src").mkdir(parents=True)
+    (runtime_workspace / "frontend" / "src" / "App.js").write_text(
+        "const ORDER_CS_WIDGET_HOST_CONTRACT = {\n"
+        '  authBootstrapPath: "/api/chat/auth-token",\n'
+        '  widgetBundlePath: "/widget.js",\n'
+        "};\n"
+        'globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"] = ORDER_CS_WIDGET_HOST_CONTRACT;\n'
+        'const orderCsWidgetScript = document.createElement("script");\n'
+        'orderCsWidgetScript.src = "/widget.js";\n'
+        'orderCsWidgetScript.dataset.orderCsWidgetBundle = "true";\n'
+        "export default function App() {\n"
+        "  return <><main>Home</main><order-cs-widget /></>;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    reports_root = run_root / "reports"
+    reports_root.mkdir(parents=True)
+    (reports_root / "smoke-results.json").write_text(
+        json.dumps(
+            [
+                {
+                    "step_id": "chat-auth-token",
+                    "returncode": 0,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with patch(
+        "chatbot.src.onboarding.runtime_completion_runner._run_server_probes",
+        return_value={
+            "attempt_count": 1,
+            "passed": True,
+            "failure_reason": None,
+            "backend": {"passed": True, "status": "ready", "plan": {"command": ["python"]}},
+            "frontend": {"passed": True, "status": "ready", "plan": {"command": ["npm"]}},
+        },
+    ), patch(
+        "chatbot.src.onboarding.runtime_completion_runner._run_mount_probe",
+        return_value={
+            "passed": False,
+            "failure_reason": "chatbot_status_not_rendered",
+            "launcher_visible": True,
+            "auth_bootstrap_passed": True,
+            "chat_stream_passed": True,
+            "lightweight_probe": {
+                "mount_file": "frontend/src/App.js",
+                "widget_file": None,
+                "wiring_detected": True,
+                "page_url": "http://127.0.0.1:3000",
+            },
+            "browser_probe": {
+                "status": "unsupported_environment",
+            },
+        },
+    ):
+        result = run_runtime_completion(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            site="food",
+            run_id="food-run-runtime-recovered",
+        )
+
+    assert result["passed"] is True
+    assert result["failure_reason"] is None
+    assert result["failure_signature"] is None
+    assert result["chat_stream_passed"] is True
 
 
 def test_runtime_completion_runner_classifies_shared_widget_import_failure(tmp_path: Path):

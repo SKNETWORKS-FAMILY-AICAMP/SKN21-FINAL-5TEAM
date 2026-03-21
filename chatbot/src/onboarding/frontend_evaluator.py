@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .debug_logging import append_onboarding_event
+from .failure_classifier import build_failure_signature
 from .onboarding_ignore import OnboardingIgnoreMatcher
 
 try:
@@ -147,6 +148,10 @@ def evaluate_frontend_workspace(
         "source": source,
         "recovery_notes": recovery_notes,
     }
+    failure_signature = _build_frontend_failure_signature(
+        validation_errors=validation_errors,
+        build_validation=build_validation,
+    )
 
     payload = {
         "workspace_root": str(workspace),
@@ -172,6 +177,7 @@ def evaluate_frontend_workspace(
         "bootstrap_failure_reason": build_validation["bootstrap_failure_reason"],
         "runtime_checks": build_validation["runtime_checks"],
         "failure_reason": build_validation["failure_reason"],
+        "failure_signature": failure_signature,
         "frontend_artifact": artifact,
     }
     output_path = reports / "frontend-evaluation.json"
@@ -410,6 +416,29 @@ def _build_frontend_build_validation(
     }
 
 
+def _build_frontend_failure_signature(
+    *,
+    validation_errors: list[str],
+    build_validation: dict[str, Any],
+) -> str | None:
+    if validation_errors:
+        detail = "mount missing widget contract"
+        if "routes child violation" in validation_errors:
+            detail = "routes child violation"
+        return build_failure_signature(
+            classification="frontend_mount_violation",
+            detail=detail,
+        )
+    bootstrap_failure_reason = str(build_validation.get("bootstrap_failure_reason") or "").strip()
+    bootstrap_failure_stage = str(build_validation.get("bootstrap_failure_stage") or "").strip()
+    if bootstrap_failure_reason or bootstrap_failure_stage:
+        return build_failure_signature(
+            classification="frontend_bootstrap_failure",
+            detail=bootstrap_failure_stage or bootstrap_failure_reason,
+        )
+    return None
+
+
 def _is_warning_only_output(text: str | None) -> bool:
     if not text:
         return False
@@ -448,4 +477,3 @@ def _build_artifact_exists(*, frontend_root: Path, framework: str) -> bool:
     if framework == "next":
         candidates.append(frontend_root / ".next")
     return any(path.exists() for path in candidates)
-

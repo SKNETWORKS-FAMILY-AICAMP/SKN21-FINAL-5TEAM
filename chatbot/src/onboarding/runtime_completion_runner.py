@@ -8,6 +8,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
+from .failure_classifier import build_failure_signature
 from .frontend_build_runner import detect_package_manager
 
 
@@ -62,6 +63,14 @@ def run_runtime_completion(
 
     raw_failure_reason = probe_payload.get("failure_reason") or mount_probe.get("failure_reason")
     failure_reason = str(raw_failure_reason) if raw_failure_reason else None
+    failure_signature = (
+        build_failure_signature(
+            classification="runtime_stack",
+            detail=failure_reason,
+        )
+        if failure_reason
+        else None
+    )
     launcher_visible = bool(mount_probe.get("launcher_visible", False))
     auth_bootstrap_passed = bool(mount_probe.get("auth_bootstrap_passed", False)) or _read_auth_bootstrap_status(run_root_path)
     chat_stream_passed = bool(mount_probe.get("chat_stream_passed", False))
@@ -71,6 +80,7 @@ def run_runtime_completion(
     )
     if passed:
         failure_reason = None
+        failure_signature = None
 
     server_probe_report = {
         "run_id": run_id,
@@ -81,6 +91,7 @@ def run_runtime_completion(
         "frontend": frontend_probe,
         "passed": passed,
         "failure_reason": failure_reason,
+        "failure_signature": failure_signature,
         "mount_probe": mount_probe,
         "launcher_visible": launcher_visible,
         "auth_bootstrap_passed": auth_bootstrap_passed,
@@ -99,6 +110,7 @@ def run_runtime_completion(
         "attempt_count": attempt_count,
         "passed": passed,
         "failure_reason": failure_reason,
+        "failure_signature": failure_signature,
         "backend_probe": backend_probe,
         "frontend_probe": frontend_probe,
         "mount_probe": mount_probe,

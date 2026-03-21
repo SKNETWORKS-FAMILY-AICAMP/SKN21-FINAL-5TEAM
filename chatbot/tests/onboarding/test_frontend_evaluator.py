@@ -193,8 +193,29 @@ def test_evaluate_frontend_workspace_hard_fallbacks_when_mount_missing(tmp_path:
     assert frontend_artifact["source"] == "hard_fallback"
     assert frontend_artifact["validation_status"] == "invalid"
     assert any("mount" in error for error in frontend_artifact["validation_errors"])
+    assert payload["failure_signature"] == "frontend_mount_violation:mount_missing_widget_contract"
     assert payload["passed"] is False
     assert payload["build_attempted"] is False
+
+
+def test_evaluate_frontend_workspace_records_routes_child_failure_signature(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    report_root = tmp_path / "reports"
+    _write_react_mount(
+        workspace,
+        include_bundle_bootstrap=True,
+        include_widget_usage=True,
+        inside_routes=True,
+    )
+
+    report_path = evaluate_frontend_workspace(
+        runtime_workspace=workspace,
+        report_root=report_root,
+    )
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert payload["passed"] is False
+    assert payload["failure_signature"] == "frontend_mount_violation:routes_child_violation"
 
 
 def test_evaluate_frontend_workspace_emits_observability_events(tmp_path: Path):

@@ -10,6 +10,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from .failure_classifier import build_failure_signature
 from .smoke_contract import SmokeRecoveryPayload, SmokeTestPlan, SmokeTestStep
 
 TEMPLATE_PATTERN = re.compile(r"{{\s*([^}\s]+)\s*}}")
@@ -524,6 +525,17 @@ def summarize_smoke_results(results: list[dict]) -> dict:
         for result in failures
         if "Smoke script not found:" in (result.get("stderr") or "")
     ]
+    failure_signature = None
+    if failures:
+        failure_tokens = sorted(
+            f"{_normalize_smoke_step_token(result.get('step_id') or result.get('step'))}_{int(result.get('returncode') or 0)}"
+            for result in failures
+        )
+        failure_detail = "|".join(failure_tokens)
+        failure_signature = build_failure_signature(
+            classification="smoke",
+            detail=failure_detail,
+        )
 
     return {
         "passed": len(required_failures) == 0,
@@ -534,4 +546,13 @@ def summarize_smoke_results(results: list[dict]) -> dict:
         "timed_out_steps": timed_out_steps,
         "missing_scripts": missing_scripts,
         "auth_bootstrap_passed": auth_bootstrap_passed,
+        "failure_signature": failure_signature,
     }
+
+
+def _normalize_smoke_step_token(step_name: Any) -> str:
+    value = str(step_name or "").strip().lower()
+    value = value.replace("-", "_").replace("/", "_").replace(".", "_")
+    value = re.sub(r"[^a-z0-9_]+", "_", value)
+    value = re.sub(r"_+", "_", value)
+    return value.strip("_") or "unknown_step"
