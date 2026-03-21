@@ -7,16 +7,14 @@ import ChatbotWidget, {
   streamSharedChatResponse,
   type SharedChatBootstrap,
   type SharedWidgetHostConfig,
-} from '@shared-chatbot/ChatbotWidget';
+} from '@skn/shared-chatbot/ChatbotWidget';
 import styles from './chatbotfab.module.css';
 import OrderListUI from './OrderListUI';
-import ProductListUI, {
-  ECOMMERCE_SHARED_WIDGET_CAPABILITIES,
-  type UiProduct,
-} from './ProductListUI';
+import ProductListUI, { type UiProduct } from './ProductListUI';
 import ReviewFormUI from './ReviewFormUI';
 import UsedSaleFormUI from './UsedSaleFormUI';
-import { useAuth } from '../authcontext';
+
+const ECOMMERCE_SHARED_WIDGET_CAPABILITIES = ['order_list', 'product_list', 'review_form', 'used_sale_form'];
 
 const INITIAL_BOT_MESSAGE: TextMessage = { role: 'bot', type: 'text', text: '안녕하세요. MOYEO 챗봇입니다.' };
 
@@ -196,7 +194,7 @@ declare global {
   }
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE_URL = process.env.NEXT_PUBLIC_CHATBOT_API_URL || 'http://localhost:8100';
 const SHARED_WIDGET_HOST: SharedWidgetHostConfig = {
   authBootstrapPath: `${API_BASE_URL || ''}/api/v1/chat/auth-token`,
   chatbotApiBase: API_BASE_URL || '',
@@ -610,8 +608,7 @@ function OptionSelectCard({
   );
 }
 
-export default function ChatbotFab() {
-  const { isLoggedIn } = useAuth();
+export default function ChatbotFab({ isLoggedIn }: { isLoggedIn: boolean }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMsg[]>([INITIAL_BOT_MESSAGE]);

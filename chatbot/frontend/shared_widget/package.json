@@ -1,0 +1,8 @@
+{
+  "name": "@skn/shared-chatbot",
+  "version": "0.1.0",
+  "main": "index.ts",
+  "dependencies": {
+    "react-markdown": "^10.1.0"
+  }
+}

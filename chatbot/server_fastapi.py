@@ -52,8 +52,10 @@ from chatbot.src.adapters.base import AdapterError  # noqa: E402
 from chatbot.src.adapters import setup as adapter_setup  # noqa: E402
 from chatbot.src.graph.llm_providers import resolve_llm_runtime_policy  # noqa: E402
 from chatbot.src.graph.workflow import graph_app  # noqa: E402
+from chatbot.src.api.v1.endpoints.chat import router as chat_router  # noqa: E402
 from chatbot.src.api.v1.endpoints.onboarding_runs import router as onboarding_runs_router  # noqa: E402
 from chatbot.src.onboarding.redis_runtime import build_onboarding_event_store, close_onboarding_event_store  # noqa: E402
+from chatbot.src.graph.nodes.guardrail import load_guardrail_model  # noqa: E402
 
 
 class ChatRequest(BaseModel):
@@ -221,12 +223,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.include_router(chat_router, prefix=f"{settings.API_V1_STR}/chat")
 app.include_router(onboarding_runs_router, prefix=settings.API_V1_STR)
 
 
@@ -235,6 +238,8 @@ async def _startup_onboarding_event_store() -> None:
     app.state.onboarding_event_store = build_onboarding_event_store(
         redis_url=settings.ONBOARDING_REDIS_URL,
     )
+    # 가드레일 모델을 서버 시작 시 1회 로드합니다.
+    load_guardrail_model()
 
 
 @app.on_event("shutdown")

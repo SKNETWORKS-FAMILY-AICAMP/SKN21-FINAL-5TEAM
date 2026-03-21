@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import styles from './reviewform.module.css';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_CHATBOT_API_URL || 'http://localhost:8100';
 
 interface ReviewFormUIProps {
   orderId: string;

@@ -1,9 +1,6 @@
 import type { NextConfig } from "next";
+import sharedConfig from "./next.config.shared.js";
 
-const nextConfig: NextConfig = {
-  env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "",
-  },
-};
+const nextConfig = sharedConfig as NextConfig;
 
 export default nextConfig;
