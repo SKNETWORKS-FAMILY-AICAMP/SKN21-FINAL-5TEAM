@@ -422,6 +422,82 @@ def test_promoted_generator_repair_records_onboarding_ownership(tmp_path: Path, 
     assert request_payload["requires_fresh_run"] is True
 
 
+def test_structure_summary_type_recovery_does_not_promote_generator_repair(tmp_path: Path, monkeypatch):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    original_writer = __import__(
+        "chatbot.src.onboarding.orchestrator",
+        fromlist=["write_llm_codebase_interpretation"],
+    ).write_llm_codebase_interpretation
+
+    def fake_write_llm_codebase_interpretation(**kwargs):
+        path = original_writer(
+            source_root=kwargs["source_root"],
+            analysis=kwargs["analysis"],
+            codebase_map=kwargs["codebase_map"],
+            output_path=kwargs["output_path"],
+            llm_factory=lambda: type(
+                "FakeLLM",
+                (),
+                {
+                    "invoke": lambda self, messages: type(
+                        "Response",
+                        (),
+                        {
+                            "content": json.dumps(
+                                    {
+                                        "structure_summary": {"frontend": "react app"},
+                                        "framework_assessment": {"backend": "django", "frontend": "react"},
+                                        "ranked_candidates": [{"path": "frontend/src/App.js", "reason": "app shell"}],
+                                        "notes": [],
+                                    }
+                                )
+                        },
+                    )()
+                },
+            )(),
+            provider="openai",
+            model="gpt-5.2",
+        )
+        return path
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.write_llm_codebase_interpretation",
+        fake_write_llm_codebase_interpretation,
+    )
+
+    result = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-structure-summary-recovery",
+        agent_version="test-v1",
+        approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
+        use_llm_roles=True,
+    )
+
+    interpretation_payload = json.loads(Path(result["llm_codebase_interpretation_path"]).read_text(encoding="utf-8"))
+
+    assert result["current_state"] == "completed"
+    assert result["generator_repair_request_path"] is None
+    assert result["repair_scope"] is None
+    assert interpretation_payload["source"] == "recovered_llm"
+
+
 def test_run_onboarding_generation_with_slack_bridge_waits_for_store_decision(tmp_path: Path):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"

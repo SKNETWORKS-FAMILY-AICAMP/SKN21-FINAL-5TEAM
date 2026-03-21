@@ -845,6 +845,80 @@ def test_run_onboarding_generation_promoted_repair_requires_fresh_run_id(tmp_pat
     assert request_payload["ownership_root"] == "chatbot/src/onboarding"
 
 
+def test_run_onboarding_generation_promotes_second_routes_child_violation(tmp_path: Path, monkeypatch):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.run_smoke_tests",
+        lambda **_: [
+            {
+                "step": "frontend-runtime",
+                "step_id": "frontend-runtime",
+                "required": True,
+                "category": "frontend",
+                "timed_out": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "routes child violation",
+            }
+        ],
+    )
+
+    role_runner = _build_simple_role_runner(
+        lambda context: {
+            "claim": "React Routes child rule violated",
+            "evidence": context["evidence"],
+            "confidence": 0.82,
+            "risk": "medium",
+            "next_action": "request_human_review",
+            "blocking_issue": "none",
+            "metadata": {
+                "classification": "frontend_mount_violation",
+                "should_retry": False,
+                "failure_signature": "frontend_mount_violation:routes_child_violation",
+            },
+        }
+    )
+
+    first = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-routes-child-1",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+    second = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-routes-child-2",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+
+    assert first["repair_scope"] == "run_only"
+    assert second["repair_scope"] == "generator_promoted"
+    assert second["promotion_decision"]["promote"] is True
+
+
 def test_run_onboarding_generation_calls_recovery_planner_for_recoverable_failure(tmp_path: Path, monkeypatch):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"
