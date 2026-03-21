@@ -45,18 +45,12 @@ def build_recovery_plan(context: dict[str, Any]) -> dict[str, Any]:
         context.get("llm_repair_recommendation")
     )
     if llm_recommendation is not None:
-        classification_payload = classify_onboarding_failure(
-            failure_signature=str(llm_recommendation.get("failure_signature") or context.get("failure_signature") or ""),
-            failed_results=list(context.get("failed_results") or []),
-            backend_evaluation=context.get("backend_evaluation") or {},
-            frontend_evaluation=context.get("frontend_evaluation") or {},
-        )
         return {
             "classification": str(llm_recommendation["classification"]),
             "should_retry": bool(llm_recommendation["should_retry"]),
             "proposed_probe_updates": [],
             "proposed_schema_overrides": [],
-            "repair_actions": list(classification_payload.get("repair_actions") or []),
+            "repair_actions": list(llm_recommendation.get("repair_actions") or []),
             "repair_scope": str(llm_recommendation["repair_scope"]),
             "recommendation_source": "llm",
             "guardrail_rejection_reason": llm_recommendation.get("guardrail_rejection_reason"),
@@ -151,6 +145,7 @@ def _normalize_llm_repair_recommendation(payload: Any) -> dict[str, Any] | None:
         "proposed_fix": str(payload.get("proposed_fix") or "").strip(),
         "failure_signature": str(payload.get("failure_signature") or "").strip(),
         "guardrail_rejection_reason": payload.get("guardrail_rejection_reason"),
+        "repair_actions": list(payload.get("repair_actions") or []),
     }
     return normalized
 

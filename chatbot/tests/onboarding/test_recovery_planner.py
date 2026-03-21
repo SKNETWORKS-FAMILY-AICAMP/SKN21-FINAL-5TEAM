@@ -146,6 +146,48 @@ def test_recovery_plan_prefers_llm_repair_recommendation_when_valid():
     assert payload["guardrail_rejection_reason"] == "routes child violation"
 
 
+def test_recovery_plan_uses_llm_recommendation_without_deterministic_classifier(monkeypatch):
+    from chatbot.src.onboarding import recovery_planner
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("deterministic classifier should not run when llm recommendation is valid")
+
+    monkeypatch.setattr(recovery_planner, "classify_onboarding_failure", fail_if_called)
+
+    payload = recovery_planner.build_recovery_plan(
+        {
+            "failure_signature": "frontend_mount_violation:routes_child_violation",
+            "retry_count": 0,
+            "retry_budget": 2,
+            "failed_results": [],
+            "llm_repair_recommendation": {
+                "classification": "frontend_mount_violation",
+                "should_retry": True,
+                "repair_scope": "run_only",
+                "guardrail_rejection_reason": "routes child violation",
+                "root_cause_hypothesis": "widget inserted inside Routes",
+                "proposed_fix": "retry planning with mount_context outside_routes",
+                "repair_actions": [
+                    {
+                        "action": "repair_frontend_mount_target",
+                        "target_path": "frontend/src",
+                    }
+                ],
+            },
+        }
+    )
+
+    assert payload["classification"] == "frontend_mount_violation"
+    assert payload["should_retry"] is True
+    assert payload["repair_actions"] == [
+        {
+            "action": "repair_frontend_mount_target",
+            "target_path": "frontend/src",
+        }
+    ]
+    assert payload["recommendation_source"] == "llm"
+
+
 def test_recovery_plan_falls_back_to_deterministic_classification_when_llm_recommendation_invalid():
     from chatbot.src.onboarding.recovery_planner import build_recovery_plan
 
