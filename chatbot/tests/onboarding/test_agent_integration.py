@@ -302,6 +302,126 @@ def test_run_onboarding_generation_uses_approval_store_decisions(tmp_path: Path)
     assert store.get_decision(run_id="food-run-store", approval_type="export")["status"] == "consumed"
 
 
+def test_promoted_generator_repair_records_onboarding_ownership(tmp_path: Path, monkeypatch):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.run_smoke_tests",
+        lambda **_: [
+            {
+                "step": "frontend-runtime",
+                "step_id": "frontend-runtime",
+                "required": True,
+                "category": "frontend",
+                "timed_out": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "build artifact selected as mount target",
+            }
+        ],
+    )
+
+    role_runner = RoleRunner(
+        responders={
+            "Analyzer": lambda context: {
+                "claim": "분석 완료",
+                "evidence": context["evidence"],
+                "confidence": 0.8,
+                "risk": "low",
+                "next_action": "다음 단계 진행",
+                "blocking_issue": "없음",
+            },
+            "Planner": lambda context: {
+                "claim": "계획 수립 완료",
+                "evidence": context["evidence"],
+                "confidence": 0.8,
+                "risk": "low",
+                "next_action": "생성 진행",
+                "blocking_issue": "없음",
+            },
+            "Generator": lambda context: {
+                "claim": "생성 완료",
+                "evidence": context["evidence"],
+                "confidence": 0.8,
+                "risk": "low",
+                "next_action": "검증 진행",
+                "blocking_issue": "없음",
+                "metadata": {
+                    "proposed_files": context.get("proposed_files") or [],
+                    "proposed_patches": context.get("proposed_patches") or [],
+                },
+            },
+            "Validator": lambda context: {
+                "claim": "검증 실패",
+                "evidence": context["evidence"],
+                "confidence": 0.8,
+                "risk": "medium",
+                "next_action": "진단 진행",
+                "blocking_issue": "없음",
+                "metadata": {
+                    "failed_steps": ["frontend-runtime"],
+                    "failure_count": 1,
+                    "validation_status": "failed",
+                    "approval_recommendation": "diagnose_failure",
+                },
+            },
+            "Diagnostician": lambda context: {
+                "claim": "Frontend target selection bug detected",
+                "evidence": context["evidence"],
+                "confidence": 0.85,
+                "risk": "medium",
+                "next_action": "request_human_review",
+                "blocking_issue": "none",
+                "metadata": {
+                    "classification": "frontend_target_detection",
+                    "should_retry": False,
+                    "failure_signature": "frontend_target_detection:build_artifact_selected",
+                },
+            },
+        }
+    )
+
+    run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-generator-agent-1",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+    second = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-generator-agent-2",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+
+    request_payload = json.loads(Path(second["generator_repair_request_path"]).read_text(encoding="utf-8"))
+
+    assert second["repair_scope"] == "generator_promoted"
+    assert request_payload["ownership_root"] == "chatbot/src/onboarding"
+    assert request_payload["requires_fresh_run"] is True
+
+
 def test_run_onboarding_generation_with_slack_bridge_waits_for_store_decision(tmp_path: Path):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"

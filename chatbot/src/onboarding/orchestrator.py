@@ -41,6 +41,7 @@ from .recovery_planner import build_recovery_plan
 from .run_generator import generate_run_bundle
 from .run_resume import analyze_run_checkpoint
 from .runtime_completion_runner import run_runtime_completion
+from .runtime_llm_repair import attempt_llm_runtime_repair, build_runtime_repair_factory
 from .runtime_repair_toolkit import repair_python_import_from_traceback
 from .slack_bridge import InMemorySlackBridge
 from .smoke_runner import load_smoke_plan, run_smoke_tests, summarize_smoke_results
@@ -210,6 +211,11 @@ def run_onboarding_generation(
             site=site,
             run_id=run_id,
         )
+        generator_repair_request = _write_generator_repair_request(
+            run_root=run_root,
+            run_id=run_id,
+            repair_history_summary=repair_history_summary,
+        )
         result = _build_run_result(
             run_id=run_id,
             run_root=run_root,
@@ -220,6 +226,7 @@ def run_onboarding_generation(
         )
         result["resume_checkpoint"] = resume_checkpoint
         result.update(repair_history_summary)
+        result.update(generator_repair_request)
         return result
 
     if bridge is not None:
@@ -244,7 +251,13 @@ def run_onboarding_generation(
             "latest_failure_signature": checkpoint.latest_failure_signature,
             "failure_count_for_signature": checkpoint.failure_count_for_signature,
             "repair_history_path": checkpoint.repair_history_path,
+            "generator_repair_request_path": checkpoint.generator_repair_request_path,
+            "requires_fresh_run": checkpoint.requires_fresh_run,
         }
+        if checkpoint.requires_fresh_run:
+            run_root = existing_run_root
+            agent.state = RunState.HUMAN_REVIEW_REQUIRED
+            return finalize_result(runtime_workspace=None)
         if checkpoint.resume_from_stage in {"validation", "export"}:
             run_root = existing_run_root
             manifest = OverlayManifest.model_validate_json((run_root / "manifest.json").read_text(encoding="utf-8"))
@@ -1129,6 +1142,14 @@ def run_onboarding_generation(
             agent=agent,
             terminal_logger=terminal_logger,
             strategy_provenance=strategy_provenance,
+            runtime_repair_llm_factory=build_runtime_repair_factory(
+                enabled=generate_llm_patch_draft or llm_patch_factory is not None,
+                llm_factory=llm_patch_factory,
+                provider=llm_provider,
+                model=llm_model,
+            ),
+            llm_provider=llm_provider,
+            llm_model=llm_model,
         )
         if not completion_result.get("passed", False):
             agent.state = RunState.HUMAN_REVIEW_REQUIRED
@@ -1693,6 +1714,40 @@ def _read_final_failure_signature(run_root: Path) -> str | None:
     return None
 
 
+def _write_generator_repair_request(
+    *,
+    run_root: Path,
+    run_id: str,
+    repair_history_summary: dict[str, Any],
+) -> dict[str, Any]:
+    if repair_history_summary.get("repair_scope") != "generator_promoted":
+        return {
+            "generator_repair_request_path": None,
+            "generator_repair_request": None,
+        }
+
+    payload = {
+        "run_id": run_id,
+        "repair_scope": "generator_promoted",
+        "failure_signature": repair_history_summary.get("failure_signature"),
+        "promotion_decision": repair_history_summary.get("promotion_decision") or {},
+        "ownership_root": "chatbot/src/onboarding",
+        "target_paths": ["chatbot/src/onboarding"],
+        "requires_fresh_run": True,
+        "fresh_run_reason": "generator promotion must be validated on a new run id",
+    }
+    path = run_root / "reports" / "generator-repair-request.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return {
+        "generator_repair_request_path": str(path),
+        "generator_repair_request": payload,
+    }
+
+
 def _run_event_stream_key(run_id: str) -> str:
     return f"onboarding:events:{run_id}"
 
@@ -1831,6 +1886,9 @@ def _run_runtime_completion_with_retries(
     agent: AgentOrchestrator,
     terminal_logger: Callable[[str], None] | None,
     strategy_provenance: dict[str, str],
+    runtime_repair_llm_factory: Callable[[], Any] | None = None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
 ) -> dict[str, Any]:
     backend_evaluation = _read_json_if_exists(run_root / "reports" / "backend-evaluation.json") or {}
     frontend_evaluation = _read_json_if_exists(run_root / "reports" / "frontend-evaluation.json") or {}
@@ -1888,6 +1946,24 @@ def _run_runtime_completion_with_retries(
         attempt_record["classification"] = recovery_payload.get("classification")
         attempt_record["should_retry"] = recovery_payload.get("should_retry", False)
         attempt_record["repair_actions"] = recovery_payload.get("repair_actions") or []
+
+        llm_repair_factory = runtime_repair_llm_factory
+        if str(latest_result.get("failure_reason") or "").endswith("import_resolution_failed"):
+            llm_repair_result = attempt_llm_runtime_repair(
+                run_root=run_root,
+                runtime_workspace=runtime_workspace,
+                failure_signature=str(latest_result.get("failure_reason") or "runtime_completion_failed"),
+                evidence_payload=latest_result,
+                attempt_id=f"runtime-completion-{attempt_index}",
+                llm_factory=llm_repair_factory,
+                provider=llm_provider,
+                model=llm_model,
+            )
+            attempt_record["llm_repair_applied"] = llm_repair_result.get("applied", False)
+            attempt_record["llm_repair_failure_reason"] = llm_repair_result.get("failure_reason")
+            attempt_record["llm_repair_patch_path"] = llm_repair_result.get("patch_path")
+            if llm_repair_result.get("applied", False):
+                continue
 
         if not recovery_payload.get("should_retry", False):
             break

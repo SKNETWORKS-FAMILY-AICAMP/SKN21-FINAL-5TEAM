@@ -147,6 +147,12 @@ metadata must be an object and should include:
 - proposed_patches: array
 - patch_intents: array
 - generation_risks: array
+- target_paths: array
+
+If context.repair_scope is "generator_promoted":
+- limit ownership to chatbot/src/onboarding only
+- set metadata.target_paths to files under chatbot/src/onboarding
+- assume validation must happen on a fresh run id rather than mutating the old run in place
 """,
     "Validator": """You are the Validator role for a website onboarding agent.
 Return only JSON with keys: claim, evidence, confidence, risk, next_action, blocking_issue, metadata.

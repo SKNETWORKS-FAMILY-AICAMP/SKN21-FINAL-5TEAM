@@ -20,6 +20,7 @@ class GeneratorEvalExpected(BaseModel):
     proposed_files: list[str]
     proposed_patches: list[str]
     target_paths: list[str] = Field(default_factory=list)
+    ownership_roots: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -47,6 +48,8 @@ class GeneratorEvalResult(BaseModel):
     extra_patches: list[str]
     missing_targets: list[str]
     extra_targets: list[str]
+    missing_ownership_roots: list[str]
+    extra_ownership_roots: list[str]
     forbidden_hits: list[str]
     actual: dict[str, list[str]]
 
@@ -74,7 +77,13 @@ def evaluate_generator_proposal(
     expected_files = fixture.expected.proposed_files
     expected_patches = fixture.expected.proposed_patches
     expected_targets = fixture.expected.target_paths
+    expected_ownership_roots = fixture.expected.ownership_roots
     actual_targets = list(target_paths or [])
+    actual_ownership_roots = [
+        "chatbot/src/onboarding"
+        for target in actual_targets
+        if str(target).startswith("chatbot/src/onboarding")
+    ]
 
     missing_files = [item for item in expected_files if item not in proposed_files]
     extra_files = [item for item in proposed_files if item not in expected_files]
@@ -82,6 +91,8 @@ def evaluate_generator_proposal(
     extra_patches = [item for item in proposed_patches if item not in expected_patches]
     missing_targets = [item for item in expected_targets if item not in actual_targets]
     extra_targets = [item for item in actual_targets if item not in expected_targets]
+    missing_ownership_roots = [item for item in expected_ownership_roots if item not in actual_ownership_roots]
+    extra_ownership_roots = [item for item in actual_ownership_roots if item not in expected_ownership_roots]
 
     forbidden_hits = [
         item
@@ -92,6 +103,8 @@ def evaluate_generator_proposal(
     checks = {
         "required_files": len(missing_files) == 0,
         "required_patches": len(missing_patches) == 0,
+        "required_targets": len(missing_targets) == 0,
+        "required_ownership_roots": len(missing_ownership_roots) == 0,
         "no_extra_artifacts": len(extra_files) == 0 and len(extra_patches) == 0,
         "no_forbidden_hits": len(forbidden_hits) == 0,
     }
@@ -100,7 +113,19 @@ def evaluate_generator_proposal(
     return GeneratorEvalResult(
         id=fixture.id,
         site=fixture.site,
-        passed=not any([missing_files, extra_files, missing_patches, extra_patches, forbidden_hits]),
+        passed=not any(
+            [
+                missing_files,
+                extra_files,
+                missing_patches,
+                extra_patches,
+                missing_targets,
+                extra_targets,
+                missing_ownership_roots,
+                extra_ownership_roots,
+                forbidden_hits,
+            ]
+        ),
         score=score,
         checks=checks,
         missing_files=missing_files,
@@ -109,11 +134,14 @@ def evaluate_generator_proposal(
         extra_patches=extra_patches,
         missing_targets=missing_targets,
         extra_targets=extra_targets,
+        missing_ownership_roots=missing_ownership_roots,
+        extra_ownership_roots=extra_ownership_roots,
         forbidden_hits=forbidden_hits,
         actual={
             "proposed_files": proposed_files,
             "proposed_patches": proposed_patches,
             "target_paths": actual_targets,
+            "ownership_roots": actual_ownership_roots,
         },
     )
 

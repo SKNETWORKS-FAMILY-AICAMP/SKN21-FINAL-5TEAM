@@ -18,6 +18,8 @@ class ResumeCheckpoint:
     latest_failure_signature: str | None = None
     failure_count_for_signature: int | None = None
     repair_history_path: str | None = None
+    generator_repair_request_path: str | None = None
+    requires_fresh_run: bool = False
 
 
 def analyze_run_checkpoint(run_root: str | Path) -> ResumeCheckpoint:
@@ -68,6 +70,12 @@ def analyze_run_checkpoint(run_root: str | Path) -> ResumeCheckpoint:
         resume_from_stage = None
 
     repair_history = _read_json(reports / "repair-history.json")
+    generator_repair_request = _read_json(reports / "generator-repair-request.json")
+    requires_fresh_run = bool(generator_repair_request.get("requires_fresh_run"))
+    if requires_fresh_run:
+        failed_stage = None
+        resume_from_stage = None
+        reason = "fresh run required after generator promotion"
 
     return ResumeCheckpoint(
         run_root=str(root),
@@ -78,6 +86,12 @@ def analyze_run_checkpoint(run_root: str | Path) -> ResumeCheckpoint:
         latest_failure_signature=str(repair_history.get("failure_signature") or "") or None,
         failure_count_for_signature=_coerce_int(repair_history.get("failure_count_for_signature")),
         repair_history_path=str(reports / "repair-history.json") if repair_history else None,
+        generator_repair_request_path=(
+            str(reports / "generator-repair-request.json")
+            if generator_repair_request
+            else None
+        ),
+        requires_fresh_run=requires_fresh_run,
     )
 
 
