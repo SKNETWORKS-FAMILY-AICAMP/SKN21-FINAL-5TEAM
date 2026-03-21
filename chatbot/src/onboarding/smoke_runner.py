@@ -499,6 +499,11 @@ def _run_script_step(*, step: SmokeTestStep, workspace: Path, root: Path) -> dic
 
 def summarize_smoke_results(results: list[dict]) -> dict:
     failures = [result for result in results if result.get("returncode") != 0]
+    auth_bootstrap_passed = any(
+        (result.get("step_id") or result.get("step")) == "chat-auth-token"
+        and result.get("returncode") == 0
+        for result in results
+    )
     required_failures = [
         result.get("step_id") or result.get("step")
         for result in failures
@@ -528,4 +533,5 @@ def summarize_smoke_results(results: list[dict]) -> dict:
         "optional_failures": optional_failures,
         "timed_out_steps": timed_out_steps,
         "missing_scripts": missing_scripts,
+        "auth_bootstrap_passed": auth_bootstrap_passed,
     }

@@ -22,6 +22,7 @@ from .codebase_mapper import (
 )
 from .debug_logging import append_execution_trace, append_generation_log, append_onboarding_event, append_recovery_event, update_file_activity
 from .exporter import export_patch_artifact, export_runtime_patch
+from .frontend_generator import build_frontend_mount_contract
 from .frontend_evaluator import evaluate_frontend_workspace
 from .overlay_generator import generate_overlay_scaffold
 from .patch_planner import (
@@ -1806,6 +1807,7 @@ def _build_run_result(
     bridge: InMemorySlackBridge | None,
     event_store: RedisRunJobStore | None,
 ) -> dict[str, Any]:
+    runtime_completion_summary = _read_runtime_completion_summary(run_root)
     result: dict[str, Any] = {
         "run_root": str(run_root),
         "runtime_workspace": str(runtime_workspace) if runtime_workspace is not None else None,
@@ -1842,6 +1844,9 @@ def _build_run_result(
         "blocked_jobs": dict(agent.blocked_jobs),
         "final_recovery_source": _read_recovery_provenance(run_root).get("final_recovery_source"),
         "runtime_failure_summary": _read_runtime_failure_summary(run_root),
+        "launcher_visible": runtime_completion_summary.get("launcher_visible"),
+        "auth_bootstrap_passed": runtime_completion_summary.get("auth_bootstrap_passed"),
+        "chat_stream_passed": runtime_completion_summary.get("chat_stream_passed"),
     }
     if bridge is not None:
         bridge.post_run_summary(
@@ -1852,6 +1857,23 @@ def _build_run_result(
         )
         result["slack_message_count"] = len(bridge.messages)
     return result
+
+
+def _read_runtime_completion_summary(run_root: Path) -> dict[str, Any]:
+    path = run_root / "reports" / "runtime-completion.json"
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        "launcher_visible": payload.get("launcher_visible"),
+        "auth_bootstrap_passed": payload.get("auth_bootstrap_passed"),
+        "chat_stream_passed": payload.get("chat_stream_passed"),
+    }
 
 
 def _run_event_stream_key(run_id: str) -> str:
@@ -2414,16 +2436,6 @@ def _repair_frontend_mount_target(runtime_workspace: Path) -> bool:
         frontend_src = runtime_workspace / "src"
     frontend_src.mkdir(parents=True, exist_ok=True)
 
-    widget_path = frontend_src / "chatbot" / "SharedChatbotWidget.jsx"
-    widget_path.parent.mkdir(parents=True, exist_ok=True)
-    if not widget_path.exists():
-        widget_path.write_text(
-            "export default function SharedChatbotWidget() {\n"
-            '  return <div data-chatbot-status="authenticated">Chat ready</div>;\n'
-            "}\n",
-            encoding="utf-8",
-        )
-
     mount_candidates = [
         frontend_src / "App.js",
         frontend_src / "App.jsx",
@@ -2432,18 +2444,38 @@ def _repair_frontend_mount_target(runtime_workspace: Path) -> bool:
     ]
     mount_path = next((path for path in mount_candidates if path.exists()), frontend_src / "App.js")
     content = mount_path.read_text(encoding="utf-8") if mount_path.exists() else ""
-    if 'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";' not in content:
-        content = 'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n' + content
-    if "<SharedChatbotWidget />" not in content:
+    host_contract = build_frontend_mount_contract()
+    bootstrap_block = (
+        "const ORDER_CS_WIDGET_HOST_CONTRACT = {\n"
+        f'  chatbotServerBaseUrl: "{host_contract["chatbotServerBaseUrl"]}",\n'
+        f'  authBootstrapPath: "{host_contract["authBootstrapPath"]}",\n'
+        f'  widgetBundlePath: "{host_contract["widgetBundlePath"]}",\n'
+        f'  widgetElementTag: "{host_contract["widgetElementTag"]}",\n'
+        f'  mountMode: "{host_contract["mountMode"]}",\n'
+        "};\n\n"
+        'if (typeof globalThis === "object") {\n'
+        '  globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"] = ORDER_CS_WIDGET_HOST_CONTRACT;\n'
+        "}\n\n"
+        'if (typeof document !== "undefined" && !document.querySelector(\'script[data-order-cs-widget-bundle="true"]\')) {\n'
+        '  const orderCsWidgetScript = document.createElement("script");\n'
+        "  orderCsWidgetScript.src = `${ORDER_CS_WIDGET_HOST_CONTRACT.chatbotServerBaseUrl}${ORDER_CS_WIDGET_HOST_CONTRACT.widgetBundlePath}`;\n"
+        "  orderCsWidgetScript.async = true;\n"
+        '  orderCsWidgetScript.dataset.orderCsWidgetBundle = "true";\n'
+        "  document.head.appendChild(orderCsWidgetScript);\n"
+        "}\n\n"
+    )
+    if '__ORDER_CS_WIDGET_HOST_CONTRACT__' not in content:
+        content = bootstrap_block + content
+    if "<order-cs-widget />" not in content:
         if "return <main>Home</main>;" in content:
             content = content.replace(
                 "return <main>Home</main>;",
-                "return <><main>Home</main><SharedChatbotWidget /></>;",
+                "return <><main>Home</main><order-cs-widget /></>;",
             )
         elif "return null;" in content:
-            content = content.replace("return null;", "return <SharedChatbotWidget />;")
+            content = content.replace("return null;", "return <order-cs-widget />;")
         else:
-            content = content.rstrip() + "\n\nexport function RuntimeCompletionMountRepair() { return <SharedChatbotWidget />; }\n"
+            content = content.rstrip() + "\n\nexport function RuntimeCompletionMountRepair() { return <order-cs-widget />; }\n"
     mount_path.write_text(content, encoding="utf-8")
     return True
 

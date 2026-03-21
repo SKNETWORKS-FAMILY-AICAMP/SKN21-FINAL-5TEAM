@@ -1699,6 +1699,9 @@ def test_run_onboarding_generation_runtime_completion_repairs_runtime_workspace_
                 "backend_probe": {"status": "ready"},
                 "frontend_probe": {"status": "ready"},
                 "mount_probe": {"passed": False},
+                "launcher_visible": False,
+                "auth_bootstrap_passed": False,
+                "chat_stream_passed": False,
             },
             {
                 "passed": True,
@@ -1707,10 +1710,24 @@ def test_run_onboarding_generation_runtime_completion_repairs_runtime_workspace_
                 "backend_probe": {"status": "ready"},
                 "frontend_probe": {"status": "ready"},
                 "mount_probe": {"passed": True},
+                "launcher_visible": True,
+                "auth_bootstrap_passed": True,
+                "chat_stream_passed": True,
             },
         ]
     )
-    monkeypatch.setattr(orchestrator_module, "run_runtime_completion", lambda **kwargs: next(completion_attempts))
+
+    def fake_run_runtime_completion(**kwargs):
+        payload = next(completion_attempts)
+        report_root = Path(kwargs["run_root"]) / "reports"
+        report_root.mkdir(parents=True, exist_ok=True)
+        (report_root / "runtime-completion.json").write_text(
+            json.dumps(payload),
+            encoding="utf-8",
+        )
+        return payload
+
+    monkeypatch.setattr(orchestrator_module, "run_runtime_completion", fake_run_runtime_completion)
 
     result = run_onboarding_generation(
         site="food",
@@ -1729,9 +1746,13 @@ def test_run_onboarding_generation_runtime_completion_repairs_runtime_workspace_
 
     assert result["current_state"] == "completed"
     assert source_app.read_text(encoding="utf-8") == "export default function App() { return <main>Home</main>; }\n"
-    assert "SharedChatbotWidget" in runtime_app.read_text(encoding="utf-8")
+    assert "order-cs-widget" in runtime_app.read_text(encoding="utf-8")
+    assert "widget.js" in runtime_app.read_text(encoding="utf-8")
     assert "frontend/src/App.js" in export_metadata["changed_files"]
-    assert "SharedChatbotWidget" in approved_patch
+    assert "order-cs-widget" in approved_patch
+    assert result["launcher_visible"] is True
+    assert result["auth_bootstrap_passed"] is True
+    assert result["chat_stream_passed"] is True
     assert attempts_payload[-1]["passed"] is True
     assert attempts_payload[0]["classification"] == "chatbot_mount_missing"
 
