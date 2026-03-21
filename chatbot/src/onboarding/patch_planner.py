@@ -89,6 +89,11 @@ def write_llm_first_patch_proposal(
     parsed_payload: Any = None
     error_type: str | None = None
     error_message: str | None = None
+    rejection_reason: dict[str, Any] | None = None
+    retry_rejection_reason: dict[str, Any] | None = None
+    retry_attempt_count = 0
+    retry_source: str | None = None
+    retry_raw_response_content: str | None = None
     report_root = Path(output_path).parent
     append_onboarding_event(
         report_root=report_root,
@@ -104,26 +109,25 @@ def write_llm_first_patch_proposal(
 
     try:
         llm = llm_factory()
-        response = llm.invoke(
-            [
-                SystemMessage(content=_llm_patch_proposal_system_prompt()),
-                HumanMessage(
-                    content=json.dumps(
-                        {
-                            "source_root": str(source_root),
-                            "analysis": analysis,
-                            "codebase_map": codebase_map,
-                            "llm_codebase_interpretation": llm_codebase_interpretation,
-                            "file_samples": _build_patch_proposal_file_samples(source_root, codebase_map),
-                            "recommended_outputs": recommended_outputs,
-                            "fallback_patch_proposal": fallback_payload,
-                        },
-                        ensure_ascii=False,
-                        indent=2,
-                    )
-                ),
-            ]
-        )
+        initial_messages = [
+            SystemMessage(content=_llm_patch_proposal_system_prompt()),
+            HumanMessage(
+                content=json.dumps(
+                    {
+                        "source_root": str(source_root),
+                        "analysis": analysis,
+                        "codebase_map": codebase_map,
+                        "llm_codebase_interpretation": llm_codebase_interpretation,
+                        "file_samples": _build_patch_proposal_file_samples(source_root, codebase_map),
+                        "recommended_outputs": recommended_outputs,
+                        "fallback_patch_proposal": fallback_payload,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            ),
+        ]
+        response = llm.invoke(initial_messages)
         append_llm_usage(
             report_root=Path(output_path).parent,
             component="llm_patch_proposal",
@@ -134,35 +138,99 @@ def write_llm_first_patch_proposal(
         raw_response_content = str(response.content)
         raw_payload = json.loads(raw_response_content)
         parsed_payload = raw_payload
-        try:
-            llm_payload = PatchProposalPayload.model_validate(raw_payload)
-        except ValidationError:
-            recovered = _recover_patch_proposal_payload(
-                raw_payload,
-                analysis=analysis,
-                codebase_map=codebase_map,
-                recommended_outputs=recommended_outputs,
-                fallback_payload=fallback_payload,
-            )
-            if recovered is None:
-                raise
-            raw_payload, recovery_reason = recovered
-            parsed_payload = raw_payload
-            llm_payload = PatchProposalPayload.model_validate(raw_payload)
-            source = "recovered_llm"
-            hard_fallback_reason = None
-        _validate_llm_patch_proposal_targets(
+        target_rejection_reason = None
+        retry_payload = None
+        retry_raw_response_content: str | None = None
+
+        def _materialize_patch_proposal_response(
+            response_payload: dict[str, Any],
+        ) -> tuple[PatchProposalPayload, dict[str, Any], str | None, str | None]:
+            materialized_source = "llm"
+            materialized_recovery_reason: str | None = None
+            parsed = response_payload
+            try:
+                llm_payload = PatchProposalPayload.model_validate(parsed)
+            except ValidationError:
+                recovered = _recover_patch_proposal_payload(
+                    parsed,
+                    analysis=analysis,
+                    codebase_map=codebase_map,
+                    recommended_outputs=recommended_outputs,
+                    fallback_payload=fallback_payload,
+                )
+                if recovered is None:
+                    raise
+                parsed, materialized_recovery_reason = recovered
+                llm_payload = PatchProposalPayload.model_validate(parsed)
+                materialized_source = "recovered_llm"
+            return llm_payload, parsed, materialized_source, materialized_recovery_reason
+
+        llm_payload, parsed_payload, source, recovery_reason = _materialize_patch_proposal_response(raw_payload)
+        target_rejection_reason = _build_llm_patch_proposal_target_rejection(
             llm_payload=llm_payload,
             codebase_map=codebase_map,
             recommended_outputs=recommended_outputs,
         )
-        payload = llm_payload.model_dump(mode="json")
-        if source != "recovered_llm":
-            source = "llm"
-        fallback_reason = None
-        if source == "llm":
-            recovery_reason = None
-        hard_fallback_reason = None
+        if target_rejection_reason is not None:
+            rejection_reason = target_rejection_reason
+            retry_attempt_count = 1
+            retry_source = source
+            retry_messages = [
+                SystemMessage(content=_llm_patch_proposal_system_prompt()),
+                HumanMessage(
+                    content=_llm_patch_proposal_retry_human_payload(
+                        source_root=source_root,
+                        analysis=analysis,
+                        codebase_map=codebase_map,
+                        llm_codebase_interpretation=llm_codebase_interpretation,
+                        recommended_outputs=recommended_outputs,
+                        fallback_payload=fallback_payload,
+                        previous_patch_proposal=llm_payload.model_dump(mode="json"),
+                        guardrail_rejection=target_rejection_reason,
+                    )
+                ),
+            ]
+            retry_response = llm.invoke(retry_messages)
+            append_llm_usage(
+                report_root=Path(output_path).parent,
+                component="llm_patch_proposal",
+                provider=provider,
+                model=model or getattr(llm, "model_name", None),
+                usage=extract_llm_usage(retry_response),
+            )
+            retry_raw_response_content = str(retry_response.content)
+            retry_raw_payload = json.loads(retry_raw_response_content)
+            parsed_payload = retry_raw_payload
+            retry_payload, parsed_payload, retry_source, retry_recovery_reason = _materialize_patch_proposal_response(retry_raw_payload)
+            retry_rejection_reason = _build_llm_patch_proposal_target_rejection(
+                llm_payload=retry_payload,
+                codebase_map=codebase_map,
+                recommended_outputs=recommended_outputs,
+            )
+            if retry_rejection_reason is None:
+                payload = retry_payload.model_dump(mode="json")
+                source = "recovered_llm"
+                if retry_recovery_reason is not None:
+                    recovery_reason = retry_recovery_reason
+                else:
+                    recovery_reason = "patch_proposal_guardrail_retry_succeeded"
+                fallback_reason = None
+                hard_fallback_reason = None
+            else:
+                fallback_reason = "invalid_target_selection"
+                hard_fallback_reason = "invalid_target_selection"
+                error_type = "invalid_target_selection"
+                error_message = retry_rejection_reason["message"]
+                payload = fallback_payload
+                source = "hard_fallback"
+        else:
+            payload = llm_payload.model_dump(mode="json")
+            if source != "recovered_llm":
+                source = "llm"
+            fallback_reason = None
+            if source == "llm":
+                recovery_reason = None
+            hard_fallback_reason = None
     except json.JSONDecodeError as exc:
         fallback_reason = "invalid_llm_response"
         hard_fallback_reason = "invalid_llm_response"
@@ -197,6 +265,10 @@ def write_llm_first_patch_proposal(
                 "fallback_reason": fallback_reason,
                 "recovery_reason": recovery_reason,
                 "hard_fallback_reason": hard_fallback_reason,
+                "rejection_reason": rejection_reason,
+                "retry_rejection_reason": retry_rejection_reason,
+                "retry_attempt_count": retry_attempt_count,
+                "retry_source": retry_source,
             },
             ensure_ascii=False,
             indent=2,
@@ -208,10 +280,16 @@ def write_llm_first_patch_proposal(
         "fallback_reason": fallback_reason,
         "recovery_reason": recovery_reason,
         "hard_fallback_reason": hard_fallback_reason,
+        "rejection_reason": rejection_reason,
+        "retry_rejection_reason": retry_rejection_reason,
         "raw_response": raw_response_content,
+        "retry_raw_response": retry_raw_response_content,
         "parsed_payload": parsed_payload,
         "error_type": error_type,
         "error_message": error_message,
+        "attempt_count": 1 + retry_attempt_count,
+        "retry_attempt_count": retry_attempt_count,
+        "retry_source": retry_source,
     }
     debug_path = write_llm_debug_artifact(
         report_root=execution_path.parent,
@@ -1024,27 +1102,13 @@ def _validate_llm_patch_proposal_targets(
     codebase_map: dict[str, Any],
     recommended_outputs: list[str] | None = None,
 ) -> None:
-    valid_paths = {
-        str(item.get("path") or "")
-        for item in (codebase_map.get("candidate_edit_targets") or [])
-    }
-    strategy_allowlist = build_strategy_allowlist(
-        integration_contract=codebase_map.get("integration_contract") or {},
-        recommended_outputs=recommended_outputs or [],
+    rejection = _build_llm_patch_proposal_target_rejection(
+        llm_payload=llm_payload,
         codebase_map=codebase_map,
+        recommended_outputs=recommended_outputs,
     )
-    if not llm_payload.target_files:
-        raise ValueError("target_files must not be empty")
-    if len(llm_payload.target_files) > 6:
-        raise ValueError("target_files must remain conservative")
-    for target in llm_payload.target_files:
-        if target.path not in valid_paths:
-            raise ValueError(f"invalid target path: {target.path}")
-        seam_rejection = seam_target_rejection_reason(target.path)
-        if seam_rejection is not None:
-            raise ValueError(f"invalid seam target path: {target.path} ({seam_rejection})")
-        if strategy_allowlist and target.path not in strategy_allowlist:
-            raise ValueError(f"invalid strategy target path: {target.path}")
+    if rejection is not None:
+        raise ValueError(rejection["message"])
 
 
 def _build_patch_proposal_file_samples(
@@ -1258,6 +1322,93 @@ def _llm_patch_retry_human_payload(
         ensure_ascii=False,
         indent=2,
     )
+
+
+def _llm_patch_proposal_retry_human_payload(
+    *,
+    source_root: str | Path,
+    analysis: dict[str, Any],
+    codebase_map: dict[str, Any],
+    llm_codebase_interpretation: dict[str, Any] | None,
+    recommended_outputs: list[str],
+    fallback_payload: dict[str, Any],
+    previous_patch_proposal: dict[str, Any],
+    guardrail_rejection: dict[str, Any],
+) -> str:
+    strategy_allowlist = sorted(
+        build_strategy_allowlist(
+            integration_contract=codebase_map.get("integration_contract") or {},
+            recommended_outputs=recommended_outputs,
+            codebase_map=codebase_map,
+        )
+    )
+    return json.dumps(
+        {
+            "source_root": str(source_root),
+            "analysis": analysis,
+            "codebase_map": codebase_map,
+            "llm_codebase_interpretation": llm_codebase_interpretation,
+            "file_samples": _build_patch_proposal_file_samples(source_root, codebase_map),
+            "recommended_outputs": recommended_outputs,
+            "fallback_patch_proposal": fallback_payload,
+            "previous_patch_proposal": previous_patch_proposal,
+            "guardrail_rejection": guardrail_rejection,
+            "allowed_target_paths": strategy_allowlist,
+            "instruction": "Return only corrected JSON patch proposal that avoids the rejected target and uses a valid source seam target.",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def _build_llm_patch_proposal_target_rejection(
+    *,
+    llm_payload: PatchProposalPayload,
+    codebase_map: dict[str, Any],
+    recommended_outputs: list[str] | None = None,
+) -> dict[str, Any] | None:
+    valid_paths = {
+        str(item.get("path") or "")
+        for item in (codebase_map.get("candidate_edit_targets") or [])
+    }
+    strategy_allowlist = build_strategy_allowlist(
+        integration_contract=codebase_map.get("integration_contract") or {},
+        recommended_outputs=recommended_outputs or [],
+        codebase_map=codebase_map,
+    )
+    if not llm_payload.target_files:
+        return {
+            "path": "",
+            "reason": "empty_target_files",
+            "message": "target_files must not be empty",
+        }
+    if len(llm_payload.target_files) > 6:
+        return {
+            "path": llm_payload.target_files[0].path,
+            "reason": "too_many_targets",
+            "message": "target_files must remain conservative",
+        }
+    for target in llm_payload.target_files:
+        if target.path not in valid_paths:
+            return {
+                "path": target.path,
+                "reason": "invalid_target_path",
+                "message": f"invalid target path: {target.path}",
+            }
+        seam_rejection = seam_target_rejection_reason(target.path)
+        if seam_rejection is not None:
+            return {
+                "path": target.path,
+                "reason": seam_rejection,
+                "message": f"invalid seam target path: {target.path} ({seam_rejection})",
+            }
+        if strategy_allowlist and target.path not in strategy_allowlist:
+            return {
+                "path": target.path,
+                "reason": "invalid_strategy_target_path",
+                "message": f"invalid strategy target path: {target.path}",
+            }
+    return None
 
 
 def _recover_patch_proposal_payload(

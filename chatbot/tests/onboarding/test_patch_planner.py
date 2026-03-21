@@ -704,6 +704,136 @@ def test_write_llm_first_patch_proposal_prefers_llm_output_when_valid(tmp_path: 
     assert execution["fallback_reason"] is None
 
 
+def test_write_llm_first_patch_proposal_retries_after_build_artifact_rejection(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "patch-proposal.json"
+    execution_path = tmp_path / "reports" / "llm-patch-proposal-execution.json"
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text("def login(request):\n    return None\n", encoding="utf-8")
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "frontend" / "src" / "App.js").write_text("export default function App() { return null; }\n", encoding="utf-8")
+    codebase_map = {
+        "integration_contract": {
+            "site": "food",
+            "backend": {
+                "framework": "django",
+                "auth_style": "session_cookie",
+                "route_registration_points": ["backend/users/urls.py"],
+                "auth_source_paths": ["backend/users/views.py"],
+                "user_resolver_paths": ["backend/users/views.py"],
+            },
+            "frontend": {
+                "framework": "react",
+                "app_shell_path": "frontend/src/App.js",
+                "widget_mount_points": ["frontend/src/App.js"],
+            },
+        },
+        "candidate_edit_targets": [
+            {"path": "backend/users/views.py", "reason": "auth handler"},
+            {"path": "backend/users/urls.py", "reason": "route target"},
+            {"path": "frontend/build/static/js/main.abc.js", "reason": "bundled mount target"},
+            {"path": "frontend/src/App.js", "reason": "react app shell"},
+        ],
+        "backend_strategy": "django",
+        "frontend_strategy": "react",
+        "backend_route_targets": [{"path": "backend/users/urls.py", "reason": "users urlconf"}],
+        "frontend_mount_targets": [{"path": "frontend/src/App.js", "reason": "app shell"}],
+        "tool_registry_targets": [{"path": "backend/users/views.py", "reason": "users auth handler"}],
+    }
+
+    class RetryingLLM:
+        def __init__(self) -> None:
+            self.calls: list[list[object]] = []
+
+        def invoke(self, messages):
+            self.calls.append(messages)
+            if len(self.calls) == 1:
+                return type(
+                    "LLMResponse",
+                    (),
+                    {
+                        "content": json.dumps(
+                            {
+                                "target_files": [
+                                    {
+                                        "path": "frontend/build/static/js/main.abc.js",
+                                        "reason": "bundled widget mount target",
+                                        "intent": "mount chatbot widget",
+                                    }
+                                ],
+                                "supporting_generated_files": ["patches/frontend_widget_mount.patch"],
+                                "recommended_outputs": ["frontend_patch"],
+                                "analysis_summary": {
+                                    "auth_style": "session_cookie",
+                                    "frontend_mount_points": ["frontend/src/App.js"],
+                                    "route_prefixes": ["/api"],
+                                },
+                            }
+                        )
+                    },
+                )()
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "target_files": [
+                                {
+                                    "path": "frontend/src/App.js",
+                                    "reason": "source app shell",
+                                    "intent": "mount chatbot widget",
+                                }
+                            ],
+                            "supporting_generated_files": ["patches/frontend_widget_mount.patch"],
+                            "recommended_outputs": ["frontend_patch"],
+                            "analysis_summary": {
+                                "auth_style": "session_cookie",
+                                "frontend_mount_points": ["frontend/src/App.js"],
+                                "route_prefixes": ["/api"],
+                            },
+                        }
+                    )
+                },
+            )()
+
+    llm = RetryingLLM()
+    write_llm_first_patch_proposal(
+        source_root=source_root,
+        analysis={
+            "auth": {"auth_style": "session_cookie"},
+            "integration_contract": codebase_map["integration_contract"],
+        },
+        codebase_map=codebase_map,
+        recommended_outputs=["frontend_patch"],
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: llm,
+    )
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+    debug_payload = json.loads((tmp_path / "reports" / "llm-debug" / "patch-proposal.json").read_text(encoding="utf-8"))
+    retry_prompt = str(llm.calls[1][1].content)
+
+    assert payload["target_files"][0]["path"] == "frontend/src/App.js"
+    assert execution["source"] == "recovered_llm"
+    assert execution["fallback_reason"] is None
+    assert execution["rejection_reason"] == {
+        "path": "frontend/build/static/js/main.abc.js",
+        "reason": "build_artifact_target",
+        "message": "invalid seam target path: frontend/build/static/js/main.abc.js (build_artifact_target)",
+    }
+    assert execution["retry_attempt_count"] == 1
+    assert execution["retry_source"] == "llm"
+    assert debug_payload["rejection_reason"] == execution["rejection_reason"]
+    assert debug_payload["retry_attempt_count"] == 1
+    assert debug_payload["retry_source"] == "llm"
+    assert "build_artifact_target" in retry_prompt
+    assert "frontend/build/static/js/main.abc.js" in retry_prompt
+    assert "guardrail_rejection" in retry_prompt
+
+
 def test_write_llm_first_patch_proposal_recovery_normalizes_single_target_shape(tmp_path: Path):
     source_root = tmp_path / "source"
     output_path = tmp_path / "reports" / "patch-proposal.json"
