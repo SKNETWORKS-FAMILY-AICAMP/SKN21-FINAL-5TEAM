@@ -97,6 +97,34 @@ def test_generate_overlay_scaffold_uses_strategy_aware_login_route_for_flask(tmp
     assert order_step["url"] == "http://127.0.0.1:8000/api/orders"
 
 
+def test_generate_overlay_scaffold_recommends_mount_patch_for_frontend_mount_targets(tmp_path: Path):
+    run_root = tmp_path / "generated" / "shop" / "shop-run-vue"
+    run_root.mkdir(parents=True)
+
+    manifest = {
+        "run_id": "shop-run-vue",
+        "site": "shop",
+        "source_root": "/workspace/shop",
+        "created_at": "2026-03-21T12:00:00+09:00",
+        "agent_version": "test-v1",
+        "analysis": {
+            "frontend_strategy": "vue",
+            "frontend_mount_targets": ["frontend/src/App.vue"],
+        },
+        "generated_files": [],
+        "patch_targets": [],
+        "docker": {},
+        "tests": {},
+        "status": "generated",
+    }
+    (run_root / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+    generate_overlay_scaffold(run_root)
+
+    plan = json.loads((run_root / "reports" / "generation-plan.json").read_text(encoding="utf-8"))
+    assert "frontend_widget_mount_patch" in plan["recommended_outputs"]
+
+
 def test_generate_overlay_scaffold_uses_session_native_auth_chain_for_django(tmp_path: Path):
     run_root = tmp_path / "generated" / "food" / "food-run-session"
     run_root.mkdir(parents=True)

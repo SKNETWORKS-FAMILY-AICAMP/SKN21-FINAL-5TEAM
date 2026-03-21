@@ -15,7 +15,7 @@ def _build_recommended_outputs(manifest: dict) -> list[str]:
     if auth.get("login_entrypoints") and auth.get("me_entrypoints"):
         outputs.append("chat_auth_endpoint")
 
-    if analysis.get("frontend_mount_points"):
+    if analysis.get("frontend_mount_points") or analysis.get("frontend_mount_targets"):
         outputs.append("frontend_widget_mount_patch")
 
     if analysis.get("product_api"):

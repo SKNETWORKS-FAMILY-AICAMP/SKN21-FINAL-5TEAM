@@ -10,6 +10,7 @@ from chatbot.src.onboarding.template_generator import (
     generate_backend_tool_registry,
     generate_backend_route_patch,
     generate_chat_auth_template,
+    generate_frontend_mount_patch,
     generate_frontend_widget_artifact,
 )
 from chatbot.src.onboarding.shared_chatbot_assets import resolve_shared_chatbot_assets
@@ -321,6 +322,48 @@ def test_resolve_shared_chatbot_assets_uses_code_owned_site_contract_for_food() 
     assert config.stream_path == "/api/v1/chat/stream"
     assert config.chatbot_api_base_default == "http://localhost:8100"
     assert config.source_label == "shared_widget_runtime"
+
+
+def test_generated_mount_patch_embeds_shared_widget_bundle(tmp_path: Path):
+    source_root = tmp_path / "food"
+    run_root = tmp_path / "generated" / "food" / "food-run-mount-001"
+    run_root.mkdir(parents=True)
+
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() {\n  return <main>Home</main>;\n}\n",
+        encoding="utf-8",
+    )
+
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "food-run-mount-001",
+                "site": "food",
+                "source_root": str(source_root),
+                "created_at": "2026-03-21T12:00:00+09:00",
+                "agent_version": "test-v1",
+                "analysis": {
+                    "frontend_mount_points": ["frontend/src/App.js"],
+                },
+                "generated_files": [],
+                "patch_targets": [],
+                "frontend_artifacts": [],
+                "docker": {},
+                "tests": {},
+                "status": "generated",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    patch = generate_frontend_mount_patch(run_root)
+    content = patch.read_text(encoding="utf-8")
+
+    assert "widget.js" in content
+    assert "order-cs-widget" in content
+    assert "/api/chat/auth-token" in content
 
 
 

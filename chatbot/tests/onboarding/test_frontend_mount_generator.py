@@ -40,7 +40,9 @@ def test_generate_frontend_mount_patch_creates_patch_for_detected_mount_file(tmp
     content = patch_path.read_text(encoding="utf-8")
     assert "--- a/frontend/src/App.js" in content
     assert "+++ b/frontend/src/App.js" in content
-    assert "SharedChatbotWidget" in content
+    assert "widget.js" in content
+    assert "order-cs-widget" in content
+    assert "/api/chat/auth-token" in content
 
 
 def test_generate_frontend_mount_patch_uses_default_app_file_when_no_mount_detected(tmp_path: Path):
@@ -112,8 +114,9 @@ def test_generate_frontend_mount_patch_uses_source_file_context_when_available(t
 
     content = patch_path.read_text(encoding="utf-8")
     assert "@@ -" in content
-    assert 'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";' in content
-    assert "+      <SharedChatbotWidget />" in content
+    assert 'globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"]' in content
+    assert 'orderCsWidgetScript.dataset.orderCsWidgetBundle = "true";' in content
+    assert "+    <order-cs-widget />" in content
     assert "+  <main>Home</main>;" not in content
     assert "+export default function App()" not in content
 
@@ -161,8 +164,8 @@ def test_generate_frontend_mount_patch_inserts_widget_inside_component_tree(tmp_
 
     content = generate_frontend_mount_patch(run_root).read_text(encoding="utf-8")
 
-    assert "+      <SharedChatbotWidget />" in content
-    assert "\n+export default App;\n+\n+  <SharedChatbotWidget />" not in content
+    assert "+      <order-cs-widget />" in content
+    assert "\n+export default App;\n+\n+  <order-cs-widget />" not in content
 
 
 def test_generate_frontend_mount_patch_includes_widget_path(tmp_path: Path):
@@ -196,8 +199,9 @@ def test_generate_frontend_mount_patch_includes_widget_path(tmp_path: Path):
     patch_path = generate_frontend_mount_patch(run_root)
     content = patch_path.read_text(encoding="utf-8")
 
-    assert './chatbot/SharedChatbotWidget' in content
-    assert "SharedChatbotWidget" in content
+    assert "widget.js" in content
+    assert "order-cs-widget" in content
+    assert "SharedChatbotWidget" not in content
 
 
 def test_generate_frontend_mount_patch_prefers_strategy_mount_target_for_vue(tmp_path: Path):
@@ -240,7 +244,8 @@ def test_generate_frontend_mount_patch_prefers_strategy_mount_target_for_vue(tmp
     content = patch_path.read_text(encoding="utf-8")
 
     assert "--- a/frontend/src/App.vue" in content
-    assert "<SharedChatbotWidget />" in content
+    assert "<order-cs-widget />" in content
+    assert "widget.js" in content
 
 
 def test_generate_frontend_mount_patch_normalizes_vue_widget_path_into_src_boundary(tmp_path: Path):
@@ -281,5 +286,6 @@ def test_generate_frontend_mount_patch_normalizes_vue_widget_path_into_src_bound
 
     content = generate_frontend_mount_patch(run_root).read_text(encoding="utf-8")
 
-    assert 'import SharedChatbotWidget from "./widgets/SharedChatbotWidget";' in content
-    assert '../widgets/SharedChatbotWidget' not in content
+    assert 'globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"]' in content
+    assert "widget.js" in content
+    assert "../widgets/SharedChatbotWidget" not in content
