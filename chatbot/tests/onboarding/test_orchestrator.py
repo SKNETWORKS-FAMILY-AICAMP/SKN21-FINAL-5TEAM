@@ -591,9 +591,11 @@ def test_run_onboarding_generation_reports_recovery_artifact_path(tmp_path: Path
             "metadata": {
                 "classification": "response_schema_mismatch",
                 "should_retry": True,
+                "repair_scope": "run_only",
                 "root_cause_hypothesis": "response body is nested",
                 "proposed_fix": "override chat-auth-token export path",
                 "failure_signature": "response_schema_mismatch:chat-auth-token",
+                "guardrail_rejection_reason": "routes child violation",
             },
         }
     )
@@ -944,6 +946,10 @@ def test_run_onboarding_generation_calls_recovery_planner_for_recoverable_failur
             "should_retry": True,
             "proposed_probe_updates": [],
             "proposed_schema_overrides": [],
+            "repair_actions": [],
+            "repair_scope": "run_only",
+            "recommendation_source": "llm",
+            "guardrail_rejection_reason": "routes child violation",
         }
 
     monkeypatch.setattr(
@@ -978,9 +984,11 @@ def test_run_onboarding_generation_calls_recovery_planner_for_recoverable_failur
             "metadata": {
                 "classification": "response_schema_mismatch",
                 "should_retry": True,
+                "repair_scope": "run_only",
                 "root_cause_hypothesis": "response body is nested",
                 "proposed_fix": "override chat-auth-token export path",
                 "failure_signature": "response_schema_mismatch:chat-auth-token",
+                "guardrail_rejection_reason": "routes child violation",
             },
         }
     )
@@ -998,6 +1006,15 @@ def test_run_onboarding_generation_calls_recovery_planner_for_recoverable_failur
 
     assert planner_calls
     assert planner_calls[0]["failure_signature"] == "response_schema_mismatch:chat-auth-token"
+    assert planner_calls[0]["llm_repair_recommendation"] == {
+        "classification": "response_schema_mismatch",
+        "should_retry": True,
+        "repair_scope": "run_only",
+        "root_cause_hypothesis": "response body is nested",
+        "proposed_fix": "override chat-auth-token export path",
+        "failure_signature": "response_schema_mismatch:chat-auth-token",
+        "guardrail_rejection_reason": "routes child violation",
+    }
 
 
 def test_run_onboarding_generation_repairs_missing_import_before_human_review(tmp_path: Path, monkeypatch):

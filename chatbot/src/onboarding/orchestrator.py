@@ -1335,6 +1335,16 @@ def _run_validation_with_retries(
                 "failed_results": [result for result in smoke_results if result.get("returncode") != 0],
                 "backend_evaluation": _read_json_if_exists(run_root / "reports" / "backend-evaluation.json") or {},
                 "frontend_evaluation": _read_json_if_exists(run_root / "reports" / "frontend-evaluation.json") or {},
+                "llm_repair_recommendation": {
+                    "classification": diagnoser_message.metadata.get("classification"),
+                    "should_retry": diagnoser_message.metadata.get("should_retry"),
+                    "repair_scope": diagnoser_message.metadata.get("repair_scope"),
+                    "root_cause_hypothesis": diagnoser_message.metadata.get("root_cause_hypothesis"),
+                    "proposed_fix": diagnoser_message.metadata.get("proposed_fix"),
+                    "failure_signature": diagnoser_message.metadata.get("failure_signature"),
+                    "guardrail_rejection_reason": diagnoser_message.metadata.get("guardrail_rejection_reason"),
+                },
+                "guardrail_rejection_reason": diagnoser_message.metadata.get("guardrail_rejection_reason"),
             }
         )
         recovery_artifact_path = run_root / "reports" / "recovery-plan.json"

@@ -197,9 +197,11 @@ Your job:
 metadata must be an object and should include:
 - classification: string
 - should_retry: boolean
+- repair_scope: run_only | generator_promoted
 - root_cause_hypothesis: string
 - proposed_fix: string
 - failure_signature: string
+- guardrail_rejection_reason: string | null
 Use metadata.should_retry as a boolean when recommending a retry.
 """,
 }

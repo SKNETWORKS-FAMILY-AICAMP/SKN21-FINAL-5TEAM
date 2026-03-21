@@ -41,6 +41,27 @@ def is_site_local_failure_signature(signature: str) -> bool:
 
 
 def build_recovery_plan(context: dict[str, Any]) -> dict[str, Any]:
+    llm_recommendation = _normalize_llm_repair_recommendation(
+        context.get("llm_repair_recommendation")
+    )
+    if llm_recommendation is not None:
+        classification_payload = classify_onboarding_failure(
+            failure_signature=str(llm_recommendation.get("failure_signature") or context.get("failure_signature") or ""),
+            failed_results=list(context.get("failed_results") or []),
+            backend_evaluation=context.get("backend_evaluation") or {},
+            frontend_evaluation=context.get("frontend_evaluation") or {},
+        )
+        return {
+            "classification": str(llm_recommendation["classification"]),
+            "should_retry": bool(llm_recommendation["should_retry"]),
+            "proposed_probe_updates": [],
+            "proposed_schema_overrides": [],
+            "repair_actions": list(classification_payload.get("repair_actions") or []),
+            "repair_scope": str(llm_recommendation["repair_scope"]),
+            "recommendation_source": "llm",
+            "guardrail_rejection_reason": llm_recommendation.get("guardrail_rejection_reason"),
+        }
+
     failed_results = list(context.get("failed_results") or [])
     classification_payload = classify_onboarding_failure(
         failure_signature=str(context.get("failure_signature") or ""),
@@ -64,6 +85,9 @@ def build_recovery_plan(context: dict[str, Any]) -> dict[str, Any]:
             "proposed_probe_updates": [],
             "proposed_schema_overrides": [],
             "repair_actions": repair_actions,
+            "repair_scope": "run_only",
+            "recommendation_source": "deterministic",
+            "guardrail_rejection_reason": context.get("guardrail_rejection_reason"),
         }
 
     failed_step_ids = [
@@ -103,7 +127,32 @@ def build_recovery_plan(context: dict[str, Any]) -> dict[str, Any]:
         "proposed_probe_updates": proposed_probe_updates,
         "proposed_schema_overrides": proposed_schema_overrides,
         "repair_actions": repair_actions,
+        "repair_scope": "run_only",
+        "recommendation_source": "deterministic",
+        "guardrail_rejection_reason": context.get("guardrail_rejection_reason"),
     }
+
+
+def _normalize_llm_repair_recommendation(payload: Any) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+
+    classification = str(payload.get("classification") or "").strip()
+    repair_scope = str(payload.get("repair_scope") or "").strip()
+    should_retry = payload.get("should_retry")
+    if not classification or repair_scope not in {"run_only", "generator_promoted"} or not isinstance(should_retry, bool):
+        return None
+
+    normalized = {
+        "classification": classification,
+        "should_retry": should_retry,
+        "repair_scope": repair_scope,
+        "root_cause_hypothesis": str(payload.get("root_cause_hypothesis") or "").strip(),
+        "proposed_fix": str(payload.get("proposed_fix") or "").strip(),
+        "failure_signature": str(payload.get("failure_signature") or "").strip(),
+        "guardrail_rejection_reason": payload.get("guardrail_rejection_reason"),
+    }
+    return normalized
 
 
 def _normalize_recovery_classification(*, signature: str, failed_results: list[dict[str, Any]]) -> str:
