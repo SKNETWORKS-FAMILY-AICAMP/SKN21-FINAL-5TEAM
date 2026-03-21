@@ -46,6 +46,10 @@ class SiteCClient:
     async def get_order_by_number(self, order_number: str, headers: Dict[str, str]) -> Any:
         return await self._request("GET", f"/orders/orders/number/{order_number}", headers=headers)
 
+    async def list_orders(self, user_id: str, headers: Dict[str, str], limit: int = 20) -> Any:
+        params = {"limit": limit}
+        return await self._request("GET", f"/orders/{user_id}/orders", headers=headers, params=params)
+
     async def get_delivery(self, input_data: GetDeliveryTrackingInput, headers: Dict[str, str]) -> Any:
         return await self._request("GET", f"/shipping/order/{input_data.orderId}", headers=headers)
 

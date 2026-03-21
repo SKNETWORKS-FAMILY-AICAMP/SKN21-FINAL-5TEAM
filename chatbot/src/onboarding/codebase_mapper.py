@@ -82,6 +82,8 @@ def build_codebase_map(*, source_root: str | Path) -> dict:
                 reason = "backend route or handler candidate"
             elif frontend_candidate is not None:
                 reason = "frontend mount or integration candidate"
+            elif api_client_candidate is not None:
+                reason = str(api_client_candidate.get("reason") or "frontend api client candidate")
 
         if reason is not None:
             candidate_edit_targets.append(

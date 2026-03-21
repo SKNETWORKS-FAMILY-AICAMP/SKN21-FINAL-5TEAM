@@ -4,6 +4,8 @@ import difflib
 import json
 from pathlib import Path
 
+from .onboarding_ignore import DEFAULT_IGNORED_PARTS
+
 
 def _read_text_or_empty(path: Path) -> list[str]:
     if not path.exists():
@@ -34,6 +36,8 @@ def export_runtime_patch(
 
     for runtime_file in sorted(runtime_files):
         relative = runtime_file.relative_to(runtime)
+        if _should_skip_export_path(relative):
+            continue
         source_file = source / relative
         source_lines = _read_text_or_empty(source_file)
         runtime_lines = _read_text_or_empty(runtime_file)
@@ -73,6 +77,10 @@ def export_runtime_patch(
         encoding="utf-8",
     )
     return patch_path
+
+
+def _should_skip_export_path(relative: Path) -> bool:
+    return bool(DEFAULT_IGNORED_PARTS.intersection(relative.parts))
 
 
 def export_patch_artifact(

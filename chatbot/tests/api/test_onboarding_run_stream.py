@@ -4,11 +4,15 @@ import json
 import sys
 import threading
 from pathlib import Path
+from fastapi import FastAPI
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+from langchain_core.messages import AIMessage
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from chatbot import server_fastapi
 from chatbot.server_fastapi import app
 
 
@@ -188,3 +192,187 @@ def test_onboarding_run_stream_can_start_empty_and_emit_later_event():
     assert payloads == [
         {"run_id": run_id, "event": "run.created", "payload": {"site": "food"}}
     ]
+
+
+def test_shared_app_chat_route_accepts_site_aware_request(monkeypatch):
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_resolve_site_adapter(site_id: str):
+        calls.append(("resolve", site_id))
+        return SimpleNamespace(site_id=site_id)
+
+    def fake_invoke(state, config):
+        user_info = state["user_info"]
+        calls.append(("invoke", user_info.get("site_id")))
+        return {
+            "messages": [AIMessage(content="ok")],
+            "completed_tasks": [],
+            "ui_action_required": None,
+            "awaiting_interrupt": False,
+            "interrupts": [],
+            "order_context": {},
+            "search_context": {},
+            "user_info": user_info,
+            "llm_provider": state["llm_provider"],
+            "llm_model": state["llm_model"],
+            "conversation_summary": None,
+        }
+
+    monkeypatch.setattr(server_fastapi.adapter_setup, "resolve_site_adapter", fake_resolve_site_adapter)
+    monkeypatch.setattr(server_fastapi.graph_app, "invoke", fake_invoke)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={
+            "message": "주문 보여줘",
+            "site_id": "site-a",
+            "access_token": "bridge-token",
+            "user_id": 3,
+            "user_name": "Tester",
+        },
+    )
+
+    assert response.status_code == 200
+    assert calls == [("resolve", "site-a"), ("invoke", "site-a")]
+    assert response.json()["state"]["user_info"]["site_id"] == "site-a"
+    assert response.json()["state"]["user_info"]["access_token"] == "bridge-token"
+
+
+def test_standalone_server_exposes_shared_stream_route(monkeypatch):
+    from chatbot.src.api.v1.endpoints import chat as chat_module
+
+    app.dependency_overrides[chat_module.get_current_user_optional] = lambda: SimpleNamespace(
+        id=7,
+        email="tester@example.com",
+        name="Tester",
+    )
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/api/v1/chat/stream",
+            json={
+                "message": "주문 보여줘",
+                "site_id": "site-a",
+                "access_token": "bridge-token",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(chat_module.get_current_user_optional, None)
+
+    assert response.status_code != 404
+
+
+def test_stream_endpoint_preserves_previous_site_and_access_token_on_follow_up_turn(monkeypatch):
+    from chatbot.src.api.v1.endpoints import chat as chat_module
+
+    captured: dict[str, object] = {}
+
+    async def fake_astream_events(stream_input, version, config):
+        captured["stream_input"] = stream_input
+        captured["config"] = config
+        yield {
+            "event": "on_chain_end",
+            "name": "LangGraph",
+            "data": {
+                "output": {
+                    "messages": [AIMessage(content="후속 응답")],
+                    "completed_tasks": [],
+                    "ui_action_required": None,
+                    "order_context": {},
+                    "search_context": {},
+                    "user_info": stream_input["user_info"],
+                    "llm_provider": stream_input["llm_provider"],
+                    "llm_model": stream_input["llm_model"],
+                    "conversation_summary": None,
+                }
+            },
+        }
+
+    monkeypatch.setattr(chat_module.adapter_setup, "resolve_site_adapter", lambda site_id: SimpleNamespace(site_id=site_id))
+    monkeypatch.setattr(chat_module.graph_app, "astream_events", fake_astream_events)
+    monkeypatch.setattr(chat_module, "_append_session_turn_log", lambda **kwargs: None)
+
+    test_app = FastAPI()
+    test_app.include_router(chat_module.router)
+    test_app.dependency_overrides[chat_module.get_current_user_optional] = lambda: SimpleNamespace(
+        id=1,
+        name="Tester",
+        email="tester@example.com",
+    )
+
+    client = TestClient(test_app)
+    response = client.post(
+        "/stream",
+        json={
+            "message": "다음 주문도 보여줘",
+            "previous_state": {
+                "conversation_id": "conv-123",
+                "user_info": {
+                    "site_id": "site-a",
+                    "access_token": "bridge-token",
+                },
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["stream_input"]["user_info"]["site_id"] == "site-a"
+    assert captured["stream_input"]["user_info"]["access_token"] == "bridge-token"
+
+
+def test_stream_endpoint_accepts_site_a_bridge_access_token_without_chatbot_cookie(monkeypatch):
+    from chatbot.src.api.v1.endpoints import chat as chat_module
+
+    captured: dict[str, object] = {}
+
+    class _FakeAdapter:
+        site_id = "site-a"
+
+        async def validate_auth(self, ctx):
+            captured["auth_ctx"] = ctx
+            return SimpleNamespace(id="7", email="tester@example.com", name="Tester")
+
+    async def fake_astream_events(stream_input, version, config):
+        captured["stream_input"] = stream_input
+        yield {
+            "event": "on_chain_end",
+            "name": "LangGraph",
+            "data": {
+                "output": {
+                    "messages": [AIMessage(content="브리지 인증 응답")],
+                    "completed_tasks": [],
+                    "ui_action_required": None,
+                    "order_context": {},
+                    "search_context": {},
+                    "user_info": stream_input["user_info"],
+                    "llm_provider": stream_input["llm_provider"],
+                    "llm_model": stream_input["llm_model"],
+                    "conversation_summary": None,
+                }
+            },
+        }
+
+    monkeypatch.setattr(chat_module.adapter_setup, "resolve_site_adapter", lambda site_id: _FakeAdapter())
+    monkeypatch.setattr(chat_module.graph_app, "astream_events", fake_astream_events)
+    monkeypatch.setattr(chat_module, "_append_session_turn_log", lambda **kwargs: None)
+
+    test_app = FastAPI()
+    test_app.include_router(chat_module.router)
+
+    client = TestClient(test_app)
+    response = client.post(
+        "/stream",
+        json={
+            "message": "주문 보여줘",
+            "site_id": "site-a",
+            "access_token": "bridge-token",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["auth_ctx"].siteId == "site-a"
+    assert captured["auth_ctx"].accessToken == "bridge-token"
+    assert captured["stream_input"]["user_info"]["id"] == "7"
+    assert captured["stream_input"]["user_info"]["site_id"] == "site-a"
+    assert captured["stream_input"]["user_info"]["access_token"] == "bridge-token"

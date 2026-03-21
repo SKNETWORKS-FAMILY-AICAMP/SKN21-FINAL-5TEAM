@@ -24,7 +24,15 @@
 
 루트에서:
 - `uv sync`
+- `.env` 또는 셸 환경에 `LLM_PROVIDER=openai`
+- `.env` 또는 셸 환경에 `OPENAI_API_KEY` 설정
+- `food` 연동 검증 시 `FOOD_API_URL=http://127.0.0.1:8000` 설정
 - `uv run uvicorn chatbot.server_fastapi:app --reload --host 0.0.0.0 --port 8100`
+
+### 공유 위젯 기본 연결 경로
+- Auth bootstrap: `POST /api/chat/auth-token`
+- Stream transport: `POST http://localhost:8100/api/v1/chat/stream`
+- Frontend override env: `REACT_APP_CHATBOT_API_BASE=http://127.0.0.1:8100`
 
 ## 3) 멀티턴 대화
 

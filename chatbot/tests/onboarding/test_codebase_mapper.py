@@ -215,6 +215,38 @@ def test_build_codebase_map_respects_onboardingignore_patterns(tmp_path: Path):
     assert "backend/secret/views.py" not in target_paths
 
 
+def test_build_codebase_map_includes_frontend_api_clients_in_candidate_edit_targets(tmp_path: Path):
+    source_root = tmp_path / "source"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src" / "api").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True, exist_ok=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() {\n"
+        "  return <main>Food storefront</main>;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "api" / "api.js").write_text(
+        "export async function fetchProducts() {\n"
+        "  const response = await fetch('/api/products/');\n"
+        "  return response.json();\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    payload = build_codebase_map(source_root=source_root)
+
+    target_paths = {item["path"] for item in payload["candidate_edit_targets"]}
+    assert "frontend/src/api/api.js" in target_paths
+    assert any(item["path"] == "frontend/src/api/api.js" for item in payload["api_client_candidates"])
+
+
 def test_write_llm_codebase_interpretation_prefers_llm_ranked_candidates(tmp_path: Path):
     source_root = tmp_path / "source"
     output_path = tmp_path / "reports" / "llm-codebase-interpretation.json"

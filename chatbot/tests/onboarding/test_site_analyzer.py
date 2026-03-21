@@ -88,6 +88,34 @@ def test_analyze_site_returns_empty_lists_when_targets_are_missing(tmp_path: Pat
     assert analysis["backend_entrypoints"] == []
 
 
+def test_analyze_site_ignores_frontend_build_artifacts_for_mount_contract(tmp_path: Path):
+    site_root = tmp_path / "food"
+    frontend_src = site_root / "frontend" / "src"
+    frontend_build = site_root / "frontend" / "build" / "static" / "js"
+
+    frontend_src.mkdir(parents=True)
+    frontend_build.mkdir(parents=True)
+
+    (frontend_src / "App.js").write_text(
+        """
+export default function App() {
+  return <Chatbot />;
+}
+""",
+        encoding="utf-8",
+    )
+    (frontend_build / "main.76c8743f.js").write_text(
+        'function App(){return React.createElement("div", null, "Chatbot")}\n',
+        encoding="utf-8",
+    )
+
+    analysis = analyze_site(site_root)
+
+    assert analysis["frontend_mount_points"] == ["frontend/src/App.js"]
+    assert analysis["integration_contract"]["frontend"]["app_shell_path"] == "frontend/src/App.js"
+    assert analysis["integration_contract"]["frontend"]["widget_mount_points"] == ["frontend/src/App.js"]
+
+
 def test_analyze_site_detects_django_cookie_session_signals(tmp_path: Path):
     site_root = tmp_path / "food"
     backend_users = site_root / "backend" / "users"

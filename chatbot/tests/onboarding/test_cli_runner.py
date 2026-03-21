@@ -281,6 +281,28 @@ def test_cli_parser_accepts_llm_role_runner_flags():
     assert args.print_report_paths is True
 
 
+def test_cli_parser_accepts_runtime_completion_loop_flag():
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "--site",
+            "food",
+            "--source-root",
+            "food",
+            "--generated-root",
+            "generated",
+            "--runtime-root",
+            "runtime",
+            "--run-id",
+            "food-run-runtime-loop",
+            "--enable-runtime-completion-loop",
+        ]
+    )
+
+    assert args.enable_runtime_completion_loop is True
+
+
 def test_cli_parser_accepts_llm_patch_draft_flag():
     parser = build_parser()
 
@@ -452,6 +474,50 @@ def test_cli_runner_emits_llm_role_execution_path(tmp_path: Path):
     assert payload["llm_role_execution_path"].endswith("reports/llm-role-execution.json")
     assert payload["llm_codebase_interpretation_path"].endswith("reports/llm-codebase-interpretation.json")
     assert payload["llm_patch_proposal_execution_path"].endswith("reports/llm-patch-proposal-execution.json")
+
+
+def test_cli_runner_passes_runtime_completion_loop_flag_to_orchestrator(monkeypatch, capsys):
+    monkeypatch.setattr("chatbot.scripts.run_onboarding_generation.load_generation_env", lambda: None)
+    monkeypatch.setattr("chatbot.scripts.run_onboarding_generation.build_onboarding_event_store", lambda redis_url: None)
+    monkeypatch.setattr("chatbot.scripts.run_onboarding_generation.close_onboarding_event_store", lambda store: None)
+
+    captured: dict[str, object] = {}
+
+    def fake_run_onboarding_generation(**kwargs):
+        captured.update(kwargs)
+        return {
+            "run_root": "/tmp/generated/food/food-run-runtime-loop",
+            "runtime_workspace": "/tmp/runtime/food/food-run-runtime-loop/workspace",
+            "current_state": "completed",
+            "runtime_completion_path": "/tmp/generated/food/food-run-runtime-loop/reports/runtime-completion.json",
+        }
+
+    monkeypatch.setattr("chatbot.scripts.run_onboarding_generation.run_onboarding_generation", fake_run_onboarding_generation)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_onboarding_generation.py",
+            "--site",
+            "food",
+            "--source-root",
+            "/tmp/source",
+            "--generated-root",
+            "/tmp/generated",
+            "--runtime-root",
+            "/tmp/runtime",
+            "--run-id",
+            "food-run-runtime-loop",
+            "--enable-runtime-completion-loop",
+        ],
+    )
+
+    exit_code = run_onboarding_generation_main()
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert captured["enable_runtime_completion_loop"] is True
+    assert payload["runtime_completion_path"].endswith("reports/runtime-completion.json")
 
 
 def test_cli_parser_accepts_approval_store_and_resume_flags():

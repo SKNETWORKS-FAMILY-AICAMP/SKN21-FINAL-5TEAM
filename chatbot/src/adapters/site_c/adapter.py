@@ -141,6 +141,17 @@ class SiteCAdapter(BaseEcommerceSupportAdapter):
         self.assert_order_ownership(mapped.order.userId, ctx)
         return mapped
 
+    async def list_orders(
+        self,
+        ctx: AuthenticatedContext,
+        limit: int = 20,
+    ) -> list[dict]:
+        self.assert_authenticated(ctx)
+        headers = build_site_c_auth_headers(ctx)
+        raw = await self.client.list_orders(ctx.userId, headers, limit=limit)
+        orders = raw.get("orders") if isinstance(raw, dict) else raw
+        return orders if isinstance(orders, list) else []
+
     async def get_delivery_tracking(
         self, ctx: AuthenticatedContext, input_data: GetDeliveryTrackingInput
     ) -> GetDeliveryTrackingResult:

@@ -1,11 +1,24 @@
 import sys
 from pathlib import Path
+import types
 
 import logging
 
 from langchain_core.messages import HumanMessage
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+langchain_ollama = types.ModuleType("langchain_ollama")
+
+
+class _DummyChatOllama:
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+
+
+langchain_ollama.ChatOllama = _DummyChatOllama
+sys.modules.setdefault("langchain_ollama", langchain_ollama)
 
 from chatbot.src.graph.nodes import guardrail
 from ecommerce.backend.app import main as backend_main

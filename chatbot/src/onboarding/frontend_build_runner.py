@@ -139,14 +139,10 @@ def classify_frontend_bootstrap_result(
     bootstrap_failure_reason = None
     if install_attempted and not install_passed:
         bootstrap_failure_stage = "install_environment_failed"
-        bootstrap_failure_reason = str(
-            install_result.get("stderr") or install_result.get("stdout") or "frontend install failed"
-        ).strip() or "frontend install failed"
+        bootstrap_failure_reason = _select_failure_output(install_result, default="frontend install failed")
     elif build_attempted and not build_passed:
         bootstrap_failure_stage = "build_environment_failed"
-        bootstrap_failure_reason = str(
-            build_result.get("stderr") or build_result.get("stdout") or "frontend build failed"
-        ).strip() or "frontend build failed"
+        bootstrap_failure_reason = _select_failure_output(build_result, default="frontend build failed")
 
     return {
         "install_attempted": install_attempted,
@@ -157,6 +153,32 @@ def classify_frontend_bootstrap_result(
         "bootstrap_failure_stage": bootstrap_failure_stage,
         "bootstrap_failure_reason": bootstrap_failure_reason,
     }
+
+
+def _select_failure_output(result: dict[str, Any] | None, *, default: str) -> str:
+    if not isinstance(result, dict):
+        return default
+
+    stderr = str(result.get("stderr") or "").strip()
+    stdout = str(result.get("stdout") or "").strip()
+    if stderr and stdout:
+        if _is_warning_only_output(stderr) and not _is_warning_only_output(stdout):
+            return stdout
+        return "\n".join(part for part in (stderr, stdout) if part).strip() or default
+    if stderr:
+        return stderr
+    if stdout:
+        return stdout
+    return default
+
+
+def _is_warning_only_output(text: str | None) -> bool:
+    if not text:
+        return False
+    lines = [line.strip() for line in str(text).splitlines() if line.strip()]
+    if not lines:
+        return False
+    return all("warning" in line.lower() or "trace-deprecation" in line.lower() for line in lines)
 
 
 def run_frontend_build(

@@ -3,6 +3,8 @@ from __future__ import annotations
 import difflib
 import json
 import re
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
@@ -20,6 +22,7 @@ from .debug_logging import (
     write_llm_debug_artifact,
 )
 from .framework_strategies import build_strategy_allowlist, select_strategy_target_candidates
+from .runtime_runner import _apply_patch_file
 
 
 class PatchProposalTarget(BaseModel):
@@ -131,11 +134,24 @@ def write_llm_first_patch_proposal(
             llm_payload = PatchProposalPayload.model_validate(raw_payload)
             source = "recovered_llm"
             hard_fallback_reason = None
-        _validate_llm_patch_proposal_targets(
-            llm_payload=llm_payload,
-            codebase_map=codebase_map,
-            recommended_outputs=recommended_outputs,
-        )
+        try:
+            _validate_llm_patch_proposal_targets(
+                llm_payload=llm_payload,
+                codebase_map=codebase_map,
+                recommended_outputs=recommended_outputs,
+            )
+        except ValueError:
+            recovered = _recover_patch_proposal_targets(
+                llm_payload=llm_payload,
+                codebase_map=codebase_map,
+                recommended_outputs=recommended_outputs,
+            )
+            if recovered is None:
+                raise
+            llm_payload, target_recovery_reason = recovered
+            source = "recovered_llm"
+            recovery_reason = target_recovery_reason
+            hard_fallback_reason = None
         payload = llm_payload.model_dump(mode="json")
         if source != "recovered_llm":
             source = "llm"
@@ -322,7 +338,11 @@ def write_llm_patch_draft(
         "recovery_reason": recovery_reason,
         "hard_fallback_reason": None,
     }
-    validation_error = _validate_llm_patch_content(content, patch_proposal=patch_proposal)
+    validation_error = _validate_llm_patch_content(
+        content,
+        patch_proposal=patch_proposal,
+        source_root=source_root,
+    )
     if validation_error is not None:
         execution_payload = {
             "source": "hard_fallback",
@@ -552,6 +572,12 @@ def build_patch_proposal(
         else:
             selected_targets = strategy_selected_targets
     if strategy_allowlist:
+        if llm_codebase_interpretation:
+            selected_targets = [
+                target
+                for target in selected_targets
+                if str(target.get("path") or "") in strategy_allowlist
+            ]
         invalid_targets = [
             str(target.get("path") or "")
             for target in selected_targets
@@ -974,10 +1000,49 @@ def _recover_patch_proposal_payload(
     return None
 
 
+def _recover_patch_proposal_targets(
+    *,
+    llm_payload: PatchProposalPayload,
+    codebase_map: dict[str, Any],
+    recommended_outputs: list[str] | None = None,
+) -> tuple[PatchProposalPayload, str] | None:
+    valid_paths = {
+        str(item.get("path") or "")
+        for item in (codebase_map.get("candidate_edit_targets") or [])
+    }
+    strategy_allowlist = build_strategy_allowlist(
+        integration_contract=codebase_map.get("integration_contract") or {},
+        recommended_outputs=recommended_outputs or [],
+        codebase_map=codebase_map,
+    )
+    filtered_targets: list[PatchProposalTarget] = []
+    seen: set[str] = set()
+    for target in llm_payload.target_files:
+        if target.path in seen:
+            continue
+        if target.path not in valid_paths:
+            continue
+        if strategy_allowlist and target.path not in strategy_allowlist:
+            continue
+        filtered_targets.append(target)
+        seen.add(target.path)
+        if len(filtered_targets) >= 6:
+            break
+    if not filtered_targets:
+        return None
+    normalized = llm_payload.model_copy(
+        update={
+            "target_files": filtered_targets,
+        }
+    )
+    return normalized, "patch_proposal_targets_filtered"
+
+
 def _validate_llm_patch_content(
     content: str,
     *,
     patch_proposal: dict[str, Any],
+    source_root: str | Path,
 ) -> dict[str, str] | None:
     if not content.strip():
         return {"reason": "invalid_patch_format", "message": "empty patch content"}
@@ -1011,7 +1076,42 @@ def _validate_llm_patch_content(
             "message": f"patch references files outside proposal: {', '.join(invalid_targets)}",
         }
 
+    patch_apply_error = _check_patch_applies_cleanly(
+        content=content,
+        source_root=source_root,
+        target_files=target_files,
+    )
+    if patch_apply_error is not None:
+        return {
+            "reason": "invalid_patch_format",
+            "message": patch_apply_error,
+        }
+
     return None
+
+
+def _check_patch_applies_cleanly(
+    *,
+    content: str,
+    source_root: str | Path,
+    target_files: list[str],
+) -> str | None:
+    root = Path(source_root)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        workspace = Path(temp_dir) / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        for relative_path in target_files:
+            source_path = root / relative_path
+            destination = workspace / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if source_path.exists():
+                shutil.copy2(source_path, destination)
+        patch_path = Path(temp_dir) / "candidate.patch"
+        patch_path.write_text(content, encoding="utf-8")
+        failure = _apply_patch_file(patch_path=patch_path, workspace=workspace)
+        if failure is None:
+            return None
+        return str(failure.get("error") or "patch does not apply cleanly")
 
 
 def _extract_patch_targets_from_content(content: str) -> list[str]:
@@ -1349,11 +1449,14 @@ def _find_list_closing_index(lines: list[str], *, start_index: int) -> int | Non
 
 
 def _find_react_mount_insert_index(lines: list[str]) -> int | None:
+    fallback_index: int | None = None
     for index, line in enumerate(lines):
         stripped = line.strip()
-        if stripped in {"</BrowserRouter>", "</Routes>", "</main>", "</div>"}:
+        if stripped in {"</main>", "</BrowserRouter>", "</div>", "</>"}:
             return index
-    return None
+        if stripped == "</Routes>" and fallback_index is None:
+            fallback_index = index
+    return fallback_index
 
 
 def _find_auth_view_insert_index(lines: list[str]) -> int | None:

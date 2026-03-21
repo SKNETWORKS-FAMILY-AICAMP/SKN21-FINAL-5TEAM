@@ -9,10 +9,11 @@ from .integration_contracts import (
     FrontendContract,
     SiteIntegrationContract,
 )
+from .onboarding_ignore import DEFAULT_IGNORED_PARTS
 
 
 TEXT_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx", ".vue"}
-SKIP_PATH_PARTS = {".venv", "venv", "site-packages", "node_modules", "__pycache__"}
+SKIP_PATH_PARTS = set(DEFAULT_IGNORED_PARTS)
 
 
 def _relative_posix(path: Path, root: Path) -> str:
@@ -117,15 +118,29 @@ def _build_integration_contract(
     backend_framework: str,
     frontend_framework: str,
     auth_style: str,
+    auth_signals: list[str],
     login_entrypoints: list[str],
     me_entrypoints: list[str],
     backend_route_targets: list[str],
     frontend_mount_targets: list[str],
     product_api: list[str],
     order_api: list[str],
+    product_api_shape: dict | None,
+    order_api_shape: dict | None,
 ) -> dict:
     app_shell_path = _find_frontend_app_shell_path(root)
     mount_targets = frontend_mount_targets or ([app_shell_path] if app_shell_path else [])
+    chat_auth_contract = {
+        "auth_mode": _infer_chat_auth_mode(
+            backend_framework=backend_framework,
+            auth_style=auth_style,
+            auth_signals=auth_signals,
+        ),
+    }
+    if "session_token" in {str(signal) for signal in auth_signals}:
+        chat_auth_contract["upstream_cookie_name"] = "session_token"
+    elif "access_token" in {str(signal) for signal in auth_signals}:
+        chat_auth_contract["upstream_cookie_name"] = "access_token"
     contract = SiteIntegrationContract(
         site=root.name,
         backend=BackendContract(
@@ -146,16 +161,84 @@ def _build_integration_contract(
             api_client_paths=_find_api_client_paths(root),
             widget_mount_points=mount_targets,
         ),
+        chat_auth=chat_auth_contract,
         product_adapter={
             "enabled": bool(product_api),
             "api_base_paths": product_api,
+            "tool_names": _infer_resource_tool_names(
+                root=root,
+                resource_name="product",
+                api_paths=product_api,
+                api_shape=product_api_shape,
+                default_tools=["product_list", "product_get"],
+            ),
         },
         order_adapter={
             "enabled": bool(order_api),
             "api_base_paths": order_api,
+            "tool_names": _infer_resource_tool_names(
+                root=root,
+                resource_name="order",
+                api_paths=order_api,
+                api_shape=order_api_shape,
+                default_tools=["orders_list", "orders_get", "orders_action"],
+            ),
         },
     )
     return contract.model_dump(mode="json")
+
+
+def _infer_chat_auth_mode(*, backend_framework: str, auth_style: str, auth_signals: list[str]) -> str:
+    signal_set = {str(signal) for signal in auth_signals}
+    if backend_framework == "django" and auth_style == "session_cookie" and "session_token" in signal_set:
+        return "session_cookie_passthrough"
+    if auth_style == "token_cookie" and "access_token" in signal_set:
+        return "host_access_token_cookie"
+    return "signed_bridge_token"
+
+
+def _infer_resource_tool_names(
+    *,
+    root: Path,
+    resource_name: str,
+    api_paths: list[str],
+    api_shape: dict | None,
+    default_tools: list[str],
+) -> list[str]:
+    if not api_paths:
+        return []
+    if resource_name == "product":
+        tool_names = ["product_list"]
+        if _resource_supports_detail_routes(root=root, resource_name=resource_name, api_shape=api_shape):
+            tool_names.append("product_get")
+        return tool_names
+    if resource_name == "order":
+        tool_names = ["orders_list"]
+        if _resource_supports_detail_routes(root=root, resource_name=resource_name, api_shape=api_shape):
+            tool_names.append("orders_get")
+            tool_names.append("orders_action")
+        return tool_names
+    return default_tools
+
+
+def _resource_supports_detail_routes(*, root: Path, resource_name: str, api_shape: dict | None) -> bool:
+    if resource_name == "product":
+        candidate_files = [
+            (path, text)
+            for path, text in _iter_text_files(root)
+            if resource_name in _relative_posix(path, root).lower()
+        ]
+        if not candidate_files:
+            return False
+        combined = "\n".join(text for _, text in candidate_files)
+        detail_markers = (
+            r'path\(\s*["\']<[^"\']+>/?["\']',
+            r'route\(\s*["\']/\<[^"\']+',
+            r'@(?:router|app)\.(?:get|post|put|patch|delete)\(\s*["\']/\{[^}]+\}',
+            rf"def\s+(?:get_)?{re.escape(resource_name)}(?:_detail)?\s*\(",
+        )
+        return any(re.search(pattern, combined) for pattern in detail_markers)
+    return True
 
 
 def _detect_backend_framework(root: Path) -> str:
@@ -521,12 +604,15 @@ def analyze_site(site_root: str | Path) -> dict:
         backend_framework=backend_framework,
         frontend_framework=frontend_framework,
         auth_style=_infer_auth_style(auth_signals, backend_framework),
+        auth_signals=auth_signals,
         login_entrypoints=login_entrypoints,
         me_entrypoints=me_entrypoints,
         backend_route_targets=backend_route_targets,
         frontend_mount_targets=frontend_mount_targets,
         product_api=product_api,
         order_api=order_api,
+        product_api_shape=_infer_api_response_shape(root, product_api[0]) if product_api else None,
+        order_api_shape=_infer_api_response_shape(root, order_api[0]) if order_api else None,
     )
 
     return {

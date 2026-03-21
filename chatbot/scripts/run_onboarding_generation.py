@@ -37,6 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--agent-version", default="dev")
     parser.add_argument("--use-llm-roles", action="store_true")
     parser.add_argument("--generate-llm-patch-draft", action="store_true")
+    parser.add_argument("--enable-runtime-completion-loop", action="store_true")
     parser.add_argument("--llm-provider", default="openai")
     parser.add_argument("--llm-model", default="gpt-5-mini")
     parser.add_argument("--print-report-paths", action="store_true")
@@ -138,6 +139,7 @@ def main() -> int:
             approval_store=approval_store,
             use_llm_roles=args.use_llm_roles,
             generate_llm_patch_draft=args.generate_llm_patch_draft,
+            enable_runtime_completion_loop=args.enable_runtime_completion_loop,
             llm_provider=args.llm_provider,
             llm_model=args.llm_model,
             terminal_logger=lambda message: print(message, file=sys.stderr, flush=True),

@@ -11,14 +11,8 @@ from .frontend_generator import (
     generate_frontend_widget_artifact as _generate_frontend_widget_artifact,
     resolve_widget_path as resolve_frontend_widget_path,
 )
+from .shared_chatbot_assets import resolve_shared_chatbot_assets
 from .tool_registry_generator import generate_backend_tool_registry
-
-
-SITE_ID_BY_NAME = {
-    "food": "site-a",
-    "bilyeo": "site-b",
-    "ecommerce": "site-c",
-}
 
 LOCAL_CHAT_TOKEN_HELPER = """import base64
 import hashlib
@@ -75,13 +69,13 @@ def _read_source_lines_for_diff(path: Path) -> list[str]:
 
 def _build_food_chat_auth_template(site_id: str) -> str:
     return f"""from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from users.models import SessionToken
 
-{LOCAL_CHAT_TOKEN_HELPER}
 
-
+@csrf_exempt
 @require_POST
 def chat_auth_token(request):
     session_token = request.COOKIES.get("session_token")
@@ -97,20 +91,16 @@ def chat_auth_token(request):
         return JsonResponse({{"authenticated": False, "detail": "invalid session"}}, status=401)
 
     user = session.user
-    token = issue_chat_token(
-        user_id=str(user.id),
-        site_id="{site_id}",
-        secret="CHANGE_ME",
-        name=user.get_full_name() or user.username,
-        email=user.email,
-        scopes=["chat"],
-        expires_in_seconds=600,
-    )
     return JsonResponse(
         {{
             "authenticated": True,
             "site_id": "{site_id}",
-            "access_token": token,
+            "access_token": session_token,
+            "user": {{
+                "id": str(user.id),
+                "email": user.email,
+                "name": user.get_full_name() or user.username,
+            }},
         }}
     )
 """
@@ -220,7 +210,7 @@ def generate_chat_auth_template(run_root: str | Path) -> Path:
     root = Path(run_root)
     manifest = _load_manifest(root)
     site = str(manifest.get("site") or "").strip()
-    site_id = SITE_ID_BY_NAME.get(site, "site-unknown")
+    site_id = resolve_shared_chatbot_assets(site).site_id
 
     output_path = root / "files" / "backend" / "chat_auth.py"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -409,7 +399,20 @@ def generate_order_adapter_template(run_root: str | Path) -> Path:
     return output_path
 
 
-def _build_food_product_adapter_template(product_api_base: str) -> str:
+def _build_food_product_adapter_template(product_api_base: str, *, include_detail: bool) -> str:
+    detail_block = ""
+    if include_detail:
+        detail_block = """
+
+    async def get_product(self, product_id: int, headers: dict | None = None) -> dict:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.get(
+                f"{self.base_url}{PRODUCT_API_BASE}{product_id}/",
+                headers=headers or {},
+            )
+            response.raise_for_status()
+            return response.json()
+"""
     return f"""import httpx
 
 
@@ -430,16 +433,7 @@ class GeneratedProductAdapterClient:
             )
             response.raise_for_status()
             return response.json()
-
-    async def get_product(self, product_id: int, headers: dict | None = None) -> dict:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(
-                f"{{self.base_url}}{{PRODUCT_API_BASE}}{{product_id}}/",
-                headers=headers or {{}},
-            )
-            response.raise_for_status()
-            return response.json()
-"""
+{detail_block}"""
 
 
 def _build_bilyeo_product_adapter_template(product_api_base: str) -> str:
@@ -544,9 +538,9 @@ class GeneratedProductAdapterClient:
 """
 
 
-def _build_product_adapter_template(site: str, product_api_base: str) -> str:
+def _build_product_adapter_template(site: str, product_api_base: str, *, include_detail: bool = True) -> str:
     if site == "food":
-        return _build_food_product_adapter_template(product_api_base)
+        return _build_food_product_adapter_template(product_api_base, include_detail=include_detail)
     if site == "bilyeo":
         return _build_bilyeo_product_adapter_template(product_api_base)
     if site == "ecommerce":
@@ -565,11 +559,16 @@ def generate_product_adapter_template(run_root: str | Path) -> Path:
     analysis = manifest.get("analysis", {})
     product_api = analysis.get("product_api") or []
     product_api_base = str(product_api[0]).strip() if product_api else "/products"
+    product_tools = (
+        ((analysis.get("integration_contract") or {}).get("product_adapter") or {}).get("tool_names")
+        or (["product_list"] if (analysis.get("product_api_shape") or {}).get("mode") == "root_array" else ["product_list", "product_get"])
+    )
+    include_detail = "product_get" in {str(item) for item in product_tools}
 
     output_path = root / "files" / "backend" / "product_adapter_client.py"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
-        _build_product_adapter_template(site, product_api_base),
+        _build_product_adapter_template(site, product_api_base, include_detail=include_detail),
         encoding="utf-8",
     )
     return output_path

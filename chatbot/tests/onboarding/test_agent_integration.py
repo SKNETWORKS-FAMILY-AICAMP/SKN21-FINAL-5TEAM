@@ -1906,6 +1906,28 @@ def test_run_onboarding_generation_runtime_completion_backend_import_repair(
         ]
     )
     monkeypatch.setattr(orchestrator_module, "run_runtime_completion", lambda **kwargs: next(completion_attempts))
+    monkeypatch.setattr(
+        orchestrator_module,
+        "_apply_repair_actions",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("canned repair should not run before llm repair")),
+    )
+
+    class FakeLLM:
+        def invoke(self, messages):
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        "--- a/backend/foodshop/urls.py\n"
+                        "+++ b/backend/foodshop/urls.py\n"
+                        "@@ -1,2 +1,2 @@\n"
+                        "-from backend.chat_auth import chat_auth_token\n"
+                        "+from chat_auth import chat_auth_token\n"
+                        " urlpatterns = [chat_auth_token]\n"
+                    )
+                },
+            )()
 
     result = run_onboarding_generation(
         site="food",
@@ -1916,6 +1938,8 @@ def test_run_onboarding_generation_runtime_completion_backend_import_repair(
         agent_version="test-v1",
         approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
         enable_runtime_completion_loop=True,
+        llm_patch_factory=lambda: FakeLLM(),
+        generate_llm_patch_draft=True,
     )
 
     attempts_payload = json.loads((Path(result["run_root"]) / "reports" / "runtime-completion-attempts.json").read_text(encoding="utf-8"))
@@ -1924,7 +1948,7 @@ def test_run_onboarding_generation_runtime_completion_backend_import_repair(
     assert result["current_state"] == "completed"
     assert urls_path.read_text(encoding="utf-8").startswith("from chat_auth import chat_auth_token\n")
     assert attempts_payload[0]["classification"] == "backend_import_resolution_failed"
-    assert attempts_payload[0]["repair_applied"] is True
+    assert attempts_payload[0]["llm_repair_applied"] is True
     assert attempts_payload[-1]["passed"] is True
     assert "from chat_auth import chat_auth_token" in approved_patch
 

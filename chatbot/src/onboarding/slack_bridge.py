@@ -595,7 +595,8 @@ def _localize_approval_summary(summary: str) -> str:
 
 
 def _localize_decision_text(*, approval_value: str, decision: str) -> str:
-    decision_label = "승인" if decision == "approve" else "거절"
+    normalized = decision.strip().lower()
+    decision_label = "승인" if normalized in {"approve", "approved"} else "거절"
     return f"`{_display_approval_type(approval_value)}` 단계에 대해 `{decision_label}` 결정이 기록되었습니다."
 
 

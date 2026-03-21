@@ -56,7 +56,10 @@ from chatbot.src.api.v1.endpoints.chat import router as chat_router  # noqa: E40
 from chatbot.src.api.v1.endpoints.onboarding_runs import router as onboarding_runs_router  # noqa: E402
 from chatbot.src.onboarding.redis_runtime import build_onboarding_event_store, close_onboarding_event_store  # noqa: E402
 from chatbot.src.graph.nodes.guardrail import load_guardrail_model  # noqa: E402
-
+from chatbot.src.tools.retrieval_tools import ensure_retrieval_models  # noqa: E402
+from chatbot.src.data_preprocessing.bge_m3_embedding import preload_model as preload_bge_m3  # noqa: E402
+from chatbot.src.infrastructure.kobart_summarizer import preload_model as preload_kobart  # noqa: E402
+from chatbot.src.tools.image_search_tools import preload_clip_resources  # noqa: E402
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
@@ -239,7 +242,35 @@ async def _startup_onboarding_event_store() -> None:
         redis_url=settings.ONBOARDING_REDIS_URL,
     )
     # 가드레일 모델을 서버 시작 시 1회 로드합니다.
-    load_guardrail_model()
+    try:
+        load_guardrail_model()
+        print("✅ Guardrail 모델 로딩 완료")
+    except Exception as e:
+        print(f"❌ Guardrail 모델 로딩 실패: {e}")
+
+    try:
+        ensure_retrieval_models()
+        print("✅ 챗봇 리트리버 모델 로딩 완료")
+    except Exception as e:
+        print(f"❌ 챗봇 리트리버 모델 로딩 실패: {e}")
+
+    try:
+        preload_bge_m3()
+        print("✅ BGE-M3 임베딩 모델 로딩 완료")
+    except Exception as e:
+        print(f"❌ BGE-M3 임베딩 모델 로딩 실패: {e}")
+
+    try:
+        preload_kobart()
+        print("✅ KoBART 모델 로딩 완료")
+    except Exception as e:
+        print(f"❌ KoBART 모델 로딩 실패: {e}")
+
+    try:
+        preload_clip_resources()
+        print("✅ CLIP 검색 모델 로딩 완료")
+    except Exception as e:
+        print(f"❌ CLIP 검색 모델 로딩 실패: {e}")
 
 
 @app.on_event("shutdown")

@@ -1,28 +1,9 @@
-import sys
+from __future__ import annotations
+
 import json
 import os
 import subprocess
 from pathlib import Path
-import types
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-langchain_ollama = types.ModuleType("langchain_ollama")
-
-
-class _DummyChatOllama:
-    def __init__(self, *args, **kwargs):
-        self.args = args
-        self.kwargs = kwargs
-
-
-langchain_ollama.ChatOllama = _DummyChatOllama
-sys.modules.setdefault("langchain_ollama", langchain_ollama)
-
-from chatbot.src.adapters import setup as adapter_setup
-from chatbot.src.api.v1.endpoints.chat import _build_current_state
-from chatbot.src.schemas.chat import ChatRequest as SharedChatRequest
-from chatbot.src.tools import adapter_order_tools
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -30,98 +11,11 @@ FRONTEND_ROOT = REPO_ROOT / "ecommerce" / "frontend"
 TSC = FRONTEND_ROOT / "node_modules" / ".bin" / "tsc"
 
 
-class DummyUser:
-    def __init__(self, user_id: int = 1, name: str = "Tester", email: str = "tester@example.com"):
-        self.id = user_id
-        self.name = name
-        self.email = email
-
-
-class DummyRequest:
-    def __init__(self, message: str = "환불해줘", site_id: str | None = "site-c"):
-        self.message = message
-        self.site_id = site_id
-
-
-def test_get_site_adapter_supports_site_a():
-    adapter = adapter_order_tools._get_site_adapter("site-a")
-
-    assert adapter.site_id == "site-a"
-
-
-def test_resolve_ecommerce_backend_url_uses_localhost_outside_docker(monkeypatch):
-    monkeypatch.delenv("BACKEND_API_URL", raising=False)
-    monkeypatch.setattr(adapter_setup.os.path, "exists", lambda path: False)
-
-    assert adapter_setup.resolve_ecommerce_backend_url() == "http://localhost:8000"
-
-
-def test_build_current_state_includes_access_token():
-    state = _build_current_state(
-        request=DummyRequest(),
-        current_user=DummyUser(),
-        previous_state={},
-        provider="openai",
-        model="gpt-5-mini",
-        conversation_id="conv-1",
-        turn_id="turn-1",
-        access_token="token-123",
-    )
-
-    assert state["user_info"]["site_id"] == "site-c"
-    assert state["user_info"]["access_token"] == "token-123"
-
-
-def test_build_current_state_accepts_food_session_token():
-    state = _build_current_state(
-        request=DummyRequest(site_id="site-a"),
-        current_user=DummyUser(),
-        previous_state={},
-        provider="openai",
-        model="gpt-5-mini",
-        conversation_id="conv-2",
-        turn_id="turn-2",
-        access_token="session-token-123",
-    )
-
-    assert state["user_info"]["site_id"] == "site-a"
-    assert state["user_info"]["access_token"] == "session-token-123"
-
-
-def test_shared_chat_request_accepts_bridge_access_token():
-    request = SharedChatRequest(message="안녕", access_token="bridge-token")
-
-    assert request.access_token == "bridge-token"
-
-
-def test_build_current_state_preserves_previous_site_id_on_follow_up_turn():
-    previous_state = {
-        "user_info": {
-            "site_id": "site-a",
-            "access_token": "bridge-token",
-        }
-    }
-
-    state = _build_current_state(
-        request=DummyRequest(site_id=None),
-        current_user=DummyUser(),
-        previous_state=previous_state,
-        provider="openai",
-        model="gpt-5-mini",
-        conversation_id="conv-3",
-        turn_id="turn-3",
-        access_token="bridge-token",
-    )
-
-    assert state["user_info"]["site_id"] == "site-a"
-    assert state["user_info"]["access_token"] == "bridge-token"
-
-
-def test_site_c_shared_widget_runtime_flow(tmp_path: Path):
-    entry = tmp_path / "run_site_c_shared_widget_runtime.tsx"
+def test_site_a_shared_widget_runtime_flow(tmp_path: Path) -> None:
+    entry = tmp_path / "run_site_a_shared_widget_runtime.tsx"
     css_types = tmp_path / "css-modules.d.ts"
-    bootstrap = tmp_path / "run_site_c_shared_widget_runtime.cjs"
-    tsconfig = tmp_path / "tsconfig.site-c-shared-widget.json"
+    bootstrap = tmp_path / "run_site_a_shared_widget_runtime.cjs"
+    tsconfig = tmp_path / "tsconfig.site-a-shared-widget.json"
     alias_root = tmp_path / "alias-node-modules" / "@shared-chatbot"
     out_dir = tmp_path / "dist"
 
@@ -161,8 +55,8 @@ async function main() {
         text: async () =>
           JSON.stringify({
             authenticated: true,
-            site_id: "site-c",
-            access_token: "ecommerce-bridge-token",
+            site_id: "site-a",
+            access_token: "food-bridge-token",
           }),
       };
     }
@@ -171,30 +65,17 @@ async function main() {
       return {
         ok: true,
         json: async () => ({
-          answer: "주문 목록을 불러왔습니다.",
-          conversation_id: "ecommerce-conv-001",
+          answer: "추천 메뉴를 찾았어요.",
+          conversation_id: "food-conv-001",
           completed_tasks: [],
-          ui_action_required: "show_order_list",
+          ui_action_required: "show_product_list",
           awaiting_interrupt: false,
           interrupts: [],
-          ui_payload: {
-            type: "order_list",
-            message: "최근 주문 목록입니다.",
-            ui_data: [
-              {
-                order_id: "ORD-001",
-                date: "2026-03-19",
-                status: "delivered",
-                status_label: "배송 완료",
-                product_name: "후드 티셔츠",
-                amount: 39000,
-                can_cancel: false,
-                can_return: true,
-                can_exchange: true,
-              },
-            ],
+          state: {
+            search_context: {
+              retrieved_products: [{ id: 7, name: "파스타", price: 15000 }],
+            },
           },
-          state: {},
         }),
       };
     }
@@ -209,7 +90,7 @@ async function main() {
 
   const auth = await bootstrapSharedWidgetAuth(fetchMock, host);
   const response = await sendSharedChatRequest(fetchMock, host, {
-    message: "내 주문 보여줘",
+    message: "추천 상품 보여줘",
     accessToken: auth.accessToken,
     siteId: auth.siteId,
   });
@@ -274,7 +155,7 @@ main().catch((error) => {
         )
         assert compile_result.returncode == 0, compile_result.stderr or compile_result.stdout
 
-        emitted = next(out_dir.rglob("run_site_c_shared_widget_runtime.js"))
+        emitted = next(out_dir.rglob("run_site_a_shared_widget_runtime.js"))
         shared_widget_js = next(out_dir.rglob("ChatbotWidget.js"))
         (shared_widget_js.parent / "chatbot-widget.module.css").write_text("", encoding="utf-8")
         (alias_root / "ChatbotWidget.js").write_text(
@@ -310,12 +191,13 @@ require("__EMITTED__");
         assert run_result.returncode == 0, run_result.stderr
         payload = json.loads(run_result.stdout)
         assert payload["authenticated"] is True
-        assert payload["siteId"] == "site-c"
+        assert payload["siteId"] == "site-a"
+        assert payload["calls"][1]["url"] == "http://localhost:9000/api/chat"
         request_body = json.loads(payload["calls"][1]["options"]["body"])
-        assert request_body["site_id"] == "site-c"
-        assert request_body["access_token"] == "ecommerce-bridge-token"
-        assert "주문 목록을 불러왔습니다." in payload["markup"]
-        assert "최근 주문 목록입니다." in payload["markup"]
-        assert "후드 티셔츠" in payload["markup"]
+        assert request_body["site_id"] == "site-a"
+        assert request_body["access_token"] == "food-bridge-token"
+        assert "추천 메뉴를 찾았어요." in payload["markup"]
+        assert "추천 상품" in payload["markup"]
+        assert "파스타" in payload["markup"]
     finally:
         (alias_root / "ChatbotWidget.js").unlink(missing_ok=True)

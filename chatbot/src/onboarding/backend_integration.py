@@ -39,7 +39,7 @@ def build_backend_route_updated_lines(
 
 def _build_django_route_updated_lines(source_lines: list[str]) -> list[str]:
     updated = list(source_lines)
-    import_line = "from backend.chat_auth import chat_auth_token\n"
+    import_line = "from chat_auth import chat_auth_token\n"
     route_line = '    path("api/chat/auth-token", chat_auth_token),\n'
     if import_line not in updated:
         insert_at = 0

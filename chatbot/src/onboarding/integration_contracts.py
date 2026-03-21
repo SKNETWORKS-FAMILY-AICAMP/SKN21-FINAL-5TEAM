@@ -88,20 +88,35 @@ class FrontendContract(BaseModel):
 class ChatAuthContract(BaseModel):
     endpoint_path: str = "/api/chat/auth-token"
     method: str = "POST"
+    auth_mode: str = "signed_bridge_token"
+    upstream_cookie_name: str | None = None
     authenticated_field: str = "authenticated"
     access_token_field: str = "access_token"
 
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator("endpoint_path", "authenticated_field", "access_token_field", mode="before")
+    @field_validator(
+        "endpoint_path",
+        "authenticated_field",
+        "access_token_field",
+        "upstream_cookie_name",
+        mode="before",
+    )
     @classmethod
     def _normalize_pathish_fields(cls, value: Any) -> str:
+        if value is None:
+            return None
         return str(value).strip()
 
     @field_validator("method", mode="before")
     @classmethod
     def _normalize_method(cls, value: Any) -> str:
         return _normalize_upper_token(str(value))
+
+    @field_validator("auth_mode", mode="before")
+    @classmethod
+    def _normalize_auth_mode(cls, value: Any) -> str:
+        return _normalize_token(str(value))
 
 
 class ProductAdapterContract(BaseModel):

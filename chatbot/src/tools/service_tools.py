@@ -84,6 +84,8 @@ def create_review(
     rating: int = 0,
     content: str = "",
     user_id: int = 1,
+    site_id: str | None = None,
+    access_token: str | None = None,
 ) -> dict:
     """
     리뷰를 작성합니다.
@@ -104,6 +106,8 @@ def create_review(
             user_id=user_id,
             order_id=order_id,
             action_context="review",
+            site_id=site_id,
+            access_token=access_token,
         )
         if not resolved_order_id:
             return {

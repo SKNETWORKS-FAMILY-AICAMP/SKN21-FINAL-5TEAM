@@ -33,8 +33,6 @@ from ecommerce.backend.app.router.user_history.router import (
 import ecommerce.backend.app.router.users.models
 import ecommerce.backend.app.router.user_history.models
 import logging
-from chatbot.src.api.v1.endpoints.chat import router as chatbot_router
-from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR
 from starlette.middleware.sessions import SessionMiddleware  # 미드웨워 추가
 
 
@@ -159,55 +157,9 @@ async def lifespan(app: FastAPI):
         db.close()
 
     if _should_preload_heavy_models_once_per_reload_session():
-        # 4. 챗봇 리트리버 모델 미리 로드 (Pre-loading)
-        try:
-            from chatbot.src.tools.retrieval_tools import ensure_retrieval_models
-
-            step_t0 = time.perf_counter()
-            ensure_retrieval_models()
-            logging.info(f"챗봇 리트리버 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
-        except Exception as e:
-            logging.error(f"챗봇 모델 로딩 실패: {e}")
-
-        # 5. Guardrail 모델 미리 로드 (prismdata/guardrail-ko-11class)
-        try:
-            from chatbot.src.graph.nodes.guardrail import load_guardrail_model
-
-            step_t0 = time.perf_counter()
-            load_guardrail_model()
-            logging.info(f"Guardrail 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
-        except Exception as e:
-            logging.error(f"Guardrail 모델 로딩 실패: {e}")
-
-        # 6. BGE-M3 임베딩 모델 미리 로드 (BAAI/bge-m3)
-        try:
-            from chatbot.src.data_preprocessing.bge_m3_embedding import preload_model as preload_bge_m3
-
-            step_t0 = time.perf_counter()
-            preload_bge_m3()
-            logging.info(f"BGE-M3 임베딩 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
-        except Exception as e:
-            logging.error(f"BGE-M3 모델 로딩 실패: {e}")
-
-        # 7. KoBART 대화 요약 모델 미리 로드 (EbanLee/kobart-summary-v3)
-        try:
-            from chatbot.src.infrastructure.kobart_summarizer import preload_model as preload_kobart
-
-            step_t0 = time.perf_counter()
-            preload_kobart()
-            logging.info(f"KoBART 요약 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
-        except Exception as e:
-            logging.error(f"KoBART 모델 로딩 실패: {e}")
-
-        # 8. CLIP 검색 모델 미리 로드 (openai/clip-vit-base-patch32)
-        try:
-            from chatbot.src.tools.image_search_tools import preload_clip_resources
-
-            step_t0 = time.perf_counter()
-            preload_clip_resources()
-            logging.info(f"CLIP 검색 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
-        except Exception as e:
-            logging.error(f"CLIP 모델 로딩 실패: {e}")
+        # Removed: chatbot retrievers, guardrail, bge-m3, kobart, and clip
+        # have all been migrated to the standalone chatbot FastAPI server.
+        pass
     else:
         logging.info("모델 프리로드 스킵: 같은 uvicorn reload 세션에서 이미 1회 수행됨")
 
@@ -226,8 +178,7 @@ app = FastAPI(
     lifespan=lifespan,  # Lifespan 이벤트 적용
 )
 
-# Chatbot uploads 공개 폴더
-app.mount("/uploads/chatbot", StaticFiles(directory=CHATBOT_UPLOAD_DIR), name="chatbot_uploads")
+
 
 # ============================================
 # CORS 설정 (프론트엔드와 통신 허용)
@@ -278,7 +229,6 @@ app.include_router(points_router, prefix="/points", tags=["Points"])
 app.include_router(reviews_router, prefix="/reviews", tags=["Reviews"])
 app.include_router(products_router, prefix="/products", tags=["Products"])
 app.include_router(user_history_router, prefix="/user-history", tags=["UserHistory"])
-app.include_router(chatbot_router, prefix="/api/v1/chat", tags=["Chatbot"])
 
 
 # ============================================

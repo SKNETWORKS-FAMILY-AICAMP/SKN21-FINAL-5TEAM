@@ -12,6 +12,7 @@ from chatbot.src.onboarding.template_generator import (
     generate_chat_auth_template,
     generate_frontend_widget_artifact,
 )
+from chatbot.src.onboarding.shared_chatbot_assets import resolve_shared_chatbot_assets
 
 
 def test_generate_chat_auth_template_for_food_site_creates_python_file(tmp_path: Path):
@@ -57,6 +58,8 @@ def test_generate_chat_auth_template_for_food_site_creates_python_file(tmp_path:
     assert 'request.COOKIES.get("session_token")' in content
     assert "SessionToken.objects.select_related" in content
     assert '"authenticated": False' in content
+    assert "from django.views.decorators.csrf import csrf_exempt" in content
+    assert "@csrf_exempt" in content
 
 
 def test_generate_chat_auth_template_for_food_uses_repo_local_primitives(tmp_path: Path):
@@ -216,7 +219,7 @@ def test_generate_frontend_widget_artifact_writes_widget_file(tmp_path: Path):
     assert "SharedChatbotWidget" in widget_file.read_text(encoding="utf-8")
 
 
-def test_generate_frontend_widget_artifact_default_content_includes_auth_bootstrap_contract(tmp_path: Path):
+def test_generate_frontend_widget_artifact_default_content_bootstraps_auth_without_external_widget_dependency(tmp_path: Path):
     run_root = tmp_path / "generated" / "food" / "frontend-run-003"
     run_root.mkdir(parents=True)
 
@@ -247,10 +250,30 @@ def test_generate_frontend_widget_artifact_default_content_includes_auth_bootstr
     artifact = generate_frontend_widget_artifact(run_root)
     content = Path(artifact["path"]).read_text(encoding="utf-8")
 
-    assert "fetch('/api/chat/auth-token'" in content or 'fetch("/api/chat/auth-token"' in content
-    assert "access_token" in content
-    assert "authenticated" in content
+    assert "authBootstrapPath" in content
     assert "SharedChatbotWidget" in content
+    assert "chatbotApiBase" in content
+    assert '@shared-chatbot/ChatbotWidget' not in content
+    assert "HostedChatbotWidget" not in content
+    assert "useEffect" in content
+    assert "useState" in content
+    assert "fetch(sharedWidgetHost.authBootstrapPath" in content
+    assert 'data-chatbot-status="authenticated"' in content
+    assert 'http://localhost:8100' in content
+    assert '/api/v1/chat/stream' in content
+    assert 'placeholder="메시지를 입력하세요"' in content
+    assert "'전송'" in content or '"전송"' in content
+
+
+def test_resolve_shared_chatbot_assets_uses_code_owned_site_contract_for_food() -> None:
+    config = resolve_shared_chatbot_assets("food")
+
+    assert config.site_name == "food"
+    assert config.site_id == "site-a"
+    assert config.auth_bootstrap_path == "/api/chat/auth-token"
+    assert config.stream_path == "/api/v1/chat/stream"
+    assert config.chatbot_api_base_default == "http://localhost:8100"
+    assert config.source_label == "shared_widget_runtime"
 
 
 
@@ -296,7 +319,7 @@ def test_generate_backend_route_patch_for_django_uses_strategy_target(tmp_path: 
 
     assert output_path == run_root / "patches" / "backend_chat_auth_route.patch"
     content = output_path.read_text(encoding="utf-8")
-    assert 'from backend.chat_auth import chat_auth_token' in content
+    assert 'from chat_auth import chat_auth_token' in content
     assert 'path("api/chat/auth-token", chat_auth_token)' in content
 
 

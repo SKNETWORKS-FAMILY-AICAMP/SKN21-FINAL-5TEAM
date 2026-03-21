@@ -10,6 +10,7 @@ from typing import Any, Callable
 import pytest
 
 from chatbot.src.onboarding.approval_store import ApprovalStore
+from chatbot.src.onboarding.smoke_contract import SmokeTestPlan
 from chatbot.src.onboarding.recovery_planner import build_recovery_plan
 from chatbot.src.onboarding.slack_bridge import InMemorySlackBridge
 
@@ -172,6 +173,124 @@ def _successful_session_smoke_results() -> list[dict]:
             "exports": {"order.first_order": "{'id': 7}"},
         },
     ]
+
+
+def test_run_smoke_tests_with_optional_recovery_launches_isolated_runtime_servers(tmp_path: Path, monkeypatch):
+    run_root = tmp_path / "generated" / "food" / "food-run-isolated-smoke"
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-isolated-smoke" / "workspace"
+    (run_root / "reports").mkdir(parents=True)
+    (runtime_workspace / "backend").mkdir(parents=True)
+    (runtime_workspace / "backend" / "manage.py").write_text("print('django')\n", encoding="utf-8")
+
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "food-run-isolated-smoke",
+                "site": "food",
+                "source_root": "/workspace/food",
+                "created_at": "2026-03-21T12:00:00+09:00",
+                "agent_version": "test-v1",
+                "analysis": {},
+                "generated_files": [],
+                "patch_targets": [],
+                "docker": {},
+                "credentials": {"email": "test1@example.com", "password": "password123"},
+                "tests": {},
+                "status": "generated",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class _FakeProcess:
+        def __init__(self, pid: int) -> None:
+            self.pid = pid
+            self.returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            self.returncode = 0
+            return 0
+
+        def kill(self):
+            self.returncode = -9
+
+    launched: list[dict[str, Any]] = []
+    terminated: list[int] = []
+    captured: dict[str, Any] = {}
+    port_values = iter([18100, 18110])
+    fake_processes = iter([_FakeProcess(7001), _FakeProcess(7002)])
+
+    monkeypatch.setattr(orchestrator_module, "_reserve_loopback_port", lambda: next(port_values))
+
+    def fake_launch(*, command, cwd, env=None):
+        launched.append({"command": list(command), "cwd": str(cwd), "env": dict(env or {})})
+        return next(fake_processes)
+
+    def fake_probe(url, *, method="GET", accepted_statuses=None, timeout_seconds=0, attempts=0, delay_seconds=0.0):
+        return {
+            "passed": True,
+            "url": url,
+            "method": method,
+            "status_code": 200,
+            "attempts": 1,
+            "error": None,
+        }
+
+    def fake_terminate(process):
+        terminated.append(process.pid)
+        process.terminate()
+
+    def fake_run_smoke_tests(*, run_root, runtime_workspace, plan, recovery_payload=None):
+        captured["urls"] = {step.id: step.url for step in plan.steps}
+        captured["recovery_payload"] = recovery_payload
+        return _successful_smoke_results()
+
+    monkeypatch.setattr(orchestrator_module, "_launch_server_process", fake_launch)
+    monkeypatch.setattr(orchestrator_module, "_probe_http_ready", fake_probe)
+    monkeypatch.setattr(orchestrator_module, "_terminate_process", fake_terminate)
+    monkeypatch.setattr(orchestrator_module, "run_smoke_tests", fake_run_smoke_tests)
+
+    plan = SmokeTestPlan(
+        steps=[
+            {
+                "id": "login",
+                "kind": "http",
+                "category": "auth",
+                "method": "POST",
+                "url": "http://127.0.0.1:8000/api/users/login/",
+                "expects": {"status": 200},
+            },
+            {
+                "id": "chatbot-stream",
+                "kind": "http",
+                "category": "chatbot",
+                "method": "POST",
+                "url": "http://127.0.0.1:8100/api/v1/chat/stream",
+                "body": {"site_id": "site-a"},
+                "expects": {"status": 200},
+            },
+        ]
+    )
+
+    orchestrator_module._run_smoke_tests_with_optional_recovery(
+        run_root=run_root,
+        runtime_workspace=runtime_workspace,
+        plan=plan,
+    )
+
+    assert captured["urls"]["login"] == "http://127.0.0.1:18100/api/users/login/"
+    assert captured["urls"]["chatbot-stream"] == "http://127.0.0.1:18110/api/v1/chat/stream"
+    assert launched[0]["command"][-2:] == ["127.0.0.1:18100", "--noreload"]
+    assert launched[1]["command"][-2:] == ["--port", "18110"]
+    assert launched[1]["env"]["FOOD_API_URL"] == "http://127.0.0.1:18100"
+    assert terminated == [7002, 7001]
 
 
 def _simple_agent_response(role: str, context: dict[str, Any]) -> dict[str, Any]:
@@ -412,9 +531,11 @@ def test_run_onboarding_generation_uses_session_native_chain_for_cookie_auth(tmp
 
     manifest = json.loads((generated_root / "food" / "food-run-session-native" / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["credentials"] == {"username": "demo", "password": "secret"}
-    assert captured["step_ids"] == ["login", "session-me", "product-api", "order-api"]
+    assert captured["step_ids"] == ["login", "session-me", "chat-auth-token", "chatbot-stream", "product-api", "order-api"]
     assert captured["smoke_urls"]["login"] == "http://127.0.0.1:8000/api/users/login/"
     assert captured["smoke_urls"]["session-me"] == "http://127.0.0.1:8000/api/users/me/"
+    assert captured["smoke_urls"]["chat-auth-token"] == "http://127.0.0.1:8000/api/chat/auth-token"
+    assert captured["smoke_urls"]["chatbot-stream"] == "http://127.0.0.1:8100/api/v1/chat/stream"
     assert result["current_state"] == "completed"
 
 
@@ -1062,8 +1183,8 @@ def test_run_onboarding_generation_records_frontend_provenance(tmp_path: Path):
     assert frontend_artifact["source"] in {"llm", "recovered_llm", "hard_fallback"}
     assert "SharedChatbotWidget" in frontend_artifact["path"]
     frontend_widget_content = (run_root / frontend_artifact["path"]).read_text(encoding="utf-8")
-    assert '@shared-chatbot/ChatbotWidget' in frontend_widget_content
-    assert "HostedChatbotWidget" in frontend_widget_content
+    assert "sharedWidgetHost" in frontend_widget_content
+    assert "resolveStreamUrl" in frontend_widget_content
     patch_content = (run_root / "patches" / "frontend_widget_mount.patch").read_text(encoding="utf-8")
     assert "SharedChatbotWidget" in patch_content
     build_report_path = result.get("frontend_build_validation_path")
@@ -1583,6 +1704,67 @@ def test_apply_repair_actions_repair_backend_entrypoint_rewrites_django_import(t
 
     assert applied is True
     assert urls_path.read_text(encoding="utf-8").startswith("from chat_auth import chat_auth_token\n")
+
+
+def test_attempt_llm_runtime_repair_cycle_applies_backend_import_patch(tmp_path: Path):
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-llm-runtime-repair" / "workspace"
+    run_root = tmp_path / "generated" / "food" / "food-run-llm-runtime-repair"
+    urls_path = runtime_workspace / "backend" / "foodshop" / "urls.py"
+    chat_auth_path = runtime_workspace / "backend" / "chat_auth.py"
+
+    urls_path.parent.mkdir(parents=True, exist_ok=True)
+    chat_auth_path.parent.mkdir(parents=True, exist_ok=True)
+    run_root.mkdir(parents=True, exist_ok=True)
+
+    urls_path.write_text(
+        "from backend.chat_auth import chat_auth_token\n"
+        "urlpatterns = [chat_auth_token]\n",
+        encoding="utf-8",
+    )
+    chat_auth_path.write_text("def chat_auth_token(request):\n    return None\n", encoding="utf-8")
+
+    class FakeLLM:
+        def invoke(self, messages):
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        "--- a/backend/foodshop/urls.py\n"
+                        "+++ b/backend/foodshop/urls.py\n"
+                        "@@ -1,2 +1,2 @@\n"
+                        "-from backend.chat_auth import chat_auth_token\n"
+                        "+from chat_auth import chat_auth_token\n"
+                        " urlpatterns = [chat_auth_token]\n"
+                    )
+                },
+            )()
+
+    result = orchestrator_module._attempt_llm_runtime_repair_cycle(
+        run_root=run_root,
+        runtime_workspace=runtime_workspace,
+        llm_runtime_repair_factory=lambda: FakeLLM(),
+        llm_provider="openai",
+        llm_model="gpt-5.2",
+        failure_signature="backend_import_resolution_failed",
+        evidence_payload={
+            "result": {
+                "backend_probe": {
+                    "stderr": (
+                        'Traceback (most recent call last):\n'
+                        f'  File "{urls_path}", line 1, in <module>\n'
+                        "    from backend.chat_auth import chat_auth_token\n"
+                        "ModuleNotFoundError: No module named 'backend'\n"
+                    )
+                }
+            }
+        },
+        attempt_id="contract-1",
+    )
+
+    assert result["applied"] is True
+    assert urls_path.read_text(encoding="utf-8").startswith("from chat_auth import chat_auth_token\n")
+    assert Path(result["patch_path"]).exists()
 
 
 def test_run_onboarding_generation_runs_runtime_completion_loop_only_when_enabled(tmp_path: Path, monkeypatch):

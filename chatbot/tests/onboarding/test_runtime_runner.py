@@ -1,6 +1,8 @@
 import json
+import shutil
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -110,6 +112,57 @@ def test_prepare_runtime_workspace_excludes_dependency_and_build_artifacts(tmp_p
     assert not (workspace / ".venv").exists()
     assert not (workspace / "backend" / "__pycache__").exists()
     assert not (workspace / "frontend" / "build").exists()
+
+
+def test_prepare_runtime_workspace_retries_runtime_cleanup_when_rmtree_is_transient(tmp_path: Path):
+    source_root = tmp_path / "source"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "frontend" / "src" / "App.js").write_text("export default function App() { return null; }\n", encoding="utf-8")
+
+    run_root = generated_root / "food" / "run-001"
+    run_root.mkdir(parents=True)
+    existing_workspace = runtime_root / "food" / "run-001" / "workspace"
+    (existing_workspace / "frontend" / "node_modules" / ".cache").mkdir(parents=True)
+    (existing_workspace / "frontend" / "node_modules" / ".cache" / "cache.txt").write_text("cache\n", encoding="utf-8")
+
+    manifest = OverlayManifest.model_validate(
+        {
+            "run_id": "run-001",
+            "site": "food",
+            "source_root": str(source_root),
+            "created_at": "2026-03-18T12:00:00+09:00",
+            "agent_version": "v1",
+            "analysis": {},
+            "generated_files": [],
+            "patch_targets": [],
+            "docker": {},
+            "tests": {},
+            "status": "generated",
+        }
+    )
+
+    original_rmtree = shutil.rmtree
+    calls = {"count": 0}
+
+    def flaky_rmtree(path, *args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise OSError(66, "Directory not empty", str(path))
+        return original_rmtree(path, *args, **kwargs)
+
+    with patch("chatbot.src.onboarding.runtime_runner.shutil.rmtree", side_effect=flaky_rmtree):
+        workspace = prepare_runtime_workspace(
+            manifest=manifest,
+            generated_run_root=run_root,
+            runtime_root=runtime_root,
+        )
+
+    assert calls["count"] == 2
+    assert workspace.exists()
+    assert (workspace / "frontend" / "src" / "App.js").exists()
 
 
 def test_simulate_runtime_merge_writes_report(tmp_path: Path):

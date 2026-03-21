@@ -378,6 +378,73 @@ def test_evaluate_frontend_workspace_ignores_warning_only_build_output_when_arti
         },
     )
 
+    payload = json.loads(
+        evaluate_frontend_workspace(runtime_workspace=workspace, report_root=report_root).read_text(encoding="utf-8")
+    )
+
+    assert payload["passed"] is True
+    assert payload["build_passed"] is True
+    assert payload["bootstrap_failure_reason"] is None
+
+
+def test_evaluate_frontend_workspace_preserves_real_build_error_when_stderr_is_only_warning(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    report_root = tmp_path / "reports"
+
+    (workspace / "frontend" / "build").mkdir(parents=True, exist_ok=True)
+    (workspace / "frontend" / "build" / "index.html").write_text("stale", encoding="utf-8")
+    (workspace / "frontend" / "package.json").write_text(
+        json.dumps({"scripts": {"build": "echo build"}}),
+        encoding="utf-8",
+    )
+    (workspace / "frontend" / "src" / "chatbot").mkdir(parents=True)
+    (workspace / "frontend" / "src" / "chatbot" / "SharedChatbotWidget.jsx").write_text(
+        "export default function SharedChatbotWidget() { return <div>Chat</div>; }\n",
+        encoding="utf-8",
+    )
+    (workspace / "frontend" / "src" / "App.js").write_text(
+        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
+        "function App() { return <SharedChatbotWidget />; }\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        frontend_evaluator,
+        "run_frontend_build",
+        lambda *, workspace, timeout=120: {
+            "workspace": str(workspace),
+            "package_manager": "npm",
+            "install_result": {
+                "command": ["npm", "install"],
+                "returncode": 0,
+                "stdout": "",
+                "stderr": "",
+                "timed_out": False,
+            },
+            "build_result": {
+                "command": ["npm", "run", "build"],
+                "returncode": 1,
+                "stdout": (
+                    "Creating an optimized production build...\n"
+                    "Failed to compile.\n\n"
+                    "Module not found: Error: Can't resolve '@shared-chatbot/ChatbotWidget'\n"
+                ),
+                "stderr": (
+                    "(node:10161) [DEP0176] DeprecationWarning: fs.F_OK is deprecated, "
+                    "use fs.constants.F_OK instead\n"
+                ),
+                "timed_out": False,
+            },
+        },
+    )
+
+    payload = json.loads(
+        evaluate_frontend_workspace(runtime_workspace=workspace, report_root=report_root).read_text(encoding="utf-8")
+    )
+
+    assert payload["passed"] is False
+    assert payload["build_passed"] is False
+    assert "Can't resolve '@shared-chatbot/ChatbotWidget'" in payload["bootstrap_failure_reason"]
+
 
 def test_evaluate_frontend_workspace_rejects_widget_inside_routes(tmp_path: Path):
     workspace = tmp_path / "workspace"

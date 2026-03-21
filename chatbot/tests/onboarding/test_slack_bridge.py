@@ -163,6 +163,41 @@ def test_slack_bridge_can_record_export_approval_decision():
     assert payload["message"]["decision"] == "approve"
 
 
+def test_slack_web_bridge_localizes_terminal_approval_states():
+    class FakeWebClient:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def chat_postMessage(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"ok": True, "ts": "1710000000.100"}
+
+    client = FakeWebClient()
+    bridge = SlackWebBridge(channel="#onboarding-runs", web_client=client)
+    bridge.post_run_root(
+        run_id="food-run-001",
+        site="food",
+        source_root="/workspace/food",
+        goal="generate onboarding overlay",
+        current_state=RunState.QUEUED,
+        approval_status="not_requested",
+    )
+
+    bridge.record_approval_decision(
+        run_id="food-run-001",
+        approval_type="analysis",
+        decision="approved",
+    )
+    bridge.record_approval_decision(
+        run_id="food-run-001",
+        approval_type="apply",
+        decision="rejected",
+    )
+
+    assert "`분석` 단계에 대해 `승인` 결정이 기록되었습니다." in client.calls[-2]["text"]
+    assert "`적용` 단계에 대해 `거절` 결정이 기록되었습니다." in client.calls[-1]["text"]
+
+
 def test_slack_bridge_can_record_run_summary():
     bridge = InMemorySlackBridge(channel="#onboarding-runs")
 

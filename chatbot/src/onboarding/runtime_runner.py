@@ -4,6 +4,7 @@ import json
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from .debug_logging import append_onboarding_event
@@ -32,7 +33,7 @@ def prepare_runtime_workspace(
     workspace = runtime_base / manifest.site / manifest.run_id / workspace_name
 
     if workspace.exists():
-        shutil.rmtree(workspace)
+        _remove_runtime_workspace(workspace)
 
     workspace.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source_root, workspace, ignore=_ignore_runtime_copy_directory)
@@ -48,6 +49,23 @@ def prepare_runtime_workspace(
             shutil.copy2(item, target_path)
 
     return workspace
+
+
+def _remove_runtime_workspace(workspace: Path, *, attempts: int = 3, delay_seconds: float = 0.2) -> None:
+    last_error: OSError | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            shutil.rmtree(workspace)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            last_error = exc
+            if attempt >= attempts:
+                raise
+            time.sleep(delay_seconds)
+    if last_error is not None:
+        raise last_error
 
 
 def apply_overlay_patches(

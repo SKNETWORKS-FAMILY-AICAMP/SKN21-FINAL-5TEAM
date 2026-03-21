@@ -11,9 +11,11 @@ from .onboarding_ignore import OnboardingIgnoreMatcher
 try:
     from .frontend_build_runner import run_frontend_build
     from .frontend_build_runner import classify_frontend_bootstrap_result
+    from .frontend_build_runner import _is_warning_only_output
 except ImportError:
     run_frontend_build = None
     classify_frontend_bootstrap_result = None
+    _is_warning_only_output = None
 
 from .frontend_recovery import attempt_frontend_recovery
 
@@ -409,16 +411,6 @@ def _build_frontend_build_validation(
         "failure_reason": failure_reason,
     }
 
-
-def _is_warning_only_output(text: str | None) -> bool:
-    if not text:
-        return False
-    lines = [line.strip() for line in str(text).splitlines() if line.strip()]
-    if not lines:
-        return False
-    return all("warning" in line.lower() or "trace-deprecation" in line.lower() for line in lines)
-
-
 def _evaluate_runtime_checks(
     *,
     frontend_root: Path,
@@ -432,6 +424,7 @@ def _evaluate_runtime_checks(
         "import_present": bool(mount_path and (mount_path.suffix.lower() == ".vue" or _has_import(mount_path))),
         "widget_usage_present": bool(mount_path and _has_widget_usage(mount_path)),
         "bootstrap_auth_fetch_present": bool(widget_path and _has_bootstrap_auth_fetch(widget_path)),
+        "chatbot_stream_fetch_present": bool(widget_path and _has_chatbot_stream_fetch(widget_path)),
         "build_artifact_exists": _build_artifact_exists(frontend_root=frontend_root, framework=framework),
     }
 
@@ -448,3 +441,8 @@ def _build_artifact_exists(*, frontend_root: Path, framework: str) -> bool:
 def _has_bootstrap_auth_fetch(path: Path) -> bool:
     content = path.read_text(encoding="utf-8", errors="ignore")
     return "/api/chat/auth-token" in content and "fetch(" in content
+
+
+def _has_chatbot_stream_fetch(path: Path) -> bool:
+    content = path.read_text(encoding="utf-8", errors="ignore")
+    return "/api/v1/chat/stream" in content and "fetch(" in content

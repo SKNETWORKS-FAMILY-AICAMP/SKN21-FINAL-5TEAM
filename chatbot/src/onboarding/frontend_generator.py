@@ -1,73 +1,39 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
+from .shared_chatbot_assets import resolve_shared_chatbot_assets
+from .shared_widget_runtime import build_default_react_shared_widget
 
 DEFAULT_WIDGET_PATH = "frontend/src/chatbot/SharedChatbotWidget.jsx"
 DEFAULT_VUE_WIDGET_PATH = "frontend/src/chatbot/SharedChatbotWidget.vue"
-DEFAULT_WIDGET_CONTENT = """import React, { useEffect, useState } from 'react';
-
-export default function SharedChatbotWidget() {
-  const [status, setStatus] = useState('loading');
-  const [accessToken, setAccessToken] = useState('');
-
-  useEffect(() => {
-    let active = true;
-
-    async function bootstrapChatAuth() {
-      try {
-        const response = await fetch('/api/chat/auth-token', {
-          method: 'POST',
-          credentials: 'include',
-        });
-        const payload = await response.json();
-        if (!active) return;
-        if (!response.ok || !payload.authenticated) {
-          setStatus('unauthenticated');
-          return;
-        }
-        setAccessToken(payload.access_token || '');
-        setStatus('authenticated');
-      } catch (error) {
-        if (active) {
-          setStatus('error');
-        }
-      }
-    }
-
-    bootstrapChatAuth();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (status === 'loading') {
-    return <div data-chatbot-status="loading">Connecting chat...</div>;
-  }
-  if (status === 'unauthenticated') {
-    return <div data-chatbot-status="unauthenticated">Login required for chat.</div>;
-  }
-  if (status === 'error') {
-    return <div data-chatbot-status="error">Chat is temporarily unavailable.</div>;
-  }
-
-  return <div data-chatbot-status="authenticated" data-access-token={accessToken}>Chatbot</div>;
-}
-"""
+DEFAULT_WIDGET_CONTENT = build_default_react_shared_widget(resolve_shared_chatbot_assets("food"))
 DEFAULT_VUE_WIDGET_CONTENT = """<script setup>
 import { onMounted, ref } from "vue";
 
 const status = ref("loading");
 const accessToken = ref("");
+const sharedWidgetHost = {
+  authBootstrapPath: "/api/chat/auth-token",
+  streamPath: "/api/v1/chat/stream",
+  chatbotApiBase:
+    (typeof window !== "undefined" && window.__CHATBOT_API_BASE__) ||
+    (typeof process !== "undefined" &&
+      process.env &&
+      (process.env.REACT_APP_CHATBOT_API_BASE || process.env.NEXT_PUBLIC_CHATBOT_API_BASE)) ||
+    "http://localhost:8100",
+};
 
 onMounted(async () => {
   try {
-    const response = await fetch("/api/chat/auth-token", {
+    const response = await fetch(sharedWidgetHost.authBootstrapPath, {
       method: "POST",
       credentials: "include",
     });
-    const payload = await response.json();
+    const rawBody = await response.text();
+    const payload = rawBody ? JSON.parse(rawBody) : {};
     if (!response.ok || !payload.authenticated) {
       status.value = "unauthenticated";
       return;
@@ -84,7 +50,14 @@ onMounted(async () => {
   <div v-if="status === 'loading'" data-chatbot-status="loading">Connecting chat...</div>
   <div v-else-if="status === 'unauthenticated'" data-chatbot-status="unauthenticated">Login required for chat.</div>
   <div v-else-if="status === 'error'" data-chatbot-status="error">Chat is temporarily unavailable.</div>
-  <div v-else data-chatbot-status="authenticated" :data-access-token="accessToken">Chatbot</div>
+  <div
+    v-else
+    data-chatbot-status="authenticated"
+    :data-access-token="accessToken"
+    :data-chatbot-api-base="sharedWidgetHost.chatbotApiBase"
+  >
+    Chatbot
+  </div>
 </template>
 """
 
@@ -105,6 +78,16 @@ def _prepare_frontend_widget_proposal(
     if proposal:
         merged.update(proposal)
     return merged
+
+
+def _load_manifest_if_present(run_root: str | Path) -> dict[str, Any] | None:
+    manifest_path = Path(run_root) / "manifest.json"
+    if not manifest_path.exists():
+        return None
+    try:
+        return json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
 
 
 def _default_widget_path(frontend_strategy: str | None) -> str:
@@ -152,6 +135,7 @@ def _prepare_widget_content(proposal: dict[str, Any]) -> str:
         return explicit if explicit.endswith("\n") else f"{explicit}\n"
     frontend_strategy = str(proposal.get("frontend_strategy") or "").strip().lower()
     widget_path = str(proposal.get("widget_path") or "").strip().lower()
+    site_name = str(proposal.get("site") or "").strip().lower() or "food"
     imports = [
         str(item)
         for item in proposal.get("imports") or []
@@ -169,7 +153,7 @@ def _prepare_widget_content(proposal: dict[str, Any]) -> str:
     elif frontend_strategy == "vue" or widget_path.endswith(".vue"):
         lines.append(DEFAULT_VUE_WIDGET_CONTENT.strip())
     else:
-        lines.append(DEFAULT_WIDGET_CONTENT.strip())
+        lines.append(build_default_react_shared_widget(resolve_shared_chatbot_assets(site_name)).strip())
     content = "\n".join(lines)
     return f"{content}\n" if not content.endswith("\n") else content
 
@@ -190,11 +174,16 @@ def generate_frontend_widget_artifact(
     manifest: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     run_root = Path(run_root)
-    merged_proposal = _prepare_frontend_widget_proposal(proposal, manifest)
-    if manifest:
+    effective_manifest = manifest or _load_manifest_if_present(run_root)
+    merged_proposal = _prepare_frontend_widget_proposal(proposal, effective_manifest)
+    if effective_manifest:
         merged_proposal.setdefault(
             "frontend_strategy",
-            str((manifest.get("analysis") or {}).get("frontend_strategy") or "").strip(),
+            str((effective_manifest.get("analysis") or {}).get("frontend_strategy") or "").strip(),
+        )
+        merged_proposal.setdefault(
+            "site",
+            str(effective_manifest.get("site") or "").strip(),
         )
     widget_path = resolve_widget_path(proposal=merged_proposal, manifest=None)
     content = _prepare_widget_content(merged_proposal)

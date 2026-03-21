@@ -27,7 +27,6 @@ import ecommerce.backend.app.router.reviews.models
 import ecommerce.backend.app.router.user_history.models
 import ecommerce.backend.app.router.payments.models
 import ecommerce.backend.app.router.inventories.models
-import ecommerce.backend.app.router.chatbot_logs.models
 
 from ecommerce.backend.app.router.users.models import User, UserStatus, UserGender
 from ecommerce.backend.app.router.users.crud import hash_password

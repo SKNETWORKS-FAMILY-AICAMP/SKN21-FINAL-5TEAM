@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from .recovery_artifacts import write_recovered_smoke_plan
+from .shared_chatbot_assets import resolve_shared_chatbot_assets
 
 
 def _build_recommended_outputs(manifest: dict) -> list[str]:
@@ -30,12 +31,22 @@ def _build_default_probe_plan(manifest: dict) -> list[dict]:
     analysis = manifest.get("analysis", {})
     auth = analysis.get("auth", {})
     auth_style = str(auth.get("auth_style") or "unknown")
-    if auth_style in {"session_cookie", "session"}:
+    if auth_style == "session_cookie":
+        return _build_session_cookie_probe_plan(manifest)
+    if auth_style == "session":
         return _build_session_probe_plan(manifest)
     return _build_token_probe_plan(manifest)
 
 
 def _build_session_probe_plan(manifest: dict) -> list[dict]:
+    return _build_session_steps(manifest, include_chat_contract=False)
+
+
+def _build_session_cookie_probe_plan(manifest: dict) -> list[dict]:
+    return _build_session_steps(manifest, include_chat_contract=True)
+
+
+def _build_session_steps(manifest: dict, *, include_chat_contract: bool) -> list[dict]:
     analysis = manifest.get("analysis", {})
     auth = analysis.get("auth", {})
     product_api = (analysis.get("product_api") or ["/api/products/"])[0]
@@ -61,6 +72,7 @@ def _build_session_probe_plan(manifest: dict) -> list[dict]:
         ]
 
     steps: list[dict] = []
+    shared_assets = resolve_shared_chatbot_assets(manifest.get("site"))
     steps.append(
         {
             "id": "login",
@@ -74,8 +86,8 @@ def _build_session_probe_plan(manifest: dict) -> list[dict]:
             "timeout_seconds": 10,
             "exports": {"login.cookies": "headers['set-cookie']"},
             "uses": [f"probe.credentials.{field}" for field in login_fields],
-        }
-    )
+            }
+        )
     if me_path:
         steps.append(
             {
@@ -90,6 +102,46 @@ def _build_session_probe_plan(manifest: dict) -> list[dict]:
                 "timeout_seconds": 8,
                 "exports": {"login.user_id": "json.user.id"},
                 "uses": ["login.cookies"],
+            }
+        )
+    if include_chat_contract:
+        steps.append(
+            {
+                "id": "chat-auth-token",
+                "category": "auth",
+                "kind": "http",
+                "strategy": backend_strategy,
+                "method": "POST",
+                "url": f"{base_url}/api/chat/auth-token",
+                "headers": {"Cookie": "{{login.cookies}}"},
+                "expects": {
+                    "status": 200,
+                    "json_keys": ["access_token"],
+                    "json_path_equals": {"authenticated": True},
+                },
+                "timeout_seconds": 8,
+                "exports": {"chat_auth.access_token": "json.access_token"},
+                "uses": ["login.cookies"],
+            }
+        )
+        steps.append(
+            {
+                "id": "chatbot-stream",
+                "category": "chatbot",
+                "kind": "http",
+                "strategy": "shared_chatbot",
+                "method": "POST",
+                "url": "http://127.0.0.1:8100/api/v1/chat/stream",
+                "headers": {"Content-Type": "application/json"},
+                "body": {
+                    "message": "테스트 메시지",
+                    "site_id": shared_assets.site_id,
+                    "access_token": "{{chat_auth.access_token}}",
+                    "previous_state": None,
+                },
+                "expects": {"status": 200},
+                "timeout_seconds": 10,
+                "uses": ["chat_auth.access_token"],
             }
         )
     steps.append(

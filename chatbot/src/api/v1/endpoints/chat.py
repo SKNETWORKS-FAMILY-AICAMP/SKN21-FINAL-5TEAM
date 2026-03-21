@@ -10,6 +10,7 @@ GlobalAgentState 기반으로 재작성.
 
 import os
 import traceback
+from types import SimpleNamespace
 from typing import Any, Dict, List
 from uuid import uuid4
 
@@ -30,6 +31,7 @@ import orjson
 from chatbot.src.graph.workflow import graph_app
 from chatbot.src.adapters.base import AdapterError
 from chatbot.src.adapters import setup as adapter_setup
+from chatbot.src.adapters.schema import AuthenticatedContext
 from chatbot.src.graph.llm_providers import resolve_llm_runtime_policy
 from chatbot.src.infrastructure.conversation_logger import SessionConversationLogger
 from chatbot.src.schemas.chat import ChatRequest, FeedbackRequest, ReviewDraftRequest
@@ -519,6 +521,50 @@ def _build_stream_config(
     return base_config
 
 
+async def _resolve_stream_current_user(
+    *,
+    request: ChatRequest,
+    cookie_user: User | None,
+    http_request: Request,
+) -> User | Any:
+    if cookie_user is not None:
+        return cookie_user
+
+    previous_user_info = request.previous_state.get("user_info", {}) if isinstance(request.previous_state, dict) else {}
+    effective_site_id = request.site_id or previous_user_info.get("site_id")
+    effective_access_token = (
+        request.access_token
+        or previous_user_info.get("access_token")
+        or http_request.cookies.get("access_token")
+        or http_request.cookies.get("session_token")
+    )
+
+    if not effective_site_id or effective_site_id == SHARED_WIDGET_SITE_ID or not effective_access_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    try:
+        resolved_adapter = adapter_setup.resolve_site_adapter(effective_site_id)
+        validated_user = await resolved_adapter.validate_auth(
+            AuthenticatedContext(
+                siteId=resolved_adapter.site_id,
+                userId=str(previous_user_info.get("id") or "__bridge__"),
+                accessToken=str(effective_access_token),
+            )
+        )
+    except AdapterError as exc:
+        raise HTTPException(status_code=401, detail=exc.message) from exc
+
+    resolved_user_id = str(getattr(validated_user, "id", "") or "").strip()
+    if not resolved_user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    return SimpleNamespace(
+        id=resolved_user_id,
+        email=getattr(validated_user, "email", None),
+        name=getattr(validated_user, "name", None),
+    )
+
+
 def _get_text_chunk_payload(event: Any) -> dict | None:
     """final_generator의 토큰 스트리밍 payload 생성."""
     if event.get("event") != "on_chat_model_stream":
@@ -645,9 +691,14 @@ async def chat_auth_token(
 async def chat_streaming_endpoint(
     http_request: Request,
     request: ChatRequest,
-    current_user: User = Depends(get_current_user),
+    cookie_user: User | None = Depends(get_current_user_optional),
 ):
     """SSE 스트리밍으로 챗봇 응답 반환."""
+    current_user = await _resolve_stream_current_user(
+        request=request,
+        cookie_user=cookie_user,
+        http_request=http_request,
+    )
 
     async def event_generator():
         try:

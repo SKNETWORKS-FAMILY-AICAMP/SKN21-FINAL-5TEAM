@@ -48,7 +48,43 @@ def setup_adapters() -> None:
 
     setup_adapters._initialized = True
 
+def resolve_site_adapter(site_id: str):
+    setup_adapters()
+    effective_site_id = (site_id or "site-c").strip() or "site-c"
+    return AdapterRegistry.get(effective_site_id)
+
+
+def resolve_order_tool_registry(site_id: str | None) -> dict[str, object]:
+    effective_site_id = (site_id or "site-c").strip() or "site-c"
+
+    from chatbot.src.tools import adapter_order_tools, order_tools
+
+    def list_orders(**kwargs):
+        return adapter_order_tools.get_user_orders_for_site(
+            user_id=kwargs.get("user_id", 1),
+            site_id=effective_site_id,
+            access_token=kwargs.get("access_token"),
+            limit=kwargs.get("limit", 5),
+            days=kwargs.get("days", 30),
+            requires_selection=kwargs.get("requires_selection", False),
+            action_context=kwargs.get("action_context"),
+        )
+
+    registry: dict[str, object] = {
+        "list_orders": list_orders,
+        "cancel": adapter_order_tools.cancel_order_via_adapter,
+        "refund": adapter_order_tools.register_return_via_adapter,
+        "exchange": adapter_order_tools.register_exchange_via_adapter,
+        "shipping": adapter_order_tools.get_shipping_via_adapter,
+        "get_order_status": adapter_order_tools.get_order_status_via_adapter,
+    }
+
+    if effective_site_id == "site-c":
+        registry["change_option"] = order_tools.change_product_option
+
+    return registry
+
+
 # 전역 함수로 바로 호출 가능하도록 초기화 지원
 def get_adapter(site_id: str):
-    setup_adapters()
-    return AdapterRegistry.get(site_id)
+    return resolve_site_adapter(site_id)
