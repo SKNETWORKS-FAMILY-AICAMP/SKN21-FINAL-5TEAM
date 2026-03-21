@@ -11,6 +11,7 @@ from chatbot.src.onboarding.template_generator import (
     generate_backend_route_patch,
     generate_chat_auth_template,
     generate_frontend_mount_patch,
+    generate_order_adapter_template,
     generate_frontend_widget_artifact,
 )
 from chatbot.src.onboarding.shared_chatbot_assets import resolve_shared_chatbot_assets
@@ -491,6 +492,46 @@ def test_generate_backend_tool_registry_includes_enabled_tools_and_targets(tmp_p
     assert "GeneratedOrderAdapterClient" in content
     assert '"product_list"' in content
     assert '"orders_list"' in content
+    assert '"list_orders"' in content
+    assert '"get_order_status"' in content
+    assert '"exchange"' in content
+
+
+def test_generate_order_bridge_compatibility_template_exposes_normalized_operations(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-order-bridge"
+    run_root.mkdir(parents=True)
+
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "food-run-order-bridge",
+                "site": "food",
+                "source_root": "/workspace/food",
+                "created_at": "2026-03-21T12:00:00+09:00",
+                "agent_version": "test-v1",
+                "analysis": {
+                    "order_api": ["/api/orders/"],
+                },
+                "generated_files": [],
+                "patch_targets": [],
+                "frontend_artifacts": [],
+                "docker": {},
+                "tests": {},
+                "status": "generated",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    content = generate_order_adapter_template(run_root).read_text(encoding="utf-8")
+
+    assert "ORDER_BRIDGE_OPERATIONS" in content
+    assert "async def list_orders" in content
+    assert "async def get_order_status" in content
+    assert "async def cancel" in content
+    assert "async def refund" in content
+    assert "async def exchange" in content
 
 
 def test_template_generator_import_does_not_require_qdrant_env(tmp_path: Path):

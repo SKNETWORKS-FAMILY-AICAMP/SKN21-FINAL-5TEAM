@@ -351,6 +351,46 @@ export default function App() {
     assert contract["chat_auth"]["endpoint_path"] == "/api/chat/auth-token"
     assert contract["product_adapter"]["api_base_paths"] == ["/api/products/"]
     assert contract["order_adapter"]["api_base_paths"] == ["/api/orders/"]
+    assert contract["order_adapter"]["tool_names"] == [
+        "list_orders",
+        "get_order_status",
+        "cancel",
+        "refund",
+        "exchange",
+    ]
+    assert analysis["order_bridge_targets"] == ["backend/foodshop/urls.py"]
+
+
+def test_analyze_site_detects_order_bridge_targets_and_normalized_tool_names(tmp_path: Path):
+    site_root = tmp_path / "food-order-bridge"
+    backend_shop = site_root / "backend" / "foodshop"
+    frontend_src = site_root / "frontend" / "src"
+
+    backend_shop.mkdir(parents=True)
+    frontend_src.mkdir(parents=True)
+
+    (backend_shop / "urls.py").write_text(
+        """
+from django.urls import path
+
+urlpatterns = [
+    path("api/orders/", lambda request: None),
+]
+""",
+        encoding="utf-8",
+    )
+    (frontend_src / "App.js").write_text("export default function App() { return <main>Chat</main>; }\n", encoding="utf-8")
+
+    analysis = analyze_site(site_root)
+
+    assert analysis["order_bridge_targets"] == ["backend/foodshop/urls.py"]
+    assert analysis["integration_contract"]["order_adapter"]["tool_names"] == [
+        "list_orders",
+        "get_order_status",
+        "cancel",
+        "refund",
+        "exchange",
+    ]
 
 
 def test_analyze_site_detects_fastapi_cookie_token_signals(tmp_path: Path):

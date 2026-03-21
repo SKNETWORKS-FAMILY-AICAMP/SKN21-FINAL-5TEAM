@@ -113,6 +113,10 @@ def build_codebase_map(*, source_root: str | Path) -> dict:
     )
     frontend_mount_targets = _build_frontend_mount_targets(frontend_component_candidates)
     tool_registry_targets = _build_tool_registry_targets(auth_candidates, candidate_edit_targets)
+    order_bridge_targets = _build_order_bridge_targets(
+        analysis=analysis,
+        candidate_edit_targets=candidate_edit_targets,
+    )
     auth_session_resolver_candidates = _build_auth_session_resolver_candidates(auth_candidates)
     frontend_app_shell_candidates = _build_frontend_app_shell_candidates(frontend_component_candidates)
     frontend_router_boundaries = _build_frontend_router_boundaries(frontend_component_candidates)
@@ -136,6 +140,7 @@ def build_codebase_map(*, source_root: str | Path) -> dict:
         "frontend_mount_targets": frontend_mount_targets,
         "validated_frontend_mount_targets": validated_frontend_mount_targets,
         "tool_registry_targets": tool_registry_targets,
+        "order_bridge_targets": order_bridge_targets,
     }
 
 
@@ -222,6 +227,33 @@ def _build_tool_registry_targets(
         item
         for item in candidate_edit_targets
         if str(item.get("path") or "").startswith("backend/")
+    ][:3]
+
+
+def _build_order_bridge_targets(
+    *,
+    analysis: dict[str, Any],
+    candidate_edit_targets: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    explicit_targets = [
+        {
+            "path": str(path),
+            "reason": "host order bridge compatibility target",
+        }
+        for path in (analysis.get("order_bridge_targets") or [])
+        if str(path).strip()
+    ]
+    if explicit_targets:
+        return explicit_targets
+
+    return [
+        {
+            "path": str(item.get("path") or ""),
+            "reason": "host order bridge fallback target",
+        }
+        for item in candidate_edit_targets
+        if str(item.get("path") or "").startswith("backend/")
+        and "order" in str(item.get("path") or "").lower()
     ][:3]
 
 

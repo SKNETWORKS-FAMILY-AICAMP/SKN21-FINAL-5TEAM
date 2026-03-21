@@ -1,10 +1,26 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+from types import ModuleType
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
+os.environ.setdefault("QDRANT_API_KEY", "test-key")
+
+fake_langchain_ollama = ModuleType("langchain_ollama")
+
+
+class _FakeChatOllama:
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+
+fake_langchain_ollama.ChatOllama = _FakeChatOllama
+sys.modules.setdefault("langchain_ollama", fake_langchain_ollama)
 
 from chatbot.src.onboarding.codebase_mapper import build_codebase_map, write_llm_codebase_interpretation
 from chatbot.src.onboarding.patch_planner import build_patch_proposal
@@ -119,6 +135,7 @@ def test_build_codebase_map_emits_strategy_and_integration_targets(tmp_path: Pat
         "from django.urls import path\n\n"
         "urlpatterns = [\n"
         '    path("api/login", login),\n'
+        '    path("api/orders/", me),\n'
         "]\n",
         encoding="utf-8",
     )
@@ -136,6 +153,37 @@ def test_build_codebase_map_emits_strategy_and_integration_targets(tmp_path: Pat
     assert any(item["path"] == "backend/shop/urls.py" for item in payload["backend_route_targets"])
     assert any(item["path"] == "frontend/src/App.js" for item in payload["frontend_mount_targets"])
     assert any(item["path"] == "backend/shop/views.py" for item in payload["tool_registry_targets"])
+    assert any(item["path"] == "backend/shop/urls.py" for item in payload["order_bridge_targets"])
+
+
+def test_build_codebase_map_emits_order_bridge_targets(tmp_path: Path):
+    source_root = tmp_path / "source-order-bridge"
+
+    (source_root / "backend" / "shop").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "shop" / "views.py").write_text(
+        "def list_orders(request):\n"
+        "    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "shop" / "urls.py").write_text(
+        "from django.urls import path\n\n"
+        "urlpatterns = [\n"
+        '    path("api/orders/", list_orders),\n'
+        "]\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() {\n"
+        "  return <main>Storefront Chatbot Shell</main>;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    payload = build_codebase_map(source_root=source_root)
+
+    assert any(item["path"] == "backend/shop/urls.py" for item in payload["order_bridge_targets"])
 
 
 def test_codebase_mapper_extracts_bilyeo_route_and_mount_contract(tmp_path: Path):
