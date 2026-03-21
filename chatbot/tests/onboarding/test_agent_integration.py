@@ -388,6 +388,7 @@ def test_promoted_generator_repair_records_onboarding_ownership(tmp_path: Path, 
                 "metadata": {
                     "classification": "frontend_target_detection",
                     "should_retry": False,
+                    "repair_scope": "generator_promoted",
                     "failure_signature": "frontend_target_detection:build_artifact_selected",
                 },
             },

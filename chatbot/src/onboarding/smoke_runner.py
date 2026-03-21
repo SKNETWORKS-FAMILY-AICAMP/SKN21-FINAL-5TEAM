@@ -380,6 +380,20 @@ def _normalize_recovery_payload(
         return None
     if isinstance(recovery_payload, SmokeRecoveryPayload):
         return recovery_payload
+    if isinstance(recovery_payload, dict):
+        allowed_keys = {
+            "classification",
+            "should_retry",
+            "proposed_probe_updates",
+            "proposed_schema_overrides",
+            "repair_actions",
+        }
+        filtered_payload = {
+            key: value
+            for key, value in recovery_payload.items()
+            if key in allowed_keys
+        }
+        return SmokeRecoveryPayload.model_validate(filtered_payload)
     return SmokeRecoveryPayload.model_validate(recovery_payload)
 
 
