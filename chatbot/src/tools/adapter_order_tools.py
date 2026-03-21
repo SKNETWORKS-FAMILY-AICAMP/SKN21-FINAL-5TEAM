@@ -9,6 +9,7 @@
 """
 
 import asyncio
+from typing import Callable
 
 from langchain_core.tools import tool
 from langgraph.types import interrupt
@@ -23,7 +24,7 @@ from chatbot.src.adapters.schema import (
     ProductSearchFilter,
     SubmitOrderActionInput,
 )
-from chatbot.src.adapters.setup import get_adapter
+from chatbot.src.adapters.setup import ORDER_CS_BRIDGE_OPERATIONS, get_adapter
 from chatbot.src.tools.order_tools import (
     _extract_optional_confirmation_from_resume,
     _extract_order_id_from_resume,
@@ -235,6 +236,103 @@ def get_user_orders_for_site(
         "requires_selection": requires_selection and action_context is not None,
         "prior_action": action_context,
     }
+
+
+def _normalize_order_list_bridge_payload(payload: dict) -> dict:
+    return {
+        "operation": "list_orders",
+        "message": payload.get("message"),
+        "total_orders": payload.get("total_orders", 0),
+        "orders": payload.get("ui_data", []),
+        "requires_selection": payload.get("requires_selection", False),
+        "prior_action": payload.get("prior_action"),
+    }
+
+
+def _normalize_action_bridge_payload(operation: str, payload: dict) -> dict:
+    if isinstance(payload, dict) and payload.get("operation") == operation:
+        return payload
+    normalized = dict(payload or {})
+    normalized.setdefault("operation", operation)
+    return normalized
+
+
+def build_order_cs_bridge(
+    *,
+    site_id: str,
+    user_id: int = 1,
+    access_token: str | None = None,
+) -> dict[str, Callable[..., dict]]:
+    effective_site_id = (site_id or "site-c").strip()
+
+    def list_orders(**kwargs) -> dict:
+        payload = get_user_orders_for_site(
+            user_id=user_id,
+            site_id=effective_site_id,
+            access_token=access_token,
+            **kwargs,
+        )
+        return _normalize_order_list_bridge_payload(payload)
+
+    def get_order_status(order_id: str, **kwargs) -> dict:
+        payload = get_order_status_via_adapter.invoke(
+            {
+                "user_id": user_id,
+                "site_id": effective_site_id,
+                "access_token": access_token,
+                "order_id": order_id,
+                **kwargs,
+            }
+        )
+        return _normalize_action_bridge_payload("get_order_status", payload)
+
+    def cancel(order_id: str = "", confirmed: bool = True, **kwargs) -> dict:
+        payload = cancel_order_via_adapter.invoke(
+            {
+                "user_id": user_id,
+                "site_id": effective_site_id,
+                "access_token": access_token,
+                "order_id": order_id,
+                "confirmed": confirmed,
+                **kwargs,
+            }
+        )
+        return _normalize_action_bridge_payload("cancel", payload)
+
+    def refund(order_id: str = "", confirmed: bool = True, **kwargs) -> dict:
+        payload = register_return_via_adapter.invoke(
+            {
+                "user_id": user_id,
+                "site_id": effective_site_id,
+                "access_token": access_token,
+                "order_id": order_id,
+                "confirmed": confirmed,
+                **kwargs,
+            }
+        )
+        return _normalize_action_bridge_payload("refund", payload)
+
+    def exchange(order_id: str = "", confirmed: bool = True, **kwargs) -> dict:
+        payload = register_exchange_via_adapter.invoke(
+            {
+                "user_id": user_id,
+                "site_id": effective_site_id,
+                "access_token": access_token,
+                "order_id": order_id,
+                "confirmed": confirmed,
+                **kwargs,
+            }
+        )
+        return _normalize_action_bridge_payload("exchange", payload)
+
+    bridge = {
+        "list_orders": list_orders,
+        "get_order_status": get_order_status,
+        "cancel": cancel,
+        "refund": refund,
+        "exchange": exchange,
+    }
+    return {name: bridge[name] for name in ORDER_CS_BRIDGE_OPERATIONS}
 
 
 def _resolve_order_id_or_payload_for_site(
