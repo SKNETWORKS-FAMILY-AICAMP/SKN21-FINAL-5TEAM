@@ -212,3 +212,38 @@ def test_recovery_plan_falls_back_to_deterministic_classification_when_llm_recom
 
     assert payload["classification"] == "missing_import_target"
     assert payload["recommendation_source"] == "deterministic"
+
+
+def test_recovery_plan_rejects_llm_recommendation_with_malformed_repair_actions():
+    from chatbot.src.onboarding.recovery_planner import build_recovery_plan
+
+    payload = build_recovery_plan(
+        {
+            "failure_signature": "runtime_validation_failure",
+            "retry_count": 0,
+            "retry_budget": 2,
+            "failed_results": [],
+            "backend_evaluation": {
+                "framework": "django",
+                "route_wiring": {
+                    "validation_errors": ["missing chat auth import target"],
+                },
+            },
+            "llm_repair_recommendation": {
+                "classification": "missing_import_target",
+                "should_retry": True,
+                "repair_scope": "run_only",
+                "repair_actions": ["repair_frontend_mount_target"],
+            },
+        }
+    )
+
+    assert payload["classification"] == "missing_import_target"
+    assert payload["recommendation_source"] == "deterministic"
+    assert payload["repair_actions"] == [
+        {
+            "action": "create_chat_auth_module",
+            "target_path": "backend/chat_auth.py",
+            "framework": "django",
+        }
+    ]

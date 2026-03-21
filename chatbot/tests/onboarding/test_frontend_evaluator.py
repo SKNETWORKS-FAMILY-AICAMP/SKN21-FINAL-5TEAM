@@ -240,6 +240,27 @@ def test_evaluate_frontend_workspace_marks_routes_child_as_retryable_planning_is
     assert "retryable mount context planning issue" in frontend_artifact["recovery_notes"]
 
 
+def test_evaluate_frontend_workspace_hard_fallbacks_when_routes_child_and_bootstrap_missing(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    report_root = tmp_path / "reports"
+    _write_react_mount(
+        workspace,
+        include_bundle_bootstrap=False,
+        include_widget_usage=True,
+        inside_routes=True,
+    )
+
+    payload = json.loads(
+        evaluate_frontend_workspace(runtime_workspace=workspace, report_root=report_root).read_text(encoding="utf-8")
+    )
+
+    frontend_artifact = payload["frontend_artifact"]
+    assert payload["passed"] is False
+    assert frontend_artifact["source"] == "hard_fallback"
+    assert "routes child violation" in frontend_artifact["validation_errors"]
+    assert "mount candidate missing shared widget bundle bootstrap" in frontend_artifact["recovery_notes"]
+
+
 def test_evaluate_frontend_workspace_ignores_build_artifact_mount_candidates(tmp_path: Path):
     workspace = tmp_path / "workspace"
     report_root = tmp_path / "reports"

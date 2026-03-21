@@ -134,7 +134,10 @@ def _normalize_llm_repair_recommendation(payload: Any) -> dict[str, Any] | None:
     classification = str(payload.get("classification") or "").strip()
     repair_scope = str(payload.get("repair_scope") or "").strip()
     should_retry = payload.get("should_retry")
+    repair_actions = _normalize_llm_repair_actions(payload.get("repair_actions"))
     if not classification or repair_scope not in {"run_only", "generator_promoted"} or not isinstance(should_retry, bool):
+        return None
+    if payload.get("repair_actions") is not None and repair_actions is None:
         return None
 
     normalized = {
@@ -145,8 +148,25 @@ def _normalize_llm_repair_recommendation(payload: Any) -> dict[str, Any] | None:
         "proposed_fix": str(payload.get("proposed_fix") or "").strip(),
         "failure_signature": str(payload.get("failure_signature") or "").strip(),
         "guardrail_rejection_reason": payload.get("guardrail_rejection_reason"),
-        "repair_actions": list(payload.get("repair_actions") or []),
+        "repair_actions": repair_actions or [],
     }
+    return normalized
+
+
+def _normalize_llm_repair_actions(payload: Any) -> list[dict[str, Any]] | None:
+    if payload is None:
+        return []
+    if not isinstance(payload, list):
+        return None
+
+    normalized: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            return None
+        action_name = str(item.get("action") or "").strip()
+        if not action_name:
+            return None
+        normalized.append(dict(item))
     return normalized
 
 

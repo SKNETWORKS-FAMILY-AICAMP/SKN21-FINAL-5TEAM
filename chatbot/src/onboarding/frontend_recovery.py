@@ -22,11 +22,6 @@ def attempt_frontend_recovery(
 ) -> dict[str, Any]:
     notes: list[str] = []
     resolved_mount = mount_candidate
-    if "routes child violation" in errors:
-        if resolved_mount is None:
-            resolved_mount = _discover_mount_in_workspace(workspace)
-        notes.append("retryable mount context planning issue")
-        return _retryable_planning(resolved_mount, notes, errors)
 
     if resolved_mount is None:
         resolved_mount = _discover_mount_in_workspace(workspace)
@@ -41,13 +36,30 @@ def attempt_frontend_recovery(
         notes.append(f"mount candidate rejected: {mount_rejection}")
         return _hard_fallback(notes, errors)
 
-    if not _mount_contains_bundle_bootstrap(resolved_mount):
+    has_bundle_bootstrap = _mount_contains_bundle_bootstrap(resolved_mount)
+    has_auth_bootstrap_contract = _mount_contains_auth_bootstrap_contract(resolved_mount)
+    has_widget_usage = _mount_contains_widget_usage(resolved_mount)
+
+    if "routes child violation" in errors:
+        if not has_bundle_bootstrap:
+            notes.append("mount candidate missing shared widget bundle bootstrap")
+            return _hard_fallback(notes, errors)
+        if not has_auth_bootstrap_contract:
+            notes.append("mount candidate missing auth bootstrap contract")
+            return _hard_fallback(notes, errors)
+        if not has_widget_usage:
+            notes.append("mount candidate missing order-cs-widget usage")
+            return _hard_fallback(notes, errors)
+        notes.append("retryable mount context planning issue")
+        return _retryable_planning(resolved_mount, notes, errors)
+
+    if not has_bundle_bootstrap:
         notes.append("mount candidate missing shared widget bundle bootstrap")
         return _hard_fallback(notes, errors)
-    if not _mount_contains_auth_bootstrap_contract(resolved_mount):
+    if not has_auth_bootstrap_contract:
         notes.append("mount candidate missing auth bootstrap contract")
         return _hard_fallback(notes, errors)
-    if not _mount_contains_widget_usage(resolved_mount):
+    if not has_widget_usage:
         notes.append("mount candidate missing order-cs-widget usage")
         return _hard_fallback(notes, errors)
 
