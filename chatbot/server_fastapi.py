@@ -52,7 +52,7 @@ from chatbot.src.adapters.base import AdapterError  # noqa: E402
 from chatbot.src.adapters import setup as adapter_setup  # noqa: E402
 from chatbot.src.graph.llm_providers import resolve_llm_runtime_policy  # noqa: E402
 from chatbot.src.graph.workflow import graph_app  # noqa: E402
-from chatbot.src.api.v1.endpoints.chat import router as chat_router  # noqa: E402
+from chatbot.src.api.v1.endpoints.chat import build_widget_bundle_response, router as chat_router  # noqa: E402
 from chatbot.src.api.v1.endpoints.onboarding_runs import router as onboarding_runs_router  # noqa: E402
 from chatbot.src.onboarding.redis_runtime import build_onboarding_event_store, close_onboarding_event_store  # noqa: E402
 from chatbot.src.graph.nodes.guardrail import load_guardrail_model  # noqa: E402
@@ -286,6 +286,11 @@ def healthcheck() -> dict[str, Any]:
         "openai_model_default": settings.OPENAI_MODEL,
         "vllm_model_default": settings.VLLM_MODEL,
     }
+
+
+@app.get("/widget.js")
+def shared_widget_bundle():
+    return build_widget_bundle_response()
 
 
 @app.post("/api/chat", response_model=ChatResponse)

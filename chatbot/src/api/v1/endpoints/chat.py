@@ -11,11 +11,12 @@ GlobalAgentState 기반으로 재작성.
 import os
 import traceback
 from types import SimpleNamespace
+from pathlib import Path
 from typing import Any, Dict, List
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -49,6 +50,7 @@ class OrjsonResponse(JSONResponse):
 
 router = APIRouter(default_response_class=OrjsonResponse)
 SHARED_WIDGET_SITE_ID = "site-c"
+WIDGET_BUNDLE_PATH = Path(__file__).resolve().parents[4] / "frontend" / "shared_widget" / "widget-entry.ts"
 
 # ── 노드 진행 상태 메시지 ─────────────────────────────────────────────────────
 NODE_STATUS_MESSAGES: dict[str, str] = {
@@ -97,6 +99,17 @@ _PER_TURN_FIELDS = frozenset({
 })
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"}
+
+
+def build_widget_bundle_response() -> FileResponse:
+    if not WIDGET_BUNDLE_PATH.exists():
+        raise HTTPException(status_code=404, detail="Shared widget bundle unavailable")
+
+    return FileResponse(
+        WIDGET_BUNDLE_PATH,
+        media_type="application/javascript; charset=utf-8",
+        filename="widget.js",
+    )
 
 # ── 직렬화 / 역직렬화 ──────────────────────────────────────────────────────────
 

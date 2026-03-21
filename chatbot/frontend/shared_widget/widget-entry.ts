@@ -1,0 +1,11 @@
+import { DEFAULT_SHARED_WIDGET_HOST_CONTRACT } from './index';
+
+const SHARED_WIDGET_HOST_CONTRACT = {
+  ...DEFAULT_SHARED_WIDGET_HOST_CONTRACT,
+};
+
+if (typeof globalThis === 'object') {
+  globalThis.__ORDER_CS_WIDGET_HOST_CONTRACT__ = SHARED_WIDGET_HOST_CONTRACT;
+}
+
+export { SHARED_WIDGET_HOST_CONTRACT };
