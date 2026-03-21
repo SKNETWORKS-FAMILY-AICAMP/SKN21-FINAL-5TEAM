@@ -35,7 +35,8 @@ from .patch_planner import (
 )
 from .role_runner import ReliableLLMRoleRunner, RoleRunner, build_llm_role_runner
 from .recovery_artifacts import write_recovered_smoke_plan
-from .repair_history import write_repair_history
+from .promotion_judge import PromotionJudge
+from .repair_history import read_failure_count, write_repair_history
 from .recovery_planner import build_recovery_plan
 from .run_generator import generate_run_bundle
 from .run_resume import analyze_run_checkpoint
@@ -1641,14 +1642,27 @@ def _write_final_repair_history(
             "site_repair_history_path": None,
             "failure_signature": None,
             "failure_count_for_signature": None,
+            "repair_scope": None,
+            "promotion_decision": None,
         }
+    failure_count = read_failure_count(
+        generated_root=generated_root,
+        site=site,
+        failure_signature=failure_signature,
+    ) + 1
+    promotion_decision = PromotionJudge(threshold=2).decide(
+        failure_signature=failure_signature,
+        count=failure_count,
+        current_scope="run_only",
+    )
     return write_repair_history(
         generated_root=generated_root,
         run_root=run_root,
         site=site,
         run_id=run_id,
         failure_signature=failure_signature,
-        repair_scope="run_only",
+        repair_scope=str(promotion_decision["repair_scope"]),
+        promotion_decision=promotion_decision,
     )
 
 

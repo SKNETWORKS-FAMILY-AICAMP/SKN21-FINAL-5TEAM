@@ -14,6 +14,21 @@ def site_repair_history_path(generated_root: str | Path, site: str) -> Path:
     return Path(generated_root) / site / "repair-history.json"
 
 
+def read_failure_count(*, generated_root: str | Path, site: str, failure_signature: str | None) -> int:
+    normalized_signature = str(failure_signature or "").strip()
+    if not normalized_signature:
+        return 0
+    site_payload = _read_json(site_repair_history_path(generated_root, site))
+    signatures = site_payload.get("signatures") or {}
+    if not isinstance(signatures, dict):
+        return 0
+    signature_payload = signatures.get(normalized_signature) or {}
+    try:
+        return int(signature_payload.get("count") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def write_repair_history(
     *,
     generated_root: str | Path,
@@ -81,6 +96,8 @@ def write_repair_history(
         "site_repair_history_path": str(site_history_path),
         "failure_signature": run_payload["failure_signature"],
         "failure_count_for_signature": run_payload["failure_count_for_signature"],
+        "repair_scope": run_payload["repair_scope"],
+        "promotion_decision": run_payload["promotion_decision"],
     }
 
 

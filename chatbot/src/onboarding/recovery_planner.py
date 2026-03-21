@@ -24,11 +24,20 @@ _RECOVERABLE_CLASSIFICATIONS = {
     "transient_timeout",
 }
 
+_SITE_LOCAL_CLASSIFICATIONS = {
+    "response_schema_mismatch",
+    "probe_contract_mismatch",
+}
+
 
 def classify_failure_signature(signature: str) -> str:
     head, _, _ = (signature or "").partition(":")
     normalized = head.strip() or "unknown_failure"
     return normalized
+
+
+def is_site_local_failure_signature(signature: str) -> bool:
+    return classify_failure_signature(signature) in _SITE_LOCAL_CLASSIFICATIONS
 
 
 def build_recovery_plan(context: dict[str, Any]) -> dict[str, Any]:

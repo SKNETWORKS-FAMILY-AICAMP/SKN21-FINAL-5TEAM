@@ -107,3 +107,10 @@ def test_recovery_plan_proposes_patch_repair_for_missing_import_target():
             "framework": "django",
         }
     ]
+
+
+def test_response_schema_mismatch_is_treated_as_site_local_signature():
+    from chatbot.src.onboarding.recovery_planner import is_site_local_failure_signature
+
+    assert is_site_local_failure_signature("response_schema_mismatch:chat-auth-token") is True
+    assert is_site_local_failure_signature("frontend_target_detection:build_artifact_selected") is False
