@@ -696,6 +696,78 @@ def test_run_onboarding_generation_persists_repair_history_across_runs(tmp_path:
     assert site_history["signatures"]["response_schema_mismatch:chat-auth-token"]["count"] == 2
 
 
+def test_run_onboarding_generation_persists_llm_promotion_recommendation_and_gate_result(tmp_path: Path, monkeypatch):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.run_smoke_tests",
+        lambda **_: [
+            {
+                "step": "frontend-runtime",
+                "step_id": "frontend-runtime",
+                "required": True,
+                "category": "frontend",
+                "timed_out": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "routes child violation",
+            }
+        ],
+    )
+
+    role_runner = _build_simple_role_runner(
+        lambda context: {
+            "claim": "React Routes child rule violated",
+            "evidence": context["evidence"],
+            "confidence": 0.82,
+            "risk": "medium",
+            "next_action": "request_human_review",
+            "blocking_issue": "none",
+            "metadata": {
+                "classification": "frontend_mount_violation",
+                "should_retry": False,
+                "repair_scope": "generator_promoted",
+                "failure_signature": "frontend_mount_violation:routes_child_violation",
+            },
+        }
+    )
+
+    result = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-llm-promotion-gate-1",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+
+    history = json.loads(Path(result["repair_history_path"]).read_text(encoding="utf-8"))
+    site_history = json.loads(Path(result["site_repair_history_path"]).read_text(encoding="utf-8"))
+
+    assert result["repair_scope"] == "run_only"
+    assert result["promotion_decision"]["promote"] is False
+    assert result["promotion_decision"]["recommended_scope"] == "generator_promoted"
+    assert history["repair_recommendation"]["repair_scope"] == "generator_promoted"
+    assert history["repair_recommendation"]["recommendation_source"] == "llm"
+    assert history["promotion_decision"]["reason"] == "below_promotion_threshold"
+    assert site_history["signatures"]["frontend_mount_violation:routes_child_violation"]["last_recommendation_scope"] == "generator_promoted"
+
+
 def test_run_onboarding_generation_promotes_repeated_pipeline_signature(tmp_path: Path, monkeypatch):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"

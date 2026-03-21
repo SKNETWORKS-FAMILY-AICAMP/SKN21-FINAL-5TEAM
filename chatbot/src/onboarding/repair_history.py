@@ -40,6 +40,7 @@ def write_repair_history(
     files_touched: list[str] | None = None,
     evaluation_delta: dict[str, Any] | None = None,
     promotion_decision: dict[str, Any] | None = None,
+    repair_recommendation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     run_history_path = run_repair_history_path(run_root)
     site_history_path = site_repair_history_path(generated_root, site)
@@ -57,6 +58,7 @@ def write_repair_history(
                 "count": 0,
                 "last_run_id": None,
                 "last_repair_scope": None,
+                "last_recommendation_scope": None,
             },
         )
         previous_run_id = str(signature_payload.get("last_run_id") or "").strip()
@@ -66,6 +68,9 @@ def write_repair_history(
         signature_payload["count"] = current_count
         signature_payload["last_run_id"] = run_id
         signature_payload["last_repair_scope"] = repair_scope
+        recommendation_scope = str((repair_recommendation or {}).get("repair_scope") or "").strip()
+        if recommendation_scope:
+            signature_payload["last_recommendation_scope"] = recommendation_scope
         count = int(signature_payload["count"])
 
     site_payload["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -82,6 +87,7 @@ def write_repair_history(
         "repair_scope": repair_scope,
         "files_touched": files_touched or [],
         "evaluation_delta": evaluation_delta or {},
+        "repair_recommendation": repair_recommendation or {},
         "promotion_decision": promotion_decision or {},
         "site_repair_history_path": str(site_history_path),
         "updated_at": site_payload["updated_at"],
@@ -97,6 +103,7 @@ def write_repair_history(
         "failure_signature": run_payload["failure_signature"],
         "failure_count_for_signature": run_payload["failure_count_for_signature"],
         "repair_scope": run_payload["repair_scope"],
+        "repair_recommendation": run_payload["repair_recommendation"],
         "promotion_decision": run_payload["promotion_decision"],
     }
 

@@ -1674,8 +1674,10 @@ def _write_final_repair_history(
             "failure_signature": None,
             "failure_count_for_signature": None,
             "repair_scope": None,
+            "repair_recommendation": None,
             "promotion_decision": None,
         }
+    repair_recommendation = _read_repair_recommendation(run_root)
     failure_count = read_failure_count(
         generated_root=generated_root,
         site=site,
@@ -1685,6 +1687,7 @@ def _write_final_repair_history(
         failure_signature=failure_signature,
         count=failure_count,
         current_scope="run_only",
+        recommendation_scope=str((repair_recommendation or {}).get("repair_scope") or "") or None,
     )
     return write_repair_history(
         generated_root=generated_root,
@@ -1693,6 +1696,7 @@ def _write_final_repair_history(
         run_id=run_id,
         failure_signature=failure_signature,
         repair_scope=str(promotion_decision["repair_scope"]),
+        repair_recommendation=repair_recommendation,
         promotion_decision=promotion_decision,
     )
 
@@ -1722,6 +1726,19 @@ def _read_final_failure_signature(run_root: Path) -> str | None:
         if signature:
             return signature
     return None
+
+
+def _read_repair_recommendation(run_root: Path) -> dict[str, Any]:
+    payload = _read_json_if_exists(run_root / "reports" / "recovery-plan.json") or {}
+    repair_scope = str(payload.get("repair_scope") or "").strip()
+    recommendation_source = str(payload.get("recommendation_source") or "").strip()
+    if not repair_scope and not recommendation_source:
+        return {}
+    return {
+        "repair_scope": repair_scope or "run_only",
+        "recommendation_source": recommendation_source or "deterministic",
+        "guardrail_rejection_reason": payload.get("guardrail_rejection_reason"),
+    }
 
 
 def _write_generator_repair_request(
