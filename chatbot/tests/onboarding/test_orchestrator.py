@@ -811,6 +811,7 @@ def test_run_onboarding_generation_promotes_repeated_pipeline_signature(tmp_path
             "metadata": {
                 "classification": "frontend_target_detection",
                 "should_retry": False,
+                "repair_scope": "generator_promoted",
                 "failure_signature": "frontend_target_detection:build_artifact_selected",
             },
         }
@@ -886,6 +887,7 @@ def test_run_onboarding_generation_promoted_repair_requires_fresh_run_id(tmp_pat
             "metadata": {
                 "classification": "frontend_target_detection",
                 "should_retry": False,
+                "repair_scope": "generator_promoted",
                 "failure_signature": "frontend_target_detection:build_artifact_selected",
             },
         }
@@ -962,6 +964,7 @@ def test_run_onboarding_generation_promotes_second_routes_child_violation(tmp_pa
             "metadata": {
                 "classification": "frontend_mount_violation",
                 "should_retry": False,
+                "repair_scope": "generator_promoted",
                 "failure_signature": "frontend_mount_violation:routes_child_violation",
             },
         }

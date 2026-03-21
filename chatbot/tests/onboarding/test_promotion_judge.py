@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 
-def test_promotion_judge_promotes_on_second_repeat():
+def test_promotion_judge_promotes_on_second_repeat_when_llm_recommends_generator_scope():
     from chatbot.src.onboarding.promotion_judge import PromotionJudge
 
     judge = PromotionJudge(threshold=2)
@@ -13,17 +13,34 @@ def test_promotion_judge_promotes_on_second_repeat():
         failure_signature="frontend_target_detection:build_artifact_selected",
         count=1,
         current_scope="run_only",
+        recommendation_scope="generator_promoted",
     )
     second = judge.decide(
         failure_signature="frontend_target_detection:build_artifact_selected",
         count=2,
         current_scope="run_only",
+        recommendation_scope="generator_promoted",
     )
 
     assert first["promote"] is False
     assert first["repair_scope"] == "run_only"
     assert second["promote"] is True
     assert second["repair_scope"] == "generator_promoted"
+
+
+def test_promotion_judge_keeps_run_only_without_llm_recommendation():
+    from chatbot.src.onboarding.promotion_judge import PromotionJudge
+
+    decision = PromotionJudge(threshold=2).decide(
+        failure_signature="frontend_target_detection:build_artifact_selected",
+        count=2,
+        current_scope="run_only",
+    )
+
+    assert decision["promote"] is False
+    assert decision["repair_scope"] == "run_only"
+    assert decision["recommended_scope"] == "run_only"
+    assert decision["reason"] == "llm_recommended_run_only"
 
 
 def test_promotion_judge_does_not_promote_site_local_signature():
