@@ -1246,8 +1246,7 @@ def _section_hunks_match_declared_counts(lines: list[str]) -> bool:
     while index < len(lines):
         line = lines[index]
         if not line.startswith("@@"):
-            index += 1
-            continue
+            return False
 
         saw_hunk = True
         header_match = re.match(r"^@@ -(?P<old_start>\d+)(,(?P<old_count>\d+))? \+(?P<new_start>\d+)(,(?P<new_count>\d+))? @@", line)

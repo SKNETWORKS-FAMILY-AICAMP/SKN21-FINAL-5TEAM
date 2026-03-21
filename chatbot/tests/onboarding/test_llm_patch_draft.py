@@ -532,3 +532,61 @@ THIS IS NOT DIFF CONTENT
     assert "LLM patch rejected" in content
     assert execution["source"] == "hard_fallback"
     assert execution["hard_fallback_reason"] == "invalid_patch_format"
+
+
+def test_write_llm_patch_draft_does_not_salvage_prefix_section_with_prose_before_first_hunk(tmp_path: Path):
+    source_root = tmp_path / "source"
+    run_root = tmp_path / "generated"
+    output_path = run_root / "patches" / "llm-proposed.patch"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "config").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "config" / "router.py").write_text(
+        "urlpatterns = []\n",
+        encoding="utf-8",
+    )
+
+    fake_llm = FakeLLM(
+        """--- a/backend/users/views.py
++++ b/backend/users/views.py
+THIS IS NOT A HUNK HEADER
+@@ -1,2 +1,3 @@
+ def login(request):
+     return None
++# ok
+--- a/backend/config/router.py
++++ b/backend/config/router.py
+@@ malformed
+"""
+    )
+
+    path = write_llm_patch_draft(
+        source_root=source_root,
+        analysis={"auth": {"auth_style": "session_cookie"}},
+        codebase_map={
+            "candidate_edit_targets": [
+                {"path": "backend/users/views.py", "reason": "auth handler"},
+                {"path": "backend/config/router.py", "reason": "route wiring"},
+            ]
+        },
+        patch_proposal={
+            "target_files": [
+                {"path": "backend/users/views.py", "intent": "add auth stub"},
+                {"path": "backend/config/router.py", "intent": "register route"},
+            ],
+            "supporting_generated_files": ["files/backend/chat_auth.py"],
+        },
+        output_path=output_path,
+        llm_factory=lambda: fake_llm,
+    )
+
+    content = path.read_text(encoding="utf-8")
+    execution = json.loads((run_root / "reports" / "llm-patch-draft-execution.json").read_text(encoding="utf-8"))
+
+    assert "LLM patch rejected" in content
+    assert execution["source"] == "hard_fallback"
+    assert execution["hard_fallback_reason"] == "invalid_patch_format"
