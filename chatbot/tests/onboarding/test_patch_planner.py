@@ -732,6 +732,56 @@ def test_write_llm_first_patch_proposal_recovery_normalizes_single_target_shape(
     assert execution["hard_fallback_reason"] is None
 
 
+def test_write_llm_first_patch_proposal_recovery_normalizes_alias_fields_and_string_targets(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "patch-proposal.json"
+    execution_path = tmp_path / "reports" / "llm-patch-proposal-execution.json"
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text("def login(request):\n    return None\n", encoding="utf-8")
+    codebase_map = {
+        "candidate_edit_targets": [
+            {"path": "backend/users/views.py", "reason": "auth handler"},
+        ]
+    }
+
+    class RecoverableAliasLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "targetFiles": ["backend/users/views.py"],
+                            "supportingGeneratedFiles": "files/backend/chat_auth.py",
+                            "recommendedOutputs": "chat_auth",
+                        }
+                    )
+                },
+            )()
+
+    write_llm_first_patch_proposal(
+        source_root=source_root,
+        analysis={"auth": {"auth_style": "session_cookie"}},
+        codebase_map=codebase_map,
+        recommended_outputs=["chat_auth"],
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: RecoverableAliasLLM(),
+    )
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+
+    assert payload["target_files"][0]["path"] == "backend/users/views.py"
+    assert payload["target_files"][0]["reason"] == "auth handler"
+    assert "chat auth" in payload["target_files"][0]["intent"]
+    assert payload["analysis_summary"]["auth_style"] == "session_cookie"
+    assert execution["source"] == "recovered_llm"
+    assert execution["recovery_reason"] == "patch_proposal_shape_normalized"
+    assert execution["hard_fallback_reason"] is None
+
+
 def test_write_llm_first_patch_proposal_falls_back_on_invalid_json(tmp_path: Path):
     source_root = tmp_path / "source"
     output_path = tmp_path / "reports" / "patch-proposal.json"
@@ -774,6 +824,56 @@ def test_write_llm_first_patch_proposal_falls_back_on_invalid_json(tmp_path: Pat
     assert ("patch_planner", "llm_call_started") in events
     assert ("patch_planner", "hard_fallback_used") in events
     assert ("patch_planner", "artifact_written") in events
+
+
+def test_write_llm_first_patch_proposal_writes_debug_artifact_for_invalid_payload(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "patch-proposal.json"
+    execution_path = tmp_path / "reports" / "llm-patch-proposal-execution.json"
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text("def login(request):\n    return None\n", encoding="utf-8")
+    codebase_map = {
+        "candidate_edit_targets": [
+            {"path": "backend/users/views.py", "reason": "auth handler"},
+        ]
+    }
+
+    class InvalidPayloadLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "target_files": [123],
+                            "supporting_generated_files": ["files/backend/chat_auth.py"],
+                            "recommended_outputs": ["chat_auth"],
+                            "analysis_summary": [],
+                        }
+                    )
+                },
+            )()
+
+    write_llm_first_patch_proposal(
+        source_root=source_root,
+        analysis={"auth": {"auth_style": "session_cookie"}},
+        codebase_map=codebase_map,
+        recommended_outputs=["chat_auth"],
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: InvalidPayloadLLM(),
+    )
+
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+    debug_payload = json.loads((tmp_path / "reports" / "llm-debug" / "patch-proposal.json").read_text(encoding="utf-8"))
+
+    assert execution["source"] == "hard_fallback"
+    assert execution["hard_fallback_reason"] == "invalid_llm_payload"
+    assert debug_payload["status"] == "hard_fallback"
+    assert debug_payload["hard_fallback_reason"] == "invalid_llm_payload"
+    assert debug_payload["error_type"] == "invalid_llm_payload"
+    assert "target_files" in debug_payload["error_message"]
 
 
 def test_write_llm_first_patch_proposal_emits_acceptance_event_for_recovered_payload(tmp_path: Path):
