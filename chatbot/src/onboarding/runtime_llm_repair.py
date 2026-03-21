@@ -8,6 +8,7 @@ from typing import Any, Callable
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from .debug_logging import append_generation_log, append_llm_usage, write_llm_debug_artifact
+from .framework_strategies import seam_target_rejection_reason
 from .patch_planner import build_llm_patch_factory
 from .runtime_runner import _apply_patch_file, _extract_patch_target_files
 
@@ -72,6 +73,7 @@ def attempt_llm_runtime_repair(
     debug_path: Path | None = None
     source = "hard_fallback"
     failure_reason = "llm_exception"
+    guardrail_rejection_reason: str | None = None
 
     try:
         llm = llm_factory()
@@ -100,6 +102,7 @@ def attempt_llm_runtime_repair(
             target_validation_error = _validate_patch_targets(target_files)
             if target_validation_error is not None:
                 failure_reason = target_validation_error
+                guardrail_rejection_reason = target_validation_error
             else:
                 apply_failure = _apply_patch_file(patch_path=patch_path, workspace=runtime_workspace)
                 if apply_failure is None:
@@ -114,6 +117,7 @@ def attempt_llm_runtime_repair(
         "status": "applied" if failure_reason is None else "hard_fallback",
         "source": source,
         "failure_reason": failure_reason,
+        "guardrail_rejection_reason": guardrail_rejection_reason,
         "failure_signature": failure_signature,
         "raw_response": raw_response,
         "normalized_response": normalized_patch,
@@ -137,6 +141,7 @@ def attempt_llm_runtime_repair(
             "patch_path": str(patch_path),
             "debug_path": str(debug_path),
             "failure_reason": failure_reason,
+            "guardrail_rejection_reason": guardrail_rejection_reason,
             "target_files": debug_payload["target_files"],
         },
     )
@@ -145,6 +150,7 @@ def attempt_llm_runtime_repair(
         "applied": failure_reason is None,
         "source": source,
         "failure_reason": failure_reason,
+        "guardrail_rejection_reason": guardrail_rejection_reason,
         "patch_path": str(patch_path),
         "debug_path": str(debug_path),
         "target_files": debug_payload["target_files"],
@@ -237,6 +243,14 @@ def _build_candidate_file_list(*, runtime_workspace: Path, evidence_payload: dic
                 "frontend/src/chatbot/ChatbotWidget.jsx",
             ]:
                 _add_candidate(path)
+        if any(marker in blob for marker in ["chatbot_mount_missing", "chatbot_status_not_rendered", "auth_bootstrap", "routes child violation"]):
+            for path in [
+                "frontend/src/App.js",
+                "frontend/src/App.jsx",
+                "frontend/src/main.jsx",
+                "frontend/src/main.js",
+            ]:
+                _add_candidate(path)
     if candidates:
         return candidates[:10]
     fallback_candidates = [
@@ -263,4 +277,7 @@ def _validate_patch_targets(target_files: list[str]) -> str | None:
     for target in target_files:
         if target.startswith("/") or ".." in Path(target).parts:
             return "invalid_patch_targets"
+        seam_rejection = seam_target_rejection_reason(target)
+        if seam_rejection is not None:
+            return seam_rejection
     return None

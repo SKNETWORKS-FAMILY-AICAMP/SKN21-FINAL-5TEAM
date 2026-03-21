@@ -1975,7 +1975,7 @@ def _run_runtime_completion_with_retries(
         attempt_record["repair_actions"] = recovery_payload.get("repair_actions") or []
 
         llm_repair_factory = runtime_repair_llm_factory
-        if str(latest_result.get("failure_reason") or "").endswith("import_resolution_failed"):
+        if _should_attempt_llm_runtime_repair(latest_result):
             llm_repair_result = attempt_llm_runtime_repair(
                 run_root=run_root,
                 runtime_workspace=runtime_workspace,
@@ -1988,6 +1988,7 @@ def _run_runtime_completion_with_retries(
             )
             attempt_record["llm_repair_applied"] = llm_repair_result.get("applied", False)
             attempt_record["llm_repair_failure_reason"] = llm_repair_result.get("failure_reason")
+            attempt_record["llm_repair_guardrail_rejection_reason"] = llm_repair_result.get("guardrail_rejection_reason")
             attempt_record["llm_repair_patch_path"] = llm_repair_result.get("patch_path")
             if llm_repair_result.get("applied", False):
                 continue
@@ -2006,6 +2007,19 @@ def _run_runtime_completion_with_retries(
 
     _write_runtime_completion_attempts(run_root=run_root, attempts=attempts_payload)
     return latest_result
+
+
+def _should_attempt_llm_runtime_repair(result: dict[str, Any]) -> bool:
+    failure_reason = str(result.get("failure_reason") or "").strip()
+    if not failure_reason:
+        return False
+    if failure_reason.endswith("import_resolution_failed"):
+        return True
+    return failure_reason in {
+        "chatbot_mount_missing",
+        "chatbot_status_not_rendered",
+        "django_urlconf_import_failed",
+    }
 
 
 def _write_runtime_completion_attempts(*, run_root: Path, attempts: list[dict[str, Any]]) -> None:
