@@ -135,6 +135,14 @@ def test_recovery_plan_prefers_llm_repair_recommendation_when_valid():
                 "guardrail_rejection_reason": "routes child violation",
                 "root_cause_hypothesis": "widget inserted inside Routes",
                 "proposed_fix": "retry planning with mount_context outside_routes",
+                "proposed_schema_overrides": [
+                    {
+                        "step_id": "chat-auth-token",
+                        "exports": {
+                            "chat_auth.access_token": "body.access_token.token",
+                        },
+                    }
+                ],
             },
         }
     )
@@ -144,6 +152,14 @@ def test_recovery_plan_prefers_llm_repair_recommendation_when_valid():
     assert payload["repair_scope"] == "run_only"
     assert payload["recommendation_source"] == "llm"
     assert payload["guardrail_rejection_reason"] == "routes child violation"
+    assert payload["proposed_schema_overrides"] == [
+        {
+            "step_id": "chat-auth-token",
+            "exports": {
+                "chat_auth.access_token": "body.access_token.token",
+            },
+        }
+    ]
 
 
 def test_recovery_plan_uses_llm_recommendation_without_deterministic_classifier(monkeypatch):

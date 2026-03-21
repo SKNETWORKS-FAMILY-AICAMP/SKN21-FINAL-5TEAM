@@ -48,8 +48,8 @@ def build_recovery_plan(context: dict[str, Any]) -> dict[str, Any]:
         return {
             "classification": str(llm_recommendation["classification"]),
             "should_retry": bool(llm_recommendation["should_retry"]),
-            "proposed_probe_updates": [],
-            "proposed_schema_overrides": [],
+            "proposed_probe_updates": list(llm_recommendation.get("proposed_probe_updates") or []),
+            "proposed_schema_overrides": list(llm_recommendation.get("proposed_schema_overrides") or []),
             "repair_actions": list(llm_recommendation.get("repair_actions") or []),
             "repair_scope": str(llm_recommendation["repair_scope"]),
             "recommendation_source": "llm",
@@ -134,8 +134,14 @@ def _normalize_llm_repair_recommendation(payload: Any) -> dict[str, Any] | None:
     classification = str(payload.get("classification") or "").strip()
     repair_scope = str(payload.get("repair_scope") or "").strip()
     should_retry = payload.get("should_retry")
+    proposed_probe_updates = _normalize_llm_recommendation_list(payload.get("proposed_probe_updates"))
+    proposed_schema_overrides = _normalize_llm_recommendation_list(payload.get("proposed_schema_overrides"))
     repair_actions = _normalize_llm_repair_actions(payload.get("repair_actions"))
     if not classification or repair_scope not in {"run_only", "generator_promoted"} or not isinstance(should_retry, bool):
+        return None
+    if payload.get("proposed_probe_updates") is not None and proposed_probe_updates is None:
+        return None
+    if payload.get("proposed_schema_overrides") is not None and proposed_schema_overrides is None:
         return None
     if payload.get("repair_actions") is not None and repair_actions is None:
         return None
@@ -148,8 +154,24 @@ def _normalize_llm_repair_recommendation(payload: Any) -> dict[str, Any] | None:
         "proposed_fix": str(payload.get("proposed_fix") or "").strip(),
         "failure_signature": str(payload.get("failure_signature") or "").strip(),
         "guardrail_rejection_reason": payload.get("guardrail_rejection_reason"),
+        "proposed_probe_updates": proposed_probe_updates or [],
+        "proposed_schema_overrides": proposed_schema_overrides or [],
         "repair_actions": repair_actions or [],
     }
+    return normalized
+
+
+def _normalize_llm_recommendation_list(payload: Any) -> list[dict[str, Any]] | None:
+    if payload is None:
+        return []
+    if not isinstance(payload, list):
+        return None
+
+    normalized: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            return None
+        normalized.append(dict(item))
     return normalized
 
 

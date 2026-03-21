@@ -202,6 +202,9 @@ metadata must be an object and should include:
 - proposed_fix: string
 - failure_signature: string
 - guardrail_rejection_reason: string | null
+- proposed_probe_updates: array | null
+- proposed_schema_overrides: array | null
+- repair_actions: array | null
 Use metadata.should_retry as a boolean when recommending a retry.
 """,
 }

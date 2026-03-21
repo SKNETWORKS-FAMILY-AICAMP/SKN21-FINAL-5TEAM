@@ -1089,6 +1089,9 @@ def test_run_onboarding_generation_calls_recovery_planner_for_recoverable_failur
         "proposed_fix": "override chat-auth-token export path",
         "failure_signature": "response_schema_mismatch:chat-auth-token",
         "guardrail_rejection_reason": "routes child violation",
+        "proposed_probe_updates": None,
+        "proposed_schema_overrides": None,
+        "repair_actions": None,
     }
 
 

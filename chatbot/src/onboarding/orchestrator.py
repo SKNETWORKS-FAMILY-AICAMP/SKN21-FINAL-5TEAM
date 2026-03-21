@@ -1343,6 +1343,9 @@ def _run_validation_with_retries(
                     "proposed_fix": diagnoser_message.metadata.get("proposed_fix"),
                     "failure_signature": diagnoser_message.metadata.get("failure_signature"),
                     "guardrail_rejection_reason": diagnoser_message.metadata.get("guardrail_rejection_reason"),
+                    "proposed_probe_updates": diagnoser_message.metadata.get("proposed_probe_updates"),
+                    "proposed_schema_overrides": diagnoser_message.metadata.get("proposed_schema_overrides"),
+                    "repair_actions": diagnoser_message.metadata.get("repair_actions"),
                 },
                 "guardrail_rejection_reason": diagnoser_message.metadata.get("guardrail_rejection_reason"),
             }
