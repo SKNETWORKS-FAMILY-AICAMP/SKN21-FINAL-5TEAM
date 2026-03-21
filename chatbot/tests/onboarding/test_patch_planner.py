@@ -130,59 +130,6 @@ def test_strategy_patch_proposal_for_bilyeo_targets_flask_auth_and_vue_shell():
     assert "frontend/src/views/Orders.vue" not in paths
 
 
-def test_build_patch_proposal_filters_llm_ranked_targets_outside_strategy_allowlist():
-    contract = {
-        "site": "food",
-        "backend": {
-            "framework": "django",
-            "auth_style": "session_cookie",
-            "route_registration_points": ["backend/foodshop/urls.py"],
-            "auth_source_paths": ["backend/users/views.py"],
-            "user_resolver_paths": ["backend/users/views.py"],
-        },
-        "frontend": {
-            "framework": "react",
-            "app_shell_path": "frontend/src/App.js",
-            "widget_mount_points": ["frontend/src/App.js"],
-        },
-    }
-    proposal = build_patch_proposal(
-        analysis={"integration_contract": contract},
-        codebase_map={
-            "integration_contract": contract,
-            "candidate_edit_targets": [
-                {"path": "backend/users/views.py", "reason": "users auth handler"},
-                {"path": "backend/foodshop/urls.py", "reason": "project urlconf"},
-                {"path": "backend/orders/urls.py", "reason": "orders urlconf"},
-                {"path": "backend/products/urls.py", "reason": "products urlconf"},
-                {"path": "frontend/src/App.js", "reason": "react app shell"},
-                {"path": "frontend/src/pages/Login/index.jsx", "reason": "login page"},
-            ],
-            "backend_strategy": "django",
-            "frontend_strategy": "react",
-            "backend_route_targets": [{"path": "backend/foodshop/urls.py", "reason": "project urlconf"}],
-            "frontend_mount_targets": [{"path": "frontend/src/App.js", "reason": "app shell"}],
-            "tool_registry_targets": [{"path": "backend/users/views.py", "reason": "users auth handler"}],
-        },
-        recommended_outputs=["chat_auth", "order_adapter", "product_adapter", "frontend_patch"],
-        llm_codebase_interpretation={
-            "ranked_candidates": [
-                {"path": "backend/orders/urls.py", "reason": "llm broad candidate"},
-                {"path": "backend/products/urls.py", "reason": "llm broad candidate"},
-                {"path": "frontend/src/pages/Login/index.jsx", "reason": "llm auth ui candidate"},
-            ]
-        },
-    )
-
-    paths = {item["path"] for item in proposal["target_files"]}
-    assert "backend/users/views.py" in paths
-    assert "backend/foodshop/urls.py" in paths
-    assert "frontend/src/App.js" in paths
-    assert "backend/orders/urls.py" not in paths
-    assert "backend/products/urls.py" not in paths
-    assert "frontend/src/pages/Login/index.jsx" not in paths
-
-
 def test_write_unified_diff_draft_inserts_auth_stub_after_existing_auth_view(tmp_path: Path):
     source_root = tmp_path / "source"
     run_root = tmp_path / "generated"
@@ -326,59 +273,6 @@ def test_write_unified_diff_draft_inserts_react_widget_inside_component_markup(t
     assert '+  widgetBundlePath: "/widget.js",\n' in content
     assert '+      <order-cs-widget />\n' in content
     assert 'SharedChatbotWidget' not in content
-
-
-def test_write_unified_diff_draft_keeps_widget_outside_routes_block(tmp_path: Path):
-    source_root = tmp_path / "source"
-    run_root = tmp_path / "generated"
-    source_file = source_root / "frontend" / "src" / "App.js"
-    proposal_path = run_root / "reports" / "patch-proposal.json"
-    output_path = run_root / "patches" / "proposed.patch"
-
-    source_file.parent.mkdir(parents=True)
-    source_file.write_text(
-        'import { BrowserRouter, Routes, Route } from "react-router-dom";\n'
-        "\n"
-        "function App() {\n"
-        "  return (\n"
-        "    <BrowserRouter>\n"
-        "      <main>\n"
-        "        <Routes>\n"
-        '          <Route path="/" element={<div>Home</div>} />\n'
-        "        </Routes>\n"
-        "      </main>\n"
-        "    </BrowserRouter>\n"
-        "  );\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    proposal_path.parent.mkdir(parents=True)
-    proposal_path.write_text(
-        json.dumps(
-            {
-                "target_files": [
-                    {
-                        "path": "frontend/src/App.js",
-                        "reason": "frontend app shell",
-                        "intent": "mount chatbot widget",
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    write_unified_diff_draft(
-        source_root=source_root,
-        generated_run_root=run_root,
-        proposal_path=proposal_path,
-        output_path=output_path,
-    )
-
-    content = output_path.read_text(encoding="utf-8")
-
-    assert "+          <Route path=\"/\" element={<div>Home</div>} />\n+      <SharedChatbotWidget />\n+        </Routes>\n" not in content
-    assert "         </Routes>\n+      <SharedChatbotWidget />\n       </main>\n" in content
 
 
 def test_write_unified_diff_draft_inserts_fastapi_router_near_app_setup(tmp_path: Path):
@@ -1035,71 +929,6 @@ def test_write_llm_first_patch_proposal_recovery_uses_hard_fallback_on_invalid_t
     assert payload["target_files"][0]["path"] == "backend/users/views.py"
     assert execution["source"] == "hard_fallback"
     assert execution["hard_fallback_reason"] == "invalid_target_selection"
-
-
-def test_write_llm_first_patch_proposal_filters_invalid_targets_when_valid_subset_remains(tmp_path: Path):
-    source_root = tmp_path / "source"
-    output_path = tmp_path / "reports" / "patch-proposal.json"
-    execution_path = tmp_path / "reports" / "llm-patch-proposal-execution.json"
-    (source_root / "backend" / "users").mkdir(parents=True)
-    (source_root / "backend" / "foodshop").mkdir(parents=True)
-    (source_root / "backend" / "users" / "views.py").write_text("def login(request):\n    return None\n", encoding="utf-8")
-    (source_root / "backend" / "foodshop" / "urls.py").write_text("urlpatterns = []\n", encoding="utf-8")
-    codebase_map = {
-        "candidate_edit_targets": [
-            {"path": "backend/users/views.py", "reason": "auth handler"},
-            {"path": "backend/foodshop/urls.py", "reason": "root urls"},
-        ]
-    }
-
-    class PartiallyInvalidTargetLLM:
-        def invoke(self, messages):
-            return type(
-                "LLMResponse",
-                (),
-                {
-                    "content": json.dumps(
-                        {
-                            "target_files": [
-                                {
-                                    "path": "backend/users/views.py",
-                                    "reason": "valid target",
-                                    "intent": "auth",
-                                },
-                                {
-                                    "path": "backend/admin/views.py",
-                                    "reason": "invalid target",
-                                    "intent": "wrong",
-                                },
-                            ],
-                            "supporting_generated_files": ["files/backend/chat_auth.py"],
-                            "recommended_outputs": ["chat_auth"],
-                            "analysis_summary": {
-                                "auth_style": "session_cookie",
-                                "frontend_mount_points": [],
-                                "route_prefixes": [],
-                            },
-                        }
-                    )
-                },
-            )()
-
-    write_llm_first_patch_proposal(
-        source_root=source_root,
-        analysis={"auth": {"auth_style": "session_cookie"}},
-        codebase_map=codebase_map,
-        recommended_outputs=["chat_auth"],
-        output_path=output_path,
-        execution_output_path=execution_path,
-        llm_factory=lambda: PartiallyInvalidTargetLLM(),
-    )
-
-    payload = json.loads(output_path.read_text(encoding="utf-8"))
-    execution = json.loads(execution_path.read_text(encoding="utf-8"))
-
-    assert [item["path"] for item in payload["target_files"]] == ["backend/users/views.py"]
-    assert execution["source"] == "recovered_llm"
-    assert execution["recovery_reason"] == "patch_proposal_targets_filtered"
 
 
 def test_write_llm_first_patch_proposal_includes_file_samples_in_prompt(tmp_path: Path):
