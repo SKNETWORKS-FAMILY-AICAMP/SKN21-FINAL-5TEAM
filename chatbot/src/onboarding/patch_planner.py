@@ -21,6 +21,7 @@ from .debug_logging import (
     extract_llm_usage,
     write_llm_debug_artifact,
 )
+from .frontend_generator import build_frontend_mount_contract
 from .framework_strategies import build_strategy_allowlist, select_strategy_target_candidates
 from .runtime_runner import _apply_patch_file
 
@@ -1333,11 +1334,13 @@ def _build_react_mount_updated_lines(
     *,
     insertion_hint: dict[str, Any] | None = None,
 ) -> list[str]:
-    updated_lines = _insert_import_after_existing_block(
-        source_lines,
-        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n',
-    )
-    widget_line = "      <SharedChatbotWidget />\n"
+    updated_lines = list(source_lines)
+    if '__ORDER_CS_WIDGET_HOST_CONTRACT__' not in "".join(updated_lines):
+        updated_lines = _insert_lines_after_existing_block(
+            updated_lines,
+            _build_shared_widget_bootstrap_lines(),
+        )
+    widget_line = "      <order-cs-widget />\n"
     if widget_line in updated_lines:
         return updated_lines
 
@@ -1348,7 +1351,7 @@ def _build_react_mount_updated_lines(
 
     insert_index = _find_react_mount_insert_index(updated_lines)
     if insert_index is None:
-        fallback_line = "  <SharedChatbotWidget />\n"
+        fallback_line = "  <order-cs-widget />\n"
         if fallback_line not in updated_lines:
             if updated_lines and not updated_lines[-1].endswith("\n"):
                 updated_lines[-1] = f"{updated_lines[-1]}\n"
@@ -1361,7 +1364,16 @@ def _build_react_mount_updated_lines(
 
 def _build_vue_mount_updated_lines(source_lines: list[str]) -> list[str]:
     updated_lines = list(source_lines)
-    widget_line = "  <SharedChatbotWidget />\n"
+    widget_line = "  <order-cs-widget />\n"
+    if '__ORDER_CS_WIDGET_HOST_CONTRACT__' not in "".join(updated_lines):
+        script_close = next((index for index, line in enumerate(updated_lines) if "</script>" in line), None)
+        insertion = list(_build_shared_widget_bootstrap_lines())
+        if script_close is not None:
+            if script_close > 0 and updated_lines[script_close - 1].strip():
+                insertion.insert(0, "\n")
+            updated_lines[script_close:script_close] = insertion
+        else:
+            updated_lines.extend(["\n", "<script setup>\n", *insertion, "</script>\n"])
     if widget_line not in updated_lines:
         if updated_lines and not updated_lines[-1].endswith("\n"):
             updated_lines[-1] = f"{updated_lines[-1]}\n"
@@ -1369,9 +1381,35 @@ def _build_vue_mount_updated_lines(source_lines: list[str]) -> list[str]:
     return updated_lines
 
 
-def _insert_import_after_existing_block(source_lines: list[str], import_line: str) -> list[str]:
+def _build_shared_widget_bootstrap_lines() -> list[str]:
+    contract = build_frontend_mount_contract()
+    return [
+        "const ORDER_CS_WIDGET_HOST_CONTRACT = {\n",
+        f'  chatbotServerBaseUrl: "{contract["chatbotServerBaseUrl"]}",\n',
+        f'  authBootstrapPath: "{contract["authBootstrapPath"]}",\n',
+        f'  widgetBundlePath: "{contract["widgetBundlePath"]}",\n',
+        f'  widgetElementTag: "{contract["widgetElementTag"]}",\n',
+        f'  mountMode: "{contract["mountMode"]}",\n',
+        "};\n",
+        "\n",
+        'if (typeof globalThis === "object") {\n',
+        '  globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"] = ORDER_CS_WIDGET_HOST_CONTRACT;\n',
+        "}\n",
+        "\n",
+        'if (typeof document !== "undefined" && !document.querySelector(\'script[data-order-cs-widget-bundle="true"]\')) {\n',
+        '  const orderCsWidgetScript = document.createElement("script");\n',
+        "  orderCsWidgetScript.src = `${ORDER_CS_WIDGET_HOST_CONTRACT.chatbotServerBaseUrl}${ORDER_CS_WIDGET_HOST_CONTRACT.widgetBundlePath}`;\n",
+        "  orderCsWidgetScript.async = true;\n",
+        '  orderCsWidgetScript.dataset.orderCsWidgetBundle = "true";\n',
+        "  document.head.appendChild(orderCsWidgetScript);\n",
+        "}\n",
+        "\n",
+    ]
+
+
+def _insert_lines_after_existing_block(source_lines: list[str], insertion_lines: list[str]) -> list[str]:
     updated_lines = list(source_lines)
-    if import_line in updated_lines:
+    if not insertion_lines:
         return updated_lines
 
     insert_index = 0
@@ -1386,8 +1424,12 @@ def _insert_import_after_existing_block(source_lines: list[str], import_line: st
             continue
         break
 
-    updated_lines.insert(insert_index, import_line)
+    updated_lines[insert_index:insert_index] = insertion_lines
     return updated_lines
+
+
+def _insert_import_after_existing_block(source_lines: list[str], import_line: str) -> list[str]:
+    return _insert_lines_after_existing_block(source_lines, [import_line])
 
 
 def _find_first_line_index(lines: list[str], marker: str) -> int | None:

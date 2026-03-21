@@ -964,7 +964,6 @@ def test_run_onboarding_generation_passes_rich_analysis_context_to_roles(tmp_pat
         "files/backend/chat_auth.py",
         "files/backend/order_adapter_client.py",
         "files/backend/product_adapter_client.py",
-        "files/frontend/src/chatbot/SharedChatbotWidget.jsx",
         "files/backend/tool_registry.py",
     ]
     assert generator_context["proposed_patches"] == [
@@ -1773,20 +1772,11 @@ def test_run_onboarding_generation_runtime_completion_repairs_shared_widget_impo
         encoding="utf-8",
     )
 
-    widget_path = runtime_workspace / "frontend" / "src" / "chatbot" / "SharedChatbotWidget.jsx"
-    widget_path.parent.mkdir(parents=True, exist_ok=True)
-    widget_path.write_text(
-        '// preserve @shared-chatbot/ChatbotWidget alias comment\n'
-        'import { HostedChatbotWidget } from "@shared-chatbot/ChatbotWidget";\n'
-        "export default function SharedChatbotWidget() {\n"
-        "  return <HostedChatbotWidget />;\n"
-        "}\n",
-        encoding="utf-8",
-    )
     runtime_app = runtime_workspace / "frontend" / "src" / "App.js"
     runtime_app.parent.mkdir(parents=True, exist_ok=True)
     runtime_app.write_text(
-        "export default function App() { return <main>Home</main>; }\n",
+        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
+        "export default function App() { return <><main>Home</main><SharedChatbotWidget /></>; }\n",
         encoding="utf-8",
     )
 
@@ -1847,14 +1837,13 @@ def test_run_onboarding_generation_runtime_completion_repairs_shared_widget_impo
         enable_runtime_completion_loop=True,
     )
 
-    vendored_widget = runtime_workspace / "frontend" / "src" / "chatbot" / "ChatbotWidget.jsx"
     attempts_payload = json.loads((Path(result["run_root"]) / "reports" / "runtime-completion-attempts.json").read_text(encoding="utf-8"))
 
     assert result["current_state"] == "completed"
-    assert 'from "./ChatbotWidget"' in widget_path.read_text(encoding="utf-8")
-    assert "// preserve @shared-chatbot/ChatbotWidget alias comment" in widget_path.read_text(encoding="utf-8")
-    assert vendored_widget.exists()
-    assert "HostedChatbotWidget" in vendored_widget.read_text(encoding="utf-8")
+    repaired_app = runtime_app.read_text(encoding="utf-8")
+    assert 'globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"]' in repaired_app
+    assert "<order-cs-widget />" in repaired_app
+    assert "@shared-chatbot/ChatbotWidget" not in repaired_app
     assert attempts_payload[0]["classification"] == "frontend_import_resolution_failed"
 
 
@@ -2946,8 +2935,8 @@ def test_run_onboarding_generation_writes_frontend_mount_diff_draft(tmp_path: Pa
 
     assert result["current_state"] == "completed"
     assert "+++ b/frontend/src/App.js" in content
-    assert 'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";' in content
-    assert "<SharedChatbotWidget />" in content
+    assert 'globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"]' in content
+    assert "<order-cs-widget />" in content
 
 
 def test_run_onboarding_generation_handles_sources_without_trailing_newlines(tmp_path: Path):

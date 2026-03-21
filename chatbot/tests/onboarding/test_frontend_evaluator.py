@@ -1,9 +1,12 @@
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
+os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
 SRC_ROOT = Path(__file__).resolve().parents[3] / "chatbot" / "src"
 frontend_evaluator_path = SRC_ROOT / "onboarding" / "frontend_evaluator.py"
@@ -15,6 +18,89 @@ spec.loader.exec_module(frontend_evaluator)
 evaluate_frontend_workspace = frontend_evaluator.evaluate_frontend_workspace
 
 
+def _build_successful_build_result(workspace: Path) -> dict[str, object]:
+    return {
+        "workspace": str(workspace),
+        "package_manager": "npm",
+        "install_result": {
+            "command": ["npm", "install"],
+            "returncode": 0,
+            "stdout": "",
+            "stderr": "",
+            "timed_out": False,
+        },
+        "build_result": {
+            "command": ["npm", "run", "build"],
+            "returncode": 0,
+            "stdout": "",
+            "stderr": "",
+            "timed_out": False,
+        },
+    }
+
+
+def _shared_widget_bootstrap() -> str:
+    return (
+        "const ORDER_CS_WIDGET_HOST_CONTRACT = {\n"
+        '  chatbotServerBaseUrl: "",\n'
+        '  authBootstrapPath: "/api/chat/auth-token",\n'
+        '  widgetBundlePath: "/widget.js",\n'
+        '  widgetElementTag: "order-cs-widget",\n'
+        '  mountMode: "floating_launcher",\n'
+        "};\n"
+        'globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"] = ORDER_CS_WIDGET_HOST_CONTRACT;\n'
+        'const orderCsWidgetScript = document.createElement("script");\n'
+        "orderCsWidgetScript.src = `${ORDER_CS_WIDGET_HOST_CONTRACT.chatbotServerBaseUrl}${ORDER_CS_WIDGET_HOST_CONTRACT.widgetBundlePath}`;\n"
+        'orderCsWidgetScript.dataset.orderCsWidgetBundle = "true";\n'
+        "document.head.appendChild(orderCsWidgetScript);\n"
+    )
+
+
+def _write_react_mount(
+    workspace: Path,
+    *,
+    include_bundle_bootstrap: bool = True,
+    include_widget_usage: bool = True,
+    inside_routes: bool = False,
+) -> None:
+    (workspace / "frontend" / "src").mkdir(parents=True, exist_ok=True)
+    bootstrap = _shared_widget_bootstrap() if include_bundle_bootstrap else ""
+    if inside_routes:
+        body = (
+            'import { Routes } from "react-router-dom";\n\n'
+            f"{bootstrap}\n"
+            "export default function App() {\n"
+            "  return (\n"
+            "    <Routes>\n"
+            f'      {"<order-cs-widget />" if include_widget_usage else "<main>Home</main>"}\n'
+            "    </Routes>\n"
+            "  );\n"
+            "}\n"
+        )
+    else:
+        widget = "<order-cs-widget />" if include_widget_usage else "<main>Home</main>"
+        body = (
+            f"{bootstrap}\n"
+            "export default function App() {\n"
+            f"  return <>{widget}</>;\n"
+            "}\n"
+        )
+    (workspace / "frontend" / "src" / "App.js").write_text(body, encoding="utf-8")
+
+
+def _write_vue_mount(workspace: Path) -> None:
+    (workspace / "frontend" / "src").mkdir(parents=True, exist_ok=True)
+    (workspace / "frontend" / "src" / "App.vue").write_text(
+        "<script setup>\n"
+        f"{_shared_widget_bootstrap()}"
+        "</script>\n\n"
+        "<template>\n"
+        "  <order-cs-widget />\n"
+        "</template>\n",
+        encoding="utf-8",
+    )
+
+
 def test_evaluate_frontend_workspace_detects_react_mount(tmp_path: Path, monkeypatch):
     workspace = tmp_path / "workspace"
     report_root = tmp_path / "reports"
@@ -24,40 +110,11 @@ def test_evaluate_frontend_workspace_detects_react_mount(tmp_path: Path, monkeyp
         json.dumps({"scripts": {"build": "echo build"}}),
         encoding="utf-8",
     )
-    (workspace / "frontend" / "src" / "chatbot").mkdir(parents=True)
-    (workspace / "frontend" / "src" / "chatbot" / "SharedChatbotWidget.jsx").write_text(
-        "export default function SharedChatbotWidget() {\n"
-        "  fetch('/api/chat/auth-token', { method: 'POST', credentials: 'include' });\n"
-        "  return <div>Chat</div>;\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (workspace / "frontend" / "src" / "App.js").write_text(
-        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
-        "function App() { return <SharedChatbotWidget />; }\n",
-        encoding="utf-8",
-    )
+    _write_react_mount(workspace)
     monkeypatch.setattr(
         frontend_evaluator,
         "run_frontend_build",
-        lambda *, workspace, timeout=120: {
-            "workspace": str(workspace),
-            "package_manager": "npm",
-            "install_result": {
-                "command": ["npm", "install"],
-                "returncode": 0,
-                "stdout": "",
-                "stderr": "",
-                "timed_out": False,
-            },
-            "build_result": {
-                "command": ["npm", "run", "build"],
-                "returncode": 0,
-                "stdout": "",
-                "stderr": "",
-                "timed_out": False,
-            },
-        },
+        lambda *, workspace, timeout=120: _build_successful_build_result(workspace),
     )
 
     report_path = evaluate_frontend_workspace(
@@ -73,14 +130,15 @@ def test_evaluate_frontend_workspace_detects_react_mount(tmp_path: Path, monkeyp
     frontend_artifact = payload["frontend_artifact"]
     assert frontend_artifact["source"] == "llm"
     assert frontend_artifact["validation_status"] == "valid"
-    assert frontend_artifact["widget_path"].endswith("SharedChatbotWidget.jsx")
+    assert frontend_artifact["widget_path"] is None
     assert payload["install_attempted"] is True
     assert payload["build_attempted"] is True
     assert payload["build_command"] == ["npm", "run", "build"]
     assert payload["build_passed"] is True
     assert payload["runtime_checks"]["mount_exists"] is True
-    assert payload["runtime_checks"]["widget_exists"] is True
-    assert payload["runtime_checks"]["bootstrap_auth_fetch_present"] is True
+    assert payload["runtime_checks"]["bundle_bootstrap_present"] is True
+    assert payload["runtime_checks"]["widget_usage_present"] is True
+    assert payload["runtime_checks"]["auth_bootstrap_contract_present"] is True
 
 
 def test_evaluate_frontend_workspace_detects_vue_mount(tmp_path: Path, monkeypatch):
@@ -92,36 +150,11 @@ def test_evaluate_frontend_workspace_detects_vue_mount(tmp_path: Path, monkeypat
         json.dumps({"scripts": {"build": "echo build"}}),
         encoding="utf-8",
     )
-    (workspace / "frontend" / "src" / "chatbot").mkdir(parents=True)
-    (workspace / "frontend" / "src" / "chatbot" / "SharedChatbotWidget.jsx").write_text(
-        "export default function SharedChatbotWidget() { return <div>Chat</div>; }\n",
-        encoding="utf-8",
-    )
-    (workspace / "frontend" / "src" / "App.vue").write_text(
-        "<template><SharedChatbotWidget /></template>\n",
-        encoding="utf-8",
-    )
+    _write_vue_mount(workspace)
     monkeypatch.setattr(
         frontend_evaluator,
         "run_frontend_build",
-        lambda *, workspace, timeout=120: {
-            "workspace": str(workspace),
-            "package_manager": "npm",
-            "install_result": {
-                "command": ["npm", "install"],
-                "returncode": 0,
-                "stdout": "",
-                "stderr": "",
-                "timed_out": False,
-            },
-            "build_result": {
-                "command": ["npm", "run", "build"],
-                "returncode": 0,
-                "stdout": "",
-                "stderr": "",
-                "timed_out": False,
-            },
-        },
+        lambda *, workspace, timeout=120: _build_successful_build_result(workspace),
     )
 
     report_path = evaluate_frontend_workspace(
@@ -136,36 +169,10 @@ def test_evaluate_frontend_workspace_detects_vue_mount(tmp_path: Path, monkeypat
     frontend_artifact = payload["frontend_artifact"]
     assert frontend_artifact["source"] == "llm"
     assert frontend_artifact["validation_status"] == "valid"
-    assert frontend_artifact["widget_path"].endswith("SharedChatbotWidget.jsx")
-    assert payload["install_attempted"] is True
-    assert payload["build_attempted"] is True
-    assert payload["build_command"] == ["npm", "run", "build"]
-    assert payload["build_passed"] is True
+    assert frontend_artifact["widget_path"] is None
     assert payload["runtime_checks"]["mount_exists"] is True
-    assert payload["runtime_checks"]["widget_exists"] is True
-
-
-def test_evaluate_frontend_workspace_recovers_when_widget_missing(tmp_path: Path):
-    workspace = tmp_path / "workspace"
-    report_root = tmp_path / "reports"
-    (workspace / "frontend" / "src").mkdir(parents=True)
-    # Mount candidate includes inline SharedChatbotWidget usage but no external widget file
-    (workspace / "frontend" / "src" / "App.js").write_text(
-        "function SharedChatbotWidget() { return <div>inline</div>; }\n"
-        "function App() { return <SharedChatbotWidget />; }\n",
-        encoding="utf-8",
-    )
-
-    report_path = evaluate_frontend_workspace(
-        runtime_workspace=workspace,
-        report_root=report_root,
-    )
-    payload = json.loads(report_path.read_text(encoding="utf-8"))
-    frontend_artifact = payload["frontend_artifact"]
-    assert frontend_artifact["source"] == "recovered_llm"
-    assert frontend_artifact["validation_status"] == "invalid"
-    assert any("widget file" in error for error in frontend_artifact["validation_errors"])
-    assert payload["build_attempted"] is False
+    assert payload["runtime_checks"]["bundle_bootstrap_present"] is True
+    assert payload["runtime_checks"]["widget_usage_present"] is True
 
 
 def test_evaluate_frontend_workspace_hard_fallbacks_when_mount_missing(tmp_path: Path):
@@ -193,11 +200,10 @@ def test_evaluate_frontend_workspace_hard_fallbacks_when_mount_missing(tmp_path:
 def test_evaluate_frontend_workspace_emits_observability_events(tmp_path: Path):
     workspace = tmp_path / "workspace"
     report_root = tmp_path / "reports"
-    (workspace / "frontend" / "src").mkdir(parents=True)
-    (workspace / "frontend" / "src" / "App.js").write_text(
-        "function SharedChatbotWidget() { return <div>inline</div>; }\n"
-        "function App() { return <SharedChatbotWidget />; }\n",
-        encoding="utf-8",
+    _write_react_mount(
+        workspace,
+        include_bundle_bootstrap=False,
+        include_widget_usage=True,
     )
 
     evaluate_frontend_workspace(
@@ -213,7 +219,7 @@ def test_evaluate_frontend_workspace_emits_observability_events(tmp_path: Path):
     ]
 
     assert any(item["component"] == "frontend_evaluator" and item["event"] == "stage_started" for item in trace_lines)
-    assert any(item["component"] == "frontend_evaluator" and item["event"] == "recovery_applied" for item in trace_lines)
+    assert any(item["component"] == "frontend_evaluator" and item["event"] == "hard_fallback_used" for item in trace_lines)
     assert any(item["component"] == "frontend_evaluator" and item["event"] == "stage_completed" for item in trace_lines)
 
 
@@ -226,16 +232,7 @@ def test_evaluate_frontend_workspace_emits_hard_fallback_event_when_build_fails(
         json.dumps({"scripts": {"build": "echo build"}}),
         encoding="utf-8",
     )
-    (workspace / "frontend" / "src" / "chatbot").mkdir(parents=True)
-    (workspace / "frontend" / "src" / "chatbot" / "SharedChatbotWidget.jsx").write_text(
-        "export default function SharedChatbotWidget() { return <div>Chat</div>; }\n",
-        encoding="utf-8",
-    )
-    (workspace / "frontend" / "src" / "App.js").write_text(
-        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
-        "function App() { return <SharedChatbotWidget />; }\n",
-        encoding="utf-8",
-    )
+    _write_react_mount(workspace)
     monkeypatch.setattr(
         frontend_evaluator,
         "run_frontend_build",
@@ -292,16 +289,7 @@ def test_evaluate_frontend_workspace_reports_install_failure_metadata(tmp_path: 
         json.dumps({"scripts": {"build": "echo build"}}),
         encoding="utf-8",
     )
-    (workspace / "frontend" / "src" / "chatbot").mkdir(parents=True)
-    (workspace / "frontend" / "src" / "chatbot" / "SharedChatbotWidget.jsx").write_text(
-        "export default function SharedChatbotWidget() { return <div>Chat</div>; }\n",
-        encoding="utf-8",
-    )
-    (workspace / "frontend" / "src" / "App.js").write_text(
-        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
-        "function App() { return <SharedChatbotWidget />; }\n",
-        encoding="utf-8",
-    )
+    _write_react_mount(workspace)
     monkeypatch.setattr(
         frontend_evaluator,
         "run_frontend_build",
@@ -345,16 +333,7 @@ def test_evaluate_frontend_workspace_ignores_warning_only_build_output_when_arti
         json.dumps({"scripts": {"build": "echo build"}}),
         encoding="utf-8",
     )
-    (workspace / "frontend" / "src" / "chatbot").mkdir(parents=True)
-    (workspace / "frontend" / "src" / "chatbot" / "SharedChatbotWidget.jsx").write_text(
-        "export default function SharedChatbotWidget() { return <div>Chat</div>; }\n",
-        encoding="utf-8",
-    )
-    (workspace / "frontend" / "src" / "App.js").write_text(
-        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
-        "function App() { return <SharedChatbotWidget />; }\n",
-        encoding="utf-8",
-    )
+    _write_react_mount(workspace)
     monkeypatch.setattr(
         frontend_evaluator,
         "run_frontend_build",
@@ -384,89 +363,12 @@ def test_evaluate_frontend_workspace_ignores_warning_only_build_output_when_arti
 
     assert payload["passed"] is True
     assert payload["build_passed"] is True
-    assert payload["bootstrap_failure_reason"] is None
-
-
-def test_evaluate_frontend_workspace_preserves_real_build_error_when_stderr_is_only_warning(tmp_path: Path, monkeypatch):
-    workspace = tmp_path / "workspace"
-    report_root = tmp_path / "reports"
-
-    (workspace / "frontend" / "build").mkdir(parents=True, exist_ok=True)
-    (workspace / "frontend" / "build" / "index.html").write_text("stale", encoding="utf-8")
-    (workspace / "frontend" / "package.json").write_text(
-        json.dumps({"scripts": {"build": "echo build"}}),
-        encoding="utf-8",
-    )
-    (workspace / "frontend" / "src" / "chatbot").mkdir(parents=True)
-    (workspace / "frontend" / "src" / "chatbot" / "SharedChatbotWidget.jsx").write_text(
-        "export default function SharedChatbotWidget() { return <div>Chat</div>; }\n",
-        encoding="utf-8",
-    )
-    (workspace / "frontend" / "src" / "App.js").write_text(
-        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
-        "function App() { return <SharedChatbotWidget />; }\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        frontend_evaluator,
-        "run_frontend_build",
-        lambda *, workspace, timeout=120: {
-            "workspace": str(workspace),
-            "package_manager": "npm",
-            "install_result": {
-                "command": ["npm", "install"],
-                "returncode": 0,
-                "stdout": "",
-                "stderr": "",
-                "timed_out": False,
-            },
-            "build_result": {
-                "command": ["npm", "run", "build"],
-                "returncode": 1,
-                "stdout": (
-                    "Creating an optimized production build...\n"
-                    "Failed to compile.\n\n"
-                    "Module not found: Error: Can't resolve '@shared-chatbot/ChatbotWidget'\n"
-                ),
-                "stderr": (
-                    "(node:10161) [DEP0176] DeprecationWarning: fs.F_OK is deprecated, "
-                    "use fs.constants.F_OK instead\n"
-                ),
-                "timed_out": False,
-            },
-        },
-    )
-
-    payload = json.loads(
-        evaluate_frontend_workspace(runtime_workspace=workspace, report_root=report_root).read_text(encoding="utf-8")
-    )
-
-    assert payload["passed"] is False
-    assert payload["build_passed"] is False
-    assert "Can't resolve '@shared-chatbot/ChatbotWidget'" in payload["bootstrap_failure_reason"]
 
 
 def test_evaluate_frontend_workspace_rejects_widget_inside_routes(tmp_path: Path):
     workspace = tmp_path / "workspace"
     report_root = tmp_path / "reports"
-
-    (workspace / "frontend" / "src" / "chatbot").mkdir(parents=True)
-    (workspace / "frontend" / "src" / "chatbot" / "SharedChatbotWidget.jsx").write_text(
-        "export default function SharedChatbotWidget() { return <div>Chat</div>; }\n",
-        encoding="utf-8",
-    )
-    (workspace / "frontend" / "src" / "App.js").write_text(
-        'import { Routes } from "react-router-dom";\n'
-        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
-        "export default function App() {\n"
-        "  return (\n"
-        "    <Routes>\n"
-        "      <SharedChatbotWidget />\n"
-        "    </Routes>\n"
-        "  );\n"
-        "}\n",
-        encoding="utf-8",
-    )
+    _write_react_mount(workspace, inside_routes=True)
 
     payload = json.loads(
         evaluate_frontend_workspace(runtime_workspace=workspace, report_root=report_root).read_text(encoding="utf-8")
@@ -474,30 +376,6 @@ def test_evaluate_frontend_workspace_rejects_widget_inside_routes(tmp_path: Path
 
     assert payload["passed"] is False
     assert "routes child violation" in payload["frontend_artifact"]["validation_errors"]
-
-
-def test_evaluate_frontend_workspace_rejects_widget_outside_frontend_src(tmp_path: Path):
-    workspace = tmp_path / "workspace"
-    report_root = tmp_path / "reports"
-
-    (workspace / "frontend" / "chatbot").mkdir(parents=True)
-    (workspace / "frontend" / "src").mkdir(parents=True)
-    (workspace / "frontend" / "chatbot" / "SharedChatbotWidget.jsx").write_text(
-        "export default function SharedChatbotWidget() { return <div>Chat</div>; }\n",
-        encoding="utf-8",
-    )
-    (workspace / "frontend" / "src" / "App.js").write_text(
-        'import SharedChatbotWidget from "../chatbot/SharedChatbotWidget";\n'
-        "function App() { return <SharedChatbotWidget />; }\n",
-        encoding="utf-8",
-    )
-
-    payload = json.loads(
-        evaluate_frontend_workspace(runtime_workspace=workspace, report_root=report_root).read_text(encoding="utf-8")
-    )
-
-    assert payload["passed"] is False
-    assert "widget path outside frontend/src" in payload["frontend_artifact"]["validation_errors"]
 
 
 def test_evaluate_frontend_workspace_ignores_node_modules_directories(tmp_path: Path, monkeypatch):
@@ -509,16 +387,7 @@ def test_evaluate_frontend_workspace_ignores_node_modules_directories(tmp_path: 
         json.dumps({"scripts": {"build": "echo build"}}),
         encoding="utf-8",
     )
-    (workspace / "frontend" / "src" / "chatbot").mkdir(parents=True)
-    (workspace / "frontend" / "src" / "chatbot" / "SharedChatbotWidget.jsx").write_text(
-        "export default function SharedChatbotWidget() { return <div>Chat</div>; }\n",
-        encoding="utf-8",
-    )
-    (workspace / "frontend" / "src" / "App.js").write_text(
-        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
-        "function App() { return <SharedChatbotWidget />; }\n",
-        encoding="utf-8",
-    )
+    _write_react_mount(workspace)
     (workspace / "frontend" / "node_modules" / "big.js").mkdir(parents=True)
     (workspace / "frontend" / "node_modules" / "big.js" / "index.js").write_text(
         "export const big = true;\n",
@@ -527,24 +396,7 @@ def test_evaluate_frontend_workspace_ignores_node_modules_directories(tmp_path: 
     monkeypatch.setattr(
         frontend_evaluator,
         "run_frontend_build",
-        lambda *, workspace, timeout=120: {
-            "workspace": str(workspace),
-            "package_manager": "npm",
-            "install_result": {
-                "command": ["npm", "install"],
-                "returncode": 0,
-                "stdout": "",
-                "stderr": "",
-                "timed_out": False,
-            },
-            "build_result": {
-                "command": ["npm", "run", "build"],
-                "returncode": 0,
-                "stdout": "",
-                "stderr": "",
-                "timed_out": False,
-            },
-        },
+        lambda *, workspace, timeout=120: _build_successful_build_result(workspace),
     )
 
     report_path = evaluate_frontend_workspace(

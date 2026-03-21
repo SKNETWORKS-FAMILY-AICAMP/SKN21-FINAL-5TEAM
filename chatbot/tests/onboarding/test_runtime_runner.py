@@ -238,13 +238,17 @@ def test_simulate_runtime_merge_ignores_draft_proposed_patch(tmp_path: Path):
     (run_root / "patches" / "proposed.patch").write_text(
         """--- a/frontend/src/App.js
 +++ b/frontend/src/App.js
-@@ -1,3 +1,6 @@
-+import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";
- export default function App() {
-     return <main>Home</main>;
- }
+@@ -1,3 +1,12 @@
++const ORDER_CS_WIDGET_HOST_CONTRACT = {
++  authBootstrapPath: "/api/chat/auth-token",
++  widgetBundlePath: "/widget.js",
++};
++globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"] = ORDER_CS_WIDGET_HOST_CONTRACT;
+export default function App() {
+    return <main>Home</main>;
+}
 +
-+  <SharedChatbotWidget />
++  <order-cs-widget />
 """,
         encoding="utf-8",
     )

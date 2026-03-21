@@ -25,8 +25,8 @@ def classify_onboarding_failure(
             "repairable": True,
             "repair_actions": [
                 {
-                    "action": "repair_shared_widget_import",
-                    "target_path": "frontend/src/chatbot/SharedChatbotWidget.jsx",
+                    "action": "repair_frontend_mount_bundle",
+                    "target_path": "frontend/src",
                 }
             ],
         },
@@ -150,14 +150,22 @@ def classify_onboarding_failure(
                 }
             ],
         }
-    if "widget path outside frontend/src" in frontend_errors:
+    if any(
+        error in frontend_errors
+        for error in {
+            "mount missing order-cs-widget bundle bootstrap",
+            "mount missing auth bootstrap contract",
+            "mount missing order-cs-widget usage",
+            "widget path outside frontend/src",
+        }
+    ):
         return {
             "classification": "frontend_mount_violation",
             "repairable": True,
             "repair_actions": [
                 {
-                    "action": "relocate_widget_into_src",
-                    "target_path": "frontend/src/chatbot/SharedChatbotWidget.jsx",
+                    "action": "repair_frontend_mount_target",
+                    "target_path": "frontend/src",
                 }
             ],
         }

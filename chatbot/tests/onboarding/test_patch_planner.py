@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+import types
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
+os.environ.setdefault("QDRANT_API_KEY", "test-key")
+sys.modules.setdefault("langchain_ollama", types.SimpleNamespace(ChatOllama=object))
 
 from chatbot.src.onboarding.patch_planner import (
     build_patch_proposal,
@@ -317,9 +322,10 @@ def test_write_unified_diff_draft_inserts_react_widget_inside_component_markup(t
 
     content = output_path.read_text(encoding="utf-8")
 
-    assert '+import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n' in content
-    assert '+      <SharedChatbotWidget />\n' in content
-    assert '-}\n+\n+  <SharedChatbotWidget />\n+}\n' not in content
+    assert '+const ORDER_CS_WIDGET_HOST_CONTRACT = {\n' in content
+    assert '+  widgetBundlePath: "/widget.js",\n' in content
+    assert '+      <order-cs-widget />\n' in content
+    assert 'SharedChatbotWidget' not in content
 
 
 def test_write_unified_diff_draft_keeps_widget_outside_routes_block(tmp_path: Path):
@@ -608,7 +614,7 @@ def test_write_unified_diff_draft_falls_back_when_insertion_hint_missing(tmp_pat
     )
 
     content = output_path.read_text(encoding="utf-8")
-    assert '+      <SharedChatbotWidget />\n' in content
+    assert '+      <order-cs-widget />\n' in content
 
 
 def test_write_llm_first_patch_proposal_prefers_llm_output_when_valid(tmp_path: Path):

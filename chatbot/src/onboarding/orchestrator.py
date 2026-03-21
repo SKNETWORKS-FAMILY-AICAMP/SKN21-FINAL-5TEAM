@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-import socket
-import subprocess
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
+from collections import defaultdict
 from typing import Any, Callable
-from urllib.parse import urlsplit, urlunsplit
 
 from .agent_contracts import AgentMessage, RecoveryAttempt, RunState
 from .agent_orchestrator import AgentOrchestrator
@@ -39,21 +38,9 @@ from .recovery_artifacts import write_recovered_smoke_plan
 from .recovery_planner import build_recovery_plan
 from .run_generator import generate_run_bundle
 from .run_resume import analyze_run_checkpoint
-from .runtime_completion_runner import (
-    _build_backend_probe_plan,
-    _build_chatbot_probe_plan,
-    _build_frontend_probe_plan,
-    _classify_probe_failure_reason,
-    _collect_process_output,
-    _launch_server_process,
-    _probe_http_ready,
-    _terminate_process,
-    run_runtime_completion,
-)
-from .runtime_llm_repair import attempt_llm_runtime_repair, build_runtime_repair_factory
-from .runtime_repair_toolkit import repair_python_import_from_traceback, rewrite_javascript_module_specifier
+from .runtime_completion_runner import run_runtime_completion
+from .runtime_repair_toolkit import repair_python_import_from_traceback
 from .slack_bridge import InMemorySlackBridge
-from .smoke_contract import SmokeTestPlan
 from .smoke_runner import load_smoke_plan, run_smoke_tests, summarize_smoke_results
 from .runtime_runner import prepare_runtime_workspace, simulate_runtime_merge
 from .runtime_runner import simulate_candidate_patch_merge
@@ -62,7 +49,6 @@ from .template_generator import (
     generate_backend_route_patch,
     generate_backend_tool_registry,
     generate_chat_auth_template,
-    generate_frontend_widget_artifact,
     generate_frontend_mount_patch,
     generate_order_adapter_template,
     generate_product_adapter_template,
@@ -159,12 +145,6 @@ def run_onboarding_generation(
     )
 
     role_attempts: dict[str, int] = defaultdict(int)
-    llm_runtime_repair_factory = build_runtime_repair_factory(
-        enabled=use_llm_roles or generate_llm_patch_draft,
-        llm_factory=llm_patch_factory,
-        provider=llm_provider,
-        model=llm_model,
-    )
 
     def _next_job_id(role_name: str) -> str:
         role_attempts[role_name] += 1
@@ -295,9 +275,6 @@ def run_onboarding_generation(
                     event_store=event_store,
                     terminal_logger=terminal_logger,
                     run_role_with_events=_run_role_with_events,
-                    llm_runtime_repair_factory=llm_runtime_repair_factory,
-                    llm_provider=llm_provider,
-                    llm_model=llm_model,
                 )
                 (run_root / "reports" / "smoke-results.json").write_text(
                     json.dumps(smoke_results, ensure_ascii=False, indent=2),
@@ -968,9 +945,6 @@ def run_onboarding_generation(
         event_store=event_store,
         terminal_logger=terminal_logger,
         run_role_with_events=_run_role_with_events,
-        llm_runtime_repair_factory=llm_runtime_repair_factory,
-        llm_provider=llm_provider,
-        llm_model=llm_model,
     )
     (run_root / "reports" / "smoke-results.json").write_text(
         json.dumps(smoke_results, ensure_ascii=False, indent=2),
@@ -1143,9 +1117,6 @@ def run_onboarding_generation(
             agent=agent,
             terminal_logger=terminal_logger,
             strategy_provenance=strategy_provenance,
-            llm_runtime_repair_factory=llm_runtime_repair_factory,
-            llm_provider=llm_provider,
-            llm_model=llm_model,
         )
         if not completion_result.get("passed", False):
             agent.state = RunState.HUMAN_REVIEW_REQUIRED
@@ -1171,11 +1142,6 @@ def _ensure_patch_companion_files(
 
     companion_map = {
         "patches/backend_chat_auth_route.patch": ["files/backend/chat_auth.py"],
-        "patches/frontend_widget_mount.patch": [
-            path
-            for path in fallback_files
-            if path.startswith("files/frontend/src/chatbot/SharedChatbotWidget.")
-        ],
     }
     for patch_path in proposed_patches:
         for companion in companion_map.get(str(patch_path or "").strip(), []):
@@ -1275,225 +1241,152 @@ def _run_validation_with_retries(
     terminal_logger: Callable[[str], None] | None = None,
     event_store: RedisRunJobStore | None = None,
     run_role_with_events: Callable[..., AgentMessage] | None = None,
-    llm_runtime_repair_factory: Callable[[], Any] | None = None,
-    llm_provider: str | None = None,
-    llm_model: str | None = None,
 ) -> list[dict]:
     recovery_attempts: list[RecoveryAttempt] = []
     seen_retry_signatures: set[str] = set()
-    llm_repair_signatures: set[str] = set()
-    server_state = _start_validation_runtime_servers(
-        runtime_workspace=runtime_workspace,
+    smoke_results = _run_smoke_tests_with_optional_recovery(
         run_root=run_root,
+        runtime_workspace=runtime_workspace,
+        plan=smoke_plan,
     )
-    try:
-        while True:
-            startup_failures = _build_validation_server_failure_results(server_state)
-            if startup_failures:
-                llm_repair_result = _attempt_llm_runtime_repair_cycle(
-                    run_root=run_root,
-                    runtime_workspace=runtime_workspace,
-                    llm_runtime_repair_factory=llm_runtime_repair_factory,
-                    llm_provider=llm_provider,
-                    llm_model=llm_model,
-                    failure_signature="|".join(
-                        str(result.get("stderr") or result.get("step_id") or "validation_runtime_failure")
-                        for result in startup_failures
-                    ),
-                    evidence_payload={
-                        "stage": "validation_startup",
-                        "startup_failures": startup_failures,
-                        "backend_probe": server_state.get("backend") or {},
-                        "frontend_probe": server_state.get("frontend") or {},
-                    },
-                    attempt_id=f"validation-{agent.retry_count + 1}",
+    while any(result.get("returncode") != 0 for result in smoke_results):
+        failure_policy = _classify_failure_policy(smoke_results)
+        failed_steps = failure_policy["failed_steps"]
+        failure_signature = failure_policy["failure_signature"]
+        if failure_policy["retryable"]:
+            agent.mark_failure()
+        else:
+            agent.state = RunState.HUMAN_REVIEW_REQUIRED
+        diagnoser_context = {
+            "run_id": run_id,
+            "retry_count": agent.retry_count,
+            "retry_budget": agent.retry_budget,
+            "failure_signature": failure_signature,
+            "failed_steps": failed_steps,
+            "retryable": failure_policy["retryable"],
+            "failure_summary": failure_policy["summary"],
+            "smoke_results": smoke_results,
+            "evidence": [
+                f"failed smoke steps: {sum(1 for result in smoke_results if result.get('returncode') != 0)}",
+                f"current state: {agent.state.value}",
+                f"failure signature: {failure_signature}",
+                f"retryable: {failure_policy['retryable']}",
+                f"timed out steps: {failure_policy['summary']['timed_out_steps']}",
+                f"missing scripts: {failure_policy['summary']['missing_scripts']}",
+            ],
+        }
+        if run_role_with_events is not None:
+            diagnoser_message = run_role_with_events(
+                "Diagnostician",
+                diagnoser_context,
+                job_started_payload={
+                    "failure_signature": failure_signature,
+                    "retryable": failure_policy["retryable"],
+                },
+                job_completed_payload={"retryable": failure_policy["retryable"]},
+            )
+        else:
+            diagnoser_message = role_runner.run_role("Diagnostician", diagnoser_context)
+        _write_diagnostic_report(
+            run_root=run_root,
+            diagnoser_message=diagnoser_message,
+            failure_policy=failure_policy,
+            retry_count=agent.retry_count,
+            retry_budget=agent.retry_budget,
+        )
+        recovery_payload = build_recovery_plan(
+            {
+                "failure_signature": str(diagnoser_message.metadata.get("failure_signature") or failure_signature),
+                "retry_count": agent.retry_count,
+                "retry_budget": agent.retry_budget,
+                "failed_results": [result for result in smoke_results if result.get("returncode") != 0],
+                "backend_evaluation": _read_json_if_exists(run_root / "reports" / "backend-evaluation.json") or {},
+                "frontend_evaluation": _read_json_if_exists(run_root / "reports" / "frontend-evaluation.json") or {},
+            }
+        )
+        recovery_artifact_path = run_root / "reports" / "recovery-plan.json"
+        recovery_artifact_path.write_text(
+            json.dumps(recovery_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        _emit_role_log(
+            terminal_logger=terminal_logger,
+            runner=role_runner,
+            role="Diagnostician",
+            message=diagnoser_message,
+        )
+        if bridge is not None:
+            bridge.post_agent_message(
+                event=role_runner.build_event(
+                    run_id=run_id,
+                    event_type="diagnosis.completed",
+                    state=RunState.DIAGNOSING,
+                    message=diagnoser_message,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                ),
+                message=diagnoser_message,
+            )
+
+        should_retry = (
+            failure_policy["retryable"]
+            and bool(diagnoser_message.metadata.get("should_retry"))
+            and bool(recovery_payload.get("should_retry"))
+        )
+        stop_reason: str | None = None
+        if failure_signature in seen_retry_signatures:
+            should_retry = False
+            stop_reason = "duplicate_failure_signature"
+            agent.state = RunState.HUMAN_REVIEW_REQUIRED
+        elif not failure_policy["retryable"]:
+            stop_reason = "non_retryable_failure"
+        elif agent.state == RunState.HUMAN_REVIEW_REQUIRED:
+            stop_reason = "retry_budget_exhausted"
+        elif not bool(diagnoser_message.metadata.get("should_retry")):
+            stop_reason = "diagnostician_declined_retry"
+        elif not bool(recovery_payload.get("should_retry")):
+            stop_reason = "recovery_plan_declined_retry"
+
+        recovery_attempts.append(
+            RecoveryAttempt(
+                retry_count=agent.retry_count,
+                failure_signature=str(diagnoser_message.metadata.get("failure_signature") or failure_signature),
+                classification=str(
+                    diagnoser_message.metadata.get("classification")
+                    or recovery_payload.get("classification")
+                    or ""
                 )
-                if llm_repair_result.get("applied"):
-                    _stop_validation_runtime_servers(server_state)
-                    server_state = _start_validation_runtime_servers(
-                        runtime_workspace=runtime_workspace,
-                        run_root=run_root,
-                    )
-                    continue
-                return startup_failures
-            break
+                or None,
+                should_retry=should_retry,
+                stop_reason=stop_reason,
+                recovery_artifact_path=str(recovery_artifact_path),
+            )
+        )
+        _write_recovery_attempts(run_root=run_root, attempts=recovery_attempts)
+        if not should_retry or agent.state == RunState.HUMAN_REVIEW_REQUIRED:
+            return smoke_results
+
+        seen_retry_signatures.add(failure_signature)
+        if recovery_payload.get("repair_actions"):
+            append_recovery_event(
+                report_root=run_root / "reports",
+                component="repair_loop",
+                source="recovered_llm",
+                recovery_reason=str(recovery_payload.get("classification") or ""),
+            )
+        write_recovered_smoke_plan(
+            run_root=run_root,
+            smoke_steps=[step.model_dump() for step in smoke_plan.steps],
+            recovery_payload=recovery_payload,
+        )
+        agent.state = RunState.VALIDATING
         smoke_results = _run_smoke_tests_with_optional_recovery(
             run_root=run_root,
             runtime_workspace=runtime_workspace,
             plan=smoke_plan,
+            recovery_payload=recovery_payload,
         )
-        while any(result.get("returncode") != 0 for result in smoke_results):
-            failure_policy = _classify_failure_policy(smoke_results)
-            failed_steps = failure_policy["failed_steps"]
-            failure_signature = failure_policy["failure_signature"]
-            if failure_signature not in llm_repair_signatures:
-                llm_repair_result = _attempt_llm_runtime_repair_cycle(
-                    run_root=run_root,
-                    runtime_workspace=runtime_workspace,
-                    llm_runtime_repair_factory=llm_runtime_repair_factory,
-                    llm_provider=llm_provider,
-                    llm_model=llm_model,
-                    failure_signature=failure_signature,
-                    evidence_payload={
-                        "stage": "validation_smoke",
-                        "smoke_results": smoke_results,
-                        "failed_steps": failed_steps,
-                        "failure_summary": failure_policy["summary"],
-                    },
-                    attempt_id=f"validation-smoke-{agent.retry_count + 1}",
-                )
-                llm_repair_signatures.add(failure_signature)
-                if llm_repair_result.get("applied"):
-                    _stop_validation_runtime_servers(server_state)
-                    server_state = _start_validation_runtime_servers(
-                        runtime_workspace=runtime_workspace,
-                        run_root=run_root,
-                    )
-                    startup_failures = _build_validation_server_failure_results(server_state)
-                    if startup_failures:
-                        return startup_failures
-                    smoke_results = _run_smoke_tests_with_optional_recovery(
-                        run_root=run_root,
-                        runtime_workspace=runtime_workspace,
-                        plan=smoke_plan,
-                    )
-                    continue
-            if failure_policy["retryable"]:
-                agent.mark_failure()
-            else:
-                agent.state = RunState.HUMAN_REVIEW_REQUIRED
-            diagnoser_context = {
-                "run_id": run_id,
-                "retry_count": agent.retry_count,
-                "retry_budget": agent.retry_budget,
-                "failure_signature": failure_signature,
-                "failed_steps": failed_steps,
-                "retryable": failure_policy["retryable"],
-                "failure_summary": failure_policy["summary"],
-                "smoke_results": smoke_results,
-                "evidence": [
-                    f"failed smoke steps: {sum(1 for result in smoke_results if result.get('returncode') != 0)}",
-                    f"current state: {agent.state.value}",
-                    f"failure signature: {failure_signature}",
-                    f"retryable: {failure_policy['retryable']}",
-                    f"timed out steps: {failure_policy['summary']['timed_out_steps']}",
-                    f"missing scripts: {failure_policy['summary']['missing_scripts']}",
-                ],
-            }
-            if run_role_with_events is not None:
-                diagnoser_message = run_role_with_events(
-                    "Diagnostician",
-                    diagnoser_context,
-                    job_started_payload={
-                        "failure_signature": failure_signature,
-                        "retryable": failure_policy["retryable"],
-                    },
-                    job_completed_payload={"retryable": failure_policy["retryable"]},
-                )
-            else:
-                diagnoser_message = role_runner.run_role("Diagnostician", diagnoser_context)
-            _write_diagnostic_report(
-                run_root=run_root,
-                diagnoser_message=diagnoser_message,
-                failure_policy=failure_policy,
-                retry_count=agent.retry_count,
-                retry_budget=agent.retry_budget,
-            )
-            recovery_payload = build_recovery_plan(
-                {
-                    "failure_signature": str(diagnoser_message.metadata.get("failure_signature") or failure_signature),
-                    "retry_count": agent.retry_count,
-                    "retry_budget": agent.retry_budget,
-                    "failed_results": [result for result in smoke_results if result.get("returncode") != 0],
-                    "backend_evaluation": _read_json_if_exists(run_root / "reports" / "backend-evaluation.json") or {},
-                    "frontend_evaluation": _read_json_if_exists(run_root / "reports" / "frontend-evaluation.json") or {},
-                }
-            )
-            recovery_artifact_path = run_root / "reports" / "recovery-plan.json"
-            recovery_artifact_path.write_text(
-                json.dumps(recovery_payload, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            _emit_role_log(
-                terminal_logger=terminal_logger,
-                runner=role_runner,
-                role="Diagnostician",
-                message=diagnoser_message,
-            )
-            if bridge is not None:
-                bridge.post_agent_message(
-                    event=role_runner.build_event(
-                        run_id=run_id,
-                        event_type="diagnosis.completed",
-                        state=RunState.DIAGNOSING,
-                        message=diagnoser_message,
-                        created_at=datetime.now(timezone.utc).isoformat(),
-                    ),
-                    message=diagnoser_message,
-                )
 
-            should_retry = (
-                failure_policy["retryable"]
-                and bool(diagnoser_message.metadata.get("should_retry"))
-                and bool(recovery_payload.get("should_retry"))
-            )
-            stop_reason: str | None = None
-            if failure_signature in seen_retry_signatures:
-                should_retry = False
-                stop_reason = "duplicate_failure_signature"
-                agent.state = RunState.HUMAN_REVIEW_REQUIRED
-            elif not failure_policy["retryable"]:
-                stop_reason = "non_retryable_failure"
-            elif agent.state == RunState.HUMAN_REVIEW_REQUIRED:
-                stop_reason = "retry_budget_exhausted"
-            elif not bool(diagnoser_message.metadata.get("should_retry")):
-                stop_reason = "diagnostician_declined_retry"
-            elif not bool(recovery_payload.get("should_retry")):
-                stop_reason = "recovery_plan_declined_retry"
-
-            recovery_attempts.append(
-                RecoveryAttempt(
-                    retry_count=agent.retry_count,
-                    failure_signature=str(diagnoser_message.metadata.get("failure_signature") or failure_signature),
-                    classification=str(
-                        diagnoser_message.metadata.get("classification")
-                        or recovery_payload.get("classification")
-                        or ""
-                    )
-                    or None,
-                    should_retry=should_retry,
-                    stop_reason=stop_reason,
-                    recovery_artifact_path=str(recovery_artifact_path),
-                )
-            )
-            _write_recovery_attempts(run_root=run_root, attempts=recovery_attempts)
-            if not should_retry or agent.state == RunState.HUMAN_REVIEW_REQUIRED:
-                return smoke_results
-
-            seen_retry_signatures.add(failure_signature)
-            if recovery_payload.get("repair_actions"):
-                append_recovery_event(
-                    report_root=run_root / "reports",
-                    component="repair_loop",
-                    source="recovered_llm",
-                    recovery_reason=str(recovery_payload.get("classification") or ""),
-                )
-            write_recovered_smoke_plan(
-                run_root=run_root,
-                smoke_steps=[step.model_dump() for step in smoke_plan.steps],
-                recovery_payload=recovery_payload,
-            )
-            agent.state = RunState.VALIDATING
-            smoke_results = _run_smoke_tests_with_optional_recovery(
-                run_root=run_root,
-                runtime_workspace=runtime_workspace,
-                plan=smoke_plan,
-                recovery_payload=recovery_payload,
-            )
-
-        return smoke_results
-    finally:
-        _stop_validation_runtime_servers(server_state)
+    return smoke_results
 
 
 def _classify_failure_policy(smoke_results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1525,159 +1418,6 @@ def _classify_failure_policy(smoke_results: list[dict[str, Any]]) -> dict[str, A
         "failure_signature": failure_signature,
         "retryable": retryable,
         "summary": summary,
-    }
-
-
-def _start_validation_runtime_servers(
-    *,
-    runtime_workspace: Path,
-    run_root: Path,
-) -> dict[str, Any]:
-    backend_plan = _build_backend_probe_plan(runtime_workspace)
-    frontend_plan = _build_frontend_probe_plan(runtime_workspace)
-    return {
-        "backend": _launch_validation_runtime_server(plan=backend_plan, probe_name="backend"),
-        "frontend": _launch_validation_runtime_server(plan=frontend_plan, probe_name="frontend"),
-        "reports_root": run_root / "reports",
-    }
-
-
-def _stop_validation_runtime_servers(server_state: dict[str, Any]) -> None:
-    for probe_name in ("frontend", "backend"):
-        payload = server_state.get(probe_name) or {}
-        process = payload.get("process")
-        if isinstance(process, subprocess.Popen):
-            _terminate_process(process)
-
-
-def _build_validation_server_failure_results(server_state: dict[str, Any]) -> list[dict[str, Any]]:
-    failures: list[dict[str, Any]] = []
-    for probe_name in ("backend", "frontend"):
-        payload = server_state.get(probe_name) or {}
-        if payload.get("passed"):
-            continue
-        failures.append(
-            {
-                "step": f"validation-{probe_name}-runtime",
-                "step_id": f"validation-{probe_name}-runtime",
-                "required": True,
-                "category": "runtime",
-                "timed_out": False,
-                "returncode": 1,
-                "stdout": str(payload.get("stdout") or ""),
-                "stderr": f"{payload.get('failure_reason') or f'{probe_name}_server_boot_failed'}: {payload.get('stderr') or payload.get('readiness_error') or ''}".strip(),
-                "request": {
-                    "type": "runtime_server_start",
-                    "url": str((payload.get("plan") or {}).get("readiness_url") or ""),
-                },
-                "response": {
-                    "status": None,
-                    "stdout": str(payload.get("stdout") or ""),
-                    "stderr": str(payload.get("stderr") or ""),
-                },
-                "exports": {},
-            }
-        )
-    return failures
-
-
-def _launch_validation_runtime_server(
-    *,
-    plan: dict[str, Any],
-    probe_name: str,
-) -> dict[str, Any]:
-    command = plan.get("command")
-    readiness_url = str(plan.get("readiness_url") or "")
-    readiness_method = str(plan.get("readiness_method") or "GET").upper()
-    readiness_expected_statuses = {
-        int(status)
-        for status in (plan.get("readiness_expected_statuses") or [200])
-    }
-    working_directory = Path(str(plan.get("working_directory") or "."))
-    if not command:
-        return {
-            "plan": plan,
-            "process": None,
-            "passed": True,
-            "status": "skipped",
-            "failure_reason": None,
-            "stdout": "",
-            "stderr": "",
-            "readiness": None,
-            "readiness_error": None,
-        }
-
-    try:
-        process = _launch_server_process(
-            command=list(command),
-            cwd=working_directory,
-            env=dict(plan.get("environment") or {}),
-        )
-    except OSError as exc:
-        return {
-            "plan": plan,
-            "process": None,
-            "passed": False,
-            "status": "boot_failed",
-            "failure_reason": f"{probe_name}_server_boot_failed",
-            "stdout": "",
-            "stderr": str(exc),
-            "readiness": None,
-            "readiness_error": None,
-        }
-
-    if process.poll() is not None:
-        stdout, stderr = _collect_process_output(process)
-        return {
-            "plan": plan,
-            "process": process,
-            "passed": False,
-            "status": "boot_failed",
-            "failure_reason": _classify_probe_failure_reason(
-                probe_name=probe_name,
-                stdout=stdout,
-                stderr=stderr,
-                default_reason=f"{probe_name}_server_boot_failed",
-            ),
-            "stdout": stdout,
-            "stderr": stderr,
-            "readiness": None,
-            "readiness_error": None,
-        }
-
-    readiness = _probe_http_ready(
-        readiness_url,
-        method=readiness_method,
-        accepted_statuses=readiness_expected_statuses,
-        timeout_seconds=int(plan.get("readiness_timeout_seconds") or 2),
-        attempts=int(plan.get("readiness_attempts") or 10),
-        delay_seconds=float(plan.get("readiness_delay_seconds") or 0.2),
-    )
-    if not readiness.get("passed"):
-        _terminate_process(process)
-        stdout, stderr = _collect_process_output(process)
-        return {
-            "plan": plan,
-            "process": None,
-            "passed": False,
-            "status": "readiness_failed",
-            "failure_reason": f"{probe_name}_readiness_failed",
-            "stdout": stdout,
-            "stderr": stderr,
-            "readiness": readiness,
-            "readiness_error": readiness.get("error"),
-        }
-
-    return {
-        "plan": plan,
-        "process": process,
-        "passed": True,
-        "status": "ready",
-        "failure_reason": None,
-        "stdout": "",
-        "stderr": "",
-        "readiness": readiness,
-        "readiness_error": None,
     }
 
 
@@ -1889,242 +1629,24 @@ def _write_recovery_attempts(*, run_root: Path, attempts: list[RecoveryAttempt])
     )
 
 
-def _reserve_loopback_port() -> int:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("127.0.0.1", 0))
-    try:
-        return int(sock.getsockname()[1])
-    finally:
-        sock.close()
-
-
-def _read_site_from_run_root(*, run_root: Path, runtime_workspace: Path) -> str:
-    manifest_path = run_root / "manifest.json"
-    if manifest_path.exists():
-        try:
-            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            payload = {}
-        site = str(payload.get("site") or "").strip()
-        if site:
-            return site
-    return runtime_workspace.parent.parent.name
-
-
-def _rewrite_url_to_runtime_port(url: str | None, *, ports: dict[str, int]) -> str | None:
-    if not url:
-        return url
-    parsed = urlsplit(url)
-    hostname = parsed.hostname or ""
-    if hostname not in {"127.0.0.1", "localhost"}:
-        return url
-    if parsed.port == 8000:
-        netloc = f"{hostname}:{ports['backend']}"
-    elif parsed.port == 8100:
-        netloc = f"{hostname}:{ports['chatbot']}"
-    elif parsed.port == 3000 and "frontend" in ports:
-        netloc = f"{hostname}:{ports['frontend']}"
-    else:
-        return url
-    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
-
-
-def _rewrite_smoke_value_for_runtime(value: Any, *, ports: dict[str, int]) -> Any:
-    if isinstance(value, str):
-        return _rewrite_url_to_runtime_port(value, ports=ports)
-    if isinstance(value, dict):
-        return {key: _rewrite_smoke_value_for_runtime(item, ports=ports) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_rewrite_smoke_value_for_runtime(item, ports=ports) for item in value]
-    return value
-
-
-def _rewrite_smoke_plan_for_runtime(*, plan: SmokeTestPlan, ports: dict[str, int]) -> SmokeTestPlan:
-    steps: list[dict[str, Any]] = []
-    for step in plan.steps:
-        step_payload = step.model_dump()
-        for field in ("url", "headers", "body", "query", "env"):
-            step_payload[field] = _rewrite_smoke_value_for_runtime(step_payload.get(field), ports=ports)
-        steps.append(step_payload)
-    return SmokeTestPlan(steps=steps)
-
-
-def _smoke_plan_requires_frontend(plan: SmokeTestPlan) -> bool:
-    return any(":3000" in str(step.url or "") for step in plan.steps)
-
-
-def _start_smoke_runtime_process(*, plan: dict[str, Any], probe_name: str) -> tuple[subprocess.Popen[str] | None, dict[str, Any] | None]:
-    command = plan.get("command")
-    readiness_url = str(plan.get("readiness_url") or "")
-    readiness_method = str(plan.get("readiness_method") or "GET").upper()
-    readiness_expected_statuses = {
-        int(status)
-        for status in (plan.get("readiness_expected_statuses") or [200])
-    }
-    working_directory = Path(str(plan.get("working_directory") or "."))
-
-    if not command:
-        return None, {
-            "step": "smoke-runtime-stack",
-            "step_id": "smoke-runtime-stack",
-            "strategy": "runtime_isolation",
-            "required": True,
-            "category": "runtime",
-            "timed_out": False,
-            "returncode": 1,
-            "stdout": "",
-            "stderr": f"{probe_name} command missing for isolated smoke runtime",
-            "request": {},
-            "response": {"status": None, "headers": {}, "body": ""},
-            "exports": {},
-        }
-
-    try:
-        process = _launch_server_process(
-            command=list(command),
-            cwd=working_directory,
-            env=dict(plan.get("environment") or {}),
-        )
-    except OSError as exc:
-        return None, {
-            "step": "smoke-runtime-stack",
-            "step_id": "smoke-runtime-stack",
-            "strategy": "runtime_isolation",
-            "required": True,
-            "category": "runtime",
-            "timed_out": False,
-            "returncode": 1,
-            "stdout": "",
-            "stderr": f"{probe_name} boot failed: {exc}",
-            "request": {},
-            "response": {"status": None, "headers": {}, "body": ""},
-            "exports": {},
-        }
-
-    if process.poll() is not None:
-        stdout, stderr = _collect_process_output(process)
-        failure_reason = _classify_probe_failure_reason(
-            probe_name=probe_name,
-            stdout=stdout,
-            stderr=stderr,
-            default_reason=f"{probe_name}_server_boot_failed",
-        )
-        return None, {
-            "step": "smoke-runtime-stack",
-            "step_id": "smoke-runtime-stack",
-            "strategy": "runtime_isolation",
-            "required": True,
-            "category": "runtime",
-            "timed_out": False,
-            "returncode": 1,
-            "stdout": stdout,
-            "stderr": f"{probe_name} boot failed: {failure_reason}\n{stderr}".strip(),
-            "request": {},
-            "response": {"status": None, "headers": {}, "body": ""},
-            "exports": {},
-        }
-
-    readiness = _probe_http_ready(
-        readiness_url,
-        method=readiness_method,
-        accepted_statuses=readiness_expected_statuses,
-        timeout_seconds=int(plan.get("readiness_timeout_seconds") or 2),
-        attempts=int(plan.get("readiness_attempts") or 10),
-        delay_seconds=float(plan.get("readiness_delay_seconds") or 0.2),
-    )
-    if readiness.get("passed"):
-        return process, None
-
-    _terminate_process(process)
-    stdout, stderr = _collect_process_output(process)
-    return None, {
-        "step": "smoke-runtime-stack",
-        "step_id": "smoke-runtime-stack",
-        "strategy": "runtime_isolation",
-        "required": True,
-        "category": "runtime",
-        "timed_out": False,
-        "returncode": 1,
-        "stdout": stdout,
-        "stderr": (
-            f"{probe_name} readiness failed for {readiness_url}: "
-            f"{readiness.get('error') or 'unknown error'}\n{stderr}"
-        ).strip(),
-        "request": {},
-        "response": {"status": readiness.get("status_code"), "headers": {}, "body": ""},
-        "exports": {},
-    }
-
-
-def _run_smoke_tests_in_isolated_runtime(
+def _run_smoke_tests_with_optional_recovery(
     *,
     run_root: Path,
     runtime_workspace: Path,
-    plan: SmokeTestPlan,
+    plan,
     recovery_payload: dict[str, Any] | None = None,
 ) -> list[dict]:
-    site = _read_site_from_run_root(run_root=run_root, runtime_workspace=runtime_workspace)
-    ports = {
-        "backend": _reserve_loopback_port(),
-        "chatbot": _reserve_loopback_port(),
-    }
-    if _smoke_plan_requires_frontend(plan):
-        ports["frontend"] = _reserve_loopback_port()
-
-    backend_base_url = f"http://127.0.0.1:{ports['backend']}"
-    backend_plan = _build_backend_probe_plan(runtime_workspace, port=ports["backend"])
-    chatbot_plan = _build_chatbot_probe_plan(
-        runtime_workspace,
-        site=site,
-        port=ports["chatbot"],
-        backend_base_url=backend_base_url,
-    )
-    frontend_plan = None
-    if "frontend" in ports:
-        frontend_plan = _build_frontend_probe_plan(
-            runtime_workspace,
-            chatbot_plan=chatbot_plan,
-            port=ports["frontend"],
+    if recovery_payload is None:
+        return run_smoke_tests(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            plan=plan,
         )
-
-    required_plans = [backend_plan, chatbot_plan]
-    if frontend_plan is not None:
-        required_plans.append(frontend_plan)
-    if any(not plan_item.get("command") for plan_item in required_plans):
-        try:
-            return run_smoke_tests(
-                run_root=run_root,
-                runtime_workspace=runtime_workspace,
-                plan=plan,
-                recovery_payload=recovery_payload,
-            )
-        except TypeError as exc:
-            if "recovery_payload" not in str(exc):
-                raise
-            return run_smoke_tests(
-                run_root=run_root,
-                runtime_workspace=runtime_workspace,
-                plan=plan,
-            )
-
-    launched_processes: list[subprocess.Popen[str]] = []
-    for probe_name, probe_plan in [("backend", backend_plan), ("chatbot", chatbot_plan), ("frontend", frontend_plan)]:
-        if probe_plan is None:
-            continue
-        process, failure = _start_smoke_runtime_process(plan=probe_plan, probe_name=probe_name)
-        if failure is not None:
-            for launched_process in reversed(launched_processes):
-                _terminate_process(launched_process)
-            return [failure]
-        assert process is not None
-        launched_processes.append(process)
-
-    isolated_plan = _rewrite_smoke_plan_for_runtime(plan=plan, ports=ports)
     try:
         return run_smoke_tests(
             run_root=run_root,
             runtime_workspace=runtime_workspace,
-            plan=isolated_plan,
+            plan=plan,
             recovery_payload=recovery_payload,
         )
     except TypeError as exc:
@@ -2133,26 +1655,8 @@ def _run_smoke_tests_in_isolated_runtime(
         return run_smoke_tests(
             run_root=run_root,
             runtime_workspace=runtime_workspace,
-            plan=isolated_plan,
+            plan=plan,
         )
-    finally:
-        for process in reversed(launched_processes):
-            _terminate_process(process)
-
-
-def _run_smoke_tests_with_optional_recovery(
-    *,
-    run_root: Path,
-    runtime_workspace: Path,
-    plan,
-    recovery_payload: dict[str, Any] | None = None,
-) -> list[dict]:
-    return _run_smoke_tests_in_isolated_runtime(
-        run_root=run_root,
-        runtime_workspace=runtime_workspace,
-        plan=plan,
-        recovery_payload=recovery_payload,
-    )
 
 
 def _read_recovery_provenance(run_root: Path) -> dict[str, str]:
@@ -2250,9 +1754,6 @@ def _run_runtime_completion_with_retries(
     agent: AgentOrchestrator,
     terminal_logger: Callable[[str], None] | None,
     strategy_provenance: dict[str, str],
-    llm_runtime_repair_factory: Callable[[], Any] | None = None,
-    llm_provider: str | None = None,
-    llm_model: str | None = None,
 ) -> dict[str, Any]:
     backend_evaluation = _read_json_if_exists(run_root / "reports" / "backend-evaluation.json") or {}
     frontend_evaluation = _read_json_if_exists(run_root / "reports" / "frontend-evaluation.json") or {}
@@ -2311,25 +1812,6 @@ def _run_runtime_completion_with_retries(
         attempt_record["should_retry"] = recovery_payload.get("should_retry", False)
         attempt_record["repair_actions"] = recovery_payload.get("repair_actions") or []
 
-        llm_repair_result = _attempt_llm_runtime_repair_cycle(
-            run_root=run_root,
-            runtime_workspace=runtime_workspace,
-            llm_runtime_repair_factory=llm_runtime_repair_factory,
-            llm_provider=llm_provider,
-            llm_model=llm_model,
-            failure_signature=str(latest_result.get("failure_reason") or "runtime_completion_failed"),
-            evidence_payload={
-                "stage": "runtime_completion",
-                "result": latest_result,
-                "classification": recovery_payload.get("classification"),
-            },
-            attempt_id=f"runtime-completion-{attempt_index}",
-        )
-        attempt_record["llm_repair_applied"] = bool(llm_repair_result.get("applied"))
-        attempt_record["llm_repair_patch_path"] = llm_repair_result.get("patch_path")
-        if llm_repair_result.get("applied"):
-            continue
-
         if not recovery_payload.get("should_retry", False):
             break
         applied = _apply_repair_actions(
@@ -2355,29 +1837,6 @@ def _write_runtime_completion_attempts(*, run_root: Path, attempts: list[dict[st
     )
 
 
-def _attempt_llm_runtime_repair_cycle(
-    *,
-    run_root: Path,
-    runtime_workspace: Path,
-    llm_runtime_repair_factory: Callable[[], Any] | None,
-    llm_provider: str | None,
-    llm_model: str | None,
-    failure_signature: str,
-    evidence_payload: dict[str, Any],
-    attempt_id: str,
-) -> dict[str, Any]:
-    return attempt_llm_runtime_repair(
-        run_root=run_root,
-        runtime_workspace=runtime_workspace,
-        failure_signature=failure_signature,
-        evidence_payload=evidence_payload,
-        attempt_id=attempt_id,
-        llm_factory=llm_runtime_repair_factory,
-        provider=llm_provider,
-        model=llm_model,
-    )
-
-
 def _apply_repair_actions(
     *,
     runtime_workspace: Path,
@@ -2396,8 +1855,8 @@ def _apply_repair_actions(
             applied = True
         elif action_name == "repair_frontend_mount_target":
             applied = _repair_frontend_mount_target(runtime_workspace) or applied
-        elif action_name == "repair_shared_widget_import":
-            applied = _repair_shared_widget_import(runtime_workspace) or applied
+        elif action_name == "repair_frontend_mount_bundle":
+            applied = _repair_frontend_mount_bundle(runtime_workspace) or applied
         elif action_name == "repair_backend_entrypoint":
             applied = _repair_backend_entrypoint(
                 runtime_workspace=runtime_workspace,
@@ -2480,7 +1939,7 @@ def _repair_frontend_mount_target(runtime_workspace: Path) -> bool:
     return True
 
 
-def _repair_shared_widget_import(runtime_workspace: Path) -> bool:
+def _repair_frontend_mount_bundle(runtime_workspace: Path) -> bool:
     frontend_src = runtime_workspace / "frontend" / "src"
     if not frontend_src.exists():
         frontend_src = runtime_workspace / "src"
@@ -2488,27 +1947,28 @@ def _repair_shared_widget_import(runtime_workspace: Path) -> bool:
         return False
 
     repaired = False
-    for widget_path in frontend_src.rglob("SharedChatbotWidget.*"):
-        if not widget_path.is_file():
+    for mount_path in [
+        frontend_src / "App.js",
+        frontend_src / "App.jsx",
+        frontend_src / "main.jsx",
+        frontend_src / "main.js",
+    ]:
+        if not mount_path.exists():
             continue
-        content = widget_path.read_text(encoding="utf-8", errors="ignore")
-        if '@shared-chatbot/ChatbotWidget' not in content:
-            continue
-        sibling_widget_path = widget_path.with_name("ChatbotWidget.jsx")
-        if not sibling_widget_path.exists():
-            sibling_widget_path.write_text(
-                "export function HostedChatbotWidget() {\n"
-                '  return <div data-chatbot-status="authenticated">Chat ready</div>;\n'
-                "}\n\n"
-                "export default HostedChatbotWidget;\n",
-                encoding="utf-8",
-            )
-        repaired = rewrite_javascript_module_specifier(
-            file_path=widget_path,
-            broken_import='@shared-chatbot/ChatbotWidget',
-            replacement_import='./ChatbotWidget',
-        ) or repaired
-    return repaired
+        content = mount_path.read_text(encoding="utf-8", errors="ignore")
+        updated_lines = [
+            line
+            for line in content.splitlines(True)
+            if "@shared-chatbot/ChatbotWidget" not in line
+            and 'from "./chatbot/' not in line
+            and "from './chatbot/" not in line
+        ]
+        updated = "".join(updated_lines)
+        updated = re.sub(r"<[A-Za-z0-9_]*ChatbotWidget\s*/>", "<order-cs-widget />", updated)
+        if updated != content:
+            mount_path.write_text(updated, encoding="utf-8")
+            repaired = True
+    return _repair_frontend_mount_target(runtime_workspace) or repaired
 
 
 def _repair_backend_entrypoint(
@@ -2864,7 +2324,6 @@ def _build_proposed_files(recommended_outputs: list[str]) -> list[str]:
         "chat_auth": "files/backend/chat_auth.py",
         "order_adapter": "files/backend/order_adapter_client.py",
         "product_adapter": "files/backend/product_adapter_client.py",
-        "frontend_patch": "files/frontend/src/chatbot/SharedChatbotWidget.jsx",
     }
     proposed = [file_map[item] for item in recommended_outputs if item in file_map]
     if any(item in recommended_outputs for item in {"order_adapter", "product_adapter"}):
@@ -2907,32 +2366,20 @@ def _materialize_generator_proposals(
         "files/backend/order_adapter_client.py": generate_order_adapter_template,
         "files/backend/product_adapter_client.py": generate_product_adapter_template,
         "files/backend/tool_registry.py": generate_backend_tool_registry,
-        "files/frontend/src/chatbot/SharedChatbotWidget.jsx": generate_frontend_widget_artifact,
     }
     patch_generators = {
         "patches/backend_chat_auth_route.patch": generate_backend_route_patch,
         "patches/frontend_widget_mount.patch": generate_frontend_mount_patch,
     }
-    materialized_frontend_artifacts: list[dict[str, str]] = []
     generated_files: list[str] = []
     patch_targets: list[str] = []
 
     for file_path in proposed_files:
         generator = file_generators.get(file_path)
         if generator is not None:
-            result = generator(run_root)
+            generator(run_root)
             if file_path not in generated_files:
                 generated_files.append(file_path)
-            if isinstance(result, dict) and result.get("type") == "widget":
-                materialized_frontend_artifacts.append(
-                    {
-                        "type": str(result.get("type") or "widget"),
-                        "path": str(
-                            Path(str(result.get("path") or "")).relative_to(run_root).as_posix()
-                        ),
-                        "source": "llm",
-                    }
-                )
 
     for patch_path in proposed_patches:
         generator = patch_generators.get(patch_path)
@@ -2947,33 +2394,6 @@ def _materialize_generator_proposals(
             generated_files=generated_files,
             patch_targets=patch_targets,
         )
-
-    if materialized_frontend_artifacts:
-        _update_manifest_frontend_artifacts(
-            run_root=run_root,
-            frontend_artifacts=materialized_frontend_artifacts,
-        )
-
-
-def _update_manifest_frontend_artifacts(
-    *,
-    run_root: Path,
-    frontend_artifacts: list[dict[str, str]],
-) -> None:
-    manifest_path = run_root / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["frontend_artifacts"] = frontend_artifacts
-    generated_files = list(manifest.get("generated_files") or [])
-    for artifact in frontend_artifacts:
-        path = str(artifact.get("path") or "")
-        if path and path not in generated_files:
-            generated_files.append(path)
-    manifest["generated_files"] = generated_files
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
 
 def _update_manifest_generated_outputs(
     *,

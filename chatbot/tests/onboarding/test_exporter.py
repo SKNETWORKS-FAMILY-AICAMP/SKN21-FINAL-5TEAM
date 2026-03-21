@@ -211,8 +211,15 @@ def test_export_runtime_patch_overwrites_metadata_after_runtime_completion_reexp
     assert first_metadata["changed_files"] == []
 
     (runtime_workspace / "frontend" / "src" / "App.js").write_text(
-        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
-        "export default function App() { return <><main>Home</main><SharedChatbotWidget /></>; }\n",
+        'const ORDER_CS_WIDGET_HOST_CONTRACT = {\n'
+        '  chatbotServerBaseUrl: "",\n'
+        '  authBootstrapPath: "/api/chat/auth-token",\n'
+        '  widgetBundlePath: "/widget.js",\n'
+        '  widgetElementTag: "order-cs-widget",\n'
+        '  mountMode: "floating_launcher",\n'
+        '};\n'
+        'globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"] = ORDER_CS_WIDGET_HOST_CONTRACT;\n'
+        "export default function App() { return <><main>Home</main><order-cs-widget /></>; }\n",
         encoding="utf-8",
     )
 
@@ -227,4 +234,4 @@ def test_export_runtime_patch_overwrites_metadata_after_runtime_completion_reexp
     approved_patch = (report_root / "approved.patch").read_text(encoding="utf-8")
 
     assert second_metadata["changed_files"] == ["frontend/src/App.js"]
-    assert "SharedChatbotWidget" in approved_patch
+    assert "order-cs-widget" in approved_patch

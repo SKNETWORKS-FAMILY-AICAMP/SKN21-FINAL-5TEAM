@@ -390,7 +390,6 @@ def test_slack_web_bridge_posts_human_readable_generator_narrative():
         metadata={
             "proposed_files": [
                 "files/backend/chat_auth.py",
-                "files/frontend/src/chatbot/SharedChatbotWidget.jsx",
             ],
             "proposed_patches": ["patches/frontend_widget_mount.patch"],
         },
@@ -404,7 +403,7 @@ def test_slack_web_bridge_posts_human_readable_generator_narrative():
     assert "요약" in narrative_text
     assert "대상 파일" in narrative_text
     assert "핵심 근거" in narrative_text
-    assert "SharedChatbotWidget.jsx" in narrative_text
+    assert "chat_auth.py" in narrative_text
     assert "frontend_widget_mount.patch" in narrative_text
     assert "상세 산출물" not in narrative_text
 
@@ -476,7 +475,7 @@ def test_slack_web_bridge_posts_human_readable_run_summary_from_patch_proposal(t
                 ],
                 "supporting_generated_files": [
                     "files/backend/chat_auth.py",
-                    "files/frontend/src/chatbot/SharedChatbotWidget.jsx",
+                    "patches/frontend_widget_mount.patch",
                 ],
                 "recommended_outputs": ["chat_auth", "frontend_patch"],
                 "analysis_summary": {
@@ -505,7 +504,7 @@ def test_slack_web_bridge_posts_human_readable_run_summary_from_patch_proposal(t
     assert "만든 것" in summary_text
     assert "수정 대상" in summary_text
     assert "핵심 판단" in summary_text
-    assert "SharedChatbotWidget.jsx" in summary_text
+    assert "frontend_widget_mount.patch" in summary_text
     assert "frontend/src/App.js" in summary_text
     assert "session_cookie" in summary_text
 
