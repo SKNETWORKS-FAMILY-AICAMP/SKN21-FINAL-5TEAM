@@ -2015,11 +2015,21 @@ def _should_attempt_llm_runtime_repair(result: dict[str, Any]) -> bool:
         return False
     if failure_reason.endswith("import_resolution_failed"):
         return True
-    return failure_reason in {
+    if failure_reason in {
         "chatbot_mount_missing",
         "chatbot_status_not_rendered",
         "django_urlconf_import_failed",
-    }
+    }:
+        return True
+
+    mount_probe = result.get("mount_probe") or {}
+    if mount_probe.get("passed") is False:
+        return True
+    if result.get("auth_bootstrap_passed") is False:
+        return True
+    if result.get("chat_stream_passed") is False:
+        return True
+    return False
 
 
 def _write_runtime_completion_attempts(*, run_root: Path, attempts: list[dict[str, Any]]) -> None:
