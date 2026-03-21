@@ -20,7 +20,11 @@ from .debug_logging import (
     write_llm_debug_artifact,
 )
 from .frontend_generator import build_frontend_mount_contract
-from .framework_strategies import build_strategy_allowlist, select_strategy_target_candidates
+from .framework_strategies import (
+    build_strategy_allowlist,
+    seam_target_rejection_reason,
+    select_strategy_target_candidates,
+)
 
 _UNIFIED_DIFF_HUNK_HEADER_RE = re.compile(r"^@@ -\d+(,\d+)? \+\d+(,\d+)? @@")
 
@@ -667,15 +671,13 @@ def build_patch_proposal(
         else:
             selected_targets = strategy_selected_targets
     if strategy_allowlist:
-        invalid_targets = [
-            str(target.get("path") or "")
-            for target in selected_targets
-            if str(target.get("path") or "") not in strategy_allowlist
-        ]
-        if invalid_targets:
-            raise ValueError(
-                f"target outside active strategy allowlist: {', '.join(invalid_targets)}"
-            )
+        selected_targets = _restrict_targets_to_strategy_allowlist(
+            selected_targets=selected_targets,
+            strategy_selected_targets=strategy_selected_targets,
+            strategy_allowlist=strategy_allowlist,
+            codebase_map=codebase_map,
+        )
+    selected_targets, target_rejections = _filter_seam_targets(selected_targets)
     target_files: list[dict[str, str]] = []
     for target in selected_targets:
         target_files.append(
@@ -717,6 +719,7 @@ def build_patch_proposal(
                 if str(item.get("path") or "")
             ],
             "strategy_allowlist": sorted(strategy_allowlist),
+            "target_rejections": target_rejections,
         },
     }
 
@@ -736,6 +739,61 @@ def _merge_target_candidates(
             merged.append(item)
             seen.add(path)
     return merged
+
+
+def _restrict_targets_to_strategy_allowlist(
+    *,
+    selected_targets: list[dict[str, str]],
+    strategy_selected_targets: list[dict[str, str]],
+    strategy_allowlist: set[str],
+    codebase_map: dict[str, Any],
+) -> list[dict[str, str]]:
+    allowed_selected = [
+        target
+        for target in selected_targets
+        if str(target.get("path") or "") in strategy_allowlist
+    ]
+    if allowed_selected:
+        return allowed_selected
+
+    allowed_strategy_targets = [
+        target
+        for target in strategy_selected_targets
+        if str(target.get("path") or "") in strategy_allowlist
+    ]
+    if allowed_strategy_targets:
+        return allowed_strategy_targets
+
+    candidate_sources = {
+        str(item.get("path") or ""): item
+        for item in (codebase_map.get("candidate_edit_targets") or [])
+        if str(item.get("path") or "")
+    }
+    fallback_targets: list[dict[str, str]] = []
+    for path in sorted(strategy_allowlist):
+        candidate = candidate_sources.get(path)
+        if candidate is None:
+            continue
+        fallback_targets.append(candidate)
+    return fallback_targets
+
+
+def _filter_seam_targets(targets: list[dict[str, str]]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    allowed: list[dict[str, str]] = []
+    rejections: list[dict[str, str]] = []
+    seen_rejections: set[tuple[str, str]] = set()
+    for target in targets:
+        path = str(target.get("path") or "").strip()
+        rejection_reason = seam_target_rejection_reason(path)
+        if rejection_reason is None:
+            allowed.append(target)
+            continue
+        rejection_key = (path, rejection_reason)
+        if rejection_key in seen_rejections:
+            continue
+        rejections.append({"path": path, "reason": rejection_reason})
+        seen_rejections.add(rejection_key)
+    return allowed, rejections
 
 
 def _select_target_candidates_from_map(
@@ -982,6 +1040,9 @@ def _validate_llm_patch_proposal_targets(
     for target in llm_payload.target_files:
         if target.path not in valid_paths:
             raise ValueError(f"invalid target path: {target.path}")
+        seam_rejection = seam_target_rejection_reason(target.path)
+        if seam_rejection is not None:
+            raise ValueError(f"invalid seam target path: {target.path} ({seam_rejection})")
         if strategy_allowlist and target.path not in strategy_allowlist:
             raise ValueError(f"invalid strategy target path: {target.path}")
 

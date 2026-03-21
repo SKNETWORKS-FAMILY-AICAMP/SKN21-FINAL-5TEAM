@@ -235,3 +235,43 @@ def test_export_runtime_patch_overwrites_metadata_after_runtime_completion_reexp
 
     assert second_metadata["changed_files"] == ["frontend/src/App.js"]
     assert "order-cs-widget" in approved_patch
+
+
+def test_export_runtime_patch_can_limit_exports_to_allowed_seam_targets(tmp_path: Path):
+    source_root = tmp_path / "source"
+    runtime_workspace = tmp_path / "runtime" / "food" / "run-004" / "workspace"
+    report_root = tmp_path / "generated" / "food" / "run-004" / "reports"
+
+    (source_root / "frontend" / "src" / "views").mkdir(parents=True)
+    (runtime_workspace / "frontend" / "src" / "views").mkdir(parents=True)
+    report_root.mkdir(parents=True)
+
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() { return null; }\n",
+        encoding="utf-8",
+    )
+    (runtime_workspace / "frontend" / "src" / "App.js").write_text(
+        "export default function App() { return <order-cs-widget />; }\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "views" / "Orders.js").write_text(
+        "export const Orders = () => null;\n",
+        encoding="utf-8",
+    )
+    (runtime_workspace / "frontend" / "src" / "views" / "Orders.js").write_text(
+        "export const Orders = () => <section>Orders</section>;\n",
+        encoding="utf-8",
+    )
+
+    patch_path = export_runtime_patch(
+        source_root=source_root,
+        runtime_workspace=runtime_workspace,
+        report_root=report_root,
+        allowed_targets={"frontend/src/App.js"},
+    )
+
+    metadata = json.loads((report_root / "export-metadata.json").read_text(encoding="utf-8"))
+    content = patch_path.read_text(encoding="utf-8")
+
+    assert metadata["changed_files"] == ["frontend/src/App.js"]
+    assert "frontend/src/views/Orders.js" not in content

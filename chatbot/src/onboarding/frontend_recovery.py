@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .framework_strategies import seam_target_rejection_reason
+
 SHARED_WIDGET_LEGACY_MARKERS = [
     "__ORDER_CS_WIDGET_HOST_CONTRACT__",
     "order-cs-widget",
@@ -36,6 +38,11 @@ def attempt_frontend_recovery(
             notes.append("mount candidate missing; cannot recover")
             return _hard_fallback(notes, errors)
 
+    mount_rejection = seam_target_rejection_reason(resolved_mount.relative_to(workspace).as_posix())
+    if mount_rejection is not None:
+        notes.append(f"mount candidate rejected: {mount_rejection}")
+        return _hard_fallback(notes, errors)
+
     if not _mount_contains_bundle_bootstrap(resolved_mount):
         notes.append("mount candidate missing shared widget bundle bootstrap")
         return _hard_fallback(notes, errors)
@@ -52,6 +59,9 @@ def attempt_frontend_recovery(
 def _discover_mount_in_workspace(workspace: Path) -> Path | None:
     for path in workspace.rglob("*"):
         if not path.is_file():
+            continue
+        relative = path.relative_to(workspace).as_posix()
+        if seam_target_rejection_reason(relative) is not None:
             continue
         content = path.read_text(encoding="utf-8", errors="ignore")
         if any(marker in content for marker in SHARED_WIDGET_LEGACY_MARKERS):

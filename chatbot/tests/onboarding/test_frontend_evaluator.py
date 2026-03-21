@@ -218,6 +218,26 @@ def test_evaluate_frontend_workspace_records_routes_child_failure_signature(tmp_
     assert payload["failure_signature"] == "frontend_mount_violation:routes_child_violation"
 
 
+def test_evaluate_frontend_workspace_ignores_build_artifact_mount_candidates(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    report_root = tmp_path / "reports"
+    (workspace / "frontend" / "build" / "static" / "js").mkdir(parents=True)
+    (workspace / "frontend" / "build" / "static" / "js" / "main.abc.js").write_text(
+        _shared_widget_bootstrap() + 'document.body.innerHTML = "<order-cs-widget></order-cs-widget>";\n',
+        encoding="utf-8",
+    )
+
+    report_path = evaluate_frontend_workspace(
+        runtime_workspace=workspace,
+        report_root=report_root,
+    )
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert payload["mount_candidates"] == []
+    assert payload["passed"] is False
+    assert payload["failure_signature"] == "frontend_mount_violation:mount_missing_widget_contract"
+
+
 def test_evaluate_frontend_workspace_emits_observability_events(tmp_path: Path):
     workspace = tmp_path / "workspace"
     report_root = tmp_path / "reports"

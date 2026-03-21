@@ -88,6 +88,140 @@ def test_strategy_patch_proposal_for_food_avoids_orders_auth_targets():
     assert "frontend/src/App.js" in paths
 
 
+def test_strategy_patch_proposal_for_food_allows_frontend_api_client_targets():
+    contract = {
+        "site": "food",
+        "backend": {
+            "framework": "django",
+            "auth_style": "session_cookie",
+            "route_registration_points": ["backend/foodshop/urls.py"],
+            "auth_source_paths": ["backend/users/views.py"],
+            "user_resolver_paths": ["backend/users/views.py"],
+        },
+        "frontend": {
+            "framework": "react",
+            "app_shell_path": "frontend/src/App.js",
+            "router_boundary_path": "frontend/src/App.js",
+            "api_client_paths": ["frontend/src/api/api.js"],
+            "widget_mount_points": ["frontend/src/App.js"],
+        },
+    }
+    proposal = build_patch_proposal(
+        analysis={"integration_contract": contract},
+        codebase_map={
+            "integration_contract": contract,
+            "candidate_edit_targets": [
+                {"path": "backend/users/views.py", "reason": "users auth handler"},
+                {"path": "backend/foodshop/urls.py", "reason": "project route target"},
+                {"path": "frontend/src/App.js", "reason": "react app shell"},
+                {"path": "frontend/src/api/api.js", "reason": "api client target"},
+            ],
+            "backend_strategy": "django",
+            "frontend_strategy": "react",
+            "backend_route_targets": [{"path": "backend/foodshop/urls.py", "reason": "project urlconf"}],
+            "frontend_mount_targets": [{"path": "frontend/src/App.js", "reason": "app shell"}],
+            "tool_registry_targets": [{"path": "backend/users/views.py", "reason": "users auth handler"}],
+        },
+        recommended_outputs=["chat_auth", "frontend_patch"],
+        llm_codebase_interpretation={
+            "ranked_candidates": [
+                {"path": "frontend/src/api/api.js", "reason": "api bootstrap integration point"},
+                {"path": "frontend/src/App.js", "reason": "widget mount"},
+            ]
+        },
+    )
+
+    paths = {item["path"] for item in proposal["target_files"]}
+    assert "frontend/src/api/api.js" in paths
+    assert proposal["analysis_summary"]["strategy_allowlist"] == sorted(
+        [
+            "backend/foodshop/urls.py",
+            "backend/users/views.py",
+            "frontend/src/App.js",
+            "frontend/src/api/api.js",
+        ]
+    )
+
+
+def test_build_patch_proposal_filters_ranked_candidates_outside_strategy_allowlist():
+    contract = {
+        "site": "food",
+        "backend": {
+            "framework": "django",
+            "auth_style": "session_cookie",
+            "route_registration_points": ["backend/foodshop/urls.py"],
+            "auth_source_paths": ["backend/users/views.py"],
+            "user_resolver_paths": ["backend/users/views.py"],
+        },
+        "frontend": {
+            "framework": "react",
+            "app_shell_path": "frontend/src/App.js",
+            "router_boundary_path": "frontend/src/App.js",
+            "widget_mount_points": ["frontend/src/App.js"],
+        },
+    }
+    proposal = build_patch_proposal(
+        analysis={"integration_contract": contract},
+        codebase_map={
+            "integration_contract": contract,
+            "candidate_edit_targets": [
+                {"path": "backend/users/views.py", "reason": "users auth handler"},
+                {"path": "backend/foodshop/urls.py", "reason": "project route target"},
+                {"path": "frontend/src/App.js", "reason": "react app shell"},
+                {"path": "frontend/src/views/Orders.js", "reason": "orders screen"},
+            ],
+            "backend_route_targets": [{"path": "backend/foodshop/urls.py", "reason": "project urlconf"}],
+            "frontend_mount_targets": [{"path": "frontend/src/App.js", "reason": "app shell"}],
+            "tool_registry_targets": [{"path": "backend/users/views.py", "reason": "users auth handler"}],
+        },
+        recommended_outputs=["chat_auth", "frontend_patch"],
+        llm_codebase_interpretation={
+            "ranked_candidates": [
+                {"path": "frontend/src/views/Orders.js", "reason": "incorrect frontend target"},
+            ]
+        },
+    )
+
+    paths = {item["path"] for item in proposal["target_files"]}
+    assert "frontend/src/views/Orders.js" not in paths
+    assert "frontend/src/App.js" in paths
+
+
+def test_build_patch_proposal_rejects_build_artifact_mount_target():
+    contract = {
+        "site": "food",
+        "frontend": {
+            "framework": "react",
+            "app_shell_path": "frontend/build/static/js/main.abc.js",
+            "widget_mount_points": ["frontend/build/static/js/main.abc.js"],
+        },
+    }
+    proposal = build_patch_proposal(
+        analysis={"integration_contract": contract},
+        codebase_map={
+            "integration_contract": contract,
+            "candidate_edit_targets": [
+                {"path": "frontend/build/static/js/main.abc.js", "reason": "bundled mount target"},
+                {"path": "frontend/src/App.js", "reason": "source app shell"},
+            ],
+            "frontend_mount_targets": [
+                {"path": "frontend/build/static/js/main.abc.js", "reason": "bundled mount target"},
+                {"path": "frontend/src/App.js", "reason": "source app shell"},
+            ],
+        },
+        recommended_outputs=["frontend_patch"],
+    )
+
+    paths = {item["path"] for item in proposal["target_files"]}
+    assert "frontend/build/static/js/main.abc.js" not in paths
+    assert proposal["analysis_summary"]["target_rejections"] == [
+        {
+            "path": "frontend/build/static/js/main.abc.js",
+            "reason": "build_artifact_target",
+        }
+    ]
+
+
 def test_strategy_patch_proposal_for_bilyeo_targets_flask_auth_and_vue_shell():
     contract = {
         "site": "bilyeo",

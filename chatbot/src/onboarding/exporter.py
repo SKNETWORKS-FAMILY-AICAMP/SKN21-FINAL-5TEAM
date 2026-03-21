@@ -29,6 +29,7 @@ def export_runtime_patch(
     runtime_workspace: str | Path,
     report_root: str | Path,
     patch_name: str = "approved.patch",
+    allowed_targets: set[str] | None = None,
     strategy_provenance: dict[str, str] | None = None,
     recovery_provenance: dict[str, str] | None = None,
 ) -> Path:
@@ -51,13 +52,16 @@ def export_runtime_patch(
 
         if source_lines == runtime_lines:
             continue
+        relative_path = relative.as_posix()
+        if allowed_targets is not None and relative_path not in allowed_targets:
+            continue
 
-        changed_files.append(relative.as_posix())
+        changed_files.append(relative_path)
         diff = difflib.unified_diff(
             source_lines,
             runtime_lines,
-            fromfile=f"a/{relative.as_posix()}",
-            tofile=f"b/{relative.as_posix()}",
+            fromfile=f"a/{relative_path}",
+            tofile=f"b/{relative_path}",
         )
         patch_chunks.append("".join(diff))
 
