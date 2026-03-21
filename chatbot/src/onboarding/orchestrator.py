@@ -35,6 +35,7 @@ from .patch_planner import (
 )
 from .role_runner import ReliableLLMRoleRunner, RoleRunner, build_llm_role_runner
 from .recovery_artifacts import write_recovered_smoke_plan
+from .repair_history import write_repair_history
 from .recovery_planner import build_recovery_plan
 from .run_generator import generate_run_bundle
 from .run_resume import analyze_run_checkpoint
@@ -202,6 +203,12 @@ def run_onboarding_generation(
     def finalize_result(*, runtime_workspace: Path | None) -> dict[str, Any]:
         _write_llm_role_execution_report(run_root=run_root, runner=active_role_runner)
         _write_llm_debug_artifacts(run_root=run_root, runner=active_role_runner)
+        repair_history_summary = _write_final_repair_history(
+            generated_root=generated_root,
+            run_root=run_root,
+            site=site,
+            run_id=run_id,
+        )
         result = _build_run_result(
             run_id=run_id,
             run_root=run_root,
@@ -211,6 +218,7 @@ def run_onboarding_generation(
             event_store=event_store,
         )
         result["resume_checkpoint"] = resume_checkpoint
+        result.update(repair_history_summary)
         return result
 
     if bridge is not None:
@@ -232,6 +240,9 @@ def run_onboarding_generation(
             "failed_stage": checkpoint.failed_stage,
             "resume_from_stage": checkpoint.resume_from_stage,
             "reason": checkpoint.reason,
+            "latest_failure_signature": checkpoint.latest_failure_signature,
+            "failure_count_for_signature": checkpoint.failure_count_for_signature,
+            "repair_history_path": checkpoint.repair_history_path,
         }
         if checkpoint.resume_from_stage in {"validation", "export"}:
             run_root = existing_run_root
@@ -1614,6 +1625,58 @@ def _read_runtime_completion_summary(run_root: Path) -> dict[str, Any]:
         "auth_bootstrap_passed": payload.get("auth_bootstrap_passed"),
         "chat_stream_passed": payload.get("chat_stream_passed"),
     }
+
+
+def _write_final_repair_history(
+    *,
+    generated_root: str | Path,
+    run_root: Path,
+    site: str,
+    run_id: str,
+) -> dict[str, Any]:
+    failure_signature = _read_final_failure_signature(run_root)
+    if not failure_signature:
+        return {
+            "repair_history_path": None,
+            "site_repair_history_path": None,
+            "failure_signature": None,
+            "failure_count_for_signature": None,
+        }
+    return write_repair_history(
+        generated_root=generated_root,
+        run_root=run_root,
+        site=site,
+        run_id=run_id,
+        failure_signature=failure_signature,
+        repair_scope="run_only",
+    )
+
+
+def _read_final_failure_signature(run_root: Path) -> str | None:
+    attempts_path = run_root / "reports" / "recovery-attempts.json"
+    if attempts_path.exists():
+        try:
+            attempts_payload = json.loads(attempts_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            attempts_payload = []
+        if isinstance(attempts_payload, list):
+            for attempt in reversed(attempts_payload):
+                if not isinstance(attempt, dict):
+                    continue
+                signature = str(attempt.get("failure_signature") or "").strip()
+                if signature:
+                    return signature
+
+    for path in (
+        run_root / "reports" / "runtime-completion.json",
+        run_root / "reports" / "smoke-summary.json",
+        run_root / "reports" / "frontend-evaluation.json",
+    ):
+        payload = _read_json_if_exists(path) or {}
+        signature = str(payload.get("failure_signature") or "").strip()
+        if signature:
+            return signature
+    return None
 
 
 def _run_event_stream_key(run_id: str) -> str:

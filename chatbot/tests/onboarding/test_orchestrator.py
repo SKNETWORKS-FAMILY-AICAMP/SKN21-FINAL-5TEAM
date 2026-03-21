@@ -613,6 +613,87 @@ def test_run_onboarding_generation_reports_recovery_artifact_path(tmp_path: Path
     assert result["recovery_artifact_path"].endswith("reports/recovery-plan.json")
 
 
+def test_run_onboarding_generation_persists_repair_history_across_runs(tmp_path: Path, monkeypatch):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.run_smoke_tests",
+        lambda **_: [
+            {
+                "step": "chat-auth-token",
+                "step_id": "chat-auth-token",
+                "required": True,
+                "category": "auth",
+                "timed_out": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "response body shape mismatch",
+            }
+        ],
+    )
+
+    role_runner = _build_simple_role_runner(
+        lambda context: {
+            "claim": "HTTP contract mismatch detected",
+            "evidence": context["evidence"],
+            "confidence": 0.83,
+            "risk": "medium",
+            "next_action": "request_human_review",
+            "blocking_issue": "none",
+            "metadata": {
+                "classification": "response_schema_mismatch",
+                "should_retry": False,
+                "root_cause_hypothesis": "response body is nested",
+                "proposed_fix": "override chat-auth-token export path",
+                "failure_signature": "response_schema_mismatch:chat-auth-token",
+            },
+        }
+    )
+
+    first = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-history-1",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+    second = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-history-2",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+
+    first_history = json.loads(Path(first["repair_history_path"]).read_text(encoding="utf-8"))
+    second_history = json.loads(Path(second["repair_history_path"]).read_text(encoding="utf-8"))
+    site_history = json.loads(Path(second["site_repair_history_path"]).read_text(encoding="utf-8"))
+
+    assert first_history["failure_signature"] == "response_schema_mismatch:chat-auth-token"
+    assert first_history["failure_count_for_signature"] == 1
+    assert second_history["failure_count_for_signature"] == 2
+    assert site_history["signatures"]["response_schema_mismatch:chat-auth-token"]["count"] == 2
+
+
 def test_run_onboarding_generation_calls_recovery_planner_for_recoverable_failure(tmp_path: Path, monkeypatch):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"

@@ -15,6 +15,9 @@ class ResumeCheckpoint:
     failed_stage: str | None
     resume_from_stage: str | None
     reason: str
+    latest_failure_signature: str | None = None
+    failure_count_for_signature: int | None = None
+    repair_history_path: str | None = None
 
 
 def analyze_run_checkpoint(run_root: str | Path) -> ResumeCheckpoint:
@@ -64,12 +67,17 @@ def analyze_run_checkpoint(run_root: str | Path) -> ResumeCheckpoint:
     if last_completed_stage == "export":
         resume_from_stage = None
 
+    repair_history = _read_json(reports / "repair-history.json")
+
     return ResumeCheckpoint(
         run_root=str(root),
         last_completed_stage=last_completed_stage,
         failed_stage=failed_stage,
         resume_from_stage=resume_from_stage,
         reason=reason,
+        latest_failure_signature=str(repair_history.get("failure_signature") or "") or None,
+        failure_count_for_signature=_coerce_int(repair_history.get("failure_count_for_signature")),
+        repair_history_path=str(reports / "repair-history.json") if repair_history else None,
     )
 
 
@@ -101,3 +109,12 @@ def _read_json(path: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
+
+
+def _coerce_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
