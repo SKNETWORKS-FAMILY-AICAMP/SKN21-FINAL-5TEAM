@@ -19,6 +19,7 @@ export const DEFAULT_SHARED_WIDGET_HOST_CONTRACT: SharedWidgetHostContract = {
 export { default as ChatbotWidget } from './ChatbotWidget';
 export * from './ChatbotWidget';
 export { default as ChatbotFab } from './chatbotfab';
+export * from './chatbotfab';
 export { default as OrderListUI } from './OrderListUI';
 export { default as ProductListUI } from './ProductListUI';
 export * from './ProductListUI';

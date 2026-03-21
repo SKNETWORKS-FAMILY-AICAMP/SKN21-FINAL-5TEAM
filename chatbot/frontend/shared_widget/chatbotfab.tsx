@@ -5,7 +5,9 @@ import ReactMarkdown from 'react-markdown';
 import ChatbotWidget, {
   bootstrapSharedChatAuth,
   streamSharedChatResponse,
+  type FetchLike,
   type SharedChatBootstrap,
+  type SharedWidgetCapabilities,
   type SharedWidgetHostConfig,
 } from '@skn/shared-chatbot/ChatbotWidget';
 import styles from './chatbotfab.module.css';
@@ -14,7 +16,12 @@ import ProductListUI, { type UiProduct } from './ProductListUI';
 import ReviewFormUI from './ReviewFormUI';
 import UsedSaleFormUI from './UsedSaleFormUI';
 
-const ECOMMERCE_SHARED_WIDGET_CAPABILITIES = ['order_list', 'product_list', 'review_form', 'used_sale_form'];
+const ECOMMERCE_SHARED_WIDGET_CAPABILITIES = [
+  'order_list',
+  'product_list',
+  'review_form',
+  'used_sale_form',
+] as unknown as SharedWidgetCapabilities;
 
 const INITIAL_BOT_MESSAGE: TextMessage = { role: 'bot', type: 'text', text: '안녕하세요. MOYEO 챗봇입니다.' };
 
@@ -200,6 +207,21 @@ const SHARED_WIDGET_HOST: SharedWidgetHostConfig = {
   chatbotApiBase: API_BASE_URL || '',
   streamPath: '/api/v1/chat/stream',
 };
+
+export async function ensureFloatingLauncherBootstrapOnOpen(args: {
+  isOpen: boolean;
+  bootstrap: SharedChatBootstrap | null;
+  host: SharedWidgetHostConfig;
+  fetchImpl: FetchLike;
+}): Promise<SharedChatBootstrap | null> {
+  if (!args.isOpen) {
+    return args.bootstrap;
+  }
+  if (args.bootstrap?.authenticated && args.bootstrap.access_token) {
+    return args.bootstrap;
+  }
+  return bootstrapSharedChatAuth(args.host, args.fetchImpl);
+}
 const ORDER_LIST_BASE_MESSAGE = '최근 30일간의 주문 목록입니다.';
 
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.2'] as const;
@@ -766,6 +788,33 @@ export default function ChatbotFab({ isLoggedIn }: { isLoggedIn: boolean }) {
 
   const sharedFetch = (input: string, init?: Record<string, unknown>) => fetch(input, init as RequestInit);
 
+  useEffect(() => {
+    let active = true;
+
+    async function bootstrapOnFirstOpen() {
+      try {
+        const nextBootstrap = await ensureFloatingLauncherBootstrapOnOpen({
+          isOpen: open,
+          bootstrap: chatBootstrap,
+          host: SHARED_WIDGET_HOST,
+          fetchImpl: sharedFetch,
+        });
+        if (active && nextBootstrap && nextBootstrap !== chatBootstrap) {
+          setChatBootstrap(nextBootstrap);
+        }
+      } catch (error) {
+        if (active) {
+          console.error('Shared chat bootstrap error:', error);
+        }
+      }
+    }
+
+    void bootstrapOnFirstOpen();
+    return () => {
+      active = false;
+    };
+  }, [open, chatBootstrap]);
+
   const ensureSharedChatBootstrap = async () => {
     if (!SHARED_WIDGET_HOST.chatbotApiBase) {
       throw new Error('API 주소가 설정되지 않았습니다.');
@@ -1321,7 +1370,13 @@ export default function ChatbotFab({ isLoggedIn }: { isLoggedIn: boolean }) {
   return (
     <>
       {/* 우측 하단 원형 버튼 */}
-      <button type="button" className={styles.fab} onClick={toggle} aria-label="챗봇 열기">
+      <button
+        type="button"
+        className={styles.fab}
+        onClick={toggle}
+        aria-label="챗봇 열기"
+        data-launcher-mode="floating"
+      >
         💬
       </button>
 
@@ -1330,6 +1385,7 @@ export default function ChatbotFab({ isLoggedIn }: { isLoggedIn: boolean }) {
         ref={panelRef}
         className={`${styles.panel} ${open ? styles.open : ''}`}
         aria-hidden={!open}
+        data-launcher-mode="floating"
         style={{ width: panelSize.w, height: panelSize.h }}
         onWheelCapture={handlePanelWheelCapture}
       >
