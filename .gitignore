@@ -67,3 +67,11 @@ food/frontend/.env*
 generated/
 
 runtime/
+
+# Local runtime artifacts
+.approval-store/
+.onboarding-approvals/
+logs/chat_sessions/
+nextjs.log
+tmp/
+uvicorn.log
