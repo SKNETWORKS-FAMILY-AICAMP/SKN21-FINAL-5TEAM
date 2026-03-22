@@ -417,6 +417,78 @@ def test_write_llm_codebase_interpretation_recovery_normalizes_string_framework_
     ]
 
 
+def test_write_llm_codebase_interpretation_recovery_normalizes_object_structure_summary(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "llm-codebase-interpretation.json"
+
+    (source_root / "backend" / "account").mkdir(parents=True)
+    (source_root / "backend" / "account" / "handlers.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+
+    codebase_map = {
+        "candidate_edit_targets": [
+            {"path": "backend/account/handlers.py", "reason": "auth handler"},
+        ]
+    }
+
+    class ObjectStructureSummaryLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "structure_summary": {
+                                "backend": {"framework": "django"},
+                                "frontend": {"framework": "react"},
+                            },
+                            "framework_assessment": {
+                                "backend": "django",
+                                "frontend": "react",
+                            },
+                            "ranked_candidates": [
+                                {
+                                    "path": "backend/account/handlers.py",
+                                    "reason": "primary auth entrypoint",
+                                }
+                            ],
+                        }
+                    )
+                },
+            )()
+
+    path = write_llm_codebase_interpretation(
+        source_root=source_root,
+        analysis={"framework": {"backend": "django", "frontend": "react"}},
+        codebase_map=codebase_map,
+        output_path=output_path,
+        llm_factory=lambda: ObjectStructureSummaryLLM(),
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    debug_payload = json.loads((tmp_path / "reports" / "llm-debug" / "codebase-interpretation.json").read_text(encoding="utf-8"))
+    recovery_events = json.loads((tmp_path / "reports" / "recovery-events.json").read_text(encoding="utf-8"))
+
+    assert payload["source"] == "recovered_llm"
+    assert payload["recovery_applied"] is True
+    assert payload["recovery_reason"] == "structure_summary_object_to_string"
+    assert payload["hard_fallback_reason"] is None
+    assert '"backend"' in payload["structure_summary"]
+    assert debug_payload["status"] == "recovered_llm"
+    assert debug_payload["recovery_reason"] == "structure_summary_object_to_string"
+    assert recovery_events == [
+        {
+            "component": "llm_codebase_interpretation",
+            "source": "recovered_llm",
+            "recovery_reason": "structure_summary_object_to_string",
+            "hard_fallback_reason": None,
+        }
+    ]
+
+
 def test_write_llm_codebase_interpretation_recovery_uses_hard_fallback_on_invalid_candidate(tmp_path: Path):
     source_root = tmp_path / "source"
     output_path = tmp_path / "reports" / "llm-codebase-interpretation.json"

@@ -827,6 +827,10 @@ def _recover_codebase_interpretation_payload(
     codebase_map: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str] | None:
     normalized = dict(payload)
+    structure_summary = normalized.get("structure_summary")
+    if isinstance(structure_summary, dict):
+        normalized["structure_summary"] = json.dumps(structure_summary, ensure_ascii=False, sort_keys=True)
+        return normalized, "structure_summary_object_to_string"
     framework_assessment = normalized.get("framework_assessment")
     if isinstance(framework_assessment, str):
         normalized["framework_assessment"] = {"summary": framework_assessment}
