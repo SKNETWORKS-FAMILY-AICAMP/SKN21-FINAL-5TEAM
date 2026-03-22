@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>검색과 RAG 설계</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<main class="slide">
+    <div class="topbar">
+        <p class="eyebrow">Retrieval & Multimodal</p>
+        <span class="page-badge">07</span>
+    </div>
+    <section class="hero compact">
+        <h1>정책 안내는 정확하게,<br>상품 탐색은 직관적으로</h1>
+        <div class="accent-line"></div>
+        <p class="lead">의류 이커머스 특성상 텍스트 검색과 이미지 검색을 함께 지원해야 하므로, 검색 구조도 두 축으로 분리해 설계했습니다.</p>
+    </section>
+    <section class="retrieval-split">
+        <article class="card">
+            <p class="kicker">Text Retrieval</p>
+            <h3>Qdrant 기반 하이브리드 검색</h3>
+            <p>BGE-M3와 BM25를 함께 써서 의미 유사도와 핵심 키워드 매칭을 동시에 확보했습니다.</p>
+            <ul class="list">
+                <li>대상: FAQ, 약관, 정책, 리뷰, 상품 설명</li>
+                <li>환불·배송·교환 같은 정책 키워드 대응에 강합니다</li>
+            </ul>
+        </article>
+        <article class="card accent">
+            <p class="kicker">Image Retrieval</p>
+            <h3>CLIP 기반 상품 이미지 탐색</h3>
+            <p>이미지 벡터 인덱스를 만들어 text-to-image, image-to-image 탐색을 함께 지원합니다.</p>
+            <ul class="list">
+                <li>이미지로 비슷한 옷 찾기</li>
+                <li>텍스트 설명으로 시각적 스타일 찾기</li>
+            </ul>
+        </article>
+    </section>
+    <section class="card" style="margin-top:16px;">
+        <p class="kicker">Chunking Rules</p>
+        <h3>데이터 종류마다 자르는 단위를 다르게 설계</h3>
+        <div class="chip-cloud">
+            <span class="chip">products · entity level</span>
+            <span class="chip">faq · QA level</span>
+            <span class="chip">policy · section level</span>
+            <span class="chip">reviews · entity level</span>
+        </div>
+        <p class="mini-note">상품은 엔티티, FAQ는 질의응답, 정책은 섹션 단위로 나눠 검색 정확도와 응답 품질을 높였습니다.</p>
+    </section>
+</main>
+</body>
+</html>

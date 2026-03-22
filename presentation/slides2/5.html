@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moyeo Shop 구현 구조</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<main class="slide">
+    <div class="topbar">
+        <p class="eyebrow">Moyeo Shop Testbed</p>
+        <span class="page-badge">05</span>
+    </div>
+    <section class="hero compact">
+        <h1>Moyeo Shop을 실제 서비스형 테스트베드로 구현</h1>
+        <div class="accent-line"></div>
+        <p class="lead">단순 목업 사이트가 아니라, 쇼핑 흐름과 인증, 주문 상태를 포함한 테스트베드 위에 챗봇을 탑재했습니다.</p>
+    </section>
+    <section class="service-stack">
+        <article class="card accent">
+            <p class="kicker">Structure Overview</p>
+            <h3>Browser → Next.js → FastAPI</h3>
+            <div class="layer-stack">
+                <div class="layer" style="background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.16);">
+                    <strong>Frontend · Next.js App Router</strong>
+                    <span style="color:rgba(255,255,255,0.82);">쇼핑 UI 구성과 글로벌 레이아웃 기반 챗봇 FAB 삽입</span>
+                </div>
+                <div class="layer" style="background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.16);">
+                    <strong>Backend · FastAPI API</strong>
+                    <span style="color:rgba(255,255,255,0.82);">일반 쇼핑 API와 `/api/v1/chat/stream` SSE 스트리밍 분리</span>
+                </div>
+                <div class="layer" style="background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.16);">
+                    <strong>Auth + Data · MySQL / Knowledge</strong>
+                    <span style="color:rgba(255,255,255,0.82);">JWT 쿠키 기반 인증과 상품·주문·정책 데이터 연결</span>
+                </div>
+            </div>
+        </article>
+        <div class="service-rail">
+            <article class="card">
+                <p class="kicker">Testbed Value</p>
+                <h3>단순 목업이 아닙니다</h3>
+                <p>상품 조회, 장바구니, 결제, 주문, 배송, 마이페이지 흐름까지 포함했습니다.</p>
+            </article>
+            <article class="card soft">
+                <p class="kicker">Widget Mount</p>
+                <h3>글로벌 레이아웃 삽입</h3>
+                <p>전역 FAB 위젯으로 현재 페이지 문맥을 읽을 수 있도록 구성했습니다.</p>
+            </article>
+            <article class="card soft">
+                <p class="kicker">Chat Endpoint</p>
+                <h3>`/api/v1/chat/stream`</h3>
+                <p>FastAPI SSE 스트리밍으로 챗봇 응답을 자연스럽게 반환합니다.</p>
+            </article>
+        </div>
+    </section>
+</main>
+</body>
+</html>

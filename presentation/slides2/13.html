@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>부록 B</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<main class="slide">
+    <div class="topbar">
+        <p class="eyebrow">Appendix B</p>
+        <span class="page-badge">13</span>
+    </div>
+    <section class="hero compact">
+        <h1>부록 B · 온보딩 상세 모듈 맵</h1>
+        <div class="accent-line"></div>
+        <p class="lead">“온보딩을 직접 구현했는가”라는 질문에 대응하기 위한 모듈 레벨 요약입니다.</p>
+    </section>
+    <section class="module-grid">
+        <article class="module-card">
+            <p class="kicker">Analyze</p>
+            <h3>Analyzer</h3>
+            <p>대상 사이트의 프레임워크, 인증 구조, API, mount 후보를 추론합니다.</p>
+        </article>
+        <article class="module-card soft">
+            <p class="kicker">Map</p>
+            <h3>Codebase Mapper</h3>
+            <p>수정 후보 파일, 라우트 타깃, 삽입 포인트를 코드베이스에서 탐색합니다.</p>
+        </article>
+        <article class="module-card soft">
+            <p class="kicker">Plan / Generate</p>
+            <h3>Planner · Generator</h3>
+            <p>어댑터, 위젯, 패치, 템플릿 기반 산출물을 생성합니다.</p>
+        </article>
+        <article class="module-card accent">
+            <p class="kicker">Validate</p>
+            <h3>Runner · Diagnostician</h3>
+            <p>runtime workspace에서 검증하고, 실패 시 진단 및 recovery loop를 수행합니다.</p>
+        </article>
+    </section>
+    <section class="card" style="margin-top:10px;">
+        <p class="kicker">Runtime Track</p>
+        <h3>실행 순서와 export 경로</h3>
+        <div class="runtime-diagram">
+            <div class="runtime-node">Site Analyzer</div>
+            <div class="runtime-node">Mapper</div>
+            <div class="runtime-node">Planner</div>
+            <div class="runtime-node">Generator</div>
+            <div class="runtime-node">Smoke Runner</div>
+            <div class="runtime-node">Exporter</div>
+        </div>
+        <div class="chip-cloud">
+            <span class="pill">Approval Gate</span>
+            <span class="pill">Redis Store</span>
+            <span class="pill">SSE Updates</span>
+            <span class="pill">Slack Bridge</span>
+            <span class="pill">Resume Support</span>
+        </div>
+    </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slides2 Viewer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #edf1fb;
+            --panel: rgba(255, 255, 255, 0.72);
+            --line: rgba(51, 63, 135, 0.12);
+            --ink: #1b213e;
+            --cobalt: #3f47d7;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: "Plus Jakarta Sans", "Noto Sans KR", sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(143, 151, 255, 0.2), transparent 28%),
+                linear-gradient(180deg, #f5f7fd 0%, #eef2fb 100%);
+        }
+
+        .frame {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        iframe {
+            width: 1280px;
+            height: 720px;
+            border: none;
+            position: absolute;
+            transform-origin: top left;
+            border-radius: 28px;
+            box-shadow: 0 30px 90px rgba(44, 55, 123, 0.18);
+            background: #fff;
+        }
+
+        .controls {
+            position: fixed;
+            left: 50%;
+            bottom: 24px;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 10px 16px;
+            border-radius: 999px;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            backdrop-filter: blur(16px);
+            color: var(--ink);
+            z-index: 20;
+        }
+
+        .controls button {
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 999px;
+            background: rgba(63, 71, 215, 0.08);
+            color: var(--cobalt);
+            font-size: 16px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .controls button:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        .counter {
+            min-width: 82px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <main class="frame">
+        <iframe id="slideFrame" src="1.html" title="Slides2 presentation"></iframe>
+    </main>
+    <div class="controls">
+        <button id="prevBtn" aria-label="previous slide">‹</button>
+        <div class="counter"><span id="current">1</span> / <span id="total">13</span></div>
+        <button id="nextBtn" aria-label="next slide">›</button>
+    </div>
+    <script>
+        const slideDeck = [
+            { file: "1.html", title: "표지" },
+            { file: "2.html", title: "프로젝트 배경" },
+            { file: "3.html", title: "차별화 포인트" },
+            { file: "4.html", title: "데모 시나리오" },
+            { file: "5.html", title: "Moyeo Shop 구조" },
+            { file: "6.html", title: "챗봇 아키텍처" },
+            { file: "7.html", title: "검색과 RAG" },
+            { file: "8.html", title: "온보딩 파이프라인" },
+            { file: "9.html", title: "운영 메커니즘" },
+            { file: "10.html", title: "기술 선택" },
+            { file: "11.html", title: "기대효과" },
+            { file: "12.html", title: "부록 A" },
+            { file: "13.html", title: "부록 B" }
+        ];
+
+        const frame = document.getElementById("slideFrame");
+        const current = document.getElementById("current");
+        const total = document.getElementById("total");
+        const prevBtn = document.getElementById("prevBtn");
+        const nextBtn = document.getElementById("nextBtn");
+        let index = Math.max(0, (parseInt(window.location.hash.replace("#", ""), 10) || 1) - 1);
+
+        total.textContent = String(slideDeck.length);
+
+        function scaleFrame() {
+            const scale = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+            frame.style.transform = `scale(${scale})`;
+            frame.style.left = `${(window.innerWidth - 1280 * scale) / 2}px`;
+            frame.style.top = `${(window.innerHeight - 720 * scale) / 2}px`;
+        }
+
+        function render() {
+            const slide = slideDeck[index];
+            frame.src = slide.file;
+            current.textContent = String(index + 1);
+            document.title = `${slide.title} - Slides2 Viewer`;
+            window.location.hash = String(index + 1);
+            prevBtn.disabled = index === 0;
+            nextBtn.disabled = index === slideDeck.length - 1;
+        }
+
+        prevBtn.addEventListener("click", () => {
+            if (index > 0) {
+                index -= 1;
+                render();
+            }
+        });
+
+        nextBtn.addEventListener("click", () => {
+            if (index < slideDeck.length - 1) {
+                index += 1;
+                render();
+            }
+        });
+
+        window.addEventListener("keydown", (event) => {
+            if (event.key === "ArrowRight" || event.key === " ") {
+                event.preventDefault();
+                if (index < slideDeck.length - 1) {
+                    index += 1;
+                    render();
+                }
+            }
+            if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                if (index > 0) {
+                    index -= 1;
+                    render();
+                }
+            }
+        });
+
+        window.addEventListener("resize", scaleFrame);
+        frame.addEventListener("load", scaleFrame);
+        render();
+        scaleFrame();
+    </script>
+</body>
+</html>

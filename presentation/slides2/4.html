@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>데모 시나리오</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<main class="slide">
+    <div class="topbar">
+        <p class="eyebrow">Demo Scenario</p>
+        <span class="page-badge">04</span>
+    </div>
+    <section class="hero compact">
+        <h1>사용자와 운영자 관점에서의 동작 흐름</h1>
+        <div class="accent-line"></div>
+        <p class="lead">실제 발표에서는 세 가지 시나리오만 보여주고, 동작 이유와 구조 설명은 뒤 슬라이드에서 이어갑니다.</p>
+    </section>
+    <section class="scenario-grid">
+        <article class="card">
+            <p class="kicker">Scenario 01 · Public</p>
+            <h3>비로그인 사용자</h3>
+            <div class="example-cloud">
+                <div class="example-chip">“이 상품이 어떤 스타일에 어울리나요?”</div>
+                <div class="example-chip">“비슷한 옷 추천해줘”</div>
+            </div>
+            <div class="pill-row">
+                <span class="pill">상품 추천</span>
+                <span class="pill">정책 안내</span>
+                <span class="pill">이미지 탐색</span>
+            </div>
+        </article>
+        <article class="card soft">
+            <p class="kicker">Scenario 02 · Protected</p>
+            <h3>로그인 사용자</h3>
+            <div class="example-cloud">
+                <div class="example-chip">“내 주문 배송 상태 알려줘”</div>
+                <div class="example-chip">“주문 취소 가능한가?”</div>
+            </div>
+            <div class="pill-row">
+                <span class="pill">배송 조회</span>
+                <span class="pill">취소 / 환불</span>
+                <span class="pill">교환</span>
+            </div>
+        </article>
+        <article class="card tint">
+            <p class="kicker">Scenario 03 · Operator</p>
+            <h3>운영자 온보딩</h3>
+            <div class="example-cloud">
+                <div class="example-chip">사이트 분석</div>
+                <div class="example-chip">mount 지점 추론</div>
+                <div class="example-chip">patch 생성 · 검증 · export</div>
+            </div>
+            <div class="pill-row">
+                <span class="pill">Analyze</span>
+                <span class="pill">Validate</span>
+                <span class="pill">Export</span>
+            </div>
+        </article>
+    </section>
+    <div class="caption-row">
+        <p class="slim-note">데모는 1분 이내로 짧게 보여주고, 동작 이유는 뒤 슬라이드에서 구조로 설명합니다.</p>
+    </div>
+</main>
+</body>
+</html>
