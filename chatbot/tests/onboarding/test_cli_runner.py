@@ -471,6 +471,50 @@ def test_cli_parser_accepts_runtime_completion_loop_flag():
     assert args.enable_runtime_completion_loop is True
 
 
+def test_cli_parser_defaults_engine_to_legacy():
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "--site",
+            "food",
+            "--source-root",
+            "food",
+            "--generated-root",
+            "generated",
+            "--runtime-root",
+            "runtime",
+            "--run-id",
+            "food-run-engine-default",
+        ]
+    )
+
+    assert args.engine == "legacy"
+
+
+def test_cli_parser_accepts_engine_v2():
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "--site",
+            "food",
+            "--source-root",
+            "food",
+            "--generated-root",
+            "generated",
+            "--runtime-root",
+            "runtime",
+            "--run-id",
+            "food-run-engine-v2",
+            "--engine",
+            "v2",
+        ]
+    )
+
+    assert args.engine == "v2"
+
+
 def test_cli_parser_accepts_llm_patch_draft_flag():
     parser = build_parser()
 
@@ -1225,3 +1269,50 @@ def test_load_generation_env_reads_root_dotenv(tmp_path: Path, monkeypatch):
 
     assert os.getenv("SLACK_COORDINATOR_BOT_TOKEN") == "xoxb-coordinator"
     assert os.getenv("SLACK_ANALYZER_BOT_TOKEN") == "xoxb-analyzer"
+
+
+def test_cli_runner_dispatches_v2_engine(monkeypatch, capsys):
+    monkeypatch.setattr("chatbot.scripts.run_onboarding_generation.load_generation_env", lambda: None)
+    monkeypatch.setattr(
+        "chatbot.scripts.run_onboarding_generation.run_onboarding_generation",
+        lambda **kwargs: pytest.fail("legacy engine should not run when --engine v2 is used"),
+    )
+    monkeypatch.setattr(
+        "chatbot.scripts.run_onboarding_generation.run_onboarding_generation_v2",
+        lambda **kwargs: {
+            "engine": "v2",
+            "run_root": "/tmp/generated/food/food-run-v2",
+            "status": "exported",
+            "latest_analysis_artifact": "/tmp/generated/food/food-run-v2/artifacts/01-analysis/snapshot/v0001.json",
+            "latest_plan_artifact": "/tmp/generated/food/food-run-v2/artifacts/02-planning/integration-plan/v0001.json",
+            "latest_compile_artifact": "/tmp/generated/food/food-run-v2/artifacts/03-compile/edit-program/v0001.json",
+            "latest_validation_artifact": "/tmp/generated/food/food-run-v2/artifacts/05-validation/validation-bundle/v0001.json",
+            "latest_export_artifact": "/tmp/generated/food/food-run-v2/artifacts/06-export/export-bundle/v0001.json",
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_onboarding_generation.py",
+            "--site",
+            "food",
+            "--source-root",
+            "/tmp/source",
+            "--generated-root",
+            "/tmp/generated",
+            "--runtime-root",
+            "/tmp/runtime",
+            "--run-id",
+            "food-run-v2",
+            "--engine",
+            "v2",
+        ],
+    )
+
+    exit_code = run_onboarding_generation_main()
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["engine"] == "v2"
+    assert payload["status"] == "exported"

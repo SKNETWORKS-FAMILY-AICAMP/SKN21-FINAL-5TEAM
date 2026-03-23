@@ -12,13 +12,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from chatbot.src.onboarding.approval_store import ApprovalStore
-from chatbot.src.onboarding.orchestrator import run_onboarding_generation
 from chatbot.src.onboarding.redis_runtime import (
     build_onboarding_event_store,
     close_onboarding_event_store,
 )
 from chatbot.src.onboarding.slack_bridge import SlackWebBridge
 from chatbot.src.core.config import settings
+
+
+run_onboarding_generation = None
+run_onboarding_generation_v2 = None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,6 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--enable-runtime-completion-loop", action="store_true")
     parser.add_argument("--llm-provider", default="openai")
     parser.add_argument("--llm-model", default="gpt-5-mini")
+    parser.add_argument("--engine", choices=("legacy", "v2"), default="legacy")
     parser.add_argument("--print-report-paths", action="store_true")
     parser.add_argument("--slack-channel")
     parser.add_argument("--approval-store-root")
@@ -112,45 +116,83 @@ def main() -> int:
         }.items()
         if value
     }
-    slack_bridge = (
-        build_slack_bridge_from_env(channel=args.slack_channel)
-        if args.slack_channel
-        else None
-    )
-    approval_store = (
-        ApprovalStore(root=args.approval_store_root)
-        if args.approval_store_root
-        else None
-    )
-    event_store = build_onboarding_event_store(
-        redis_url=settings.ONBOARDING_REDIS_URL,
-    )
-
-    try:
-        result = run_onboarding_generation(
+    if args.engine == "v2":
+        result = _get_v2_runner()(
             site=args.site,
             source_root=args.source_root,
             generated_root=args.generated_root,
             runtime_root=args.runtime_root,
             run_id=effective_run_id,
             agent_version=args.agent_version,
-            slack_bridge=slack_bridge,
-            approval_decisions=approvals if approvals else None,
-            approval_store=approval_store,
+            llm_provider=args.llm_provider,
+            llm_model=args.llm_model,
+            onboarding_credentials=onboarding_credentials or None,
             use_llm_roles=args.use_llm_roles,
             generate_llm_patch_draft=args.generate_llm_patch_draft,
             enable_runtime_completion_loop=args.enable_runtime_completion_loop,
-            llm_provider=args.llm_provider,
-            llm_model=args.llm_model,
-            terminal_logger=lambda message: print(message, file=sys.stderr, flush=True),
-            event_store=event_store,
-            onboarding_credentials=onboarding_credentials or None,
-            resume_from_existing=bool(args.resume_run_id),
         )
-    finally:
-        close_onboarding_event_store(event_store)
+    else:
+        slack_bridge = (
+            build_slack_bridge_from_env(channel=args.slack_channel)
+            if args.slack_channel
+            else None
+        )
+        approval_store = (
+            ApprovalStore(root=args.approval_store_root)
+            if args.approval_store_root
+            else None
+        )
+        event_store = build_onboarding_event_store(
+            redis_url=settings.ONBOARDING_REDIS_URL,
+        )
+
+        try:
+            result = _get_legacy_runner()(
+                site=args.site,
+                source_root=args.source_root,
+                generated_root=args.generated_root,
+                runtime_root=args.runtime_root,
+                run_id=effective_run_id,
+                agent_version=args.agent_version,
+                slack_bridge=slack_bridge,
+                approval_decisions=approvals if approvals else None,
+                approval_store=approval_store,
+                use_llm_roles=args.use_llm_roles,
+                generate_llm_patch_draft=args.generate_llm_patch_draft,
+                enable_runtime_completion_loop=args.enable_runtime_completion_loop,
+                llm_provider=args.llm_provider,
+                llm_model=args.llm_model,
+                terminal_logger=lambda message: print(message, file=sys.stderr, flush=True),
+                event_store=event_store,
+                onboarding_credentials=onboarding_credentials or None,
+                resume_from_existing=bool(args.resume_run_id),
+            )
+        finally:
+            close_onboarding_event_store(event_store)
     print(json.dumps(result, ensure_ascii=False))
     return 0
+
+
+def _get_legacy_runner():
+    global run_onboarding_generation
+    if run_onboarding_generation is None:
+        from chatbot.src.onboarding.orchestrator import (
+            run_onboarding_generation as legacy_runner,
+        )
+
+        run_onboarding_generation = legacy_runner
+    return run_onboarding_generation
+
+
+def _get_v2_runner():
+    global run_onboarding_generation_v2
+    if run_onboarding_generation_v2 is None:
+        from chatbot.src.onboarding_v2.engine import (
+            run_onboarding_generation_v2 as v2_runner,
+        )
+
+        run_onboarding_generation_v2 = v2_runner
+    return run_onboarding_generation_v2
 
 
 def _default_web_client_factory(token: str):
