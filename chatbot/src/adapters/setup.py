@@ -67,3 +67,19 @@ def get_order_cs_bridge_operations(site_id: str | None = None) -> tuple[str, ...
     if site_id:
         resolve_site_adapter(site_id.strip())
     return ORDER_CS_BRIDGE_OPERATIONS
+
+
+def resolve_order_tool_registry(
+    site_id: str,
+    *,
+    user_id: int = 1,
+    access_token: str | None = None,
+) -> dict:
+    from chatbot.src.tools.adapter_order_tools import build_order_cs_bridge
+
+    resolve_site_adapter(site_id.strip())
+    return build_order_cs_bridge(
+        site_id=site_id.strip(),
+        user_id=user_id,
+        access_token=access_token,
+    )

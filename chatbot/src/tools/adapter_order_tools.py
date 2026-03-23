@@ -26,6 +26,7 @@ from chatbot.src.adapters.schema import (
 )
 from chatbot.src.adapters.setup import ORDER_CS_BRIDGE_OPERATIONS, get_adapter
 from chatbot.src.tools.order_tools import (
+    _extract_new_option_id_from_resume,
     _extract_optional_confirmation_from_resume,
     _extract_order_id_from_resume,
     _is_langgraph_interrupt_error,
@@ -239,22 +240,34 @@ def get_user_orders_for_site(
 
 
 def _normalize_order_list_bridge_payload(payload: dict) -> dict:
+    orders = payload.get("ui_data", [])
     return {
         "operation": "list_orders",
+        "ui_action": payload.get("ui_action", "show_order_list"),
         "message": payload.get("message"),
         "total_orders": payload.get("total_orders", 0),
-        "orders": payload.get("ui_data", []),
+        "orders": orders,
+        "ui_data": orders,
         "requires_selection": payload.get("requires_selection", False),
         "prior_action": payload.get("prior_action"),
     }
 
 
 def _normalize_action_bridge_payload(operation: str, payload: dict) -> dict:
-    if isinstance(payload, dict) and payload.get("operation") == operation:
-        return payload
     normalized = dict(payload or {})
-    normalized.setdefault("operation", operation)
+    normalized["operation"] = operation
     return normalized
+
+
+def _build_exchange_option_selection_payload(message: str, options: list[dict]) -> dict:
+    return {
+        "success": False,
+        "ui_action": "show_option_list",
+        "action": "select_option",
+        "message": message,
+        "ui_data": options,
+        "prior_action": "exchange",
+    }
 
 
 def build_order_cs_bridge(
@@ -265,21 +278,29 @@ def build_order_cs_bridge(
 ) -> dict[str, Callable[..., dict]]:
     effective_site_id = (site_id or "site-c").strip()
 
+    def _resolve_bridge_context(kwargs: dict) -> tuple[int, str, str | None]:
+        local_user_id = int(kwargs.pop("user_id", user_id))
+        local_site_id = str(kwargs.pop("site_id", effective_site_id) or effective_site_id).strip()
+        local_access_token = kwargs.pop("access_token", access_token)
+        return local_user_id, local_site_id, local_access_token
+
     def list_orders(**kwargs) -> dict:
+        local_user_id, local_site_id, local_access_token = _resolve_bridge_context(kwargs)
         payload = get_user_orders_for_site(
-            user_id=user_id,
-            site_id=effective_site_id,
-            access_token=access_token,
+            user_id=local_user_id,
+            site_id=local_site_id,
+            access_token=local_access_token,
             **kwargs,
         )
         return _normalize_order_list_bridge_payload(payload)
 
     def get_order_status(order_id: str, **kwargs) -> dict:
+        local_user_id, local_site_id, local_access_token = _resolve_bridge_context(kwargs)
         payload = get_order_status_via_adapter.invoke(
             {
-                "user_id": user_id,
-                "site_id": effective_site_id,
-                "access_token": access_token,
+                "user_id": local_user_id,
+                "site_id": local_site_id,
+                "access_token": local_access_token,
                 "order_id": order_id,
                 **kwargs,
             }
@@ -287,11 +308,12 @@ def build_order_cs_bridge(
         return _normalize_action_bridge_payload("get_order_status", payload)
 
     def cancel(order_id: str = "", confirmed: bool = True, **kwargs) -> dict:
+        local_user_id, local_site_id, local_access_token = _resolve_bridge_context(kwargs)
         payload = cancel_order_via_adapter.invoke(
             {
-                "user_id": user_id,
-                "site_id": effective_site_id,
-                "access_token": access_token,
+                "user_id": local_user_id,
+                "site_id": local_site_id,
+                "access_token": local_access_token,
                 "order_id": order_id,
                 "confirmed": confirmed,
                 **kwargs,
@@ -300,11 +322,12 @@ def build_order_cs_bridge(
         return _normalize_action_bridge_payload("cancel", payload)
 
     def refund(order_id: str = "", confirmed: bool = True, **kwargs) -> dict:
+        local_user_id, local_site_id, local_access_token = _resolve_bridge_context(kwargs)
         payload = register_return_via_adapter.invoke(
             {
-                "user_id": user_id,
-                "site_id": effective_site_id,
-                "access_token": access_token,
+                "user_id": local_user_id,
+                "site_id": local_site_id,
+                "access_token": local_access_token,
                 "order_id": order_id,
                 "confirmed": confirmed,
                 **kwargs,
@@ -313,11 +336,12 @@ def build_order_cs_bridge(
         return _normalize_action_bridge_payload("refund", payload)
 
     def exchange(order_id: str = "", confirmed: bool = True, **kwargs) -> dict:
+        local_user_id, local_site_id, local_access_token = _resolve_bridge_context(kwargs)
         payload = register_exchange_via_adapter.invoke(
             {
-                "user_id": user_id,
-                "site_id": effective_site_id,
-                "access_token": access_token,
+                "user_id": local_user_id,
+                "site_id": local_site_id,
+                "access_token": local_access_token,
                 "order_id": order_id,
                 "confirmed": confirmed,
                 **kwargs,
@@ -444,6 +468,80 @@ def _build_site_adapter_context(
     return adapter, _build_ctx(user_id, adapter.site_id, access_token)
 
 
+def _list_exchange_options_via_adapter(
+    *,
+    adapter,
+    ctx: AuthenticatedContext,
+    current_product_id: str | None,
+) -> list[dict]:
+    search_result = _run(
+        adapter.search_products(
+            ctx,
+            ProductSearchFilter(query="", inStockOnly=True, limit=10),
+        )
+    )
+    options = []
+    for item in getattr(search_result, "items", []) or []:
+        option_id = str(getattr(item, "id", "") or "").strip()
+        if not option_id or option_id == str(current_product_id or "").strip():
+            continue
+        options.append(
+            {
+                "option_id": option_id,
+                "label": str(getattr(item, "title", "") or option_id),
+                "in_stock": bool(getattr(item, "inStock", True)),
+            }
+        )
+    return options
+
+
+def _resolve_exchange_option_for_site(
+    *,
+    adapter,
+    ctx: AuthenticatedContext,
+    current_product_id: str | None,
+    new_option_id: str | None,
+) -> tuple[str | None, dict | None]:
+    provided = str(new_option_id or "").strip()
+    options = _list_exchange_options_via_adapter(
+        adapter=adapter,
+        ctx=ctx,
+        current_product_id=current_product_id,
+    )
+    offered_option_ids = {str(option.get("option_id", "")).strip() for option in options if option.get("option_id")}
+
+    if provided:
+        if provided in offered_option_ids:
+            return provided, None
+        return None, _build_exchange_option_selection_payload(
+            "선택한 옵션이 목록에 없습니다. 다시 선택해주세요.",
+            options,
+        )
+
+    if not options:
+        return None, _build_exchange_option_selection_payload(
+            "교환 가능한 옵션을 찾을 수 없습니다.",
+            options,
+        )
+
+    while True:
+        resume_value = interrupt(
+            {
+                "ui_action": "show_option_list",
+                "action": "select_option",
+                "message": "교환할 옵션을 선택해주세요.",
+                "ui_data": options,
+                "prior_action": "exchange",
+            }
+        )
+        selected_option_id = _extract_new_option_id_from_resume(resume_value)
+        if selected_option_id is None:
+            continue
+        selected_option = str(selected_option_id).strip()
+        if selected_option in offered_option_ids:
+            return selected_option, None
+
+
 @tool("cancel")
 def cancel_order_via_adapter(
     order_id: str | None = None,
@@ -531,6 +629,7 @@ def cancel_order_via_adapter(
             )
         )
         return {
+            "operation": "cancel",
             "success": result.success,
             "message": (
                 result.message
@@ -642,6 +741,7 @@ def register_return_via_adapter(
             )
         )
         return {
+            "operation": "refund",
             "success": result.success,
             "message": (
                 result.message
@@ -666,6 +766,7 @@ def register_exchange_via_adapter(
     access_token: str | None = None,
     reason: str = "교환 요청",
     confirmed: bool | None = None,
+    new_option_id: str | None = None,
 ) -> dict:
     """교환을 접수합니다. (어댑터 기반 - 다중 사이트 지원)"""
     try:
@@ -718,11 +819,27 @@ def register_exchange_via_adapter(
                 )
             }
 
+        resolved_new_option_id, option_selection_payload = _resolve_exchange_option_for_site(
+            adapter=adapter,
+            ctx=ctx,
+            current_product_id=order_result.order.items[0].productId if order_result.order.items else None,
+            new_option_id=new_option_id,
+        )
+        if not resolved_new_option_id:
+            if option_selection_payload:
+                return option_selection_payload
+            return {
+                "success": False,
+                "message": "교환할 옵션을 선택해주세요.",
+                "order_id": resolved_order_id,
+            }
+
         approved = _require_human_confirmation(
             action="exchange",
             prompt=f"주문({resolved_order_id})의 교환을 접수할까요?",
             context={
                 "order_id": resolved_order_id,
+                "new_option_id": resolved_new_option_id,
                 "reason": reason,
             },
             confirmed=confirmed,
@@ -743,10 +860,12 @@ def register_exchange_via_adapter(
                     actionType=OrderActionType.EXCHANGE,
                     reasonCode=OrderActionReason.CHANGED_MIND,
                     reasonText=reason,
+                    newOptionId=resolved_new_option_id,
                 ),
             )
         )
         return {
+            "operation": "exchange",
             "success": result.success,
             "message": (
                 result.message
@@ -754,6 +873,7 @@ def register_exchange_via_adapter(
             ),
             "status": "exchange_requested",
             "order_id": resolved_order_id,
+            "new_option_id": resolved_new_option_id,
         }
     except Exception as e:
         if isinstance(e, AdapterError):
@@ -845,6 +965,7 @@ def get_order_status_via_adapter(
         )
         order = result.order
         return {
+            "operation": "get_order_status",
             "order_id": order.orderId,
             "status": order.status.value,
             "user_id": order.userId,

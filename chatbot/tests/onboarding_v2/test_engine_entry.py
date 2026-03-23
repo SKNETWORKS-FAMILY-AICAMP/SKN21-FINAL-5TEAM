@@ -9,13 +9,17 @@ os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
 from chatbot.src.onboarding_v2.engine import run_onboarding_generation_v2
 from chatbot.src.onboarding_v2.models.repair import RepairDecision
-from chatbot.src.onboarding_v2.models.validation import BackendRuntimePlan, BackendRuntimePrepResult, BackendRuntimeState
+from chatbot.src.onboarding_v2.models.validation import (
+    BackendRuntimePlan,
+    BackendRuntimePrepResult,
+    BackendRuntimeState,
+)
 
 
 def test_engine_entry_returns_v2_payload(monkeypatch, tmp_path: Path):
     runtime_plan = BackendRuntimePlan(
         framework="django",
-        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "backend"),
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "host" / "backend"),
         command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
         readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
     )
@@ -43,11 +47,33 @@ def test_engine_entry_returns_v2_payload(monkeypatch, tmp_path: Path):
         lambda state: None,
     )
     monkeypatch.setattr(
-        "chatbot.src.onboarding_v2.validation.runner.run_runtime_smoke",
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
         lambda **kwargs: {
             "passed": True,
-            "results": [],
-            "failure_summary": "smoke passed",
+            "failure_summary": "host auth bootstrap passed",
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "session-token",
+                "user": {"id": "7"},
+            },
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot adapter auth passed",
+            "validated_user": {"id": "7", "siteId": "food"},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_order_e2e",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget order e2e passed",
             "related_files": [],
         },
     )
@@ -57,11 +83,16 @@ def test_engine_entry_returns_v2_payload(monkeypatch, tmp_path: Path):
         generated_root=str(tmp_path / "generated"),
         runtime_root=str(tmp_path / "runtime"),
         run_id="food-run-v2",
+        chatbot_server_base_url="http://localhost:8100",
     )
 
     assert result["engine"] == "v2"
     assert result["status"] == "exported"
     assert result["latest_analysis_artifact"].endswith("v0001.json")
+    assert result["latest_compile_artifact"].endswith("host-edit-program/v0001.json")
+    assert result["latest_chatbot_compile_artifact"].endswith("chatbot-edit-program/v0001.json")
+    assert result["approved_patch_path"].endswith("host-approved.patch/v0001.patch")
+    assert result["chatbot_approved_patch_path"].endswith("chatbot-approved.patch/v0001.patch")
     assert result["latest_repair_artifact"] is None
     assert result["repair_attempt_count"] == 0
 
@@ -69,7 +100,7 @@ def test_engine_entry_returns_v2_payload(monkeypatch, tmp_path: Path):
 def test_engine_entry_rewinds_validation_failures(monkeypatch, tmp_path: Path):
     runtime_plan = BackendRuntimePlan(
         framework="django",
-        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "backend"),
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "host" / "backend"),
         command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
         readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
     )
@@ -99,34 +130,61 @@ def test_engine_entry_rewinds_validation_failures(monkeypatch, tmp_path: Path):
         lambda state: None,
     )
 
-    def _run_smoke(**kwargs):
+    def _host_bootstrap(**kwargs):
         smoke_attempts["count"] += 1
         if smoke_attempts["count"] == 1:
             return {
                 "passed": False,
-                "results": [{"step_id": "order-api", "returncode": 1, "stderr": "order failed"}],
-                "failure_summary": "step order-api returned 500",
-                "related_files": ["backend/orders/views.py"],
+                "failure_summary": "host auth bootstrap missing site_id",
+                "bootstrap_payload": {
+                    "authenticated": True,
+                    "site_id": "",
+                    "access_token": "session-token",
+                    "user": {"id": "7"},
+                },
+                "related_files": ["backend/chat_auth.py"],
             }
         return {
             "passed": True,
-            "results": [],
-            "failure_summary": "smoke passed",
+            "failure_summary": "host auth bootstrap passed",
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "session-token",
+                "user": {"id": "7"},
+            },
             "related_files": [],
         }
 
     monkeypatch.setattr(
-        "chatbot.src.onboarding_v2.validation.runner.run_runtime_smoke",
-        _run_smoke,
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
+        _host_bootstrap,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot adapter auth passed",
+            "validated_user": {"id": "7", "siteId": "food"},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_order_e2e",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget order e2e passed",
+            "related_files": [],
+        },
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.engine.diagnose_failure",
         lambda **kwargs: RepairDecision(
-            failure_signature="smoke_step_order_api_returned_500",
-            diagnosis="rerun validation after smoke failure",
+            failure_signature="host_auth_bootstrap_missing_site_id",
+            diagnosis="rerun validation after host auth bootstrap failure",
             rewind_to="validation",
             preserve_artifacts=["analysis", "planning", "compile", "apply", "export"],
-            required_rechecks=["smoke"],
+            required_rechecks=["host_auth_bootstrap"],
             additional_discovery=[],
             artifact_overrides={},
             stop=False,
@@ -141,6 +199,7 @@ def test_engine_entry_rewinds_validation_failures(monkeypatch, tmp_path: Path):
         run_id="food-run-v2-repair",
         llm_provider="openai",
         llm_model="gpt-5-mini",
+        chatbot_server_base_url="http://localhost:8100",
     )
 
     assert result["status"] == "exported"
@@ -152,7 +211,7 @@ def test_engine_entry_rewinds_validation_failures(monkeypatch, tmp_path: Path):
 def test_engine_entry_stops_after_repeated_failure_signature(monkeypatch, tmp_path: Path):
     runtime_plan = BackendRuntimePlan(
         framework="django",
-        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "backend"),
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "host" / "backend"),
         command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
         readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
     )
@@ -181,22 +240,44 @@ def test_engine_entry_stops_after_repeated_failure_signature(monkeypatch, tmp_pa
         lambda state: None,
     )
     monkeypatch.setattr(
-        "chatbot.src.onboarding_v2.validation.runner.run_runtime_smoke",
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
         lambda **kwargs: {
             "passed": False,
-            "results": [{"step_id": "login", "returncode": 1, "stderr": "login failed"}],
-            "failure_summary": "step login returned 500",
-            "related_files": ["backend/users/views.py"],
+            "failure_summary": "host auth bootstrap missing site_id",
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "",
+                "access_token": "session-token",
+                "user": {"id": "7"},
+            },
+            "related_files": ["backend/chat_auth.py"],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot adapter auth passed",
+            "validated_user": {"id": "7", "siteId": "food"},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_order_e2e",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget order e2e passed",
+            "related_files": [],
         },
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.engine.diagnose_failure",
         lambda **kwargs: RepairDecision(
-            failure_signature="smoke_step_login_returned_500",
+            failure_signature="host_auth_bootstrap_missing_site_id",
             diagnosis="rerun validation",
             rewind_to="validation",
             preserve_artifacts=["analysis", "planning", "compile", "apply", "export"],
-            required_rechecks=["smoke"],
+            required_rechecks=["host_auth_bootstrap"],
             additional_discovery=[],
             artifact_overrides={},
             stop=False,
@@ -211,6 +292,7 @@ def test_engine_entry_stops_after_repeated_failure_signature(monkeypatch, tmp_pa
         run_id="food-run-v2-repair-stop",
         llm_provider="openai",
         llm_model="gpt-5-mini",
+        chatbot_server_base_url="http://localhost:8100",
     )
 
     assert result["status"] == "failed_human_review"

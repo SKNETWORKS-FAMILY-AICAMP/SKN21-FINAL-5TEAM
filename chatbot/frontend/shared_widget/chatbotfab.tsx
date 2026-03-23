@@ -1204,19 +1204,11 @@ export default function ChatbotFab({
 
     // interrupt resume payload 전송
     const inferredAction = priorAction || getInferredAction();
-    const normalizedAction = String(inferredAction || '').toLowerCase();
     const resumePayload: Record<string, unknown> = {
       selected_order_id: selectedOrderIds[0],
       selected_order_ids: selectedOrderIds,
       ...(inferredAction ? { action: inferredAction } : {}),
     };
-
-    // 환불은 주문 선택 직후 승인까지 함께 수집
-    if (normalizedAction === 'refund') {
-      const approved = window.confirm('선택한 주문으로 반품 접수를 진행할까요?');
-      resumePayload.approved = approved;
-      resumePayload.confirmed = approved;
-    }
 
     // 사용자 채팅에는 숨기고 resume_payload만 전달
     sendMessage('주문 선택 완료', true, resumePayload);

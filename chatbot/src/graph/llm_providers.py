@@ -7,7 +7,11 @@ from langchain_core.outputs import ChatResult, ChatGeneration
 from langchain_openai import ChatOpenAI
 from pydantic import Field, SecretStr, PrivateAttr
 from typing import Any, Dict, List, Literal, Optional, Type, Union
-from langchain_ollama import ChatOllama
+
+try:
+    from langchain_ollama import ChatOllama
+except ModuleNotFoundError:  # optional dependency
+    ChatOllama = None
 
 from chatbot.src.core.config import settings
 
@@ -219,6 +223,10 @@ def make_chat_llm(provider: str | None = None, model: str = "gpt-4o-mini", tempe
             api_key=SecretStr(settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
         )
     elif provider == "ollama":
+        if ChatOllama is None:
+            raise ModuleNotFoundError(
+                "langchain_ollama is required when provider is 'ollama'."
+            )
         llm = ChatOllama(
             model=model,
             temperature=temperature,

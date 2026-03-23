@@ -19,16 +19,27 @@ def _normalize_mount_mode(value: str | None) -> str:
     return DEFAULT_MOUNT_MODE if str(value or "").strip() != DEFAULT_MOUNT_MODE else DEFAULT_MOUNT_MODE
 
 
+def _normalize_chatbot_server_base_url(value: str | None, *, required: bool) -> str:
+    normalized = str(value or "").strip().rstrip("/")
+    if required and not normalized:
+        raise ValueError("chatbot_server_base_url must be non-empty")
+    return normalized
+
+
 def build_shared_widget_host_contract(
     *,
-    chatbot_server_base_url: str = DEFAULT_CHATBOT_SERVER_BASE_URL,
+    chatbot_server_base_url: str | None = None,
     auth_bootstrap_path: str = DEFAULT_AUTH_BOOTSTRAP_PATH,
     widget_bundle_path: str = DEFAULT_WIDGET_BUNDLE_PATH,
     widget_element_tag: str = DEFAULT_WIDGET_ELEMENT_TAG,
     mount_mode: str = DEFAULT_MOUNT_MODE,
 ) -> dict[str, str]:
+    normalized_base_url = _normalize_chatbot_server_base_url(
+        chatbot_server_base_url,
+        required=chatbot_server_base_url is not None,
+    )
     return {
-        "chatbotServerBaseUrl": chatbot_server_base_url.rstrip("/"),
+        "chatbotServerBaseUrl": normalized_base_url,
         "authBootstrapPath": auth_bootstrap_path,
         "widgetBundlePath": widget_bundle_path,
         "widgetElementTag": widget_element_tag,
@@ -47,7 +58,11 @@ def resolve_shared_widget_host_contract(
             if key not in base_contract:
                 continue
             value = str(base_contract[key] or "")
-            resolved[key] = value.rstrip("/") if key == "chatbotServerBaseUrl" else value
+            resolved[key] = (
+                _normalize_chatbot_server_base_url(value, required=True)
+                if key == "chatbotServerBaseUrl"
+                else value
+            )
 
     if attribute_overrides:
         for raw_key, raw_value in attribute_overrides.items():
@@ -55,7 +70,11 @@ def resolve_shared_widget_host_contract(
             if key not in resolved:
                 continue
             value = str(raw_value or "")
-            resolved[key] = value.rstrip("/") if key == "chatbotServerBaseUrl" else value
+            resolved[key] = (
+                _normalize_chatbot_server_base_url(value, required=True)
+                if key == "chatbotServerBaseUrl"
+                else value
+            )
 
     resolved["mountMode"] = _normalize_mount_mode(resolved.get("mountMode"))
     return resolved

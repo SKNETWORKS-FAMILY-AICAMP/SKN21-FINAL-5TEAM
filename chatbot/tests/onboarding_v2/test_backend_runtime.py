@@ -8,7 +8,12 @@ os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
 os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
 from chatbot.src.onboarding_v2.models.analysis import AnalysisSnapshot, BackendSeams, DomainIntegration, FrontendSeams, RepoProfile
-from chatbot.src.onboarding_v2.models.planning import BackendWiringPlan, FrontendIntegrationPlan, IntegrationPlan
+from chatbot.src.onboarding_v2.models.planning import (
+    ChatbotBridgePlan,
+    BackendWiringPlan,
+    FrontendIntegrationPlan,
+    IntegrationPlan,
+)
 from chatbot.src.onboarding_v2.models.validation import BackendRuntimePrepResult
 from chatbot.src.onboarding_v2.validation.backend_runtime import build_backend_runtime_plan
 
@@ -31,17 +36,25 @@ def _snapshot(*, backend_framework: str, backend_entrypoints: list[str] | None =
 
 def _plan(*, strategy: str) -> IntegrationPlan:
     return IntegrationPlan(
-        backend_wiring=BackendWiringPlan(
+        host_backend=BackendWiringPlan(
             strategy=strategy,
             route_target="backend/config/urls.py",
             import_target="backend/config/urls.py",
             auth_handler_source="backend/users/views.py",
+            site_id="demo",
         ),
-        frontend_integration=FrontendIntegrationPlan(
+        host_frontend=FrontendIntegrationPlan(
             mount_strategy="react_app_shell_outside_routes",
             mount_target="frontend/src/App.js",
             api_strategy="react_api_client_augment_existing",
             api_client_target="frontend/src/api/api.js",
+            chatbot_server_base_url="http://localhost:8100",
+        ),
+        chatbot_bridge=ChatbotBridgePlan(
+            site_key="demo",
+            adapter_package="src/adapters/generated/demo",
+            setup_target="src/adapters/setup.py",
+            host_base_url_env_var="GENERATED_DEMO_API_URL",
         ),
     )
 

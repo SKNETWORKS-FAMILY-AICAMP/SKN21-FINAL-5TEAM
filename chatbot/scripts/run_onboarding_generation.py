@@ -44,6 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-provider", default="openai")
     parser.add_argument("--llm-model", default="gpt-5-mini")
     parser.add_argument("--engine", choices=("legacy", "v2"), default="legacy")
+    parser.add_argument("--chatbot-server-base-url")
     parser.add_argument("--print-report-paths", action="store_true")
     parser.add_argument("--slack-channel")
     parser.add_argument("--approval-store-root")
@@ -117,6 +118,8 @@ def main() -> int:
         if value
     }
     if args.engine == "v2":
+        if not str(args.chatbot_server_base_url or "").strip():
+            parser.error("--chatbot-server-base-url is required when --engine v2 is used")
         result = _get_v2_runner()(
             site=args.site,
             source_root=args.source_root,
@@ -130,6 +133,7 @@ def main() -> int:
             use_llm_roles=args.use_llm_roles,
             generate_llm_patch_draft=args.generate_llm_patch_draft,
             enable_runtime_completion_loop=args.enable_runtime_completion_loop,
+            chatbot_server_base_url=args.chatbot_server_base_url,
         )
     else:
         slack_bridge = (
@@ -162,7 +166,9 @@ def main() -> int:
                 enable_runtime_completion_loop=args.enable_runtime_completion_loop,
                 llm_provider=args.llm_provider,
                 llm_model=args.llm_model,
-                terminal_logger=lambda message: print(message, file=sys.stderr, flush=True),
+                terminal_logger=lambda message: print(
+                    message, file=sys.stderr, flush=True
+                ),
                 event_store=event_store,
                 onboarding_credentials=onboarding_credentials or None,
                 resume_from_existing=bool(args.resume_run_id),

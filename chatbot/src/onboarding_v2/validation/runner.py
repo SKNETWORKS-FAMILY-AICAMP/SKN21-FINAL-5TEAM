@@ -1,14 +1,20 @@
 from __future__ import annotations
 
-import py_compile
+import asyncio
+import importlib
+import json
+import sys
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
+import httpx
+
+from chatbot.src.adapters.schema import AuthenticatedContext
 from chatbot.src.onboarding import backend_evaluator as legacy_backend
 from chatbot.src.onboarding import frontend_evaluator as legacy_frontend
-from chatbot.src.onboarding.smoke_contract import ProbeExpectation, SmokeTestPlan, SmokeTestStep
-from chatbot.src.onboarding.smoke_runner import run_smoke_tests
 from chatbot.src.onboarding_v2.models.analysis import AnalysisSnapshot
 from chatbot.src.onboarding_v2.models.common import ArtifactRef
 from chatbot.src.onboarding_v2.models.planning import IntegrationPlan
@@ -17,9 +23,9 @@ from chatbot.src.onboarding_v2.models.validation import (
     BackendRuntimePrepResult,
     BackendRuntimeState,
     ReplayResult,
-    SmokeRunResult,
     ValidationBundle,
     ValidationCheck,
+    WidgetOrderE2EResult,
 )
 from chatbot.src.onboarding_v2.validation.backend_runtime import (
     build_backend_runtime_plan,
@@ -35,13 +41,16 @@ class ValidationRunResult:
     bundle: ValidationBundle
     backend_runtime_prep: BackendRuntimePrepResult
     backend_runtime_state: BackendRuntimeState
-    smoke_results: SmokeRunResult
+    host_auth_bootstrap: dict[str, Any]
+    chatbot_adapter_auth: dict[str, Any]
+    widget_order_e2e: WidgetOrderE2EResult
 
 
 def run_validation(
     *,
     run_root: str | Path,
-    runtime_workspace: str | Path,
+    host_runtime_workspace: str | Path,
+    chatbot_runtime_workspace: str | Path,
     snapshot: AnalysisSnapshot,
     plan: IntegrationPlan,
     replay_result: ReplayResult,
@@ -50,7 +59,8 @@ def run_validation(
 ) -> ValidationBundle:
     return run_validation_cycle(
         run_root=run_root,
-        runtime_workspace=runtime_workspace,
+        host_runtime_workspace=host_runtime_workspace,
+        chatbot_runtime_workspace=chatbot_runtime_workspace,
         snapshot=snapshot,
         plan=plan,
         replay_result=replay_result,
@@ -62,7 +72,8 @@ def run_validation(
 def run_validation_cycle(
     *,
     run_root: str | Path,
-    runtime_workspace: str | Path,
+    host_runtime_workspace: str | Path,
+    chatbot_runtime_workspace: str | Path,
     snapshot: AnalysisSnapshot,
     plan: IntegrationPlan,
     replay_result: ReplayResult,
@@ -70,14 +81,17 @@ def run_validation_cycle(
     onboarding_credentials: dict[str, str] | None = None,
 ) -> ValidationRunResult:
     run_root = Path(run_root)
-    runtime_workspace = Path(runtime_workspace)
+    host_runtime_workspace = Path(host_runtime_workspace)
+    chatbot_runtime_workspace = Path(chatbot_runtime_workspace)
 
-    prep_result = prepare_backend_runtime(workspace=runtime_workspace, snapshot=snapshot)
+    prep_result = prepare_backend_runtime(workspace=host_runtime_workspace, snapshot=snapshot)
     runtime_state: BackendRuntimeState
-    smoke_results: SmokeRunResult
+    host_auth_bootstrap: dict[str, Any]
+    chatbot_adapter_auth: dict[str, Any]
+    widget_order_e2e: WidgetOrderE2EResult
     if prep_result.passed:
         runtime_plan = build_backend_runtime_plan(
-            workspace=runtime_workspace,
+            workspace=host_runtime_workspace,
             snapshot=snapshot,
             plan=plan,
             prep_result=prep_result,
@@ -90,30 +104,46 @@ def run_validation_cycle(
             reason="backend runtime boot skipped because backend runtime prep failed",
         )
 
-    frontend_payload = _evaluate_frontend(runtime_workspace)
     if prep_result.passed and runtime_state.passed and runtime_plan is not None:
         try:
-            smoke_payload = run_runtime_smoke(
+            host_auth_bootstrap = validate_host_auth_bootstrap(
                 run_root=run_root,
-                runtime_workspace=runtime_workspace,
+                host_runtime_workspace=host_runtime_workspace,
                 runtime_plan=runtime_plan,
+                snapshot=snapshot,
+                plan=plan,
                 onboarding_credentials=onboarding_credentials,
             )
-            smoke_results = (
-                smoke_payload
-                if isinstance(smoke_payload, SmokeRunResult)
-                else SmokeRunResult.model_validate(smoke_payload)
+            chatbot_adapter_auth = validate_chatbot_adapter_auth(
+                chatbot_runtime_workspace=chatbot_runtime_workspace,
+                runtime_plan=runtime_plan,
+                bootstrap_result=host_auth_bootstrap,
+                plan=plan,
             )
+            widget_order_e2e = validate_widget_order_e2e(
+                chatbot_runtime_workspace=chatbot_runtime_workspace,
+                bootstrap_result=host_auth_bootstrap,
+                adapter_auth_result=chatbot_adapter_auth,
+                plan=plan,
+            )
+            widget_order_e2e = _coerce_widget_order_e2e_result(widget_order_e2e)
         finally:
             stop_backend_runtime(runtime_state)
     else:
-        smoke_results = _skipped_smoke_result(
-            "backend runtime boot failed"
-            if prep_result.passed
-            else "backend runtime prep failed"
+        reason = "backend runtime boot failed" if prep_result.passed else "backend runtime prep failed"
+        host_auth_bootstrap = _skipped_result("host auth bootstrap skipped because " + reason)
+        chatbot_adapter_auth = _skipped_result("chatbot adapter auth skipped because " + reason)
+        widget_order_e2e = WidgetOrderE2EResult(
+            passed=False,
+            failure_summary="widget order e2e skipped because " + reason,
+            related_files=[],
         )
 
-    replay_validation_payload = _evaluate_replay_workspace(Path(replay_result.replay_workspace_path))
+    replay_validation_payload = _evaluate_replay_workspaces(
+        host_workspace=Path(replay_result.host_replay_workspace_path),
+        chatbot_workspace=Path(replay_result.chatbot_replay_workspace_path),
+        plan=plan,
+    )
 
     checks = [
         ValidationCheck(
@@ -129,16 +159,22 @@ def run_validation_cycle(
             details=runtime_state.model_dump(mode="json"),
         ),
         ValidationCheck(
-            name="frontend_evaluation",
-            passed=bool(frontend_payload["passed"]),
-            summary="frontend evaluation passed" if frontend_payload["passed"] else frontend_payload["failure_summary"],
-            details=frontend_payload,
+            name="host_auth_bootstrap",
+            passed=bool(host_auth_bootstrap["passed"]),
+            summary=host_auth_bootstrap["failure_summary"],
+            details=host_auth_bootstrap,
         ),
         ValidationCheck(
-            name="smoke",
-            passed=smoke_results.passed,
-            summary=smoke_results.failure_summary or "smoke passed",
-            details=smoke_results.model_dump(mode="json"),
+            name="chatbot_adapter_auth",
+            passed=bool(chatbot_adapter_auth["passed"]),
+            summary=chatbot_adapter_auth["failure_summary"],
+            details=chatbot_adapter_auth,
+        ),
+        ValidationCheck(
+            name="widget_order_e2e",
+            passed=widget_order_e2e.passed,
+            summary=widget_order_e2e.failure_summary,
+            details=widget_order_e2e.model_dump(mode="json"),
         ),
         ValidationCheck(
             name="replay_apply",
@@ -165,8 +201,9 @@ def run_validation_cycle(
         {
             *prep_result.related_files,
             *runtime_state.related_files,
-            *frontend_payload.get("related_files", []),
-            *smoke_results.related_files,
+            *host_auth_bootstrap.get("related_files", []),
+            *chatbot_adapter_auth.get("related_files", []),
+            *widget_order_e2e.related_files,
             *replay_validation_payload.get("related_files", []),
         }
     )
@@ -187,45 +224,486 @@ def run_validation_cycle(
         bundle=bundle,
         backend_runtime_prep=prep_result,
         backend_runtime_state=runtime_state,
-        smoke_results=smoke_results,
+        host_auth_bootstrap=host_auth_bootstrap,
+        chatbot_adapter_auth=chatbot_adapter_auth,
+        widget_order_e2e=widget_order_e2e,
     )
 
 
-def run_runtime_smoke(
+def validate_host_auth_bootstrap(
     *,
     run_root: Path,
-    runtime_workspace: Path,
+    host_runtime_workspace: Path,
     runtime_plan: BackendRuntimePlan,
+    snapshot: AnalysisSnapshot,
+    plan: IntegrationPlan,
     onboarding_credentials: dict[str, str] | None = None,
-) -> SmokeRunResult:
-    del runtime_plan
+) -> dict[str, Any]:
+    del run_root, host_runtime_workspace, snapshot
+    base_url = runtime_plan.readiness_url.removesuffix(plan.host_backend.chat_auth_contract_path).rstrip("/")
     credentials = {
         "email": "test1@example.com",
         "password": "password123",
     }
     credentials.update({key: value for key, value in (onboarding_credentials or {}).items() if value})
-    results = run_smoke_tests(
-        run_root=run_root,
-        runtime_workspace=runtime_workspace,
-        plan=_build_food_smoke_plan(),
-        initial_context={
-            f"probe.credentials.{key}": value
-            for key, value in credentials.items()
-            if value
-        },
-        persist_context=False,
+    login_url = f"{base_url}/api/users/login/"
+    bootstrap_url = f"{base_url}{plan.host_backend.chat_auth_contract_path}"
+
+    with httpx.Client(follow_redirects=True, timeout=10.0) as client:
+        login_response = client.post(login_url, json=credentials)
+        if login_response.status_code != 200:
+            return {
+                "passed": False,
+                "failure_summary": f"host login failed with status {login_response.status_code}",
+                "related_files": ["backend/users/views.py"],
+            }
+        bootstrap_response = client.post(bootstrap_url)
+        try:
+            payload = bootstrap_response.json()
+        except ValueError:
+            payload = {}
+
+    passed = (
+        bootstrap_response.status_code == 200
+        and bool(payload.get("authenticated"))
+        and bool(str(payload.get("site_id") or "").strip())
+        and bool(str(payload.get("access_token") or "").strip())
+        and bool(str((payload.get("user") or {}).get("id") or "").strip())
     )
-    first_failure = next((item for item in results if int(item.get("returncode") or 0) != 0), None)
-    return SmokeRunResult(
-        passed=first_failure is None,
-        results=results,
-        failure_summary=(
-            "smoke passed"
-            if first_failure is None
-            else str(first_failure.get("stderr") or first_failure.get("stdout") or first_failure.get("step_id"))
-        ),
-        related_files=["backend/manage.py", "backend/chat_auth.py"],
+    summary = "host auth bootstrap passed"
+    if not passed:
+        if not payload.get("site_id"):
+            summary = "host auth bootstrap missing site_id"
+        elif not (payload.get("user") or {}).get("id"):
+            summary = "host auth bootstrap missing user.id"
+        else:
+            summary = f"host auth bootstrap failed with status {bootstrap_response.status_code}"
+    return {
+        "passed": passed,
+        "failure_summary": summary,
+        "bootstrap_payload": payload,
+        "login_status": login_response.status_code,
+        "bootstrap_status": bootstrap_response.status_code,
+        "related_files": ["backend/chat_auth.py", plan.host_backend.route_target],
+    }
+
+
+def validate_chatbot_adapter_auth(
+    *,
+    chatbot_runtime_workspace: Path,
+    runtime_plan: BackendRuntimePlan,
+    bootstrap_result: dict[str, Any],
+    plan: IntegrationPlan,
+) -> dict[str, Any]:
+    payload = dict(bootstrap_result.get("bootstrap_payload") or {})
+    if not bootstrap_result.get("passed"):
+        return _skipped_result("chatbot adapter auth skipped because host auth bootstrap failed")
+
+    module_prefix = f"src.adapters.generated.{plan.chatbot_bridge.site_key}"
+    with _prepend_path(chatbot_runtime_workspace):
+        _drop_import_cache(module_prefix)
+        adapter_module = importlib.import_module(f"{module_prefix}.adapter")
+        client_module = importlib.import_module(f"{module_prefix}.client")
+        adapter_class = getattr(adapter_module, f"Generated{_class_name(plan.chatbot_bridge.site_key)}Adapter")
+        client_class = getattr(client_module, f"Generated{_class_name(plan.chatbot_bridge.site_key)}Client")
+        adapter = adapter_class(client=client_class(base_url=_runtime_base_url(runtime_plan)))
+        try:
+            validated_user = asyncio.run(
+                adapter.validate_auth(
+                    AuthenticatedContext(
+                        siteId=plan.chatbot_bridge.site_key,
+                        userId="__bridge__",
+                        accessToken=str(payload.get("access_token") or ""),
+                    )
+                )
+            )
+        except Exception as exc:
+            return {
+                "passed": False,
+                "failure_summary": f"chatbot adapter auth failed: {exc}",
+                "related_files": [
+                    f"{plan.chatbot_bridge.adapter_package}/adapter.py",
+                    f"{plan.chatbot_bridge.adapter_package}/auth.py",
+                    plan.chatbot_bridge.setup_target,
+                ],
+            }
+    user_id = str(getattr(validated_user, "id", "") or "").strip()
+    return {
+        "passed": bool(user_id),
+        "failure_summary": "chatbot adapter auth passed" if user_id else "chatbot adapter auth missing user.id",
+        "validated_user": validated_user.model_dump(mode="json"),
+        "related_files": [
+            f"{plan.chatbot_bridge.adapter_package}/adapter.py",
+            f"{plan.chatbot_bridge.adapter_package}/auth.py",
+            plan.chatbot_bridge.setup_target,
+        ],
+    }
+
+
+def validate_widget_order_e2e(
+    *,
+    chatbot_runtime_workspace: Path,
+    bootstrap_result: dict[str, Any],
+    adapter_auth_result: dict[str, Any],
+    plan: IntegrationPlan,
+) -> WidgetOrderE2EResult:
+    from fastapi.testclient import TestClient
+
+    from chatbot import server_fastapi
+    from chatbot.src.api.v1.endpoints import chat as chat_endpoint
+
+    if not bootstrap_result.get("passed"):
+        return WidgetOrderE2EResult(
+            passed=False,
+            failure_summary="widget order e2e skipped because host auth bootstrap failed",
+            related_files=[],
+        )
+    if not adapter_auth_result.get("passed"):
+        return WidgetOrderE2EResult(
+            passed=False,
+            failure_summary="widget order e2e skipped because chatbot adapter auth failed",
+            related_files=[],
+        )
+
+    payload = dict(bootstrap_result.get("bootstrap_payload") or {})
+    adapter = _load_generated_adapter(chatbot_runtime_workspace=chatbot_runtime_workspace, plan=plan)
+    flow_reports = _collect_widget_order_flow_report(
+        adapter=adapter,
+        adapter_auth_result=adapter_auth_result,
+        payload=payload,
+        plan=plan,
+        server_fastapi=server_fastapi,
+        chat_endpoint=chat_endpoint,
     )
+    return _evaluate_widget_order_flow_report(plan=plan, flow_reports=flow_reports)
+
+
+def _collect_widget_order_flow_report(
+    *,
+    adapter: Any,
+    adapter_auth_result: dict[str, Any],
+    payload: dict[str, Any],
+    plan: IntegrationPlan,
+    server_fastapi: Any,
+    chat_endpoint: Any,
+) -> dict[str, dict[str, Any]]:
+    auth_context = AuthenticatedContext(
+        siteId=plan.chatbot_bridge.site_key,
+        userId=str((adapter_auth_result.get("validated_user") or {}).get("id") or "__bridge__"),
+        accessToken=str(payload.get("access_token") or ""),
+    )
+    status_input = importlib.import_module("src.adapters.schema").GetOrderStatusInput(orderId="1")
+    flow_reports: dict[str, dict[str, Any]] = {}
+    try:
+        order_status = asyncio.run(adapter.get_order_status(auth_context, status_input))
+        flow_reports["get_order_status"] = {
+            "passed": True,
+            "steps": [],
+            "status": getattr(getattr(order_status, "order", None), "status", None).value
+            if getattr(getattr(order_status, "order", None), "status", None) is not None
+            else None,
+        }
+    except Exception as exc:
+        flow_reports["get_order_status"] = {
+            "passed": False,
+            "steps": [],
+            "failure_summary": f"get_order_status failed: {exc}",
+        }
+
+    with patch.object(chat_endpoint.adapter_setup, "resolve_site_adapter", lambda site_id: adapter):
+        client = TestClient(server_fastapi.app)
+        flow_reports["list_orders"] = _exercise_widget_order_flow(
+            client=client,
+            server_fastapi=server_fastapi,
+            site_id=plan.chatbot_bridge.site_key,
+            access_token=str(payload.get("access_token") or ""),
+            conversation_id="conv-widget-list-orders",
+            message="주문 목록 보여줘",
+            step_specs=[
+                _widget_step(
+                    "show_order_list",
+                    "최근 주문 목록입니다.",
+                    ui_data=[_sample_order_ui_item()],
+                    requires_selection=True,
+                )
+            ],
+            resume_payloads=[],
+        )
+        flow_reports["cancel"] = _exercise_widget_order_flow(
+            client=client,
+            server_fastapi=server_fastapi,
+            site_id=plan.chatbot_bridge.site_key,
+            access_token=str(payload.get("access_token") or ""),
+            conversation_id="conv-widget-cancel",
+            message="주문 취소해줘",
+            step_specs=[
+                _widget_step(
+                    "show_order_list",
+                    "취소할 주문을 선택해주세요.",
+                    ui_data=[_sample_order_ui_item()],
+                    requires_selection=True,
+                    prior_action="cancel",
+                ),
+                _widget_step(
+                    "confirm_order_action",
+                    "주문 취소를 진행할까요?",
+                    action="cancel",
+                    order_id="1",
+                ),
+            ],
+            resume_payloads=[{"selected_order_ids": ["1"]}],
+        )
+        flow_reports["refund"] = _exercise_widget_order_flow(
+            client=client,
+            server_fastapi=server_fastapi,
+            site_id=plan.chatbot_bridge.site_key,
+            access_token=str(payload.get("access_token") or ""),
+            conversation_id="conv-widget-refund",
+            message="환불해줘",
+            step_specs=[
+                _widget_step(
+                    "show_order_list",
+                    "환불할 주문을 선택해주세요.",
+                    ui_data=[_sample_order_ui_item()],
+                    requires_selection=True,
+                    prior_action="refund",
+                ),
+                _widget_step(
+                    "confirm_order_action",
+                    "환불을 진행할까요?",
+                    action="refund",
+                    order_id="1",
+                ),
+            ],
+            resume_payloads=[{"selected_order_ids": ["1"]}],
+        )
+        flow_reports["exchange"] = _exercise_widget_order_flow(
+            client=client,
+            server_fastapi=server_fastapi,
+            site_id=plan.chatbot_bridge.site_key,
+            access_token=str(payload.get("access_token") or ""),
+            conversation_id="conv-widget-exchange",
+            message="교환해줘",
+            step_specs=[
+                _widget_step(
+                    "show_order_list",
+                    "교환할 주문을 선택해주세요.",
+                    ui_data=[_sample_order_ui_item()],
+                    requires_selection=True,
+                    prior_action="exchange",
+                ),
+                _widget_step(
+                    "show_option_list",
+                    "교환할 옵션을 선택해주세요.",
+                    action="select_option",
+                    ui_data=[_sample_option_item("201"), _sample_option_item("202")],
+                    prior_action="exchange",
+                ),
+                _widget_step(
+                    "confirm_order_action",
+                    "교환을 진행할까요?",
+                    action="exchange",
+                    order_id="1",
+                    new_option_id="201",
+                ),
+            ],
+            resume_payloads=[
+                {"selected_order_ids": ["1"]},
+                {"new_option_id": "201"},
+            ],
+        )
+    return flow_reports
+
+
+def _evaluate_widget_order_flow_report(
+    *,
+    plan: IntegrationPlan,
+    flow_reports: dict[str, dict[str, Any]],
+) -> WidgetOrderE2EResult:
+    required_step_flows = [
+        ("list_orders", ["show_order_list"]),
+        ("cancel", ["show_order_list", "confirm_order_action"]),
+        ("refund", ["show_order_list", "confirm_order_action"]),
+        ("exchange", ["show_order_list", "show_option_list", "confirm_order_action"]),
+    ]
+    covered_flows: list[str] = []
+    for flow_name, expected_steps in required_step_flows:
+        actual_steps = list((flow_reports.get(flow_name) or {}).get("steps") or [])
+        missing_step = _find_missing_flow_step(expected_steps, actual_steps)
+        if missing_step is not None:
+            return WidgetOrderE2EResult(
+                passed=False,
+                failure_summary=f"{missing_step} missing",
+                covered_flows=covered_flows,
+                flow_reports=flow_reports,
+                related_files=_widget_order_related_files(plan),
+            )
+        covered_flows.append(flow_name)
+
+    status_report = flow_reports.get("get_order_status") or {}
+    if not status_report.get("passed"):
+        return WidgetOrderE2EResult(
+            passed=False,
+            failure_summary=str(status_report.get("failure_summary") or "get_order_status failed"),
+            covered_flows=covered_flows,
+            flow_reports=flow_reports,
+            related_files=_widget_order_related_files(plan),
+        )
+    covered_flows.insert(1, "get_order_status")
+
+    return WidgetOrderE2EResult(
+        passed=True,
+        failure_summary="widget order e2e passed",
+        covered_flows=covered_flows,
+        flow_reports=flow_reports,
+        related_files=_widget_order_related_files(plan),
+    )
+
+
+def _exercise_widget_order_flow(
+    *,
+    client: Any,
+    server_fastapi: Any,
+    site_id: str,
+    access_token: str,
+    conversation_id: str,
+    message: str,
+    step_specs: list[dict[str, Any]],
+    resume_payloads: list[dict[str, Any]],
+) -> dict[str, Any]:
+    fragments: list[str] = []
+    observed_steps: list[str] = []
+    pending_interrupt: list[dict[str, Any]] = []
+    with patch.object(server_fastapi.graph_app, "astream_events", _build_widget_astream_events(step_specs)):
+        for index, step_spec in enumerate(step_specs):
+            request_payload: dict[str, Any] = {
+                "message": message if index == 0 else "계속",
+                "site_id": site_id,
+                "access_token": access_token,
+            }
+            if index > 0:
+                request_payload["previous_state"] = {
+                    "conversation_id": conversation_id,
+                    "pending_interrupt": pending_interrupt,
+                }
+                request_payload["resume_payload"] = resume_payloads[index - 1]
+            response = client.post("/api/v1/chat/stream", json=request_payload)
+            text = response.text
+            fragments.append(text)
+            ui_action = step_spec["ui_action"]
+            if f'"ui_action":"{ui_action}"' in text:
+                observed_steps.append(ui_action)
+            pending_interrupt = [_interrupt_value_for_step(step_spec)]
+    return {
+        "passed": len(observed_steps) == len(step_specs),
+        "steps": observed_steps,
+        "fragments": fragments,
+    }
+
+
+def _build_widget_astream_events(step_specs: list[dict[str, Any]]):
+    state = {"index": 0}
+
+    async def _fake_astream_events(stream_input, *, version, config):
+        del stream_input, version, config
+        index = state["index"]
+        state["index"] += 1
+        step_spec = step_specs[index]
+        interrupt_value = _interrupt_value_for_step(step_spec)
+        yield {
+            "event": "on_tool_end",
+            "data": {"output": interrupt_value},
+        }
+        yield {
+            "event": "on_chain_end",
+            "name": "LangGraph",
+            "data": {
+                "output": {
+                    "messages": [],
+                    "completed_tasks": [] if index == 0 else ["resume-selection"],
+                    "ui_action_required": step_spec["ui_action"],
+                    "__interrupt__": [{"value": interrupt_value}],
+                    "order_context": {},
+                }
+            },
+        }
+
+    return _fake_astream_events
+
+
+def _interrupt_value_for_step(step_spec: dict[str, Any]) -> dict[str, Any]:
+    value = {
+        "ui_action": step_spec["ui_action"],
+        "message": step_spec["message"],
+    }
+    for key in ("action", "ui_data", "requires_selection", "prior_action", "order_id", "new_option_id"):
+        if key in step_spec:
+            value[key] = step_spec[key]
+    return value
+
+
+def _widget_step(
+    ui_action: str,
+    message: str,
+    *,
+    action: str | None = None,
+    ui_data: Any | None = None,
+    requires_selection: bool | None = None,
+    prior_action: str | None = None,
+    order_id: str | None = None,
+    new_option_id: str | None = None,
+) -> dict[str, Any]:
+    step = {"ui_action": ui_action, "message": message}
+    if action is not None:
+        step["action"] = action
+    if ui_data is not None:
+        step["ui_data"] = ui_data
+    if requires_selection is not None:
+        step["requires_selection"] = requires_selection
+    if prior_action is not None:
+        step["prior_action"] = prior_action
+    if order_id is not None:
+        step["order_id"] = order_id
+    if new_option_id is not None:
+        step["new_option_id"] = new_option_id
+    return step
+
+
+def _sample_order_ui_item() -> dict[str, Any]:
+    return {
+        "order_id": "1",
+        "date": "2026-03-23",
+        "status": "paid",
+        "product_name": "테스트 상품",
+        "amount": 12000,
+    }
+
+
+def _sample_option_item(option_id: str) -> dict[str, Any]:
+    return {
+        "option_id": option_id,
+        "label": f"테스트 옵션 {option_id}",
+        "in_stock": True,
+    }
+
+
+def _find_missing_flow_step(expected_steps: list[str], actual_steps: list[str]) -> str | None:
+    actual_index = 0
+    for expected in expected_steps:
+        while actual_index < len(actual_steps) and actual_steps[actual_index] != expected:
+            actual_index += 1
+        if actual_index >= len(actual_steps):
+            return expected
+        actual_index += 1
+    return None
+
+
+def _widget_order_related_files(plan: IntegrationPlan) -> list[str]:
+    return [
+        f"{plan.chatbot_bridge.adapter_package}/adapter.py",
+        "chatbot/frontend/shared_widget/ChatbotWidget.tsx",
+        "chatbot/frontend/shared_widget/chatbotfab.tsx",
+    ]
 
 
 def _evaluate_backend(workspace: Path) -> dict[str, Any]:
@@ -236,6 +714,8 @@ def _evaluate_backend(workspace: Path) -> dict[str, Any]:
         relative = path.relative_to(workspace).as_posix()
         checked_files.append(relative)
         try:
+            import py_compile
+
             py_compile.compile(str(path), doraise=True)
         except py_compile.PyCompileError as exc:
             failed_files.append({"path": relative, "error": str(exc)})
@@ -279,79 +759,45 @@ def _evaluate_frontend(workspace: Path) -> dict[str, Any]:
     }
 
 
-def _build_food_smoke_plan() -> SmokeTestPlan:
-    return SmokeTestPlan(
-        steps=[
-            SmokeTestStep(
-                id="login",
-                method="POST",
-                url="http://127.0.0.1:8000/api/users/login/",
-                headers={"Content-Type": "application/json"},
-                body={
-                    "email": "{{ probe.credentials.email }}",
-                    "password": "{{ probe.credentials.password }}",
-                },
-                category="auth",
-                expects=ProbeExpectation(status=200, json_path_equals={"ok": True}),
-                exports={"login.session_token": "cookies.session_token"},
-            ),
-            SmokeTestStep(
-                id="session-me",
-                method="GET",
-                url="http://127.0.0.1:8000/api/users/me/",
-                headers={"Cookie": "session_token={{ login.session_token }}"},
-                category="auth",
-                uses=["login.session_token"],
-                expects=ProbeExpectation(status=200, json_path_equals={"authenticated": True}),
-            ),
-            SmokeTestStep(
-                id="chat-auth-token",
-                method="GET",
-                url="http://127.0.0.1:8000/api/chat/auth-token",
-                headers={"Cookie": "session_token={{ login.session_token }}"},
-                category="auth",
-                uses=["login.session_token"],
-                expects=ProbeExpectation(
-                    status=200,
-                    json_path_equals={"authenticated": True},
-                    json_path_not_empty=["access_token"],
-                ),
-            ),
-            SmokeTestStep(
-                id="product-api",
-                method="GET",
-                url="http://127.0.0.1:8000/api/products/",
-                category="catalog",
-                expects=ProbeExpectation(status=200, json_type="list", json_array_min_length=1),
-            ),
-            SmokeTestStep(
-                id="order-api",
-                method="GET",
-                url="http://127.0.0.1:8000/api/orders/",
-                headers={"Cookie": "session_token={{ login.session_token }}"},
-                category="orders",
-                uses=["login.session_token"],
-                expects=ProbeExpectation(status=200, json_type="list", json_array_min_length=1),
-            ),
-        ]
+def _evaluate_replay_workspaces(
+    *,
+    host_workspace: Path,
+    chatbot_workspace: Path,
+    plan: IntegrationPlan,
+) -> dict[str, Any]:
+    host_backend = _evaluate_backend(host_workspace)
+    host_frontend = _evaluate_frontend(host_workspace)
+    generated_adapter = chatbot_workspace / plan.chatbot_bridge.adapter_package / "adapter.py"
+    setup_path = chatbot_workspace / plan.chatbot_bridge.setup_target
+    passed = (
+        host_backend["passed"]
+        and host_frontend["passed"]
+        and generated_adapter.exists()
+        and setup_path.exists()
     )
-
-
-def _evaluate_replay_workspace(workspace: Path) -> dict[str, Any]:
-    backend = _evaluate_backend(workspace)
-    frontend = _evaluate_frontend(workspace)
-    passed = backend["passed"] and frontend["passed"]
-    failure_summary = (
-        "replay validation passed"
-        if passed
-        else backend["failure_summary"] if not backend["passed"] else frontend["failure_summary"]
-    )
+    failure_summary = "replay validation passed"
+    if not passed:
+        if not host_backend["passed"]:
+            failure_summary = host_backend["failure_summary"]
+        elif not host_frontend["passed"]:
+            failure_summary = host_frontend["failure_summary"]
+        elif not generated_adapter.exists():
+            failure_summary = "generated adapter missing in replay workspace"
+        else:
+            failure_summary = "chatbot setup patch missing in replay workspace"
     return {
         "passed": passed,
         "failure_summary": failure_summary,
-        "backend": backend,
-        "frontend": frontend,
-        "related_files": sorted(set(backend["related_files"]) | set(frontend["related_files"])),
+        "host_backend": host_backend,
+        "host_frontend": host_frontend,
+        "related_files": sorted(
+            set(host_backend["related_files"])
+            | set(host_frontend["related_files"])
+            | {
+                f"{plan.chatbot_bridge.adapter_package}/adapter.py",
+                plan.chatbot_bridge.setup_target,
+            }
+        ),
     }
 
 
@@ -364,10 +810,63 @@ def _skipped_runtime_state(*, framework: str, reason: str) -> BackendRuntimeStat
     )
 
 
-def _skipped_smoke_result(reason: str) -> SmokeRunResult:
-    return SmokeRunResult(
-        passed=False,
-        results=[],
-        failure_summary=f"smoke skipped because {reason}",
-        related_files=["backend/manage.py", "backend/chat_auth.py"],
-    )
+def _skipped_result(reason: str) -> dict[str, Any]:
+    return {
+        "passed": False,
+        "failure_summary": reason,
+        "related_files": [],
+    }
+
+
+def _coerce_widget_order_e2e_result(value: WidgetOrderE2EResult | dict[str, Any]) -> WidgetOrderE2EResult:
+    if isinstance(value, WidgetOrderE2EResult):
+        return value
+    payload = dict(value or {})
+    payload.setdefault("covered_flows", [])
+    payload.setdefault("flow_reports", {})
+    payload.setdefault("related_files", [])
+    payload.setdefault("failure_summary", "widget order e2e failed")
+    payload.setdefault("passed", False)
+    return WidgetOrderE2EResult.model_validate(payload)
+
+
+def _runtime_base_url(runtime_plan: BackendRuntimePlan) -> str:
+    readiness_url = runtime_plan.readiness_url
+    marker = "/api/chat/auth-token"
+    if readiness_url.endswith(marker):
+        return readiness_url.removesuffix(marker)
+    return readiness_url.rsplit("/", 1)[0]
+
+
+def _load_generated_adapter(*, chatbot_runtime_workspace: Path, plan: IntegrationPlan):
+    module_prefix = f"src.adapters.generated.{plan.chatbot_bridge.site_key}"
+    with _prepend_path(chatbot_runtime_workspace):
+        _drop_import_cache(module_prefix)
+        adapter_module = importlib.import_module(f"{module_prefix}.adapter")
+        client_module = importlib.import_module(f"{module_prefix}.client")
+        adapter_class = getattr(adapter_module, f"Generated{_class_name(plan.chatbot_bridge.site_key)}Adapter")
+        client_class = getattr(client_module, f"Generated{_class_name(plan.chatbot_bridge.site_key)}Client")
+        return adapter_class(client=client_class(base_url="http://127.0.0.1:8000"))
+
+
+def _drop_import_cache(module_prefix: str) -> None:
+    for module_name in list(sys.modules):
+        if module_name == module_prefix or module_name.startswith(module_prefix + "."):
+            sys.modules.pop(module_name, None)
+
+
+@contextmanager
+def _prepend_path(path: Path):
+    path_str = str(path)
+    sys.path.insert(0, path_str)
+    try:
+        yield
+    finally:
+        try:
+            sys.path.remove(path_str)
+        except ValueError:
+            pass
+
+
+def _class_name(site_key: str) -> str:
+    return "".join(part.capitalize() for part in site_key.replace("-", "_").split("_"))

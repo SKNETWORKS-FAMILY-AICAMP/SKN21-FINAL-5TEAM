@@ -17,8 +17,12 @@ class ApplyBundleResult(BaseModel):
 
 class ApplyResult(BaseModel):
     workspace_path: str
+    host_workspace_path: str
+    chatbot_workspace_path: str
     passed: bool
     applied_files: list[str] = Field(default_factory=list)
+    host_applied_files: list[str] = Field(default_factory=list)
+    chatbot_applied_files: list[str] = Field(default_factory=list)
     applied_bundles: list[ApplyBundleResult] = Field(default_factory=list)
     failed_bundles: list[ApplyBundleResult] = Field(default_factory=list)
 
@@ -27,7 +31,10 @@ class ApplyResult(BaseModel):
 
 class ReplayResult(BaseModel):
     replay_workspace_path: str
-    patch_path: str
+    host_replay_workspace_path: str
+    chatbot_replay_workspace_path: str
+    host_patch_path: str
+    chatbot_patch_path: str
     passed: bool
     applied_patch_artifacts: list[str] = Field(default_factory=list)
     failed_patch_artifacts: list[dict[str, Any]] = Field(default_factory=list)
@@ -95,6 +102,16 @@ class SmokeRunResult(BaseModel):
     passed: bool
     results: list[dict[str, Any]] = Field(default_factory=list)
     failure_summary: str | None = None
+    related_files: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class WidgetOrderE2EResult(BaseModel):
+    passed: bool
+    failure_summary: str
+    covered_flows: list[str] = Field(default_factory=list)
+    flow_reports: dict[str, Any] = Field(default_factory=dict)
     related_files: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")

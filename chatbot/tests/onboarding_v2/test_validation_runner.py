@@ -14,7 +14,7 @@ from chatbot.src.onboarding_v2.export import export_and_replay
 from chatbot.src.onboarding_v2.models.validation import BackendRuntimePlan, BackendRuntimePrepResult, BackendRuntimeState
 from chatbot.src.onboarding_v2.planning import build_integration_plan
 from chatbot.src.onboarding_v2.storage import ArtifactStore
-from chatbot.src.onboarding_v2.validation.runner import run_validation
+from chatbot.src.onboarding_v2.validation.runner import _evaluate_widget_order_flow_report, run_validation
 from chatbot.src.onboarding_v2.validation.signatures import build_failure_signature
 
 
@@ -22,10 +22,14 @@ def _build_food_runtime_artifacts(tmp_path: Path):
     generated_root = tmp_path / "generated" / "food" / "food-run-v2"
     runtime_root = tmp_path / "runtime"
     snapshot = build_analysis_snapshot(site="food", source_root=ROOT / "food")
-    plan = build_integration_plan(snapshot)
+    plan = build_integration_plan(
+        snapshot,
+        chatbot_server_base_url="http://localhost:8100",
+    )
     program = compile_plan(snapshot=snapshot, plan=plan, source_root=ROOT / "food")
     apply_result = apply_edit_program(
-        source_root=ROOT / "food",
+        host_source_root=ROOT / "food",
+        chatbot_source_root=ROOT / "chatbot",
         runtime_root=runtime_root,
         site="food",
         run_id="food-run-v2",
@@ -34,11 +38,13 @@ def _build_food_runtime_artifacts(tmp_path: Path):
     artifact_store = ArtifactStore(generated_root)
     analysis_ref = artifact_store.write_json_artifact(stage="analysis", artifact_type="snapshot", payload=snapshot.model_dump(mode="json"), producer="test")
     plan_ref = artifact_store.write_json_artifact(stage="planning", artifact_type="integration-plan", payload=plan.model_dump(mode="json"), producer="test")
-    compile_ref = artifact_store.write_json_artifact(stage="compile", artifact_type="edit-program", payload=program.model_dump(mode="json"), producer="test")
+    compile_ref = artifact_store.write_json_artifact(stage="compile", artifact_type="host-edit-program", payload=program.host_program.model_dump(mode="json"), producer="test")
     apply_ref = artifact_store.write_json_artifact(stage="apply", artifact_type="apply-result", payload=apply_result.model_dump(mode="json"), producer="test")
     _, replay_result, replay_ref = export_and_replay(
-        source_root=ROOT / "food",
-        runtime_workspace=apply_result.workspace_path,
+        host_source_root=ROOT / "food",
+        chatbot_source_root=ROOT / "chatbot",
+        host_runtime_workspace=apply_result.host_workspace_path,
+        chatbot_runtime_workspace=apply_result.chatbot_workspace_path,
         runtime_root=runtime_root,
         run_root=generated_root,
         site="food",
@@ -92,11 +98,35 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
         lambda state: None,
     )
     monkeypatch.setattr(
-        "chatbot.src.onboarding_v2.validation.runner.run_runtime_smoke",
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
         lambda **kwargs: {
             "passed": True,
-            "results": [],
-            "failure_summary": "smoke passed",
+            "failure_summary": "host auth bootstrap passed",
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "session-token",
+                "user": {"id": "7"},
+            },
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot adapter auth passed",
+            "validated_user": {"id": "7", "siteId": "food"},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_order_e2e",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget order e2e passed",
+            "covered_flows": ["list_orders", "get_order_status", "cancel", "refund", "exchange"],
+            "flow_reports": {},
             "related_files": [],
         },
     )
@@ -104,7 +134,8 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
 
     bundle = run_validation(
         run_root=runtime_context["generated_root"],
-        runtime_workspace=runtime_context["apply_result"].workspace_path,
+        host_runtime_workspace=runtime_context["apply_result"].host_workspace_path,
+        chatbot_runtime_workspace=runtime_context["apply_result"].chatbot_workspace_path,
         snapshot=runtime_context["snapshot"],
         plan=runtime_context["plan"],
         replay_result=runtime_context["replay_result"],
@@ -115,10 +146,18 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
     assert [check.name for check in bundle.checks] == [
         "backend_runtime_prep",
         "backend_runtime_boot",
-        "frontend_evaluation",
-        "smoke",
+        "host_auth_bootstrap",
+        "chatbot_adapter_auth",
+        "widget_order_e2e",
         "replay_apply",
         "replay_validation",
+    ]
+    assert bundle.checks[4].details["covered_flows"] == [
+        "list_orders",
+        "get_order_status",
+        "cancel",
+        "refund",
+        "exchange",
     ]
 
 
@@ -135,7 +174,8 @@ def test_validation_runner_does_not_allow_static_fallback_success(monkeypatch, t
 
     bundle = run_validation(
         run_root=runtime_context["generated_root"],
-        runtime_workspace=runtime_context["apply_result"].workspace_path,
+        host_runtime_workspace=runtime_context["apply_result"].host_workspace_path,
+        chatbot_runtime_workspace=runtime_context["apply_result"].chatbot_workspace_path,
         snapshot=runtime_context["snapshot"],
         plan=runtime_context["plan"],
         replay_result=runtime_context["replay_result"],
@@ -151,7 +191,45 @@ def test_validation_runner_does_not_allow_static_fallback_success(monkeypatch, t
 def test_failure_signature_distinguishes_runtime_validation_phases():
     assert build_failure_signature(check_name="backend_runtime_prep", summary="dependency install failed") == "backend_runtime_prep_dependency_install_failed"
     assert build_failure_signature(check_name="backend_runtime_boot", summary="django app boot failed") == "backend_runtime_boot_django_app_boot_failed"
-    assert build_failure_signature(check_name="smoke", summary="step order-api returned 500") == "smoke_step_order_api_returned_500"
+    assert build_failure_signature(check_name="widget_order_e2e", summary="show_order_list missing") == "widget_order_e2e_show_order_list_missing"
+
+
+def test_widget_order_e2e_report_tracks_all_required_flows():
+    result = _evaluate_widget_order_flow_report(
+        plan=build_integration_plan(
+            build_analysis_snapshot(site="food", source_root=ROOT / "food"),
+            chatbot_server_base_url="http://localhost:8100",
+        ),
+        flow_reports={
+            "get_order_status": {"passed": True, "steps": []},
+            "list_orders": {"steps": ["show_order_list"], "fragments": ["list-stream"]},
+            "cancel": {"steps": ["show_order_list", "confirm_order_action"], "fragments": ["cancel-1", "cancel-2"]},
+            "refund": {"steps": ["show_order_list", "confirm_order_action"], "fragments": ["refund-1", "refund-2"]},
+            "exchange": {"steps": ["show_order_list", "show_option_list", "confirm_order_action"], "fragments": ["exchange-1", "exchange-2", "exchange-3"]},
+        },
+    )
+
+    assert result.passed is True
+    assert result.covered_flows == ["list_orders", "get_order_status", "cancel", "refund", "exchange"]
+
+
+def test_widget_order_e2e_report_marks_missing_exchange_option_step_as_failure():
+    result = _evaluate_widget_order_flow_report(
+        plan=build_integration_plan(
+            build_analysis_snapshot(site="food", source_root=ROOT / "food"),
+            chatbot_server_base_url="http://localhost:8100",
+        ),
+        flow_reports={
+            "get_order_status": {"passed": True, "steps": []},
+            "list_orders": {"steps": ["show_order_list"], "fragments": ["list-stream"]},
+            "cancel": {"steps": ["show_order_list", "confirm_order_action"], "fragments": ["cancel-1", "cancel-2"]},
+            "refund": {"steps": ["show_order_list", "confirm_order_action"], "fragments": ["refund-1", "refund-2"]},
+            "exchange": {"steps": ["show_order_list", "confirm_order_action"], "fragments": ["exchange-1", "exchange-2"]},
+        },
+    )
+
+    assert result.passed is False
+    assert result.failure_summary == "show_option_list missing"
 
 
 def test_validation_runner_uses_explicit_credentials_without_manifest(monkeypatch, tmp_path: Path):
@@ -186,18 +264,40 @@ def test_validation_runner_uses_explicit_credentials_without_manifest(monkeypatc
     )
     captured = {}
 
-    def _smoke(**kwargs):
+    def _bootstrap(**kwargs):
         captured["kwargs"] = kwargs
         return {
             "passed": True,
-            "results": [],
-            "failure_summary": "smoke passed",
+            "failure_summary": "host auth bootstrap passed",
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "session-token",
+                "user": {"id": "7"},
+            },
             "related_files": [],
         }
 
     monkeypatch.setattr(
-        "chatbot.src.onboarding_v2.validation.runner.run_runtime_smoke",
-        _smoke,
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
+        _bootstrap,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot adapter auth passed",
+            "validated_user": {"id": "7", "siteId": "food"},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_order_e2e",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget order e2e passed",
+            "related_files": [],
+        },
     )
     runtime_context = _build_food_runtime_artifacts(tmp_path)
     manifest_path = runtime_context["generated_root"] / "manifest.json"
@@ -206,7 +306,8 @@ def test_validation_runner_uses_explicit_credentials_without_manifest(monkeypatc
 
     bundle = run_validation(
         run_root=runtime_context["generated_root"],
-        runtime_workspace=runtime_context["apply_result"].workspace_path,
+        host_runtime_workspace=runtime_context["apply_result"].host_workspace_path,
+        chatbot_runtime_workspace=runtime_context["apply_result"].chatbot_workspace_path,
         snapshot=runtime_context["snapshot"],
         plan=runtime_context["plan"],
         replay_result=runtime_context["replay_result"],
@@ -217,3 +318,66 @@ def test_validation_runner_uses_explicit_credentials_without_manifest(monkeypatc
     assert bundle.passed is True
     assert captured["kwargs"]["onboarding_credentials"]["email"] == "test1@example.com"
     assert not manifest_path.exists()
+
+
+def test_validation_runner_requires_site_id_in_host_bootstrap(monkeypatch, tmp_path: Path):
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
+        readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
+    )
+    runtime_state = BackendRuntimeState(
+        framework="django",
+        passed=True,
+        pid=1234,
+        command=runtime_plan.command,
+        readiness_url=runtime_plan.readiness_url,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.prepare_backend_runtime",
+        lambda **kwargs: BackendRuntimePrepResult(framework="django", passed=True),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.build_backend_runtime_plan",
+        lambda **kwargs: runtime_plan,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
+        lambda plan: runtime_state,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
+        lambda state: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
+        lambda **kwargs: {
+            "passed": False,
+            "failure_summary": "host auth bootstrap missing site_id",
+            "related_files": ["backend/chat_auth.py"],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
+        lambda **kwargs: {"passed": True, "failure_summary": "chatbot adapter auth passed", "related_files": []},
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_order_e2e",
+        lambda **kwargs: {"passed": True, "failure_summary": "widget order e2e passed", "related_files": []},
+    )
+    runtime_context = _build_food_runtime_artifacts(tmp_path)
+
+    bundle = run_validation(
+        run_root=runtime_context["generated_root"],
+        host_runtime_workspace=runtime_context["apply_result"].host_workspace_path,
+        chatbot_runtime_workspace=runtime_context["apply_result"].chatbot_workspace_path,
+        snapshot=runtime_context["snapshot"],
+        plan=runtime_context["plan"],
+        replay_result=runtime_context["replay_result"],
+        artifact_refs=runtime_context["artifact_refs"],
+    )
+
+    assert bundle.passed is False
+    assert bundle.checks[2].name == "host_auth_bootstrap"
+    assert bundle.failure_signature == "host_auth_bootstrap_host_auth_bootstrap_missing_site_id"
