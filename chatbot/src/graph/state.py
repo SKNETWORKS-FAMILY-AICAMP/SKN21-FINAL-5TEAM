@@ -64,6 +64,7 @@ class GlobalAgentState(TypedDict):
     # 8. Guardrail State
     # ---------------------------------------------------------
     guardrail_passed: bool  # True = 통과, False = 차단 (guardrail_node 기록 → route_after_guardrail 참조)
+    use_guardrail: bool     # 제어용: 가드레일 활성화 여부
 
     # ---------------------------------------------------------
     # 9. Session Metadata
@@ -78,3 +79,11 @@ class GlobalAgentState(TypedDict):
     # LLM 컨텍스트 길이 절약 + 멀티턴 기억력 유지.
     # 형식: "사용자가 ORD-123 환불을 요청했고 처리 완료됨. 다음 교환 요청 대기 중."
     conversation_summary: Optional[str]
+
+    # ---------------------------------------------------------
+    # 11. Direct Routing (평가 전용 플래그)
+    # ---------------------------------------------------------
+    # True이면 guardrail/planner/supervisor/order_entry를 건너뛰고
+    # order_intent_router로 직행합니다. (order_intent_router 독립 평가용)
+    # 운영 모드에서는 항상 False (기본값).
+    is_direct_routing: bool

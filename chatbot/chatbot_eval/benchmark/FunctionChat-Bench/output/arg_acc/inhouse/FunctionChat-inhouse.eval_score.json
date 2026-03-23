@@ -1,16 +1,16 @@
 {
     "fcb_version": "",
-    "fcb_environments": "new_feature#5cf668b",
+    "fcb_environments": "new_feature#2289f3e",
     "llm_judge_model": "gpt-4o-mini",
     "target_model_path": "inhouse",
     "singlecall_score": {},
     "dialog_score": {
-        "call pass cnt": 6,
-        "call pass rate": 0.2222222222222222,
-        "total_pass_cnt": 6,
+        "call pass cnt": 7,
+        "call pass rate": 0.25925925925925924,
+        "total_pass_cnt": 7,
         "total_cnt": 27,
-        "total_pass_rate": 0.2222222222222222,
-        "avg(micro)": 0.2222222222222222
+        "total_pass_rate": 0.25925925925925924,
+        "avg(micro)": 0.25925925925925924
     },
     "calldecision_score": {}
 }

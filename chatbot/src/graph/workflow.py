@@ -66,6 +66,19 @@ from chatbot.src.graph.nodes.final_generator import final_generator_node
 from chatbot.src.graph.nodes.summarize import summarize_node
 
 
+# ── 라우팅 함수 (Direct Routing 모드 지원) ─────────────────
+
+def route_from_start(state: GlobalAgentState) -> str:
+    """START 지점에서 직행 평가 모드 여부에 따라 분기합니다.
+    
+    - is_direct_routing == True  → order_intent_router 직행 (평가 모드)
+    - is_direct_routing == False → guardrail 경유 (운영 모드, 기본값)
+    """
+    if state.get("is_direct_routing", False):
+        return "order_intent_router"
+    return "guardrail"
+
+
 # ── 그래프 빌드 ──────────────────────────────────────────
 
 def build_graph() -> StateGraph:
@@ -88,8 +101,17 @@ def build_graph() -> StateGraph:
     builder.add_node("final_generator",        final_generator_node)
     builder.add_node("summarize",              summarize_node)
 
-    # ── 엔트리포인트 ──────────────────────────────────
-    builder.add_edge(START, "guardrail")
+    # ── 엔트리포인트 (조건부: 운영 vs 평가 모드) ──────────
+    # is_direct_routing == True  → order_intent_router 직행
+    # is_direct_routing == False → guardrail 경유 (기존 흐름)
+    builder.add_conditional_edges(
+        START,
+        route_from_start,
+        {
+            "guardrail":            "guardrail",
+            "order_intent_router":  "order_intent_router",
+        },
+    )
 
     # ── guardrail → (planner | END) ──────────────────
     builder.add_conditional_edges(

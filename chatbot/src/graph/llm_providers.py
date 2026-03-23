@@ -33,7 +33,14 @@ def make_vllm_llm(model: str, temperature: float = 0) -> ChatOpenAI:
     )
 
 
-def make_chat_llm(provider: str, model: str, temperature: float = 0) -> ChatOpenAI:
+def make_chat_llm(provider: str | None = None, model: str = "gpt-4o-mini", temperature: float = 0) -> ChatOpenAI:
+    # 1. Provider가 명시되지 않은 경우 모델명으로 추론
+    if not provider:
+        if "qwen" in model.lower() or "/" in model:
+            provider = "vllm"
+        else:
+            provider = "openai"
+            
     if provider == "openai":
         return make_openai_llm(model=model, temperature=temperature)
     if provider == "vllm":

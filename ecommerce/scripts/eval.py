@@ -9,7 +9,7 @@ import sys
 # 프로젝트 루트를 PYTHONPATH에 추가 (직접 실행용)
 # -------------------------------------------------
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(CURRENT_DIR))
 sys.path.append(PROJECT_ROOT)
 
 import logging
