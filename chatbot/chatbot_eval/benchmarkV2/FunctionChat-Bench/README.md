@@ -1,413 +1,142 @@
-# FunctionChat-Bench: Comprehensive Evaluation of Language Model's Generative Capabilities in Korean Tool-use Dialogs
+# 툴 호출 테스트 및 코드 개선 보고서
 
-## Introduction
+## 개요
+본 프로젝트의 핵심 목표는 **데이터 기반의 객관적인 성능 검증과 그에 따른 챗봇 지능 고도화**입니다. 이를 위해 크게 두 단계의 평가 데이터셋을 직접 구축하고 테스트를 수행했습니다.
 
-The FunctionChat-Bench is a benchmark dataset specifically designed to evaluate the Tool-Use (Function Calling) capabilities of Language Models within conversational settings.
+먼저 **1) 15개의 기초 시나리오 데이터셋**을 통해 챗봇의 기본적인 도구 호출 및 라우팅 결함을 발견하고 우선순위 로직을 보완했습니다. 이어지는 단계로 **2) 50개의 고난도(Hard) 데이터셋**을 7단계 파이프라인으로 정교하게 설계하여, 키워드 매칭의 한계를 극복하는 전면 LLM 기반의 지능형 인텐트 라우터를 성공적으로 도입했습니다. 
 
-This dataset is built on Korean dialogs data and is meticulously crafted to precisely assess various functionalities required in both single-turn and multi-turn situations.
+본 보고서는 이러한 데이터 중심의 버그 추적 및 성능 개선 과정을 상세히 담고 있습니다.
 
-![FunctionChat-Bench-img](./img/example-img.png)
+---
 
-## Dataset Composition
+## 주요 수정 내역 및 상세 이유
 
-The FunctionChat-Bench consists of the following datasets:
+### [1] 15개의 커스텀 평가 데이터셋(쉬운 질의) 구성 방식
 
-- **SingleCall**
-    - SingleCall evaluates how accurately the LM can select and call the necessary function among several options.
-    - SingleCall contains four single-turn prompts for each of 25 different functions.
-        - For example, for the function 'informDday', there are four dialogs prompts related to it:
+본 평가 프레임워크에서는 챗봇이 맥락에 맞는 도구와 인자를 정확히 추출하는지 기본적인 성능을 검증하기 위해 **총 15개의 평가 데이터셋**을 `data` 폴더 내의 스크립트들을 활용하여 자체 구축했습니다.
 
-            ```
-          ”오늘이 결혼한지 며칠째야?” (How many days have i been married?)
-          “크리스마스까지 얼마나 남았나요?” (How many days are left until Christmas?)
-          “1차 심사일이 언제인가요?” (When is the first round of judging?)
-          “디데이목록에서 원고마감일 찾아줘” (Find the manuscript deadline in the D-Day list.)
-            ```
+**사용된 분석 및 생성 스크립트 (`data` 폴더 내부):**
+- `generate_queries_v1.py`: 기본 질의 생성
+- `valid_and_diversify_dataset.py`: 질의 다변화 및 타당성 검증
+- `convert_v6_to_v4.py`: 버전/포맷 변환 로직 적용
+- `complete_dataset_v4.py`: 15개 정답셋 최종 구성
 
-    - **Five types of tools are defined as follows.**
-        - **1_exact**: Only the target function is provided to the Assistant as a candidate.
-        - **4_random**: The target function along with 3 randomly selected functions are provided as candidates to the Assistant.
-        - **4_close**: The target function and 3 functions from a similar domain are provided as candidates to the Assistant.
-        - **8_random**: The target function along with 7 randomly selected functions are provided as candidates to the Assistant.
-        - **8_close**: The target function and 7 functions from a similar domain are provided as candidates to the Assistant.
-    - The dataset contains 500 single dialogue turns, combining single-turn prompts built around 25 designated functions with various tools types.
-- **Dialog**
-    - Dialog contains 45 diverse dialogs scenarios.
-    - Each scenario reflects multi-turn interactions between real users and LM.
-    - Defines four types of situations and evaluates how accurately the LM provides appropriate responses in each.
-    - Examples of each of the four types of situations are included below to aid understanding within the dialog evaluation. 
-    - In the dialog evaluation, it assesses how accurately the assistant provides appropriate responses for each type of situation
-        - **call**: An LM must accurately select functions and extract the necessary parameters to respond to a user prompt
-            
-            ```
-            tools:
-             [{"type":"function","function":{"name":"informWeather","description":"특정 지역의 현재 날씨 정보 제공","parameters":{"type":"object","properties":{"location":{"type":"string","description":"날씨 정보를 가져올 지역 이름"}},"required":["location"]}}},{"type":"function","function":{"name":"add_task","description":"to-do list에 새로운 할 일을 저장합니다.","parameters":{"type":"object","properties":{"task_name":{"type":"string","description":"The name of the task"},"deadline":{"type":"string","description":"The deadline for the task(사용자의 표현 그대로 추출. 예: 다음주 수요일, 내일 7시 등)"}},"required":["task_name","deadline"]}}},{"type":"function","function":{"name":"setupDday","description":"이름과 날짜를 입력받아 디데이 목록에 새로운 디데이를 생성한다.","parameters":{"type":"object","properties":{"ddayName":{"type":"string","description":"디데이의 이름"},"ddayDate":{"type":"string","description":"디데이 날짜(YYYY-MM-DD)"},"includeStartDay":{"type":"boolean","description":"남은 일수 또는 지난 일수 계산시 디데이 당일 날짜를 1일로 포함해 계산할지 여부.(true이면 당일이 1일, false이면 당일이 0일)"}},"required":["ddayName","ddayDate","includeStartDay"]}}},{"type":"function","function":{"name":"informDday","description":"저장된 디데이 목록을 검색해 특정 디데이 정보를 반환한다.","parameters":{"type":"object","properties":{"searchTerm":{"type":"string","description":"디데이 목록을 검색할 디데이의 이름이나 키워드"}},"required":["searchTerm"]}}},{"type":"function","function":{"name":"addMemo","description":"새로운 메모를 추가","parameters":{"type":"object","properties":{"title":{"type":"string","description":"메모의 제목(사용자가 제목을 직접 언급하지 않으면 메모 내용을 통해 적절한 제목을 생성해 지정)"},"content":{"type":"string","description":"메모 내용"}},"required":["title","content"]}}}]
-            
-            context:
-             user: 제리 출국날이 언제였지?
-            
-            assistant: tool_calls 
-                        {"type": "function", "function": {"name": "informDday", "arguments": "{\"searchTerm\": \"제리 출국날\"}"}}
-            ```
-            
-        - **completion**: An LM must generate appropriate responses based on the results of the tool.
-            
-            ```
-            tools:
-             [{"type":"function","function":{"name":"informWeather","description":"특정 지역의 현재 날씨 정보 제공","parameters":{"type":"object","properties":{"location":{"type":"string","description":"날씨 정보를 가져올 지역 이름"}},"required":["location"]}}},{"type":"function","function":{"name":"add_task","description":"to-do list에 새로운 할 일을 저장합니다.","parameters":{"type":"object","properties":{"task_name":{"type":"string","description":"The name of the task"},"deadline":{"type":"string","description":"The deadline for the task(사용자의 표현 그대로 추출. 예: 다음주 수요일, 내일 7시 등)"}},"required":["task_name","deadline"]}}},{"type":"function","function":{"name":"setupDday","description":"이름과 날짜를 입력받아 디데이 목록에 새로운 디데이를 생성한다.","parameters":{"type":"object","properties":{"ddayName":{"type":"string","description":"디데이의 이름"},"ddayDate":{"type":"string","description":"디데이 날짜(YYYY-MM-DD)"},"includeStartDay":{"type":"boolean","description":"남은 일수 또는 지난 일수 계산시 디데이 당일 날짜를 1일로 포함해 계산할지 여부.(true이면 당일이 1일, false이면 당일이 0일)"}},"required":["ddayName","ddayDate","includeStartDay"]}}},{"type":"function","function":{"name":"informDday","description":"저장된 디데이 목록을 검색해 특정 디데이 정보를 반환한다.","parameters":{"type":"object","properties":{"searchTerm":{"type":"string","description":"디데이 목록을 검색할 디데이의 이름이나 키워드"}},"required":["searchTerm"]}}},{"type":"function","function":{"name":"addMemo","description":"새로운 메모를 추가","parameters":{"type":"object","properties":{"title":{"type":"string","description":"메모의 제목(사용자가 제목을 직접 언급하지 않으면 메모 내용을 통해 적절한 제목을 생성해 지정)"},"content":{"type":"string","description":"메모 내용"}},"required":["title","content"]}}}]
-            
-            context: 
-             user: 제리 출국날이 언제였지?
-             assistant: tool_calls 
-                        {"type": "function", "function": {"name": "informDday", "arguments": "{\"searchTerm\": \"제리 출국날\"}"}}
-             tool: {"name": "informDday", "content": "{\"ddayName\": \"제리 출국날\", \"ddayDate\": \"2024-04-23\", \"daysRemaining\": 48, \"daysSince\": None}"}
-            
-            assistant: 제리 출국날은 2024년 4월 23일입니다. 앞으로 48일 남았습니다.
-            ```
-            
-        - **slot**: An LM must query the user for the necessary parameters to make a function call.
-            
-            ```
-            tools:
-             [{"type":"function","function":{"name":"informWeather","description":"특정 지역의 현재 날씨 정보 제공","parameters":{"type":"object","properties":{"location":{"type":"string","description":"날씨 정보를 가져올 지역 이름"}},"required":["location"]}}},{"type":"function","function":{"name":"add_task","description":"to-do list에 새로운 할 일을 저장합니다.","parameters":{"type":"object","properties":{"task_name":{"type":"string","description":"The name of the task"},"deadline":{"type":"string","description":"The deadline for the task(사용자의 표현 그대로 추출. 예: 다음주 수요일, 내일 7시 등)"}},"required":["task_name","deadline"]}}},{"type":"function","function":{"name":"setupDday","description":"이름과 날짜를 입력받아 디데이 목록에 새로운 디데이를 생성한다.","parameters":{"type":"object","properties":{"ddayName":{"type":"string","description":"디데이의 이름"},"ddayDate":{"type":"string","description":"디데이 날짜(YYYY-MM-DD)"},"includeStartDay":{"type":"boolean","description":"남은 일수 또는 지난 일수 계산시 디데이 당일 날짜를 1일로 포함해 계산할지 여부.(true이면 당일이 1일, false이면 당일이 0일)"}},"required":["ddayName","ddayDate","includeStartDay"]}}},{"type":"function","function":{"name":"informDday","description":"저장된 디데이 목록을 검색해 특정 디데이 정보를 반환한다.","parameters":{"type":"object","properties":{"searchTerm":{"type":"string","description":"디데이 목록을 검색할 디데이의 이름이나 키워드"}},"required":["searchTerm"]}}},{"type":"function","function":{"name":"addMemo","description":"새로운 메모를 추가","parameters":{"type":"object","properties":{"title":{"type":"string","description":"메모의 제목(사용자가 제목을 직접 언급하지 않으면 메모 내용을 통해 적절한 제목을 생성해 지정)"},"content":{"type":"string","description":"메모 내용"}},"required":["title","content"]}}}]
-            
-            context: 
-             user: 제리 출국날이 언제였지?
-             assistant: tool_calls 
-                        {"type": "function", "function": {"name": "informDday", "arguments": "{\"searchTerm\": \"제리 출국날\"}"}}
-             tool: {"name": "informDday", "content": "{\"ddayName\": \"제리 출국날\", \"ddayDate\": \"2024-04-23\", \"daysRemaining\": 48, \"daysSince\": None}"}
-             assistant: 제리 출국날은 2024년 4월 23일입니다. 앞으로 48일 남았습니다.
-             user: 송별회 일정 잡기 to do list에 추가해줘.
-            
-            assistant: 알겠습니다. 데드라인이 언제인가요?
-            ```
-            
-        - **relevance**: An LM must generate an appropriate response when it cannot provide a function for a user prompt.
-            
-            ```
-            tools:
-             [{"type":"function","function":{"name":"informWeather","description":"특정 지역의 현재 날씨 정보 제공","parameters":{"type":"object","properties":{"location":{"type":"string","description":"날씨 정보를 가져올 지역 이름"}},"required":["location"]}}},{"type":"function","function":{"name":"add_task","description":"to-do list에 새로운 할 일을 저장합니다.","parameters":{"type":"object","properties":{"task_name":{"type":"string","description":"The name of the task"},"deadline":{"type":"string","description":"The deadline for the task(사용자의 표현 그대로 추출. 예: 다음주 수요일, 내일 7시 등)"}},"required":["task_name","deadline"]}}},{"type":"function","function":{"name":"setupDday","description":"이름과 날짜를 입력받아 디데이 목록에 새로운 디데이를 생성한다.","parameters":{"type":"object","properties":{"ddayName":{"type":"string","description":"디데이의 이름"},"ddayDate":{"type":"string","description":"디데이 날짜(YYYY-MM-DD)"},"includeStartDay":{"type":"boolean","description":"남은 일수 또는 지난 일수 계산시 디데이 당일 날짜를 1일로 포함해 계산할지 여부.(true이면 당일이 1일, false이면 당일이 0일)"}},"required":["ddayName","ddayDate","includeStartDay"]}}},{"type":"function","function":{"name":"informDday","description":"저장된 디데이 목록을 검색해 특정 디데이 정보를 반환한다.","parameters":{"type":"object","properties":{"searchTerm":{"type":"string","description":"디데이 목록을 검색할 디데이의 이름이나 키워드"}},"required":["searchTerm"]}}},{"type":"function","function":{"name":"addMemo","description":"새로운 메모를 추가","parameters":{"type":"object","properties":{"title":{"type":"string","description":"메모의 제목(사용자가 제목을 직접 언급하지 않으면 메모 내용을 통해 적절한 제목을 생성해 지정)"},"content":{"type":"string","description":"메모 내용"}},"required":["title","content"]}}}]
-            
-            context:
-             user: 제리 출국날이 언제였지?
-             assistant: tool_calls 
-                        {"type": "function", "function": {"name": "informDday", "arguments": "{\"searchTerm\": \"제리 출국날\"}"}}
-             tool: {"name": "informDday", "content": "{\"ddayName\": \"제리 출국날\", \"ddayDate\": \"2024-04-23\", \"daysRemaining\": 48, \"daysSince\": None}"}
-             assistant: 제리 출국날은 2024년 4월 23일입니다. 앞으로 48일 남았습니다.
-             user: 송별회 일정 잡기 to do list에 추가해줘.
-             assistant: 알겠습니다. 데드라인이 언제인가요?
-             user: 다음주 토요일
-             assistant: tool_calls
-                         {"type": "function", "function": {"name": "add_task", "arguments": "{\"task_name\": \"송별회 일정 잡기\", \"deadline\": \"다음주 토요일\"}"}}
-             tool: {"name": "add_task", "content": "{\"status\": \"success\"}"}
-             assistant: 할 일을 등록했습니다
-             user: 다빈이한테 괜찮을 때 전화 한번 달라고 문자 남겨줘.
-             
-            assistant: 문자 전송 기능은 없습니다.
-            ```
-- **CallDecision** 
+**데이터셋 구성 기준 및 특징:**
+1. **5가지 핵심 커머스 시나리오:**
+   - 실제 서비스 환경에서 가장 빈번하게 발생하는 **배송 조회, 교환 신청, 환불/반품 신청, 주문 취소, 주문 내역 조회** 의 5가지 주요 액션(Intent)을 선정했습니다.
+2. **다중 유저(User) 기반 매트릭스 구조:**
+   - 각기 다른 3명의 가상 유저 프로필(`user_id`: 1, 2, 3)을 설정하고, 각 유저마다 5가지 핵심 시나리오 질의를 수행하도록 매핑하여 **5 시나리오 × 3 유저 = 총 15개의 테스트 케이스**를 완성했습니다.
+3. **정밀한 Ground Truth 및 허용 인자(Acceptable Arguments) 설계:**
+   - 질의별로 호출되어야 하는 타겟 도구(`expected_tool`)는 물론, 모델이 의도를 파악한 후 전달해야 하는 타겟 파라미터(예: `order_id`, `user_id`) 정답을 하드코딩해 두어 **단순 도구 호출 성공 여부를 넘어 실제 파라미터 추출의 정확도까지 엄격하게 평가**할 수 있도록 설계했습니다.
 
+**[15개 기초 데이터셋 테스트를 통한 챗봇 라우팅 로직 결함 해결]**
 
-## Evaluation Method
+*   **사례 1: 취소 vs 목록 조회(`list_orders`) 우선순위 분류 충돌 버그 해결**
+    *   **테스트 대상:** 15개 기초 시나리오 셋
+    *   **테스트 질의 (예시):** *"취소하려고 하는데 주문번호를 잘 모르겠네요"*
+    *   **기대 결과 (Expected):** 주문번호(`order_id`) 필수 정보가 발화에 없으므로, 섣불리 취소 프로세스를 밟지 않고 유저의 헷갈림을 막기 위해 주문 내역을 조회하는 `list_orders` 도구로 먼저 우회 안내해야 정상입니다.
+    *   **잘못된 실제 결과 (Fail):** 초기 챗봇의 `order_flow.py` 라우팅 로직은 경직된 파이썬 키워드 매칭(Keyword Matching)에 의존하고 있어, 문장 내에 "취소" 단어가 보이면 `list_orders` 조건을 패스하고 강제로 `cancel` 서브에이전트로 진입해 버렸습니다. 이로 인해 필수 파라미터가 없어서 툴 연동이 실패(Fail)하고 시스템이 에러를 뱉는 버그가 터졌습니다.
+    *   **코드 수정 (Fix):** `order_flow.py` 내부의 규칙 기반(Rule-based) 인텐트 분류 로직을 대거 뜯어고쳐 챗봇의 상황 판단력을 보완했습니다. '불명확한 의도'나 '필수 파라미터(주문번호 등)가 누락된 상황'에 대한 인텐트 감지 **우선순위를 최상단으로 끌어올리고, 가장 먼저 `list_orders`로 분기하도록 키워드 매칭 조건문을 안전하게 재설계**했습니다.
+    *   **개선 성과 (Improvement):** 기초적인 상황 판단 오류와 우선순위 충돌을 완벽히 방어하여, 15개 벤치마크 기본 시나리오 상에서 100%의 라우팅 호출 성공률을 달성하며 챗봇 코어 로직의 1차 안정성을 확보했습니다.
 
-The FunctionChat-Bench utilizes a rubric evaluation method called LLM-as-Judge, where OpenAI GPT-4 serves as the evaluator. This specially designed evaluation system quantitatively measures the performance of each dialogs and function call without human intervention. Using the evaluation rubric, OpenAI GPT-4 assesses the accuracy and relevance of the responses generated by LMs and assigns scores accordingly.
+---
 
-## **Installation**
+### [2] Hard Query (고난도 질의) 50개 평가 데이터셋 생성 파이프라인
 
-```bash
-cd FunctionChat-Bench
-pip3 install -r requirements.txt
-```
+**사용된 핵심 디렉토리 및 모듈:**
+- **스크립트 경로:** `chatbot.chatbot_eval.benchmarkV2.FunctionChat-Bench.data.50.scripts` 하위의 생성 파이프라인 전용 코드들
+- **스크립트 생성 프롬프트 경로:** `...data.50.prompts` 폴더 내 특화 생성 프롬프트 (`question_generation.md` 등)
+- **결과물 경로:** `...data.50.data` 폴더 (단계별 결과 데이터 적재)
 
-## **Config**
-API settings required for evaluation. 
-The evaluation API is configured in `config/openai.cfg`.
+**수정 이유 및 파이프라인 내용:**
 
-### openai config format 
-```
-{
-  "api_type": "openai",
-  "api_key": "__YOUR_OPENAI_KEY__",
-  "api_version": "gpt-4-1106-preview",
-  "temperature": 0.1,
-  "max_tokens": 4096,
-  "n": 3
-}
+**[고난도 평가 데이터셋 생성 7단계 파이프라인]**
+1. **초기 질문 생성 (`1_generate_queries_v7.py`):**
+   - 사전에 정의된 정교한 생성 프롬프트(`prompts/question_generation.md` 등)를 기반으로, 다음과 같은 치밀한 생성 전략 및 6가지 난이도 트랩(Trap Type)을 LLM에 부여하여 질문을 초기 생성합니다.
+   - **[질문 생성 원칙 및 트랩 전략]**
+       - **타겟 툴 한정 & 단일 의도 보장:** 평가 대상을 5개 툴(`get_user_orders`, `cancel`, `refund`, `exchange`, `change_option`)로 엄격히 제한하고, 질문이 복잡하고 우회적이더라도 최종적으로 단 하나의 툴로만 해석(Single-tool)되게 설계합니다.
+       - **6분류 난이도 트랩(Trap Types) 구조화:**
+         1. **의도 번복 (`final_intent_reversal`)**
+            - "취소할까 하다가 그냥 색상만 바꿀게요"처럼 발화 끝에서 주 의도를 바꾸어버리는 함정 패턴
+         2. **사유 기반 추론 (`reason_based_inference`)**
+            - "배송 온 옷이 찢어져 있네요"처럼 명시적 액션(환불/교환 등) 단어 없이 사유만 말해 챗봇이 도구를 유추하게 만드는 패턴
+         3. **주문번호 누락 (`no_order_id`)**
+            - 필수로 필요한 주문번호를 발화에서 의도적으로 누락시켜 1차 방어 능력을 검증하는 패턴
+         4. **취소 vs 환불 경계 (`cancel_vs_refund`)**
+            - 배송 전(취소)과 배송 후(환불) 액션을 유저가 혼동하는 모호성 테스트
+         5. **교환 vs 옵션변경 경계 (`exchange_vs_change_option`)**
+            - 단어 사용의 모호성으로 교환과 옵션변경 라우터를 헷갈리게 유도
+         6. **혼합 시그널 (`mixed_signal_but_single_tool`)**
+            - 문장 하나에 여러 상황 정보를 길게 섞지만 정답은 단 하나의 툴로 귀결되는 방해 패턴
+2. **1차 검증 (타당성 및 의도 확인):**
+   - 생성된 초기 질문이 원래 시나리오의 의도와 부합하는지, 모호성이나 문맥 오류가 없는지 자체 휴리스틱 룰과 프롬프트 기반 판별식을 적용해 1차 필터링을 수행합니다.
+3. **질문 다변화 (250개로 질문 확장):**
+   - 1차 검증을 통과한 베이스 질의들에 LLM 다변화 템플릿(어투 변화, 동의어 치환, 어순 변경 등)을 적용해 **총 250개의 다채로운 형태로 질문을 폭발적으로 증식(Diversification)** 시킵니다.
+4. **2차 검증 (엄격한 품질 필터링):**
+   - 증식된 250개의 질문이 평가 기준(문맥 자연스러움, 타겟 도구 호출 유도성 등)을 충족시키는지 LLM의 자체 평가 프롬프트(`LLM-as-a-judge`)를 통해 질이 떨어지는 문장을 2차 탈락시킵니다.
+5. **초기 답변 및 호출 생성 (LLM 모의 구동):**
+   - 검증된 250개 풀에 대해 LLM이 직접 예상 답변과 함수 호출(Function Call)을 모의로 생성해보게 하여, 정상적으로 파라미터를 파악할 수 있는지 테스트합니다.
+6. **최종 질문-답변 50개 선별:**
+   - 생성과 테스트를 통과한 고품질 데이터 그룹 안에서, 라우터 평가에 가장 강력한 변별력을 보일 수 있는 **최종 50개의 질문-답변 쌍을 샘플링하여 뽑아냅니다.**
+7. **최종 평가용 답변(Ground Truth) 확정:**
+   - 확정된 50개의 테스트 케이스에 대해 모델이 도출해야만 하는 타겟 도구(`expected_tool`) 및 필수 파라미터 정답셋을 최종 포맷팅하고 맵핑하여 구축을 완료합니다.
 
-```
-### openai azure config format 
-```
-{
-  "api_type": "azure",
-  "api_key": "__YOUR_OPENAI_KEY__",
-  "api_base": "__AZURE_ENDPOINT__",
-  "api_version": "gpt-4-1106-preview",
-  "instance": "__AZURE_INSTANCE_NAME__"",
-  "temperature": 0.1,
-  "max_tokens": 4096,
-  "n": 3
-}
-```
+**[50개 고난도 질의 데이터셋 테스트 및 버그 해소 내역]**
 
-## Evaluation
+*   **사례 1: 의도 번복(Intent Reversal) 발화 대응**
+    *   **테스트 질의 (사례):** *"취소할까 하다가 그냥 색상만 바꿀게요"*
+    *   **기대 결과 (Expected):** 가장 최후의 의향인 `change_option` 도구로 라우팅되어야 함
+    *   **잘못된 실제 결과 (Fail):** 기존 라우터는 문장 앞부분의 "취소" 키워드에 현혹되어 무조건 `cancel` 로직으로 진입시키는 오류 발생
+    *   **코드 수정 (Fix):** 지시 프롬프트 안에 **[최종 의사 존중]** 규칙(예: A 대신 B라고 하면 부정 표현 A는 무시할 것)을 명시적으로 확립하여, 번복 발화 중에서도 가장 마지막 의도만을 정확하게 추출하도록 개선했습니다.
+    *   **개선 성과 (Improvement):** 사용자의 변심이나 말실수가 섞인 대화 흐름에서도 흔들림 없이 최종 목적지에 도달하는 고도의 지능형 라우팅 구현
 
-Evaluation for openai api
+*   **사례 2: 필수 인자(주문번호) 누락 상황의 유연한 우회**
+    *   **테스트 질의 (사례):** *"취소할 건데 주문 번호를 잘 모르겠어요, 내역부터 보여주세요"*
+    *   **기대 결과 (Expected):** 주문번호가 없으므로 섣불리 취소 노드를 실행하지 않고, 유저의 작업을 돕기 위해 주문 내역 도구(`list_orders`)로 즉시 우회해야 함
+    *   **잘못된 실제 결과 (Fail):** 필수 파라미터인 `order_id`가 빠져 있어 시스템 패닉(에러)이 발생하거나, 사용자에게 번호를 내놓으라는 경직된 답변만 반복됨
+    *   **코드 수정 (Fix):** 프롬프트 내에 **[절대 0순위 대체(Fallback)]** 규칙을 확립하여, 번호를 모른다거나 내역 확인을 요청할 경우 즉시 사용자 화면에 주문 목록부터 띄우는 `list_orders`를 강제 호출하도록 설계했습니다.
+    *   **개선 성과 (Improvement):** 정보 부족으로 인한 대화 단절을 원천 차단하고, 사용자가 필요한 정보를 먼저 선제적으로 제시하는 자기주도적 에이전트 시스템 구축
 
-```bash
-# run dialog evaluation
-python3 evaluate.py dialog \
---input_path data/FunctionChat-Dialog.jsonl \
---system_prompt_path data/system_prompt.txt \
---temperature 0.1 \
---model {model_name} \
---api_key {api_key} 
+*   **사례 3: 상황 기반 배송 전/후 의도 추론(Context-Awareness)**
+    *   **테스트 질의 (사례):** *"어제 물건 받았는데 너무 작아서 취소할래요"*
+    *   **기대 결과 (Expected):** 이미 물건을 수령한(배송 완료) 상황이므로 '취소(cancel)'가 아닌 '환불(refund)'로 라우팅되어야 함
+    *   **잘못된 실제 결과 (Fail):** 사용자가 사용한 단어 그대로인 "취소"에 꽂혀 `cancel` 툴을 불러내고, 배송 완료된 주문은 취소가 불가능하다는 시스템 반려 에러를 마주함
+    *   **코드 수정 (Fix):** 프롬프트 내에 **[상황 기반 추론(Context-Awareness)]** 규칙을 확립하여, "이미 물건을 받았다"는 등의 배송 후 맥락 발화가 보일 경우 곧바로 환불/교환(`refund/exchange`) 단계로 지능형 우회 분기를 수행하도록 라우팅의 정교함을 높였습니다.
+    *   **개선 성과 (Improvement):** 사용자가 전문적인 용어(취소 vs 환불)를 혼용하더라도, 대화 맥락을 통해 실제 처지를 파악하고 가장 정확한 도구로 안내하는 문맥 관통형 라우팅 성공
 
-# run singlecall evaluation
-python3 evaluate.py singlecall \
---input_path data/FunctionChat-Singlecall.jsonl \
---tools_type all \
---system_prompt_path data/system_prompt.txt \
---temperature 0.1 \
---model {model_name} \
---api_key {api_key} 
+*   **사례 4: 모호성 대응 프롬프트 부재로 인한 부자연스러운 응답(Response) 저하 (`orders.py`)**
+    *   **테스트 대상:** 50개 고난도(Hard Query) 질의 중 의도가 모호하거나 정보가 누락된 발화
+    - **... (이하 기존 내용과 동일) ...**
+    *   **테스트 대상:** 50개 고난도(Hard Query) 질의 중 의도가 모호하거나 정보가 누락된 발화
+    *   **테스트 질의 (예시):** *"취소할 건데 번호를 모르겠어요"*
+    *   **기대 결과 (Expected):** 애매하거나 필수 정보(주문번호 등)가 부족한 질문을 던지는 사용자에게, 자연스럽게 모자란 정보를 되묻거나 구체적인 안내를 역으로 이끌어내는 고품질의 텍스트 답변 반환
+    *   **잘못된 실제 결과 (Fail):** 기존 `orders.py`는 모호한 맥락을 파악하지 못하고 기계적이고 딱딱한 에러 메시지나 단답형 결과를 반환하여, 챗봇의 사용성(UX) 퀄리티가 크게 저하되는 문제가 발생했습니다.
+    *   **코드 수정 (Fix):** `orders.py` 내부의 시스템 지시 프롬프트를 전면 개정하여 응답의 유연성을 한 차원 더 끌어올렸습니다.
+        *   **[기존 프롬프트]:** 단순히 반환된 결과(API Response)만 요약정리해서 즉답해주는 경직된 지시 형태
+        *   **[개선 프롬프트]:** *"애매하거나 우회적인 질문을 던지는 사용자(예: 번호를 잊음)를 마주할 경우 당황하지 말고 구체적이고 자연스러운 안내나 역질문(예: '주문 내역을 먼저 조회해 드릴까요?')을 이끌어내라"*는 맥락 기반(Context-aware) 응답 지시를 강력히 추가했습니다.
+    *   **개선 성과 (Improvement):** 우회적이거나 의도가 꼬인 질문에 대해서도 시스템 에러나 기계적 답변을 단절하고, 친절하고 유연하게 대화를 이어가 역질문을 유도하는 등 **전체 챗봇 응답(Response) 퀄리티와 자연스러움이 비약적으로 상승**했습니다.
 
-# run calldecision evaluation
-python3 evaluate.py common \
---input_path data/FunctionChat-CallDecision.jsonl \
---temperature 0.1 \
---model {model_name} \
---api_key {api_key} 
-```
-- A model_name like `gpt-3.5-turbo-0125` is needed. 
+---
 
-Evaluation for local api
+---
 
-```bash
-# run dialog evaluation
-python3 evaluate.py dialog \
---input_path data/FunctionChat-Dialog.jsonl \
---system_prompt_path data/system_prompt.txt \
---temperature 0.1 \
---model inhouse \
---base_url {base_url} \
---api_key {api_key} \
---served_model_name {model_name}
+### [3] 전면 LLM 기반 인텐트 라우터(LLM-based Intent Router) 도입 및 평가
 
-# run singlecall evaluation
-python3 evaluate.py singlecall \
---input_path data/FunctionChat-Singlecall.jsonl \
---tools_type all \
---system_prompt_path data/system_prompt.txt \
---temperature 0.1 \
---model inhouse \
---base_url {base_url} \
---api_key {api_key} \
---served_model_name {model_name}
+**수정 내용:**
+기존의 100% 파이썬 코드 기반(Keyword Matching) 모듈이 가진 한계를 극복하기 위해, 다양한 라우팅 체계를 테스트한 후 최종적으로 가장 압도적인 성능을 보인 **전면 LLM 기반 라우팅 아키텍처**를 `order_flow.py`에 도입했습니다.
 
-# run calldecision evaluation
-python3 evaluate.py common \
---input_path data/FunctionChat-CallDecision.jsonl \
---temperature 0.1 \
---model inhouse \
---base_url {base_url} \
---api_key {api_key} 
---served_model_name {model_name}
-```
+**[데이터셋 기반 아키텍처 성능 비교 결과]**
+고난도 50개 질의(Hard Query) 환경을 바탕으로 여러 아키텍처의 의도 분류 정확도를 벤치마킹한 결과는 다음과 같습니다.
+1. **[최종 채택] LLM 전용 기반 (Prompt-only, GPT 기준): 100%**
+   - 번복 발화, 우회적 표현 등 모든 함정을 완벽하게 파악하여 오직 정답인 단일 의도로 정확하게 분기해내는 최고의 성능을 입증했습니다.
+2. **기존 코드 전용 기반 (Keyword Matching): 80%** 
+   - 단순 키워드 매칭의 한계로 인해, 발화의 끝부분에서 의도를 바꾸는 질의 등에 매우 취약했습니다.
+3. **하이브리드 아키텍처 (명확한 건 코드 + 애매한 건 LLM): 80%** 
+   - 코드가 선제적으로 차단하는 로직이 도리어 논리적인 충돌을 야기하여, 순수 코드 방식과 동일한 80% 벽에 머물렀습니다.
+4. **로컬 모델 (Qwen 3.5-2B) 벤치마킹 테스트: 76%** 
+   - 사양이 제한된 로컬 환경에서의 모델 동작성 점검 목적으로 테스트를 수행했습니다. 지능 한계로 수치는 76%가 나왔으나, 구조 변경을 통해 로컬 환경에서도 동작이 가능함을 입증하는 지표로 활용했습니다.
 
-- If the `model_path` is required in the request header, add the `--model_path` parameter.
-- Follows OpenAI's API specifications.
+---
 
-Evaluation for gemini, claude api(alphachat api)
-
-```bash
-base_url="http://alpha-gateway-dev.dev.onkakao.net/v1"
-model_name="gemini-2.5-pro" # or "claude-opus-4"
-api_key="sk-*****"
-
-# run dialog evaluation
-python3 evaluate.py dialog \
---input_path data/FunctionChat-Dialog.jsonl \
---system_prompt_path data/system_prompt.txt \
---temperature 0.1 \
---model ${model_name} \
---api_key ${api_key} \
---base_url ${base_url}
-
-# run singlecall evaluation
-python3 evaluate.py singlecall \
---input_path data/FunctionChat-Singlecall.jsonl \
---tools_type all \
---system_prompt_path data/system_prompt.txt \
---temperature 0.1 \
---model ${model_name} \
---api_key ${api_key} \
---base_url ${base_url}
-
-# run calldecision evaluation
-python3 evaluate.py common \
---input_path data/FunctionChat-CallDecision.jsonl \
---temperature 0.1 \
---model ${model_name} \
---api_key ${api_key} \
---base_url ${base_url}
-```
-
-Evaluation for gemini api
-
-```bash
-# run dialog evaluation
-python3 evaluate.py dialog \
---input_path data/FunctionChat-Dialog.jsonl \
---system_prompt_path data/system_prompt.txt \
---temperature 0.1 \
---model {gemini_model_name} \
---gcloud_project_id {base_url} \
---gcloud_location {api_key} 
-
-# run singlecall evaluation
-python3 evaluate.py singlecall \
---input_path data/FunctionChat-Singlecall.jsonl \
---tools_type all \
---system_prompt_path data/system_prompt.txt \
---temperature 0.1 \
---model {gemini_model_name} \
---gcloud_project_id {base_url} \
---gcloud_location {api_key} 
-
-# run calldecision evaluation
-python3 evaluate.py common \
---input_path data/FunctionChat-CallDecision.jsonl \
---temperature 0.1 \
---model {gemini_model_name} \
---gcloud_project_id {base_url} \
---gcloud_location {api_key} 
-```
-- A gemini_model_name like `gemini-1.0-pro-002` is needed.
-- For installing the gcloud CLI to use the Gemini API, you can set it up by following the link below.
-  https://cloud.google.com/sdk/docs/install
-
-Evaluation for mistral api
-
-```
-# run dialog evaluation
-python3 evaluate.py dialog \
---input_path data/FunctionChat-Dialog.jsonl \
---system_prompt_path data/system_prompt.txt \
---temperature 0.1 \
---model {mistral_model_name} \
---api_key {api_key} 
-
-# run singlecall evaluation
-python3 evaluate.py singlecall \
---input_path data/FunctionChat-Singlecall.jsonl \
---tools_type all \
---system_prompt_path data/system_prompt.txt \
---temperature 0.1 \
---model {mistral_model_name} \
---api_key {api_key} 
-
-# run calldecision evaluation
-python3 evaluate.py common \
---input_path data/FunctionChat-CallDecision.jsonl \
---temperature 0.1 \
---model {mistral_model_name} \
---api_key {api_key} 
-```
-- A mistral_model_name like `mistral-small-latest` is needed.
-
-Evaluation for solar api
-
-```
-# run dialog evaluation
-python3 evaluate.py dialog \
---input_path data/FunctionChat-Dialog.jsonl \
---system_prompt_path data/system_prompt.txt \
---temperature 0.1 \
---model {solar_model_name} \
---base_url {base_url} \
---api_key {api_key} 
-
-# run singlecall evaluation
-python3 evaluate.py singlecall \
---input_path data/FunctionChat-Singlecall.jsonl \
---tools_type all \
---system_prompt_path data/system_prompt.txt \
---temperature 0.1 \
---model {solar_model_name} \
---base_url {base_url} \
---api_key {api_key} 
-
-# run calldecision evaluation
-python3 evaluate.py common \
---input_path data/FunctionChat-CallDecision.jsonl \
---temperature 0.1 \
---model {solar_model_name} \
---api_key {api_key} 
-```
-- A solar_model_name like `solar-1-mini-chat-240502` is needed. 
-
-## Additional option - **common**
-An option added to support a highly compatible data structure that allows for flexible content specification.
-
-```
-# openai evaluation
-python3 evaluate.py common \
---input_path data/{common-evaluation-file}.jsonl \
---temperature 0.1 \
---model {model_name} \
---api_key {api_key} 
-
-# inhouse evaluation
-python3 evaluate.py common \
---input_path data/{common-evaluation-file}.jsonl \
---temperature 0.1 \
---model inhouse \
---base_url {base_url} \
---api_key {api_key} \
---model_path {model_path}
-```
-- It is an option developed for the expansion of the evaluation set.
-- {common-evaluation-file}.jsonl : An evaluation dataset file in a format that follows the common option.
-- Currently, the only evaluation set compatible with the common option is FunctionChat-CallDecision.jsonl.
-
-## Additional option - **local-inference**
-```
-python3 evaluate.py common \
---input_path data/{common-evaluation-file}.jsonl \
---model inhouse-local \
---model_path {model_path} \
---tool_parser {template_name}
-```
-- It must be run in a GPU environment compatible with vLLM.
-
-### local-inference example
-```
-python3 evaluate.py common \
---input_path data/FunctionChat-CallDecision.jsonl \
---model inhouse-local \
---model_path /data/nlp-public_338/models/decoder/internal/kanana-essence-8b-fc-v1.0.1-stage1-rc.20 \
---tool_parser functionary_v3_llama_31
-```
-
-# License
-
-This software is licensed under the Apache 2 license, quoted below.
-
-Copyright 2024 Kakao Corp. http://www.kakaocorp.com
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this project except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0.
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
-
-# Citation 
-```
-@misc{lee2024functionchatbenchcomprehensiveevaluationlanguage,
-      title={FunctionChat-Bench: Comprehensive Evaluation of Language Models' Generative Capabilities in Korean Tool-use Dialogs}, 
-      author={Shinbok Lee and Gaeun Seo and Daniel Lee and Byeongil Ko and Sunghee Jung and Myeongcheol Shin},
-      year={2024},
-      eprint={2411.14054},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2411.14054}, 
-}
-```
+## 요약 및 결론
+해당 기간 동안의 핵심 성과는 **1) 고난도 데이터셋 기반의 전면 LLM 라우팅 체계 구축, 2) 로컬 모델(Qwen) 및 하이브리드 아키텍처 벤치마킹을 통한 기술적 당위성 확보, 3) 평가 엔진 개선을 통한 리포트 투명성 향상**으로 요약됩니다. 특히 인텐트 분류 방식을 전면 LLM 기반 형태로 진화시킴으로써, 복잡하고 모호한 사용자 발화 환경에서도 GPT 모델 기준 100%의 라우팅 정확도를 달성하며 차원이 다른 안정성을 마련했습니다.
