@@ -64,6 +64,8 @@ def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: P
     assert result["status"] == "exported"
     assert (run_root / "events" / "events.jsonl").exists()
     assert (run_root / "views" / "run-summary.json").exists()
+    assert (run_root / "views" / "latest-stage-status.json").exists()
+    assert (run_root / "views" / "timeline.txt").exists()
     assert (run_root / "artifacts" / "01-analysis" / "snapshot" / "v0001.json").exists()
     assert (run_root / "artifacts" / "02-planning" / "integration-plan" / "v0001.json").exists()
     assert (run_root / "artifacts" / "03-compile" / "edit-program" / "v0001.json").exists()
@@ -88,3 +90,4 @@ def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: P
     assert "backend_runtime_boot_completed" in event_types
     assert "smoke_started" in event_types
     assert "smoke_completed" in event_types
+    assert not (run_root / "reports" / "smoke-context.json").exists()

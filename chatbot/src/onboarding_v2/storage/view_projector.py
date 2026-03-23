@@ -51,10 +51,21 @@ class ViewProjector:
             latest_event_id=latest_event_id,
             stages=stages,
         )
-        (self.views_root / "run-summary.json").write_text(
-            summary.model_dump_json(indent=2),
-            encoding="utf-8",
+        self._write_json_view(
+            name="run-summary.json",
+            payload=summary.model_dump(mode="json"),
         )
+        self._write_json_view(
+            name="latest-stage-status.json",
+            payload={
+                "run_id": run_id,
+                "site": site,
+                "status": status,
+                "latest_event_id": latest_event_id,
+                "stages": [stage.model_dump(mode="json") for stage in stages],
+            },
+        )
+        self._write_timeline(events)
         return summary
 
     def _load_latest_ref(self, artifact_root: Path) -> ArtifactRef | None:
@@ -68,3 +79,19 @@ class ViewProjector:
             payload = json.loads(index_path.read_text(encoding="utf-8"))
             count += len(payload.get("items") or [])
         return count
+
+    def _write_json_view(self, *, name: str, payload: dict[str, object]) -> None:
+        (self.views_root / name).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def _write_timeline(self, events: list) -> None:
+        lines = [
+            f"{event.timestamp} {event.stage} {event.event_type} {event.summary}"
+            for event in events
+        ]
+        (self.views_root / "timeline.txt").write_text(
+            "\n".join(lines) + ("\n" if lines else ""),
+            encoding="utf-8",
+        )

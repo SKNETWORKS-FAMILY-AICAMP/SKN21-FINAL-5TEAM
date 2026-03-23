@@ -152,3 +152,68 @@ def test_failure_signature_distinguishes_runtime_validation_phases():
     assert build_failure_signature(check_name="backend_runtime_prep", summary="dependency install failed") == "backend_runtime_prep_dependency_install_failed"
     assert build_failure_signature(check_name="backend_runtime_boot", summary="django app boot failed") == "backend_runtime_boot_django_app_boot_failed"
     assert build_failure_signature(check_name="smoke", summary="step order-api returned 500") == "smoke_step_order_api_returned_500"
+
+
+def test_validation_runner_uses_explicit_credentials_without_manifest(monkeypatch, tmp_path: Path):
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
+        readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
+    )
+    runtime_state = BackendRuntimeState(
+        framework="django",
+        passed=True,
+        pid=1234,
+        command=runtime_plan.command,
+        readiness_url=runtime_plan.readiness_url,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.prepare_backend_runtime",
+        lambda **kwargs: BackendRuntimePrepResult(framework="django", passed=True),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.build_backend_runtime_plan",
+        lambda **kwargs: runtime_plan,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
+        lambda plan: runtime_state,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
+        lambda state: None,
+    )
+    captured = {}
+
+    def _smoke(**kwargs):
+        captured["kwargs"] = kwargs
+        return {
+            "passed": True,
+            "results": [],
+            "failure_summary": "smoke passed",
+            "related_files": [],
+        }
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.run_runtime_smoke",
+        _smoke,
+    )
+    runtime_context = _build_food_runtime_artifacts(tmp_path)
+    manifest_path = runtime_context["generated_root"] / "manifest.json"
+    if manifest_path.exists():
+        manifest_path.unlink()
+
+    bundle = run_validation(
+        run_root=runtime_context["generated_root"],
+        runtime_workspace=runtime_context["apply_result"].workspace_path,
+        snapshot=runtime_context["snapshot"],
+        plan=runtime_context["plan"],
+        replay_result=runtime_context["replay_result"],
+        artifact_refs=runtime_context["artifact_refs"],
+        onboarding_credentials={"email": "test1@example.com", "password": "password123"},
+    )
+
+    assert bundle.passed is True
+    assert captured["kwargs"]["onboarding_credentials"]["email"] == "test1@example.com"
+    assert not manifest_path.exists()

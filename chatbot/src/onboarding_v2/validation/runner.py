@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import py_compile
 from dataclasses import dataclass
 from pathlib import Path
@@ -72,13 +71,6 @@ def run_validation_cycle(
 ) -> ValidationRunResult:
     run_root = Path(run_root)
     runtime_workspace = Path(runtime_workspace)
-    _write_smoke_manifest(
-        run_root=run_root,
-        credentials=onboarding_credentials or {
-            "email": "test1@example.com",
-            "password": "password123",
-        },
-    )
 
     prep_result = prepare_backend_runtime(workspace=runtime_workspace, snapshot=snapshot)
     runtime_state: BackendRuntimeState
@@ -105,6 +97,7 @@ def run_validation_cycle(
                 run_root=run_root,
                 runtime_workspace=runtime_workspace,
                 runtime_plan=runtime_plan,
+                onboarding_credentials=onboarding_credentials,
             )
             smoke_results = (
                 smoke_payload
@@ -203,12 +196,24 @@ def run_runtime_smoke(
     run_root: Path,
     runtime_workspace: Path,
     runtime_plan: BackendRuntimePlan,
+    onboarding_credentials: dict[str, str] | None = None,
 ) -> SmokeRunResult:
     del runtime_plan
+    credentials = {
+        "email": "test1@example.com",
+        "password": "password123",
+    }
+    credentials.update({key: value for key, value in (onboarding_credentials or {}).items() if value})
     results = run_smoke_tests(
         run_root=run_root,
         runtime_workspace=runtime_workspace,
         plan=_build_food_smoke_plan(),
+        initial_context={
+            f"probe.credentials.{key}": value
+            for key, value in credentials.items()
+            if value
+        },
+        persist_context=False,
     )
     first_failure = next((item for item in results if int(item.get("returncode") or 0) != 0), None)
     return SmokeRunResult(
@@ -348,16 +353,6 @@ def _evaluate_replay_workspace(workspace: Path) -> dict[str, Any]:
         "frontend": frontend,
         "related_files": sorted(set(backend["related_files"]) | set(frontend["related_files"])),
     }
-
-
-def _write_smoke_manifest(*, run_root: Path, credentials: dict[str, str]) -> None:
-    manifest_path = run_root / "manifest.json"
-    if manifest_path.exists():
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    else:
-        payload = {}
-    payload["credentials"] = {key: value for key, value in credentials.items() if value}
-    manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _skipped_runtime_state(*, framework: str, reason: str) -> BackendRuntimeState:

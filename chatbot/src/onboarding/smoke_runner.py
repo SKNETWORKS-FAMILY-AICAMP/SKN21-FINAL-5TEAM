@@ -341,6 +341,8 @@ def run_smoke_tests(
     runtime_workspace: str | Path,
     plan: SmokeTestPlan,
     recovery_payload: SmokeRecoveryPayload | dict[str, Any] | None = None,
+    initial_context: dict[str, object] | None = None,
+    persist_context: bool = True,
 ) -> list[dict]:
     root = Path(run_root)
     workspace = Path(runtime_workspace)
@@ -348,6 +350,13 @@ def run_smoke_tests(
     normalized_recovery = _normalize_recovery_payload(recovery_payload)
 
     context: dict[str, object] = _load_probe_context(root)
+    context.update(
+        {
+            key: value
+            for key, value in (initial_context or {}).items()
+            if value is not None and value != ""
+        }
+    )
     for step in plan.steps:
         effective_step, recovery_metadata = _apply_recovery_to_step(
             step=step,
@@ -368,7 +377,8 @@ def run_smoke_tests(
         exports = result.get("exports") or {}
         for key, value in exports.items():
             context[key] = value
-    _persist_probe_context(root=root, context=context)
+    if persist_context:
+        _persist_probe_context(root=root, context=context)
     return results
 
 

@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
 os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
-from chatbot.src.onboarding_v2.storage import ArtifactStore, EventStore, ViewProjector
+from chatbot.src.onboarding_v2.storage import ArtifactStore, EventStore, RunStore, ViewProjector
 
 
 def test_event_and_artifact_store_round_trip(tmp_path: Path):
@@ -71,3 +71,31 @@ def test_view_projector_builds_summary(tmp_path: Path):
     assert summary.latest_rewind_to == "validation"
     assert summary.repair_attempt_count == 1
     assert (run_root / "views" / "run-summary.json").exists()
+    latest_stage_status = json.loads((run_root / "views" / "latest-stage-status.json").read_text(encoding="utf-8"))
+    timeline = (run_root / "views" / "timeline.txt").read_text(encoding="utf-8")
+    assert latest_stage_status["run_id"] == "food-run-v2"
+    assert latest_stage_status["stages"][0]["stage"] == "analysis"
+    assert "analysis stage_completed analysis completed" in timeline
+
+
+def test_run_store_writes_top_level_metadata(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-v2"
+    run_store = RunStore(run_root)
+
+    run_store.write_run_metadata(
+        site="food",
+        source_root="/tmp/food",
+        run_id="food-run-v2",
+        agent_version="dev",
+    )
+    run_store.write_manifest(
+        site="food",
+        source_root="/tmp/food",
+        run_id="food-run-v2",
+        credentials={"email": "test1@example.com"},
+    )
+
+    run_payload = json.loads((run_root / "run.json").read_text(encoding="utf-8"))
+    manifest_payload = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+    assert run_payload["engine"] == "v2"
+    assert manifest_payload["credentials"]["email"] == "test1@example.com"

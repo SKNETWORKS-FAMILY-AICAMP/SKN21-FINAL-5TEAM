@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -25,6 +24,7 @@ from chatbot.src.onboarding_v2.storage import (
     ArtifactStore,
     DebugStore,
     EventStore,
+    RunStore,
     ViewProjector,
 )
 from chatbot.src.onboarding_v2.validation.runner import ValidationRunResult, run_validation_cycle
@@ -87,16 +87,15 @@ def run_onboarding_generation_v2(
     event_store = EventStore(run_root)
     artifact_store = ArtifactStore(run_root)
     debug_store = DebugStore(run_root)
+    run_store = RunStore(run_root)
     view_projector = ViewProjector(run_root)
-    _write_run_metadata(
-        run_root=run_root,
+    run_store.write_run_metadata(
         site=site,
         source_root=source_root,
         run_id=run_id,
         agent_version=agent_version,
     )
-    _write_manifest(
-        run_root=run_root,
+    run_store.write_manifest(
         site=site,
         source_root=source_root,
         run_id=run_id,
@@ -1204,51 +1203,4 @@ def _apply_planning_overrides(
             "domain_adapters": plan.domain_adapters.model_copy(update=domain_override),
             "planning_notes": plan.planning_notes.model_copy(update={"llm_rationale": rationale}),
         }
-    )
-
-
-def _write_run_metadata(
-    *,
-    run_root: Path,
-    site: str,
-    source_root: str,
-    run_id: str,
-    agent_version: str,
-) -> None:
-    (run_root / "run.json").write_text(
-        json.dumps(
-            {
-                "site": site,
-                "source_root": source_root,
-                "run_id": run_id,
-                "engine": "v2",
-                "agent_version": agent_version,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-
-def _write_manifest(
-    *,
-    run_root: Path,
-    site: str,
-    source_root: str,
-    run_id: str,
-    credentials: dict[str, str],
-) -> None:
-    (run_root / "manifest.json").write_text(
-        json.dumps(
-            {
-                "site": site,
-                "source_root": source_root,
-                "run_id": run_id,
-                "credentials": credentials,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
     )
