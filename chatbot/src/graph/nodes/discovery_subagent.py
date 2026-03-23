@@ -249,6 +249,7 @@ def _text_search_pipeline(
 
     # 검색 결과 추출 → search_context 업데이트
     search_context = _extract_search_results(result_messages)
+    retrieved_products = search_context.get("retrieved_products", [])
 
     # 마지막 AIMessage 내용을 agent_results 에 저장
     last_ai_content = _get_last_ai_content(result_messages)
@@ -256,6 +257,7 @@ def _text_search_pipeline(
     return {
         "messages": result_messages,
         "search_context": {**state.get("search_context", {}), **search_context},
+        "ui_action_required": "show_product_list" if retrieved_products else None,
         "completed_tasks": state.get("completed_tasks", []) + ([task] if task else []),
         "agent_results": {
             **state.get("agent_results", {}),
@@ -332,6 +334,7 @@ def _image_search_pipeline(
             answer_text = f"이미지와 유사한 상품 {len(products)}개를 찾았습니다."
 
         return {
+            "messages": [AIMessage(content=answer_text)],
             "search_context": {
                 **state.get("search_context", {}),
                 "image_url": image_url,

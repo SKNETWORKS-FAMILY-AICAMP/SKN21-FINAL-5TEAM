@@ -15,7 +15,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 백엔드 의존성 설치
 COPY ecommerce/backend/requirements.txt /app/ecommerce/backend/requirements.txt
-RUN uv pip install --system --no-cache -r /app/ecommerce/backend/requirements.txt
+RUN grep -vE '^(torch|torchvision)(==|>=|<=|~=|>|<).*' /app/ecommerce/backend/requirements.txt > /tmp/backend-requirements-no-torch.txt \
+    && uv pip install --system --no-cache -r /tmp/backend-requirements-no-torch.txt \
+    && uv pip install --system --no-cache --index-url https://download.pytorch.org/whl/cpu torch==2.10.0 torchvision==0.25.0
 
 # 소스 코드 복사
 COPY . .
