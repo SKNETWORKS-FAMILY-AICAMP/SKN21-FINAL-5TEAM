@@ -46,6 +46,10 @@ def _should_preload_heavy_models_once_per_reload_session() -> bool:
     return True
 
 
+def _should_preload_clip_on_startup() -> bool:
+    return os.getenv("PRELOAD_CLIP_ON_STARTUP", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 # ============================================
 # 자동 컬럼 마이그레이션
 # ============================================
@@ -200,14 +204,17 @@ async def lifespan(app: FastAPI):
             logging.error(f"KoBART 모델 로딩 실패: {e}")
 
         # 8. CLIP 검색 모델 미리 로드 (openai/clip-vit-base-patch32)
-        try:
-            from chatbot.src.tools.image_search_tools import preload_clip_resources
+        if _should_preload_clip_on_startup():
+            try:
+                from chatbot.src.tools.image_search_tools import preload_clip_resources
 
-            step_t0 = time.perf_counter()
-            preload_clip_resources()
-            logging.info(f"CLIP 검색 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
-        except Exception as e:
-            logging.error(f"CLIP 모델 로딩 실패: {e}")
+                step_t0 = time.perf_counter()
+                preload_clip_resources()
+                logging.info(f"CLIP 검색 모델 로딩 완료: {time.perf_counter() - step_t0:.2f}s")
+            except Exception as e:
+                logging.error(f"CLIP 모델 로딩 실패: {e}")
+        else:
+            logging.info("CLIP 프리로드 스킵: 실제 이미지 검색 요청 시 지연 로드")
     else:
         logging.info("모델 프리로드 스킵: 같은 uvicorn reload 세션에서 이미 1회 수행됨")
 
