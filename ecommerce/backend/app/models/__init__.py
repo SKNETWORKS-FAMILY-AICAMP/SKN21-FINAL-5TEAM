@@ -14,7 +14,7 @@ Central Models Package
 
 # 독립적인 모델들
 from ecommerce.backend.app.router.payments.models import Payment
-from ecommerce.backend.app.router.points.models import PointHistory
+from ecommerce.backend.app.router.points.models import PointHistory, IssuedVoucher
 from ecommerce.backend.app.router.reviews.models import Review
 from ecommerce.backend.app.router.user_history.models import UserHistory
 from ecommerce.backend.app.router.shipping.models import ShippingAddress, ShippingInfo
@@ -41,6 +41,7 @@ __all__ = [
     'Payment',
     # Points
     'PointHistory',
+    'IssuedVoucher',
     # Reviews
     'Review',
     # User History

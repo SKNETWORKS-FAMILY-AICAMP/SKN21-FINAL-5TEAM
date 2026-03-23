@@ -9,7 +9,7 @@ Order CS 전용 그래프 노드.
 
 핵심 원칙:
   - 상호배타 액션은 절대 한 에이전트에 동시에 노출하지 않습니다.
-  - 액션 선택은 Python 규칙 기반으로 우선 처리합니다.
+  - 주문 액션 분류는 LLM 단일 라우터로 처리합니다.
   - 각 액션 노드는 자기 툴만 호출하고, waiting_user/completed/failed를 명시적으로 기록합니다.
 """
 
@@ -32,8 +32,16 @@ from chatbot.src.tools.order_tools import (
     change_product_option,
     register_exchange_request,
 )
+import json
+from typing import Callable
+from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
 
-_ORDER_ACTIONS = {"cancel", "refund", "exchange", "shipping", "list_orders"}
+# .env 로드 및 기본 모델 설정
+load_dotenv()
+_DEFAULT_ROUTER_LLM = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+_ORDER_ACTIONS = {"cancel", "refund", "exchange", "shipping", "list_orders", "change_option"}
 _WAITING_UI_ACTIONS = {
     "show_order_list": "order_selection",
     "show_option_list": "new_option",
@@ -65,8 +73,20 @@ def order_entry_node(state: GlobalAgentState) -> dict:
 
 
 def order_intent_router_node(state: GlobalAgentState) -> dict:
-    """주문 액션을 cancel/refund/exchange/shipping 중 하나로 결정합니다."""
+    """주문 액션을 cancel/refund/exchange/shipping 중 하나로 결정합니다.
+    
+    직행 평가 모드(is_direct_routing=True)에서는 order_entry를 거치지 않으므로
+    order_context 기본 필드를 자체적으로 초기화합니다.
+    """
     order_context = dict(state.get("order_context", {}))
+    
+    # order_entry를 거치지 않았을 경우를 대비한 안전 초기화
+    order_context.setdefault("pending_action", None)
+    order_context.setdefault("action_status", "ready")
+    order_context.setdefault("awaiting_resume_for", None)
+    order_context.setdefault("last_tool", None)
+    order_context.setdefault("last_ui_payload", None)
+    
     pending_action = str(order_context.get("pending_action") or "").strip().lower()
     awaiting_resume_for = order_context.get("awaiting_resume_for")
 
@@ -75,10 +95,28 @@ def order_intent_router_node(state: GlobalAgentState) -> dict:
         return {"order_context": order_context}
 
     latest_user_message = _get_latest_user_message(state)
-    resolved_action = _classify_order_action(latest_user_message, pending_action)
+
+    # 주문번호 추출 (ORD- 패턴, 한글 조사 제외를 위해 ASCII 범위로 제한)
+    import re
+    order_id_match = re.search(r"ORD-[A-Za-z0-9_-]+", latest_user_message)
+    if order_id_match:
+        order_context["target_order_id"] = order_id_match.group(0).strip()
+
+    resolved_action, source = _classify_order_action(
+        state=state,
+        latest_user_message=latest_user_message,
+        current_action=pending_action,
+    )
 
     order_context["pending_action"] = resolved_action
+    order_context["classification_source"] = source
     order_context["action_status"] = "ready"
+    
+    # 서버 터미널에서 즉시 확인할 수 있도록 로그 출력
+    print(f"\n[LOG] Engine Intent Decision: {resolved_action} (via {source})", flush=True)
+    if order_id_match:
+        print(f"[LOG] Order ID Extracted: {order_context['target_order_id']}", flush=True)
+    
     return {"order_context": order_context}
 
 
@@ -90,6 +128,7 @@ def route_after_order_intent_router(state: GlobalAgentState) -> str:
         "exchange": "exchange_subagent",
         "shipping": "shipping_subagent",
         "list_orders": "order_list_subagent",
+        "change_option": "exchange_subagent",
     }.get(action, "final_generator")
 
 
@@ -328,6 +367,7 @@ def _extract_result_message(action: str, result: dict[str, Any]) -> str:
                 parts.append(f"송장번호는 {tracking_number}입니다.")
             return " ".join(parts)
 
+
     return "주문 요청을 처리했습니다."
 
 
@@ -344,8 +384,14 @@ def _build_ui_payload(action: str, result: dict[str, Any]) -> dict[str, Any]:
 def _select_exchange_tool(state: GlobalAgentState):
     site_id = state.get("user_info", {}).get("site_id")
     order_context = state.get("order_context", {})
+    pending_action = order_context.get("pending_action")
     awaiting_resume_for = order_context.get("awaiting_resume_for")
     latest_user_message = _get_latest_user_message(state)
+    normalized_text = _normalize_order_text(latest_user_message)
+
+    # 0) LLM이 명시적으로 change_option으로 분류했다면 해당 도구 강제 선택
+    if pending_action == "change_option":
+        return change_product_option
 
     if site_id and site_id != "site-c":
         return register_exchange_via_adapter
@@ -353,32 +399,222 @@ def _select_exchange_tool(state: GlobalAgentState):
     if awaiting_resume_for == "new_option":
         return change_product_option
 
-    option_keywords = ("옵션", "사이즈", "색상", "size", "option", "변경")
-    if any(keyword in latest_user_message for keyword in option_keywords):
+    change_option_keywords = (
+        "옵션만", "사이즈만", "색상만", "옵션변경", "사이즈변경", "색상변경",
+        "옵션바꿔", "사이즈바꿔", "색상바꿔", "옵션바꾸", "사이즈바꾸", "색상바꾸",
+        "다른사이즈", "다른색상", "다른색", "옵션잘못", "치수변경", "치수바꿨",
+        "바꿀게", "바꿀래", "바꿔줘", "바꿔주세", "바꾸고싶", "바꾸려구",
+        "옵셥", "사이즈", "색상" # 교환 안에서 옵션/사이즈/색상 언급되면 옵션변경 가능성 높음
+    )
+
+    if any(keyword in normalized_text for keyword in change_option_keywords):
         return change_product_option
 
     return register_exchange_request
 
+def _normalize_order_text(raw_text: str) -> str:
+    text = (raw_text or "").strip().lower()
 
-def _classify_order_action(latest_user_message: str, current_action: str | None) -> str:
-    text = latest_user_message.strip().lower()
+    replacements = {
+        "주문 취소": "주문취소",
+        "결제 취소": "결제취소",
+        "옵션 변경": "옵션변경",
+        "색상 변경": "색상변경",
+        "사이즈 변경": "사이즈변경",
+        "배송 조회": "배송조회",
+        "택배 조회": "택배조회",
+        "주문 내역": "주문내역",
+        "구매 내역": "구매내역",
+        "주문 목록": "주문목록",
+        "송장 번호": "송장번호",
+        "운송장 번호": "운송장번호",
+        "현재 위치": "현재위치",
+        "번호를 몰라": "번호몰라",
+        "번호를 모르": "번호몰라",
+        "번호를 잊": "번호몰라",
+        "번호가 안보": "번호몰라",
+        "번호 기억안": "번호몰라",
+        "어떤 건지 확인": "목록조회",
+        "주문 확인": "주문목록",
+    }
 
-    if any(keyword in text for keyword in ("배송", "언제 와", "어디쯤", "송장", "택배")):
-        return "shipping"
-    if any(keyword in text for keyword in ("교환", "사이즈", "옵션 변경", "옵션", "색상 변경")):
-        return "exchange"
-    if any(keyword in text for keyword in ("환불", "반품")):
-        return "refund"
-    if any(keyword in text for keyword in ("취소", "주문취소")):
-        return "cancel"
-    if _is_order_list_intent(text):
-        return "list_orders"
+    for src, dst in replacements.items():
+        text = text.replace(src, dst)
+
+    return text.replace(" ", "")
+
+def _classify_order_action(
+    *,
+    state: GlobalAgentState,
+    latest_user_message: str,
+    current_action: str | None,
+) -> tuple[str, str]:
+    """
+    LLM 단일 분류기.
+
+    - Python 규칙 기반 하드코딩 분류를 사용하지 않습니다.
+    - LLM이 실패하면 current_action 또는 보수적 기본값으로 fallback 합니다.
+    returns: (action, source)
+    """
+    llm_action = _classify_order_action_with_llm(
+        state=state,
+        latest_user_message=latest_user_message,
+        current_action=current_action,
+    )
+    if llm_action in _ORDER_ACTIONS:
+        return llm_action, "LLM"
 
     if current_action in _ORDER_ACTIONS:
-        return current_action
+        return current_action, "Prior"
 
-    return "refund"
+    return "list_orders", "Default"
 
+
+def _classify_order_action_with_llm(
+    *,
+    state: GlobalAgentState,
+    latest_user_message: str,
+    current_action: str | None,
+) -> str | None:
+    """
+    state 안에 order_router_llm callable 이 있으면 사용.
+    없으면 기본 gpt-4o-mini를 사용합니다.
+    callable 시그니처 예시:
+      fn(prompt: str) -> str | dict
+    """
+    llm_callable = _get_order_router_llm_callable(state)
+    if llm_callable is None:
+        return None
+
+    prompt = _build_order_router_llm_prompt(
+        latest_user_message=latest_user_message,
+        current_action=current_action,
+    )
+
+    try:
+        raw = llm_callable(prompt)
+    except Exception:
+        return None
+
+    parsed = _parse_order_router_llm_output(raw)
+    if parsed in _ORDER_ACTIONS:
+        return parsed
+    return None
+
+
+def _get_order_router_llm_callable(state: GlobalAgentState) -> Callable[[str], Any] | None:
+    """
+    프로젝트 연결용 훅.
+    아래 우선순위로 callable을 찾습니다.
+    1) state["order_router_llm"]
+    2) state["llm_clients"]["order_router"]
+    3) _DEFAULT_ROUTER_LLM (기본 gpt-4o-mini)
+    """
+    candidate = state.get("order_router_llm")
+    if callable(candidate):
+        return candidate
+
+    llm_clients = state.get("llm_clients", {})
+    candidate = llm_clients.get("order_router")
+    if callable(candidate):
+        return candidate
+
+    return _DEFAULT_ROUTER_LLM.invoke
+
+
+def _build_order_router_llm_prompt(
+    *,
+    latest_user_message: str,
+    current_action: str | None,
+) -> str:
+    return f"""
+너는 이커머스 주문 업무 전담 라우터 분류기다.
+사용자의 질문을 분석하여 아래 5개 액션 중 하나로 분류하라.
+
+가능한 액션:
+- cancel: 주문 취소, 결제 철회
+- refund: 환불, 구매 반품, 오배송/파손 사유 포함 (이미 상품을 수령한 경우)
+- exchange: 동일 모델의 다른 옵션(사이즈/색상 등)으로 교환하거나, 불량/오배송으로 인한 맞교환 (이미 상품을 수령한 경우)
+- change_option: 아직 상품을 수령하기 전(주문 완료~배송 준비 중), 주문한 상품의 옵션(사이즈/색상 등)만 변경
+- shipping: 배송 상태 확인, 송장 번호 조회, 택배 위치 문의
+- list_orders: 주문 목록 조회, 구매 내역 확인
+
+분류 우선순위 및 가이드라인:
+1. [절대 0순위] 데이터 결핍 / 명시적 목록 요청
+   - 주문번호(ORD-) 정보가 없고 "번호를 몰라요", "내역 좀 보여줘", "최근 뭐 샀지?", "리스트업" 등의 표현이 보이면 무조건 'list_orders'를 선택한다.
+2. [0순위] 명시적 최종 의사 / 번복 표현 (Intent Shifting)
+   - 사용자가 "A 하려다 마음이 바뀌어서 B 하려고 한다" 또는 "A 말고 B 해라"라고 말할 경우, 반드시 문장의 마지막에 나타나는 **최종적인 요청(B)**을 정답으로 선택한다.
+   - [중요] "A는 아니에요", "A는 원치 않아요", "A 대신 B", "A 아니라 B"와 같은 부정 표현(A)은 절대로 분류 기준으로 삼지 말고, 긍정된 목적지(B)만 선택하라.
+   - 예: "취소하려고 했는데 그냥 환불로 바꿀게요" -> 'refund'
+   - 예: "취소나 환불은 원치 않고 옵션만 바꿀게요" -> 'change_option'
+   - 예: "교환 말고 옵션 변경만 부탁드립니다" -> 'change_option'
+3. [1순위] 배송/수령 상태 기반 제약 (Context Awareness)
+   - "이미 받았다", "화면과 다르다", "사이즈가 안 맞는다" 등 상품을 실제 수령한 정황이 보이면 'cancel'(배송 전 취소)이 아닌 'refund'(환불) 또는 'exchange'(교환)를 선택한다.
+   - 반대로 "배송 전인데", "아직 안 왔는데", "준비 중인데" 등의 표현이 있고 '옵션 변경'을 원하면 'change_option'을 우선한다.
+4. [2순위] 명확한 액션 키워드
+   - "취소", "환불", "반품", "교환", "배송조회", "옵션변경" 등 직접적인 지시어에 따라 분류한다.
+5. [3순위] 사유 기반 추론
+   - "실수로 주문했어요" -> cancel
+   - "사이즈 안 맞아요" -> exchange (이미 받은 경우) 또는 change_option (준비 중인 경우)
+   - "상품 파손됨", "화면과 다름", "오배송" -> refund
+   - "택배가 아직 안 왔어요", "언제 도착하나요?" -> shipping
+
+현재 사용자 문장:
+{latest_user_message}
+
+현재 진행 중 액션:
+{current_action}
+
+반드시 아래 JSON 형식으로만 결과값을 출력하라.
+{{
+  "action": "cancel|refund|exchange|change_option|shipping|list_orders"
+}}
+""".strip()
+
+
+def _parse_order_router_llm_output(raw: Any) -> str | None:
+    if raw is None:
+        return None
+
+    if isinstance(raw, dict):
+        action = str(raw.get("action") or "").strip().lower()
+        return action if action in _ORDER_ACTIONS else None
+
+    content = None
+    if hasattr(raw, "content"):
+        content = getattr(raw, "content")
+        if isinstance(content, list):
+            try:
+                content = "".join(
+                    part.get("text", "") if isinstance(part, dict) else str(part)
+                    for part in content
+                )
+            except Exception:
+                content = str(content)
+
+    if isinstance(content, str) and content.strip():
+        text = content.strip()
+    elif isinstance(raw, str):
+        text = raw.strip()
+    else:
+        text = str(raw).strip()
+
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            action = str(parsed.get("action") or "").strip().lower()
+            return action if action in _ORDER_ACTIONS else None
+    except Exception:
+        pass
+
+    lowered = text.lower()
+    for action in _ORDER_ACTIONS:
+        if f'"action": "{action}"' in lowered or f"'action': '{action}'" in lowered:
+            return action
+        if lowered == action:
+            return action
+
+    return None
 
 
 def _get_latest_user_message(state: GlobalAgentState) -> str:
@@ -388,8 +624,3 @@ def _get_latest_user_message(state: GlobalAgentState) -> str:
     return ""
 
 
-def _is_order_list_intent(text: str) -> bool:
-    return (
-        "주문" in text
-        and any(token in text for token in ("목록", "내역", "조회", "보여"))
-    )

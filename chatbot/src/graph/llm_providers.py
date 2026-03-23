@@ -204,20 +204,14 @@ def make_local_llm(model: str, temperature: float = 0) -> LocalHFLLM:
 # 로컬 모델 재사용을 위한 전역 캐싱
 _LLM_CACHE: Dict[str, Any] = {}
 
-def make_chat_llm(
-    provider: str = "openai",
-    model: str = "gpt-4o",
-    temperature: float = 0,
-) -> BaseChatModel:
-    """Chat LLM 인스턴스를 생성하는 팩토리 함수."""
-    
-    # 캐시 키 생성
-    cache_key = f"{provider}:{model}:{temperature}"
-    
-    # 로컬 모델의 경우 캐시에서 먼저 확인
-    if provider == "local" and cache_key in _LLM_CACHE:
-        return _LLM_CACHE[cache_key]
-
+def make_chat_llm(provider: str | None = None, model: str = "gpt-4o-mini", temperature: float = 0) -> ChatOpenAI:
+    # 1. Provider가 명시되지 않은 경우 모델명으로 추론
+    if not provider:
+        if "qwen" in model.lower() or "/" in model:
+            provider = "vllm"
+        else:
+            provider = "openai"
+            
     if provider == "openai":
         llm = ChatOpenAI(
             model=model,

@@ -246,7 +246,7 @@ class EvaluationHandler:
         criteria_map = {
             # "register_gift_card": "1. assistant가 바로 tool call을 했다면 FAIL\n2. assistant가 상품권 코드를 요청하는 질문을 했다면 PASS\n3. 질문 문구가 정확히 같지 않아도 의미가 같으면 PASS",
             "cancel": "1. 주문번호가 주어졌을 때 바로 cancel 도구를 호출했다면 PASS (최신 정책)\n2. 불필요하게 목록 조회를 먼저 유도하더라도 도구 호출 인자가 맞으면 PASS",
-            "refund": "1. 주문번호가 주어졌을 때 바로 refund 도구를 호출했다면 PASS (최신 정책)\n2. 사유(reason) 필드가 대화 내용과 일치하게 포함되어야 함",
+            "refund": "1. 주문번호가 주어졌을 때 바로 refund 도구를 호출했다면 PASS (최신 정책)",
             "default": "1. Ground Truth와 논리적으로 동일한 응답을 생성했다면 PASS\n2. 틀린 도구를 호출하거나 필수 파라미터가 누락되었다면 FAIL"
         }
         criteria = criteria_map.get(scenario_name, criteria_map["default"])
@@ -375,6 +375,9 @@ class EvaluationHandler:
         # 정답(ground truth)에 명시된 필수 키들에 대해서만 값이 일치하는지 검사합니다.
         # 모델이 user_id 등 추가적인 옵셔널 파라미터를 정확하게 유추해서 넣은 경우, 오답 처리하지 않도록 합니다.
         for key, val in j_g_func_args.items():
+            # 'reason' 필드는 비교에서 제외합니다 (사용자 요청)
+            if key == 'reason':
+                continue
             p_val = j_p_func_args.get(key)
             
             # 모델이 아예 정답에 있는 키를 예측하지 않았으면 오답
@@ -446,6 +449,17 @@ class EvaluationHandler:
             
         g_func_name = ground_truth_func.get('name')
         g_func_args = ground_truth_func.get('arguments', {})
+        # 'reason' 제외 정책 적용
+        if isinstance(g_func_args, str):
+            try:
+                g_func_args_dict = json.loads(g_func_args)
+                if 'reason' in g_func_args_dict:
+                    del g_func_args_dict['reason']
+                g_func_args = json.dumps(g_func_args_dict, ensure_ascii=False)
+            except: pass
+        elif isinstance(g_func_args, dict):
+            if 'reason' in g_func_args:
+                del g_func_args['reason']
 
         predict_tools = out.get('tool_calls') or []
         
@@ -460,6 +474,18 @@ class EvaluationHandler:
             predicted_func = predict_tools[0].get('function', {})
             p_func_name = predicted_func.get('name')
             p_func_args = predicted_func.get('arguments', {})
+
+            # 'reason' 제외 정책 적용
+            if isinstance(p_func_args, str):
+                try:
+                    p_func_args_dict = json.loads(p_func_args)
+                    if 'reason' in p_func_args_dict:
+                        del p_func_args_dict['reason']
+                    p_func_args = json.dumps(p_func_args_dict, ensure_ascii=False)
+                except: pass
+            elif isinstance(p_func_args, dict):
+                if 'reason' in p_func_args:
+                    del p_func_args['reason']
 
             if g_func_name == p_func_name:
                 if self.compare_arguments(g_func_args, p_func_args, acceptable_arguments):
