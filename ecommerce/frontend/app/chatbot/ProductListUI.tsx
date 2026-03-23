@@ -7,7 +7,7 @@ import SharedProductListUI, {
   type ProductListUIClassNames,
   type ProductOption,
   type UiProduct,
-} from '@shared-chatbot/ProductListUI';
+} from './shared/ProductListUI';
 import styles from './productlist.module.css';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
