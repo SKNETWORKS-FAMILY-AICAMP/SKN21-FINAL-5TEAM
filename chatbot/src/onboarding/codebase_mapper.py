@@ -416,17 +416,23 @@ def write_llm_codebase_interpretation(
         )
         raw_payload = json.loads(str(response.content))
         llm_payload = CodebaseInterpretationPayload.model_validate(raw_payload)
-        _validate_ranked_candidates(llm_payload=llm_payload, codebase_map=codebase_map)
-        debug_payload["status"] = "llm"
+        llm_payload, dropped_ranked_candidates, ranked_candidate_recovery_reason = _accept_ranked_candidates(
+            llm_payload=llm_payload,
+            codebase_map=codebase_map,
+        )
+        debug_payload["status"] = "recovered_llm" if ranked_candidate_recovery_reason else "llm"
+        debug_payload["recovery_reason"] = ranked_candidate_recovery_reason
         debug_payload["normalized_response"] = llm_payload.model_dump(mode="json")
+        debug_payload["dropped_ranked_candidates"] = dropped_ranked_candidates
         payload = {
-            "source": "llm",
-            "recovery_applied": False,
-            "recovery_reason": None,
+            "source": "recovered_llm" if ranked_candidate_recovery_reason else "llm",
+            "recovery_applied": bool(ranked_candidate_recovery_reason),
+            "recovery_reason": ranked_candidate_recovery_reason,
             "hard_fallback_reason": None,
             "fallback_reason": None,
             "validation_error": None,
             "recovered_payload": None,
+            "dropped_ranked_candidates": dropped_ranked_candidates,
             "structure_summary": llm_payload.structure_summary,
             "framework_assessment": llm_payload.framework_assessment,
             "ranked_candidates": llm_payload.model_dump(mode="json")["ranked_candidates"],
@@ -449,24 +455,52 @@ def write_llm_codebase_interpretation(
         )
         if recovered is not None:
             recovered_payload, recovery_reason = recovered
-            llm_payload = CodebaseInterpretationPayload.model_validate(recovered_payload)
-            _validate_ranked_candidates(llm_payload=llm_payload, codebase_map=codebase_map)
-            debug_payload["status"] = "recovered_llm"
-            debug_payload["recovery_reason"] = recovery_reason
-            debug_payload["normalized_response"] = llm_payload.model_dump(mode="json")
-            debug_payload["recovered_payload"] = recovered_payload
-            payload = {
-                "source": "recovered_llm",
-                "recovery_applied": True,
-                "recovery_reason": recovery_reason,
-                "hard_fallback_reason": None,
-                "fallback_reason": None,
-                "validation_error": str(exc),
-                "recovered_payload": recovered_payload,
-                "structure_summary": llm_payload.structure_summary,
-                "framework_assessment": llm_payload.framework_assessment,
-                "ranked_candidates": llm_payload.model_dump(mode="json")["ranked_candidates"],
-            }
+            try:
+                llm_payload = CodebaseInterpretationPayload.model_validate(recovered_payload)
+                llm_payload, dropped_ranked_candidates, ranked_candidate_recovery_reason = _accept_ranked_candidates(
+                    llm_payload=llm_payload,
+                    codebase_map=codebase_map,
+                )
+            except ValidationError:
+                debug_payload["status"] = "hard_fallback"
+                debug_payload["fallback_reason"] = "invalid_llm_payload"
+                debug_payload["hard_fallback_reason"] = "invalid_llm_payload"
+                debug_payload["recovered_payload"] = recovered_payload
+                payload["validation_error"] = str(exc)
+                payload["recovered_payload"] = recovered_payload
+                payload["hard_fallback_reason"] = "invalid_llm_payload"
+                payload["fallback_reason"] = "invalid_llm_payload"
+            except ValueError as recovered_exc:
+                debug_payload["status"] = "hard_fallback"
+                debug_payload["fallback_reason"] = "invalid_ranked_candidates"
+                debug_payload["hard_fallback_reason"] = "invalid_ranked_candidates"
+                debug_payload["error_type"] = type(recovered_exc).__name__
+                debug_payload["error_message"] = str(recovered_exc)
+                debug_payload["recovered_payload"] = recovered_payload
+                payload["validation_error"] = str(exc)
+                payload["recovered_payload"] = recovered_payload
+                payload["hard_fallback_reason"] = "invalid_ranked_candidates"
+                payload["fallback_reason"] = "invalid_ranked_candidates"
+            else:
+                effective_recovery_reason = ranked_candidate_recovery_reason or recovery_reason
+                debug_payload["status"] = "recovered_llm"
+                debug_payload["recovery_reason"] = effective_recovery_reason
+                debug_payload["normalized_response"] = llm_payload.model_dump(mode="json")
+                debug_payload["recovered_payload"] = recovered_payload
+                debug_payload["dropped_ranked_candidates"] = dropped_ranked_candidates
+                payload = {
+                    "source": "recovered_llm",
+                    "recovery_applied": True,
+                    "recovery_reason": effective_recovery_reason,
+                    "hard_fallback_reason": None,
+                    "fallback_reason": None,
+                    "validation_error": str(exc),
+                    "recovered_payload": recovered_payload,
+                    "dropped_ranked_candidates": dropped_ranked_candidates,
+                    "structure_summary": llm_payload.structure_summary,
+                    "framework_assessment": llm_payload.framework_assessment,
+                    "ranked_candidates": llm_payload.model_dump(mode="json")["ranked_candidates"],
+                }
         else:
             debug_payload["status"] = "hard_fallback"
             debug_payload["fallback_reason"] = "invalid_llm_payload"
@@ -819,6 +853,46 @@ def _validate_ranked_candidates(
     for candidate in llm_payload.ranked_candidates:
         if candidate.path not in valid_paths:
             raise ValueError(f"invalid ranked candidate: {candidate.path}")
+
+
+def _accept_ranked_candidates(
+    *,
+    llm_payload: CodebaseInterpretationPayload,
+    codebase_map: dict[str, Any],
+) -> tuple[CodebaseInterpretationPayload, list[dict[str, str]], str | None]:
+    if not llm_payload.ranked_candidates:
+        raise ValueError("ranked_candidates must not be empty")
+    if len(llm_payload.ranked_candidates) > 8:
+        raise ValueError("ranked_candidates must remain conservative")
+    valid_paths = {
+        str(item.get("path") or "")
+        for item in (codebase_map.get("candidate_edit_targets") or [])
+    }
+
+    accepted_candidates: list[RankedCandidate] = []
+    dropped_candidates: list[dict[str, str]] = []
+    for candidate in llm_payload.ranked_candidates:
+        if candidate.path in valid_paths:
+            accepted_candidates.append(candidate)
+            continue
+        dropped_candidates.append(
+            {
+                "path": candidate.path,
+                "reason": candidate.reason,
+                "drop_reason": "invalid_ranked_candidate",
+            }
+        )
+
+    if not dropped_candidates:
+        return llm_payload, [], None
+    if not accepted_candidates:
+        raise ValueError(f"invalid ranked candidate: {dropped_candidates[0]['path']}")
+
+    return (
+        llm_payload.model_copy(update={"ranked_candidates": accepted_candidates}),
+        dropped_candidates,
+        "invalid_ranked_candidates_filtered",
+    )
 
 
 def _recover_codebase_interpretation_payload(

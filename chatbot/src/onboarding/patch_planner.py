@@ -584,7 +584,7 @@ def _build_edit_plan_payload(
         path = str(target.get("path") or "")
         if not path:
             continue
-        operation = _build_edit_operation(target)
+        operation = _build_edit_operation(target, source_base=source_base)
         if operation is None:
             unsupported_targets.append(
                 {
@@ -620,8 +620,14 @@ def _build_edit_plan_payload(
     }
 
 
-def _build_edit_operation(target: dict[str, Any]) -> dict[str, Any] | None:
+def _build_edit_operation(
+    target: dict[str, Any],
+    *,
+    source_base: Path | None = None,
+) -> dict[str, Any] | None:
     path = str(target.get("path") or "")
+    reason = str(target.get("reason") or "")
+    intent = str(target.get("intent") or "")
     insertion_hint = target.get("insertion_hint") or {}
     if path.endswith("views.py"):
         return {
@@ -644,11 +650,81 @@ def _build_edit_operation(target: dict[str, Any]) -> dict[str, Any] | None:
             "anchor": anchor,
             "content": '\n    path("api/chat/auth-token", onboarding_chat_auth_token),',
         }
-    if _is_frontend_mount_target(path):
+    frontend_target_role = _classify_frontend_target(
+        path,
+        reason=reason,
+        intent=intent,
+    )
+    if frontend_target_role == "mount":
+        if source_base is not None:
+            operation = _build_source_replace_operation(
+                source_base=source_base,
+                relative_path=path,
+                updated_lines_builder=lambda source_lines: _build_frontend_mount_updated_lines(
+                    source_lines,
+                    path,
+                    insertion_hint=insertion_hint,
+                ),
+            )
+            if operation is not None:
+                return operation
         return {
             "path": path,
             "operation": "append_text",
             "content": "\n<order-cs-widget />\n",
+        }
+    if frontend_target_role == "api_client":
+        if source_base is not None:
+            operation = _build_source_replace_operation(
+                source_base=source_base,
+                relative_path=path,
+                updated_lines_builder=_build_frontend_api_client_updated_lines,
+            )
+            if operation is not None:
+                return operation
+        return {
+            "path": path,
+            "operation": "append_text",
+            "content": (
+                '\nexport const ORDER_CS_CHAT_AUTH_BOOTSTRAP_PATH = "/api/chat/auth-token";\n'
+                "\n"
+                "export function withOrderCsCredentials(config = {}) {\n"
+                "  return {\n"
+                "    ...config,\n"
+                "    withCredentials: config.withCredentials ?? true,\n"
+                "  };\n"
+                "}\n"
+            ),
+        }
+    return None
+
+
+def _build_source_replace_operation(
+    *,
+    source_base: Path,
+    relative_path: str,
+    updated_lines_builder: Callable[[list[str]], list[str]],
+) -> dict[str, Any] | None:
+    source_file = source_base / relative_path
+    if not source_file.exists() or not source_file.is_file():
+        return None
+
+    source_lines = _read_text_or_empty(source_file)
+    updated_lines = updated_lines_builder(source_lines)
+    old = "".join(source_lines)
+    new = "".join(updated_lines)
+    if old:
+        return {
+            "path": relative_path,
+            "operation": "replace_text",
+            "old": old,
+            "new": new,
+        }
+    if new:
+        return {
+            "path": relative_path,
+            "operation": "append_text",
+            "content": new,
         }
     return None
 
@@ -1409,9 +1485,16 @@ def write_unified_diff_draft(
 
     for target in proposal.get("target_files") or []:
         relative = str(target.get("path") or "")
+        reason = str(target.get("reason") or "")
+        intent = str(target.get("intent") or "")
         source_file = source / relative
         source_lines = _read_text_or_empty(source_file)
         insertion_hint = target.get("insertion_hint")
+        frontend_target_role = _classify_frontend_target(
+            relative,
+            reason=reason,
+            intent=intent,
+        )
         if relative.endswith("views.py"):
             updated_lines = _build_python_stub_updated_lines(source_lines, insertion_hint=insertion_hint)
         elif relative.endswith("urls.py"):
@@ -1420,8 +1503,10 @@ def write_unified_diff_draft(
             updated_lines = _build_fastapi_registration_updated_lines(source_lines)
         elif relative.endswith("app.py"):
             updated_lines = _build_flask_registration_updated_lines(source_lines)
-        elif _is_frontend_mount_target(relative):
+        elif frontend_target_role == "mount":
             updated_lines = _build_frontend_mount_updated_lines(source_lines, relative, insertion_hint=insertion_hint)
+        elif frontend_target_role == "api_client":
+            updated_lines = _build_frontend_api_client_updated_lines(source_lines)
         else:
             continue
         diff = difflib.unified_diff(
@@ -1448,8 +1533,11 @@ def _infer_intent(*, path: str, analysis: dict[str, Any], recommended_outputs: l
         return "prepare FastAPI router registration draft for onboarding chat auth"
     if lower.endswith("app.py"):
         return "prepare Flask blueprint registration draft for onboarding chat auth"
-    if lower.endswith(("app.js", "app.jsx", "app.tsx", "app.ts", ".vue")):
+    frontend_target_role = _classify_frontend_target(path)
+    if frontend_target_role == "mount":
         return "prepare frontend chatbot mount draft for runtime-only integration review"
+    if frontend_target_role == "api_client":
+        return "prepare frontend auth bootstrap client support for onboarding chat auth"
     if recommended_outputs:
         return f"support {recommended_outputs[0]} capability"
     return f"support auth style {((analysis.get('auth') or {}).get('auth_style') or 'unknown')}"
@@ -2146,9 +2234,62 @@ def _build_flask_registration_updated_lines(source_lines: list[str]) -> list[str
     return updated_lines
 
 
+def _classify_frontend_target(
+    relative: str,
+    *,
+    reason: str = "",
+    intent: str = "",
+) -> str | None:
+    normalized = relative.replace("\\", "/").lower()
+    suffix = Path(normalized).suffix
+    if suffix not in {".js", ".jsx", ".ts", ".tsx", ".vue"}:
+        return None
+
+    basename = Path(normalized).name
+    context = f"{reason} {intent}".lower()
+    if (
+        "/api/" in normalized
+        or basename in {"api.js", "api.ts", "client.js", "client.ts", "axios.js", "axios.ts"}
+        or "api client" in context
+        or "client support" in context
+        or "auth bootstrap" in context
+    ):
+        return "api_client"
+
+    if (
+        basename in {
+            "app.js",
+            "app.jsx",
+            "app.ts",
+            "app.tsx",
+            "app.vue",
+            "main.js",
+            "main.jsx",
+            "main.ts",
+            "main.tsx",
+            "_app.js",
+            "_app.jsx",
+            "_app.tsx",
+            "layout.js",
+            "layout.jsx",
+            "layout.tsx",
+            "page.js",
+            "page.jsx",
+            "page.tsx",
+            "index.js",
+            "index.jsx",
+            "index.tsx",
+        }
+        or any(marker in normalized for marker in ("/pages/", "/components/", "/layouts/", "/app/"))
+        or any(marker in context for marker in ("mount", "widget", "app shell", "page shell", "layout"))
+    ):
+        return "mount"
+
+    return None
+
+
 def _is_frontend_mount_target(relative: str) -> bool:
-    lower = relative.lower()
-    return lower.endswith(("app.js", "app.jsx", "app.ts", "app.tsx", ".vue"))
+    return _classify_frontend_target(relative) == "mount"
 
 
 def _build_frontend_mount_updated_lines(
@@ -2204,6 +2345,36 @@ def _build_react_mount_updated_lines(
     return updated_lines
 
 
+def _build_frontend_api_client_updated_lines(source_lines: list[str]) -> list[str]:
+    updated_lines = list(source_lines)
+    current_text = "".join(updated_lines)
+    if "/api/chat/auth-token" not in current_text:
+        updated_lines = _insert_lines_after_existing_block(updated_lines, _build_frontend_api_support_lines())
+        current_text = "".join(updated_lines)
+
+    if "withCredentials" in current_text:
+        return updated_lines
+
+    axios_create_index = next(
+        (index for index, line in enumerate(updated_lines) if "axios.create(" in line and "{" in line),
+        None,
+    )
+    if axios_create_index is not None:
+        indent = re.match(r"^(\s*)", updated_lines[axios_create_index]).group(1)
+        updated_lines.insert(axios_create_index + 1, f"{indent}  withCredentials: true,\n")
+        return updated_lines
+
+    axios_import_index = next(
+        (index for index, line in enumerate(updated_lines) if "axios" in line and "import" in line),
+        None,
+    )
+    if axios_import_index is not None:
+        updated_lines.insert(axios_import_index + 1, "axios.defaults.withCredentials = true;\n")
+        return updated_lines
+
+    return updated_lines
+
+
 def _build_vue_mount_updated_lines(source_lines: list[str]) -> list[str]:
     updated_lines = list(source_lines)
     widget_line = "  <order-cs-widget />\n"
@@ -2244,6 +2415,20 @@ def _build_shared_widget_bootstrap_lines() -> list[str]:
         "  orderCsWidgetScript.async = true;\n",
         '  orderCsWidgetScript.dataset.orderCsWidgetBundle = "true";\n',
         "  document.head.appendChild(orderCsWidgetScript);\n",
+        "}\n",
+        "\n",
+    ]
+
+
+def _build_frontend_api_support_lines() -> list[str]:
+    return [
+        'export const ORDER_CS_CHAT_AUTH_BOOTSTRAP_PATH = "/api/chat/auth-token";\n',
+        "\n",
+        "export function withOrderCsCredentials(config = {}) {\n",
+        "  return {\n",
+        "    ...config,\n",
+        "    withCredentials: config.withCredentials ?? true,\n",
+        "  };\n",
         "}\n",
         "\n",
     ]

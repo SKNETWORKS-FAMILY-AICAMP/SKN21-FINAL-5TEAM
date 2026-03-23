@@ -1284,7 +1284,7 @@ def test_run_onboarding_generation_passes_rich_validation_and_diagnosis_context(
     assert diagnostician_context["retry_budget"] == 3
 
 
-def test_run_onboarding_generation_materializes_only_generator_proposals(tmp_path: Path):
+def test_run_onboarding_generation_materializes_generator_and_supporting_proposals(tmp_path: Path):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"
     runtime_root = tmp_path / "runtime"
@@ -1386,8 +1386,8 @@ def test_run_onboarding_generation_materializes_only_generator_proposals(tmp_pat
     assert '"site_id": "site-a"' in chat_auth_content
     assert '"access_token": token' in chat_auth_content
     assert '"user": {' in chat_auth_content
-    assert not (run_root / "files" / "backend" / "order_adapter_client.py").exists()
-    assert not (run_root / "files" / "backend" / "product_adapter_client.py").exists()
+    assert (run_root / "files" / "backend" / "order_adapter_client.py").exists()
+    assert (run_root / "files" / "backend" / "product_adapter_client.py").exists()
     assert (run_root / "patches" / "frontend_widget_mount.patch").exists()
 
 
@@ -1781,11 +1781,16 @@ def test_run_onboarding_generation_recovery_writes_llm_role_execution_report_and
             generated_root / "food" / "food-run-llm-roles" / "reports" / "llm-codebase-interpretation.json"
         ).read_text(encoding="utf-8")
     )
+    llm_edit_plan_execution = json.loads(
+        (
+            generated_root / "food" / "food-run-llm-roles" / "reports" / "llm-edit-plan-execution.json"
+        ).read_text(encoding="utf-8")
+    )
     assert proposal_execution["source"] in {"llm", "recovered_llm", "hard_fallback"}
     assert codebase_interpretation["source"] in {"llm", "recovered_llm", "hard_fallback"}
+    assert llm_edit_plan_execution["source"] == "hard_fallback"
     assert "recovery_started" in log_text
     assert "recovery_succeeded" in log_text
-    assert "hard_fallback_used" in log_text
 
 
 def test_run_onboarding_generation_exports_llm_patch_when_recommended(tmp_path: Path, monkeypatch):
@@ -2002,8 +2007,7 @@ def test_run_onboarding_generation_runtime_completion_repairs_shared_widget_impo
     runtime_app = runtime_workspace / "frontend" / "src" / "App.js"
     runtime_app.parent.mkdir(parents=True, exist_ok=True)
     runtime_app.write_text(
-        'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n'
-        "export default function App() { return <><main>Home</main><SharedChatbotWidget /></>; }\n",
+        "export default function App() { return <main>Home</main>; }\n",
         encoding="utf-8",
     )
     runtime_views = runtime_workspace / "backend" / "users" / "views.py"
@@ -3559,7 +3563,10 @@ def test_run_onboarding_generation_writes_frontend_mount_diff_draft(tmp_path: Pa
     assert result["current_state"] == "completed"
     assert result["edit_plan_path"].endswith("reports/edit-plan.json")
     assert any(operation["path"] == "frontend/src/App.js" for operation in payload["operations"])
-    assert any("<order-cs-widget />" in operation.get("content", "") for operation in payload["operations"])
+    assert any(
+        "<order-cs-widget />" in (operation.get("content") or operation.get("new") or "")
+        for operation in payload["operations"]
+    )
 
 
 def test_run_onboarding_generation_handles_sources_without_trailing_newlines(tmp_path: Path):

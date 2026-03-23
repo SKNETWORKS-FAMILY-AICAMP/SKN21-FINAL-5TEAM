@@ -10,6 +10,9 @@ class ProbeExpectation(BaseModel):
     status: int = 200
     json_keys: list[str] = Field(default_factory=list)
     json_path_equals: dict[str, Any] = Field(default_factory=dict)
+    json_path_not_empty: list[str] = Field(default_factory=list)
+    header_contains: dict[str, str] = Field(default_factory=dict)
+    body_contains: list[str] = Field(default_factory=list)
     json_type: str | None = None
     json_array_key: str | None = None
     json_array_min_length: int | None = None

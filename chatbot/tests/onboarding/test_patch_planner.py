@@ -183,6 +183,91 @@ def test_write_edit_plan_marks_unsupported_targets_without_placeholder_operation
     ]
 
 
+def test_write_edit_plan_builds_role_based_frontend_page_mount_from_source(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "edit-plan.json"
+
+    target = source_root / "frontend" / "src" / "pages" / "Products" / "index.jsx"
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        'import React from "react";\n\n'
+        "export default function ProductsPage() {\n"
+        "  return (\n"
+        "    <main>\n"
+        "      <section>Products</section>\n"
+        "    </main>\n"
+        "  );\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    path = write_edit_plan(
+        source_root=source_root,
+        patch_proposal={
+            "target_files": [
+                {
+                    "path": "frontend/src/pages/Products/index.jsx",
+                    "reason": "frontend page shell",
+                    "intent": "prepare frontend chatbot mount draft for runtime-only integration review",
+                    "insertion_hint": {"mount_context": "outside_routes"},
+                }
+            ],
+            "supporting_generated_files": [],
+            "recommended_outputs": ["frontend_patch"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["unsupported_targets"] == []
+    assert payload["operations"][0]["path"] == "frontend/src/pages/Products/index.jsx"
+    assert payload["operations"][0]["operation"] == "replace_text"
+    assert "<order-cs-widget />" in payload["operations"][0]["new"]
+    assert "__ORDER_CS_WIDGET_HOST_CONTRACT__" in payload["operations"][0]["new"]
+
+
+def test_write_edit_plan_builds_frontend_api_client_support_from_source(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "edit-plan.json"
+
+    target = source_root / "frontend" / "src" / "api" / "api.js"
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        'import axios from "axios";\n\n'
+        "export const api = axios.create({\n"
+        '  baseURL: "/api",\n'
+        "});\n",
+        encoding="utf-8",
+    )
+
+    path = write_edit_plan(
+        source_root=source_root,
+        patch_proposal={
+            "target_files": [
+                {
+                    "path": "frontend/src/api/api.js",
+                    "reason": "frontend api client",
+                    "intent": "prepare frontend auth bootstrap client support for onboarding chat auth",
+                }
+            ],
+            "supporting_generated_files": [],
+            "recommended_outputs": ["chat_auth"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["unsupported_targets"] == []
+    assert payload["operations"][0]["path"] == "frontend/src/api/api.js"
+    assert payload["operations"][0]["operation"] == "replace_text"
+    assert "/api/chat/auth-token" in payload["operations"][0]["new"]
+    assert "withCredentials" in payload["operations"][0]["new"]
+
+
 def test_write_llm_edit_draft_uses_hard_fallback_for_invalid_target_path(tmp_path: Path):
     source_root = tmp_path / "source"
     output_path = tmp_path / "reports" / "edit-plan.json"

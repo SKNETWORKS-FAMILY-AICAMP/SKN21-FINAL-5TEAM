@@ -375,6 +375,53 @@ def test_run_onboarding_generation_writes_edit_plan_and_execution_artifacts(tmp_
     ).read_text(encoding="utf-8")
 
 
+def test_materialize_generator_proposals_materializes_supporting_generated_file_aliases(tmp_path: Path):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() {\n  return <main>Home</main>;\n}\n",
+        encoding="utf-8",
+    )
+
+    run_root = orchestrator_module.generate_run_bundle(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        run_id="food-run-materialize",
+        agent_version="test-v1",
+    )
+
+    orchestrator_module._materialize_generator_proposals(
+        run_root=run_root,
+        proposed_files=[],
+        proposed_patches=[],
+        supporting_generated_files=[
+            "backend/chat_auth.py",
+            "backend/adapters/order_adapter.py",
+            "backend/adapters/product_adapter.py",
+            "frontend_widget_mount.patch",
+        ],
+    )
+
+    manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+
+    assert (run_root / "files" / "backend" / "chat_auth.py").exists()
+    assert (run_root / "files" / "backend" / "order_adapter_client.py").exists()
+    assert (run_root / "files" / "backend" / "product_adapter_client.py").exists()
+    assert (run_root / "patches" / "frontend_widget_mount.patch").exists()
+    assert "files/backend/chat_auth.py" in manifest["generated_files"]
+    assert "files/backend/order_adapter_client.py" in manifest["generated_files"]
+    assert "files/backend/product_adapter_client.py" in manifest["generated_files"]
+    assert "patches/frontend_widget_mount.patch" in manifest["patch_targets"]
+
+
 def test_run_onboarding_generation_exposes_runtime_completion_loop_path_placeholder(tmp_path: Path):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"

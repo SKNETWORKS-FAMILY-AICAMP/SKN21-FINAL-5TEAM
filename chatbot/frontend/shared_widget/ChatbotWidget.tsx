@@ -385,6 +385,18 @@ export async function streamSharedChatResponse(
         nextState = (data.state ?? nextState) as Record<string, unknown> | null;
         callbacks.onStateChange?.(nextState);
 
+        const pendingInterrupts = Array.isArray(data.state?.pending_interrupt)
+          ? data.state.pending_interrupt
+          : [];
+        const metadataPendingInterrupt =
+          pendingInterrupts.find(
+            (payload) =>
+              payload &&
+              typeof payload === 'object' &&
+              String((payload as Record<string, unknown>).ui_action ?? '').trim() ===
+                String(data.ui_action_required ?? '').trim(),
+          ) ?? null;
+
         if (
           !hasUiActionEvent &&
           !metadataUiActionHandled &&
@@ -400,6 +412,17 @@ export async function streamSharedChatResponse(
               products: products as UiProduct[],
             });
           }
+        }
+
+        if (
+          !hasUiActionEvent &&
+          !metadataUiActionHandled &&
+          metadataPendingInterrupt &&
+          data.ui_action_required &&
+          data.ui_action_required !== 'show_product_list'
+        ) {
+          metadataUiActionHandled = true;
+          callbacks.onUnhandledUiAction?.(metadataPendingInterrupt as Record<string, any>);
         }
         continue;
       }

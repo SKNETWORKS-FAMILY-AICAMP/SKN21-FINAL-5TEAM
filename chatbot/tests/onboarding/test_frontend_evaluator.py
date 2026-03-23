@@ -101,6 +101,23 @@ def _write_vue_mount(workspace: Path) -> None:
     )
 
 
+def _write_widget_host_artifact(workspace: Path) -> None:
+    (workspace / "frontend" / "src" / "chatbot").mkdir(parents=True, exist_ok=True)
+    (workspace / "frontend" / "src" / "chatbot" / "orderCsWidgetHost.js").write_text(
+        "export const ORDER_CS_WIDGET_HOST_CONTRACT = {\n"
+        '  chatbotServerBaseUrl: "",\n'
+        '  authBootstrapPath: "/api/chat/auth-token",\n'
+        '  widgetBundlePath: "/widget.js",\n'
+        '  widgetElementTag: "order-cs-widget",\n'
+        '  mountMode: "floating_launcher",\n'
+        "};\n"
+        "export function ensureOrderCsWidgetHost() {\n"
+        "  return ORDER_CS_WIDGET_HOST_CONTRACT;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+
 def test_evaluate_frontend_workspace_detects_react_mount(tmp_path: Path, monkeypatch):
     workspace = tmp_path / "workspace"
     report_root = tmp_path / "reports"
@@ -136,6 +153,7 @@ def test_evaluate_frontend_workspace_detects_react_mount(tmp_path: Path, monkeyp
     assert payload["build_command"] == ["npm", "run", "build"]
     assert payload["build_passed"] is True
     assert payload["runtime_checks"]["mount_exists"] is True
+    assert payload["runtime_checks"]["widget_exists"] is True
     assert payload["runtime_checks"]["bundle_bootstrap_present"] is True
     assert payload["runtime_checks"]["widget_usage_present"] is True
     assert payload["runtime_checks"]["auth_bootstrap_contract_present"] is True
@@ -171,6 +189,7 @@ def test_evaluate_frontend_workspace_detects_vue_mount(tmp_path: Path, monkeypat
     assert frontend_artifact["validation_status"] == "valid"
     assert frontend_artifact["widget_path"] is None
     assert payload["runtime_checks"]["mount_exists"] is True
+    assert payload["runtime_checks"]["widget_exists"] is True
     assert payload["runtime_checks"]["bundle_bootstrap_present"] is True
     assert payload["runtime_checks"]["widget_usage_present"] is True
 
@@ -193,80 +212,22 @@ def test_evaluate_frontend_workspace_hard_fallbacks_when_mount_missing(tmp_path:
     assert frontend_artifact["source"] == "hard_fallback"
     assert frontend_artifact["validation_status"] == "invalid"
     assert any("mount" in error for error in frontend_artifact["validation_errors"])
-    assert payload["failure_signature"] == "frontend_mount_violation:mount_missing_widget_contract"
     assert payload["passed"] is False
     assert payload["build_attempted"] is False
 
 
-def test_evaluate_frontend_workspace_records_routes_child_failure_signature(tmp_path: Path):
+def test_evaluate_frontend_workspace_prefers_real_app_shell_over_helper_mount_file(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     report_root = tmp_path / "reports"
-    _write_react_mount(
-        workspace,
-        include_bundle_bootstrap=True,
-        include_widget_usage=True,
-        inside_routes=True,
+    (workspace / "frontend" / "src").mkdir(parents=True)
+    (workspace / "frontend" / "src" / "App.js").write_text(
+        "export default function App() { return <main>Home</main>; }\n",
+        encoding="utf-8",
     )
-
-    report_path = evaluate_frontend_workspace(
-        runtime_workspace=workspace,
-        report_root=report_root,
-    )
-    payload = json.loads(report_path.read_text(encoding="utf-8"))
-
-    assert payload["passed"] is False
-    assert payload["failure_signature"] == "frontend_mount_violation:routes_child_violation"
-
-
-def test_evaluate_frontend_workspace_marks_routes_child_as_retryable_planning_issue(tmp_path: Path):
-    workspace = tmp_path / "workspace"
-    report_root = tmp_path / "reports"
-    _write_react_mount(
-        workspace,
-        include_bundle_bootstrap=True,
-        include_widget_usage=True,
-        inside_routes=True,
-    )
-
-    payload = json.loads(
-        evaluate_frontend_workspace(runtime_workspace=workspace, report_root=report_root).read_text(encoding="utf-8")
-    )
-
-    frontend_artifact = payload["frontend_artifact"]
-    assert payload["passed"] is False
-    assert frontend_artifact["source"] == "recovered_llm"
-    assert frontend_artifact["validation_status"] == "invalid"
-    assert "routes child violation" in frontend_artifact["validation_errors"]
-    assert "retryable mount context planning issue" in frontend_artifact["recovery_notes"]
-
-
-def test_evaluate_frontend_workspace_hard_fallbacks_when_routes_child_and_bootstrap_missing(tmp_path: Path):
-    workspace = tmp_path / "workspace"
-    report_root = tmp_path / "reports"
-    _write_react_mount(
-        workspace,
-        include_bundle_bootstrap=False,
-        include_widget_usage=True,
-        inside_routes=True,
-    )
-
-    payload = json.loads(
-        evaluate_frontend_workspace(runtime_workspace=workspace, report_root=report_root).read_text(encoding="utf-8")
-    )
-
-    frontend_artifact = payload["frontend_artifact"]
-    assert payload["passed"] is False
-    assert frontend_artifact["source"] == "hard_fallback"
-    assert "routes child violation" in frontend_artifact["validation_errors"]
-    assert "mount candidate missing shared widget bundle bootstrap" in frontend_artifact["recovery_notes"]
-
-
-def test_evaluate_frontend_workspace_ignores_build_artifact_mount_candidates(tmp_path: Path):
-    workspace = tmp_path / "workspace"
-    report_root = tmp_path / "reports"
-    (workspace / "frontend" / "build" / "static" / "js").mkdir(parents=True)
-    (workspace / "frontend" / "build" / "static" / "js" / "main.abc.js").write_text(
-        _shared_widget_bootstrap() + 'document.body.innerHTML = "<order-cs-widget></order-cs-widget>";\n',
+    (workspace / "frontend" / "src" / "chatbot").mkdir(parents=True, exist_ok=True)
+    (workspace / "frontend" / "src" / "chatbot" / "widget-helper.js").write_text(
+        _shared_widget_bootstrap()
+        + "\nexport const helper = () => <order-cs-widget />;\n",
         encoding="utf-8",
     )
 
@@ -276,9 +237,10 @@ def test_evaluate_frontend_workspace_ignores_build_artifact_mount_candidates(tmp
     )
     payload = json.loads(report_path.read_text(encoding="utf-8"))
 
-    assert payload["mount_candidates"] == []
+    assert payload["mount_candidates"][0] == "frontend/src/App.js"
+    assert payload["frontend_artifact"]["mount_path"].endswith("frontend/src/App.js")
     assert payload["passed"] is False
-    assert payload["failure_signature"] == "frontend_mount_violation:mount_missing_widget_contract"
+    assert "mount missing order-cs-widget bundle bootstrap" in payload["frontend_artifact"]["validation_errors"]
 
 
 def test_evaluate_frontend_workspace_emits_observability_events(tmp_path: Path):
@@ -317,6 +279,7 @@ def test_evaluate_frontend_workspace_emits_hard_fallback_event_when_build_fails(
         encoding="utf-8",
     )
     _write_react_mount(workspace)
+    _write_widget_host_artifact(workspace)
     monkeypatch.setattr(
         frontend_evaluator,
         "run_frontend_build",
@@ -374,6 +337,7 @@ def test_evaluate_frontend_workspace_reports_install_failure_metadata(tmp_path: 
         encoding="utf-8",
     )
     _write_react_mount(workspace)
+    _write_widget_host_artifact(workspace)
     monkeypatch.setattr(
         frontend_evaluator,
         "run_frontend_build",
@@ -418,6 +382,7 @@ def test_evaluate_frontend_workspace_ignores_warning_only_build_output_when_arti
         encoding="utf-8",
     )
     _write_react_mount(workspace)
+    _write_widget_host_artifact(workspace)
     monkeypatch.setattr(
         frontend_evaluator,
         "run_frontend_build",
@@ -453,6 +418,7 @@ def test_evaluate_frontend_workspace_rejects_widget_inside_routes(tmp_path: Path
     workspace = tmp_path / "workspace"
     report_root = tmp_path / "reports"
     _write_react_mount(workspace, inside_routes=True)
+    _write_widget_host_artifact(workspace)
 
     payload = json.loads(
         evaluate_frontend_workspace(runtime_workspace=workspace, report_root=report_root).read_text(encoding="utf-8")
@@ -491,3 +457,29 @@ def test_evaluate_frontend_workspace_ignores_node_modules_directories(tmp_path: 
 
     assert payload["framework"] == "react"
     assert payload["mount_candidates"] == ["frontend/src/App.js"]
+
+
+def test_evaluate_frontend_workspace_passes_without_local_widget_artifact(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    report_root = tmp_path / "reports"
+
+    (workspace / "frontend").mkdir(parents=True, exist_ok=True)
+    (workspace / "frontend" / "package.json").write_text(
+        json.dumps({"scripts": {"build": "echo build"}}),
+        encoding="utf-8",
+    )
+    _write_react_mount(workspace)
+    monkeypatch.setattr(
+        frontend_evaluator,
+        "run_frontend_build",
+        lambda *, workspace, timeout=120: _build_successful_build_result(workspace),
+    )
+
+    payload = json.loads(
+        evaluate_frontend_workspace(runtime_workspace=workspace, report_root=report_root).read_text(encoding="utf-8")
+    )
+
+    assert payload["frontend_artifact"]["widget_path"] is None
+    assert payload["runtime_checks"]["widget_exists"] is True
+    assert payload["build_passed"] is True
+    assert payload["passed"] is True

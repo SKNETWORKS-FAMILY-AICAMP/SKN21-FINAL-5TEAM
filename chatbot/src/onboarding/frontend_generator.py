@@ -15,16 +15,9 @@ LEGACY_WIDGET_MARKER = "SharedChatbotWidget"
 
 
 def build_frontend_mount_contract(*, chatbot_server_base_url: str = "") -> dict[str, str]:
-    host_contract = build_shared_widget_host_contract(
+    return build_shared_widget_host_contract(
         chatbot_server_base_url=chatbot_server_base_url,
     )
-    return {
-        "chatbotServerBaseUrl": host_contract["chatbot_server_base_url"],
-        "authBootstrapPath": host_contract["auth_bootstrap_path"],
-        "widgetBundlePath": host_contract["widget_bundle_path"],
-        "widgetElementTag": host_contract["widget_element_tag"],
-        "mountMode": host_contract["mount_mode"],
-    }
 
 
 def _prepare_frontend_widget_proposal(

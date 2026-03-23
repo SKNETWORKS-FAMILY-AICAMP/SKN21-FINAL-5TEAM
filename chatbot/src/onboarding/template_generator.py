@@ -23,6 +23,7 @@ LOCAL_CHAT_TOKEN_HELPER = """import base64
 import hashlib
 import hmac
 import json
+import os
 import time
 
 
@@ -55,6 +56,13 @@ def issue_bridge_token(
 
 def issue_chat_token(**kwargs) -> str:
     return issue_bridge_token(**kwargs)
+
+
+def require_bridge_secret() -> str:
+    secret = os.environ.get("CHATBOT_BRIDGE_SECRET", "").strip()
+    if not secret:
+        raise RuntimeError("CHATBOT_BRIDGE_SECRET is required for chat auth bridge token issuance")
+    return secret
 """
 
 
@@ -117,7 +125,7 @@ def chat_auth_token(request):
     token = issue_chat_token(
         user_id=str(user.id),
         site_id="{site_id}",
-        secret="CHANGE_ME",
+        secret=require_bridge_secret(),
         name=user.get_full_name() or user.username,
         email=user.email,
         scopes=["chat"],
@@ -166,7 +174,7 @@ def chat_auth_token():
     token = issue_chat_token(
         user_id=str(user_id),
         site_id="{site_id}",
-        secret="CHANGE_ME",
+        secret=require_bridge_secret(),
         name=name or f"user-{{user_id}}",
         email=email,
         scopes=["chat"],
@@ -220,7 +228,7 @@ def chat_auth_token(request: Request):
     token = issue_chat_token(
         user_id=resolved_user_id,
         site_id="{site_id}",
-        secret="CHANGE_ME",
+        secret=require_bridge_secret(),
         name=resolved_name,
         email=resolved_email,
         scopes=["chat"],
@@ -972,6 +980,6 @@ def _insert_shared_widget_bootstrap_lines(
 def _find_react_mount_insert_index(lines: list[str]) -> int | None:
     for index, line in enumerate(lines):
         stripped = line.strip()
-        if stripped in {"</BrowserRouter>", "</Routes>", "</main>", "</div>"}:
+        if stripped in {"</main>", "</BrowserRouter>", "</div>"}:
             return index
     return None

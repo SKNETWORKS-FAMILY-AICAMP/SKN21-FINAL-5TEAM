@@ -23,14 +23,17 @@
 기존 TypeScript 기반 어댑터를 Python Pydantic 모델 기반으로 리팩토링하여 다중 사이트(Ecommerce, Food, Bilyeo)에 대한 공통 인터페이스를 제공합니다.
 
 ### 3-1. 통합 Site ID 매핑
-| Site ID | 서비스명 | 백엔드 포트 | 모듈 |
-|---|---|---|---|
-| `site-a` | Food | 8002 | `src/adapters/site_a` |
-| `site-b` | Bilyeo | 5000 | `src/adapters/site_b` |
-| `site-c` | Ecommerce | 8000 | `src/adapters/site_c` |
+
+| Site ID  | 서비스명  | 백엔드 포트 | 모듈                  |
+| -------- | --------- | ----------- | --------------------- |
+| `site-a` | Food      | 8002        | `src/adapters/site_a` |
+| `site-b` | Bilyeo    | 5000        | `src/adapters/site_b` |
+| `site-c` | Ecommerce | 8000        | `src/adapters/site_c` |
 
 ### 3-2. 주요 기능 (Adapter tools)
+
 다음 도구들은 `site_id`를 기반으로 적절한 어댑터를 통해 각 서비스 백엔드 API를 호출합니다:
+
 - `cancel`: 주문 취소
 - `refund`: 반품/환불 접수
 - `shipping`: 배송 현황 조회
@@ -38,9 +41,11 @@
 - `search_products_adapter`: 상품 통합 검색
 
 ## 4. 실행 순서 (권장)
+
 ... (기존 내용 유지)
 
 ## 5. 실행 명령어
+
 ...
 
 ## 6. API 사용 예시 (Multi-Site)
@@ -56,6 +61,7 @@
 ```
 
 ## 7. 벤치마크/평가 실행 순서
+
 ... (기존 내용 유지)
 
 ## 8. 참고 문서
@@ -65,3 +71,4 @@
 - `benchmark/DATASET_GENERATION_GUIDE.md`
 - `src/adapters/README.md` (어댑터 상세 아키텍처)
 
+uv run uvicorn chatbot.server_fastapi:app --host 127.0.0.1 --port 8100

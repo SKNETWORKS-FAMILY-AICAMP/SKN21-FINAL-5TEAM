@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from .debug_logging import append_onboarding_event
-from .failure_classifier import build_failure_signature
 from .onboarding_ignore import OnboardingIgnoreMatcher
 
 try:
@@ -22,6 +21,46 @@ TEXT_SUFFIXES = {".js", ".jsx", ".ts", ".tsx", ".vue"}
 HOST_CONTRACT_MARKER = '__ORDER_CS_WIDGET_HOST_CONTRACT__'
 WIDGET_USAGE_MARKER = "<order-cs-widget"
 AUTH_BOOTSTRAP_MARKER = "/api/chat/auth-token"
+HELPER_PATH_SEGMENTS = frozenset(
+    {
+        "chatbot",
+        "components",
+        "component",
+        "widgets",
+        "widget",
+        "examples",
+        "example",
+        "stories",
+        "__tests__",
+        "test",
+        "tests",
+    }
+)
+LIKELY_MOUNT_SUFFIXES = (
+    "frontend/src/App.js",
+    "frontend/src/App.jsx",
+    "frontend/src/App.ts",
+    "frontend/src/App.tsx",
+    "frontend/src/App.vue",
+    "frontend/src/main.js",
+    "frontend/src/main.ts",
+    "frontend/src/main.jsx",
+    "frontend/src/main.tsx",
+    "frontend/pages/_app.js",
+    "frontend/pages/_app.jsx",
+    "frontend/pages/_app.tsx",
+    "frontend/app/layout.js",
+    "frontend/app/layout.jsx",
+    "frontend/app/layout.tsx",
+    "frontend/app/page.js",
+    "frontend/app/page.jsx",
+    "frontend/app/page.tsx",
+    "src/App.js",
+    "src/App.jsx",
+    "src/App.ts",
+    "src/App.tsx",
+    "src/App.vue",
+)
 
 
 def evaluate_frontend_workspace(
@@ -48,13 +87,10 @@ def evaluate_frontend_workspace(
 
     framework = _detect_frontend_framework(workspace)
     mount_candidates = _find_mount_candidates(workspace)
-    widget_file = _find_widget_file(workspace)
-    widget_path: Path | None = widget_file
     mount_path = _resolve_mount_path(workspace, mount_candidates)
     frontend_root = _resolve_frontend_root(workspace)
     validation_errors = _collect_validation_errors(
         workspace=workspace,
-        widget=widget_file,
         mount=mount_path,
         framework=framework,
     )
@@ -66,16 +102,11 @@ def evaluate_frontend_workspace(
         recovery = attempt_frontend_recovery(
             workspace=workspace,
             mount_candidate=mount_path,
-            widget_path=widget_file,
+            widget_path=None,
             errors=validation_errors,
         )
         if recovery.get("status") == "recovered":
             source = "recovered_llm"
-            widget_path = (
-                Path(recovery["widget_path"])
-                if recovery.get("widget_path")
-                else widget_path
-            )
             mount_path = (
                 Path(recovery["mount_path"])
                 if recovery.get("mount_path")
@@ -92,26 +123,6 @@ def evaluate_frontend_workspace(
                 summary="frontend recovery applied",
                 source=source,
                 recovery={"applied": True, "reason": "frontend_validation_recovery"},
-                details={"validation_errors": validation_errors, "notes": recovery_notes},
-            )
-        elif recovery.get("status") == "retryable_planning":
-            source = "recovered_llm"
-            mount_path = (
-                Path(recovery["mount_path"])
-                if recovery.get("mount_path")
-                else mount_path
-            )
-            recovery_notes = recovery.get("notes", [])
-            append_onboarding_event(
-                report_root=reports,
-                run_id=run_id,
-                component="frontend_evaluator",
-                stage="validation",
-                event="recovery_applied",
-                severity="info",
-                summary="frontend validation identified retryable planning issue",
-                source=source,
-                recovery={"applied": True, "reason": "frontend_retryable_planning_issue"},
                 details={"validation_errors": validation_errors, "notes": recovery_notes},
             )
         else:
@@ -133,7 +144,6 @@ def evaluate_frontend_workspace(
     build_validation = _build_frontend_build_validation(
         frontend_root=frontend_root,
         mount_path=mount_path,
-        widget_path=widget_path,
         framework=framework,
     )
     if build_validation["bootstrap_failure_stage"] and source == "llm":
@@ -161,17 +171,13 @@ def evaluate_frontend_workspace(
         )
 
     artifact = {
-        "widget_path": str(widget_path) if widget_path else None,
+        "widget_path": None,
         "mount_path": str(mount_path) if mount_path else None,
         "validation_status": validation_status,
         "validation_errors": validation_errors,
         "source": source,
         "recovery_notes": recovery_notes,
     }
-    failure_signature = _build_frontend_failure_signature(
-        validation_errors=validation_errors,
-        build_validation=build_validation,
-    )
 
     payload = {
         "workspace_root": str(workspace),
@@ -197,7 +203,6 @@ def evaluate_frontend_workspace(
         "bootstrap_failure_reason": build_validation["bootstrap_failure_reason"],
         "runtime_checks": build_validation["runtime_checks"],
         "failure_reason": build_validation["failure_reason"],
-        "failure_signature": failure_signature,
         "frontend_artifact": artifact,
     }
     output_path = reports / "frontend-evaluation.json"
@@ -250,7 +255,18 @@ def _detect_frontend_framework(root: Path) -> str:
 
 def _find_mount_candidates(root: Path) -> list[str]:
     mounts: list[str] = []
+    seen: set[str] = set()
     for path, text in _iter_text_files(root):
+        if _is_widget_host_artifact(path, text):
+            continue
+        relative = path.relative_to(root).as_posix()
+        if _is_likely_mount_path(relative):
+            if relative not in seen:
+                mounts.append(relative)
+                seen.add(relative)
+            continue
+        if _is_helper_candidate_path(relative):
+            continue
         if any(
             marker in text
             for marker in (
@@ -261,7 +277,9 @@ def _find_mount_candidates(root: Path) -> list[str]:
                 "orderCsWidgetScript",
             )
         ):
-            mounts.append(path.relative_to(root).as_posix())
+            if relative not in seen:
+                mounts.append(relative)
+                seen.add(relative)
     return mounts
 
 
@@ -281,13 +299,6 @@ def _iter_text_files(root: Path):
         yield path, text
 
 
-def _find_widget_file(root: Path) -> Path | None:
-    for path, text in _iter_text_files(root):
-        if "customElements.define" in text and "order-cs-widget" in text:
-            return path
-    return None
-
-
 def _resolve_frontend_root(root: Path) -> Path:
     frontend_root = root / "frontend"
     if frontend_root.exists():
@@ -303,10 +314,20 @@ def _resolve_mount_path(root: Path, candidates: list[str]) -> Path | None:
     return None
 
 
+def _is_likely_mount_path(relative_path: str) -> bool:
+    normalized = relative_path.replace("\\", "/")
+    return normalized.endswith(LIKELY_MOUNT_SUFFIXES)
+
+
+def _is_helper_candidate_path(relative_path: str) -> bool:
+    normalized = relative_path.replace("\\", "/")
+    segments = [segment for segment in normalized.split("/") if segment]
+    return any(segment in HELPER_PATH_SEGMENTS for segment in segments[:-1])
+
+
 def _collect_validation_errors(
     *,
     workspace: Path,
-    widget: Path | None,
     mount: Path | None,
     framework: str,
 ) -> list[str]:
@@ -367,7 +388,6 @@ def _build_frontend_build_validation(
     *,
     frontend_root: Path,
     mount_path: Path | None,
-    widget_path: Path | None,
     framework: str,
 ) -> dict[str, Any]:
     action_result: dict[str, Any] = {}
@@ -404,7 +424,6 @@ def _build_frontend_build_validation(
     runtime_checks = _evaluate_runtime_checks(
         frontend_root=frontend_root,
         mount_path=mount_path,
-        widget_path=widget_path,
         framework=framework,
     )
     if (
@@ -436,29 +455,6 @@ def _build_frontend_build_validation(
     }
 
 
-def _build_frontend_failure_signature(
-    *,
-    validation_errors: list[str],
-    build_validation: dict[str, Any],
-) -> str | None:
-    if validation_errors:
-        detail = "mount missing widget contract"
-        if "routes child violation" in validation_errors:
-            detail = "routes child violation"
-        return build_failure_signature(
-            classification="frontend_mount_violation",
-            detail=detail,
-        )
-    bootstrap_failure_reason = str(build_validation.get("bootstrap_failure_reason") or "").strip()
-    bootstrap_failure_stage = str(build_validation.get("bootstrap_failure_stage") or "").strip()
-    if bootstrap_failure_reason or bootstrap_failure_stage:
-        return build_failure_signature(
-            classification="frontend_bootstrap_failure",
-            detail=bootstrap_failure_stage or bootstrap_failure_reason,
-        )
-    return None
-
-
 def _is_warning_only_output(text: str | None) -> bool:
     if not text:
         return False
@@ -472,7 +468,6 @@ def _evaluate_runtime_checks(
     *,
     frontend_root: Path,
     mount_path: Path | None,
-    widget_path: Path | None,
     framework: str,
 ) -> dict[str, bool]:
     bundle_bootstrap_present = bool(mount_path and _has_bundle_bootstrap(mount_path))
@@ -480,7 +475,13 @@ def _evaluate_runtime_checks(
     auth_bootstrap_contract_present = bool(mount_path and _has_auth_bootstrap_contract(mount_path))
     return {
         "mount_exists": bool(mount_path and mount_path.exists()),
-        "widget_exists": bool(widget_path and widget_path.exists()),
+        "widget_exists": bool(
+            mount_path
+            and mount_path.exists()
+            and bundle_bootstrap_present
+            and widget_usage_present
+            and auth_bootstrap_contract_present
+        ),
         "import_present": bundle_bootstrap_present,
         "bundle_bootstrap_present": bundle_bootstrap_present,
         "widget_usage_present": widget_usage_present,
@@ -497,3 +498,11 @@ def _build_artifact_exists(*, frontend_root: Path, framework: str) -> bool:
     if framework == "next":
         candidates.append(frontend_root / ".next")
     return any(path.exists() for path in candidates)
+
+
+def _is_widget_host_artifact(path: Path, text: str) -> bool:
+    return (
+        "ORDER_CS_WIDGET_HOST_CONTRACT" in text
+        and "ensureOrderCsWidgetHost" in text
+        and path.as_posix().endswith("orderCsWidgetHost.js")
+    )

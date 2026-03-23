@@ -116,7 +116,7 @@ def test_generate_frontend_mount_patch_uses_source_file_context_when_available(t
     assert "@@ -" in content
     assert 'globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"]' in content
     assert 'orderCsWidgetScript.dataset.orderCsWidgetBundle = "true";' in content
-    assert "+    <order-cs-widget />" in content
+    assert "<order-cs-widget />" in content
     assert "+  <main>Home</main>;" not in content
     assert "+export default function App()" not in content
 
@@ -289,3 +289,53 @@ def test_generate_frontend_mount_patch_normalizes_vue_widget_path_into_src_bound
     assert 'globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"]' in content
     assert "widget.js" in content
     assert "../widgets/SharedChatbotWidget" not in content
+
+
+def test_generate_frontend_mount_patch_keeps_widget_outside_routes_children(tmp_path: Path):
+    source_root = tmp_path / "food"
+    run_root = tmp_path / "generated" / "food" / "food-run-routes-safe"
+    run_root.mkdir(parents=True)
+
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        'import { BrowserRouter, Routes, Route } from "react-router-dom";\n'
+        "\n"
+        "export default function App() {\n"
+        "  return (\n"
+        "    <BrowserRouter>\n"
+        "      <main>\n"
+        "        <Routes>\n"
+        '          <Route path="/" element={<div>Home</div>} />\n'
+        "        </Routes>\n"
+        "      </main>\n"
+        "    </BrowserRouter>\n"
+        "  );\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "food-run-routes-safe",
+                "site": "food",
+                "source_root": str(source_root),
+                "created_at": "2026-03-22T12:00:00+09:00",
+                "agent_version": "test-v1",
+                "analysis": {"frontend_mount_points": ["frontend/src/App.js"]},
+                "generated_files": [],
+                "patch_targets": [],
+                "frontend_artifacts": [],
+                "docker": {},
+                "tests": {},
+                "status": "generated",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    content = generate_frontend_mount_patch(run_root).read_text(encoding="utf-8")
+
+    assert "+      <order-cs-widget />\n         </Routes>\n" not in content
+    assert "+      <order-cs-widget />\n       </main>\n" in content

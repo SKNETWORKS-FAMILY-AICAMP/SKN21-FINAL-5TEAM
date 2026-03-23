@@ -147,6 +147,46 @@ def test_generate_chat_auth_template_returns_site_scoped_bootstrap_contract(tmp_
     assert '"name": user.get_full_name() or user.username' in content
 
 
+def test_generate_chat_auth_template_requires_bridge_secret_env(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-secret"
+    run_root.mkdir(parents=True)
+
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "food-run-secret",
+                "site": "food",
+                "source_root": "/workspace/food",
+                "created_at": "2026-03-22T12:00:00+09:00",
+                "agent_version": "test-v1",
+                "analysis": {
+                    "backend_strategy": "django",
+                    "integration_contract": {
+                        "backend": {
+                            "framework": "django",
+                            "auth_style": "session_cookie",
+                            "auth_source_paths": ["backend/users/views.py"],
+                            "route_registration_points": ["backend/users/urls.py"],
+                        }
+                    },
+                },
+                "generated_files": [],
+                "patch_targets": [],
+                "docker": {},
+                "tests": {},
+                "status": "generated",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    content = generate_chat_auth_template(run_root).read_text(encoding="utf-8")
+
+    assert "CHATBOT_BRIDGE_SECRET" in content
+    assert "CHANGE_ME" not in content
+
+
 def test_generate_chat_auth_template_for_bilyeo_site_uses_site_b(tmp_path: Path):
     run_root = tmp_path / "generated" / "bilyeo" / "bilyeo-run-001"
     run_root.mkdir(parents=True)

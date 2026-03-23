@@ -50,7 +50,7 @@ class OrjsonResponse(JSONResponse):
 
 router = APIRouter(default_response_class=OrjsonResponse)
 SHARED_WIDGET_SITE_ID = "site-c"
-WIDGET_BUNDLE_PATH = Path(__file__).resolve().parents[4] / "frontend" / "shared_widget" / "widget-entry.ts"
+WIDGET_BUNDLE_PATH = Path(__file__).resolve().parents[4] / "frontend" / "shared_widget" / "dist" / "widget.js"
 
 # ── 노드 진행 상태 메시지 ─────────────────────────────────────────────────────
 NODE_STATUS_MESSAGES: dict[str, str] = {
@@ -108,7 +108,6 @@ def build_widget_bundle_response() -> FileResponse:
     return FileResponse(
         WIDGET_BUNDLE_PATH,
         media_type="application/javascript; charset=utf-8",
-        filename="widget.js",
     )
 
 # ── 직렬화 / 역직렬화 ──────────────────────────────────────────────────────────

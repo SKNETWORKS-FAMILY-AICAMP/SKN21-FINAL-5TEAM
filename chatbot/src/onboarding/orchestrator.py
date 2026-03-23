@@ -752,6 +752,7 @@ def run_onboarding_generation(
         run_root=run_root,
         proposed_files=proposed_files,
         proposed_patches=proposed_patches,
+        supporting_generated_files=list(patch_proposal.get("supporting_generated_files") or []),
     )
     edit_plan_path = run_root / "reports" / "edit-plan.json"
     write_edit_plan(
@@ -2922,6 +2923,7 @@ def _materialize_generator_proposals(
     run_root: Path,
     proposed_files: list[str],
     proposed_patches: list[str],
+    supporting_generated_files: list[str] | None = None,
 ) -> None:
     file_generators = {
         "files/backend/chat_auth.py": generate_chat_auth_template,
@@ -2933,17 +2935,22 @@ def _materialize_generator_proposals(
         "patches/backend_chat_auth_route.patch": generate_backend_route_patch,
         "patches/frontend_widget_mount.patch": generate_frontend_mount_patch,
     }
+    materialized_files, materialized_patches = _partition_materialization_targets(
+        proposed_files=proposed_files,
+        proposed_patches=proposed_patches,
+        supporting_generated_files=supporting_generated_files,
+    )
     generated_files: list[str] = []
     patch_targets: list[str] = []
 
-    for file_path in proposed_files:
+    for file_path in materialized_files:
         generator = file_generators.get(file_path)
         if generator is not None:
             generator(run_root)
             if file_path not in generated_files:
                 generated_files.append(file_path)
 
-    for patch_path in proposed_patches:
+    for patch_path in materialized_patches:
         generator = patch_generators.get(patch_path)
         if generator is not None:
             generator(run_root)
@@ -2956,6 +2963,74 @@ def _materialize_generator_proposals(
             generated_files=generated_files,
             patch_targets=patch_targets,
         )
+
+
+def _partition_materialization_targets(
+    *,
+    proposed_files: list[str],
+    proposed_patches: list[str],
+    supporting_generated_files: list[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    files: list[str] = []
+    patches: list[str] = []
+    seen_files: set[str] = set()
+    seen_patches: set[str] = set()
+
+    def append_file(path: str) -> None:
+        if path and path not in seen_files:
+            files.append(path)
+            seen_files.add(path)
+
+    def append_patch(path: str) -> None:
+        if path and path not in seen_patches:
+            patches.append(path)
+            seen_patches.add(path)
+
+    for path in proposed_files:
+        normalized = _normalize_materialization_target(path)
+        if normalized and normalized.startswith("files/"):
+            append_file(normalized)
+    for path in proposed_patches:
+        normalized = _normalize_materialization_target(path)
+        if normalized and normalized.startswith("patches/"):
+            append_patch(normalized)
+    for path in supporting_generated_files or []:
+        normalized = _normalize_materialization_target(path)
+        if not normalized:
+            continue
+        if normalized.startswith("files/"):
+            append_file(normalized)
+        elif normalized.startswith("patches/"):
+            append_patch(normalized)
+
+    return files, patches
+
+
+def _normalize_materialization_target(path: str | None) -> str | None:
+    normalized = str(path or "").strip().replace("\\", "/")
+    if not normalized:
+        return None
+
+    alias_map = {
+        "backend/chat_auth.py": "files/backend/chat_auth.py",
+        "files/backend/chat_auth.py": "files/backend/chat_auth.py",
+        "backend/order_adapter_client.py": "files/backend/order_adapter_client.py",
+        "backend/adapters/order_adapter.py": "files/backend/order_adapter_client.py",
+        "files/backend/order_adapter_client.py": "files/backend/order_adapter_client.py",
+        "backend/product_adapter_client.py": "files/backend/product_adapter_client.py",
+        "backend/adapters/product_adapter.py": "files/backend/product_adapter_client.py",
+        "files/backend/product_adapter_client.py": "files/backend/product_adapter_client.py",
+        "patches/backend_chat_auth_route.patch": "patches/backend_chat_auth_route.patch",
+        "backend_chat_auth_route.patch": "patches/backend_chat_auth_route.patch",
+        "patches/frontend_widget_mount.patch": "patches/frontend_widget_mount.patch",
+        "frontend_widget_mount.patch": "patches/frontend_widget_mount.patch",
+    }
+    if normalized in alias_map:
+        return alias_map[normalized]
+    if normalized.startswith(("files/", "patches/")):
+        return normalized
+    return None
+
 
 def _update_manifest_generated_outputs(
     *,

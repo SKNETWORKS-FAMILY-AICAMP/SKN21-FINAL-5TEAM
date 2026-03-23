@@ -548,6 +548,154 @@ def test_write_llm_codebase_interpretation_recovery_uses_hard_fallback_on_invali
     ]
 
 
+def test_write_llm_codebase_interpretation_recovery_falls_back_when_recovered_payload_keeps_invalid_candidate(
+    tmp_path: Path,
+):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "llm-codebase-interpretation.json"
+    codebase_map = {
+        "candidate_edit_targets": [
+            {"path": "backend/account/handlers.py", "reason": "auth handler"},
+        ]
+    }
+
+    class RecoverableButInvalidCandidateLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "structure_summary": {
+                                "backend": {"framework": "django"},
+                                "frontend": {"framework": "react"},
+                            },
+                            "framework_assessment": {
+                                "backend": "django",
+                                "frontend": "react",
+                            },
+                            "ranked_candidates": [
+                                {
+                                    "path": "frontend/src/context/AuthContext.jsx",
+                                    "reason": "invalid candidate",
+                                }
+                            ],
+                        }
+                    )
+                },
+            )()
+
+    path = write_llm_codebase_interpretation(
+        source_root=source_root,
+        analysis={"framework": {"backend": "django", "frontend": "react"}},
+        codebase_map=codebase_map,
+        output_path=output_path,
+        llm_factory=lambda: RecoverableButInvalidCandidateLLM(),
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    debug_payload = json.loads((tmp_path / "reports" / "llm-debug" / "codebase-interpretation.json").read_text(encoding="utf-8"))
+    recovery_events = json.loads((tmp_path / "reports" / "recovery-events.json").read_text(encoding="utf-8"))
+
+    assert payload["source"] == "hard_fallback"
+    assert payload["recovery_applied"] is False
+    assert payload["recovery_reason"] is None
+    assert payload["hard_fallback_reason"] == "invalid_ranked_candidates"
+    assert payload["ranked_candidates"][0]["path"] == "backend/account/handlers.py"
+    assert debug_payload["status"] == "hard_fallback"
+    assert debug_payload["hard_fallback_reason"] == "invalid_ranked_candidates"
+    assert debug_payload["error_message"] == "invalid ranked candidate: frontend/src/context/AuthContext.jsx"
+    assert recovery_events == [
+        {
+            "component": "llm_codebase_interpretation",
+            "source": "hard_fallback",
+            "recovery_reason": None,
+            "hard_fallback_reason": "invalid_ranked_candidates",
+        }
+    ]
+
+
+def test_write_llm_codebase_interpretation_filters_invalid_ranked_candidates_when_valid_ones_remain(
+    tmp_path: Path,
+):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "llm-codebase-interpretation.json"
+    codebase_map = {
+        "candidate_edit_targets": [
+            {"path": "backend/users/views.py", "reason": "auth handler"},
+            {"path": "frontend/src/api/api.js", "reason": "api client"},
+        ]
+    }
+
+    class MixedCandidateLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "structure_summary": "django session auth",
+                            "framework_assessment": {"backend": "django", "frontend": "react"},
+                            "ranked_candidates": [
+                                {
+                                    "path": "backend/users/views.py",
+                                    "reason": "primary auth entrypoint",
+                                },
+                                {
+                                    "path": "frontend/src/context/AuthContext.jsx",
+                                    "reason": "frontend auth state",
+                                },
+                                {
+                                    "path": "frontend/src/api/api.js",
+                                    "reason": "api client",
+                                },
+                            ],
+                        }
+                    )
+                },
+            )()
+
+    path = write_llm_codebase_interpretation(
+        source_root=source_root,
+        analysis={"framework": {"backend": "django", "frontend": "react"}},
+        codebase_map=codebase_map,
+        output_path=output_path,
+        llm_factory=lambda: MixedCandidateLLM(),
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    debug_payload = json.loads((tmp_path / "reports" / "llm-debug" / "codebase-interpretation.json").read_text(encoding="utf-8"))
+    recovery_events = json.loads((tmp_path / "reports" / "recovery-events.json").read_text(encoding="utf-8"))
+
+    assert payload["source"] == "recovered_llm"
+    assert payload["recovery_applied"] is True
+    assert payload["recovery_reason"] == "invalid_ranked_candidates_filtered"
+    assert [item["path"] for item in payload["ranked_candidates"]] == [
+        "backend/users/views.py",
+        "frontend/src/api/api.js",
+    ]
+    assert payload["dropped_ranked_candidates"] == [
+        {
+            "path": "frontend/src/context/AuthContext.jsx",
+            "reason": "frontend auth state",
+            "drop_reason": "invalid_ranked_candidate",
+        }
+    ]
+    assert debug_payload["status"] == "recovered_llm"
+    assert debug_payload["recovery_reason"] == "invalid_ranked_candidates_filtered"
+    assert debug_payload["dropped_ranked_candidates"] == payload["dropped_ranked_candidates"]
+    assert recovery_events == [
+        {
+            "component": "llm_codebase_interpretation",
+            "source": "recovered_llm",
+            "recovery_reason": "invalid_ranked_candidates_filtered",
+            "hard_fallback_reason": None,
+        }
+    ]
+
+
 def test_write_llm_codebase_interpretation_recovery_normalizes_ranked_candidate_paths(tmp_path: Path):
     source_root = tmp_path / "source"
     output_path = tmp_path / "reports" / "llm-codebase-interpretation.json"

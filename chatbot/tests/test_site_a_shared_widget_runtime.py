@@ -21,6 +21,17 @@ def test_site_a_shared_widget_runtime_uses_shared_host_contract():
     payload = module.build_widget_runtime_payload(site="food")
 
     assert payload["site"] == "food"
-    assert payload["widget_bundle_path"] == "/widget.js"
-    assert payload["widget_element_tag"] == "order-cs-widget"
+    assert {
+        "chatbotServerBaseUrl": payload["chatbotServerBaseUrl"],
+        "authBootstrapPath": payload["authBootstrapPath"],
+        "widgetBundlePath": payload["widgetBundlePath"],
+        "widgetElementTag": payload["widgetElementTag"],
+        "mountMode": payload["mountMode"],
+    } == {
+        "chatbotServerBaseUrl": "",
+        "authBootstrapPath": "/api/chat/auth-token",
+        "widgetBundlePath": "/widget.js",
+        "widgetElementTag": "order-cs-widget",
+        "mountMode": "floating_launcher",
+    }
     assert "site_id" not in payload

@@ -635,7 +635,7 @@ def test_ecommerce_wrapper_enables_full_shared_widget_capabilities(tmp_path: Pat
         REPO_ROOT / "chatbot" / "frontend" / "shared_widget" / "chatbotfab.tsx"
     ).read_text(encoding="utf-8")
 
-    assert "capabilities={ECOMMERCE_SHARED_WIDGET_CAPABILITIES}" in chatbotfab_source
+    assert 'capabilities="full"' in chatbotfab_source
 
     output = _run_typescript_transport(
         tmp_path,
@@ -680,3 +680,137 @@ process.stdout.write(
     payload = json.loads(output)
     assert payload["capabilities"] == "full"
     assert "장바구니" in payload["markup"]
+
+
+def test_shared_widget_transport_promotes_metadata_pending_option_interrupt(tmp_path: Path) -> None:
+    output = _run_typescript_transport(
+        tmp_path,
+        entry_name="run_shared_widget_pending_option_interrupt.tsx",
+        bootstrap_name="run_shared_widget_pending_option_interrupt.cjs",
+        tsconfig_name="tsconfig.shared-widget-pending-option-interrupt.json",
+        source="""
+import {
+  streamSharedChatResponse,
+  type SharedChatMessage,
+} from "@shared-chatbot/ChatbotWidget";
+
+declare const process: {
+  stdout: {
+    write: (chunk: string) => void;
+  };
+  exit: (code?: number) => void;
+};
+
+const fakeFetch = async (_url: string, _init?: { body?: string }) => {
+  const events = [
+    'data: {"type":"metadata","ui_action_required":"show_option_list","state":{"conversation_id":"conv-opt-123","awaiting_interrupt":true,"pending_interrupt":[{"ui_action":"show_option_list","action":"select_option","message":"교환할 옵션을 선택해주세요.","ui_data":[{"option_id":12361,"label":"옵션 12361 · 사이즈 M · 색상 블랙 · 재고 3","size_name":"M","color":"블랙","quantity":3}],"prior_action":"exchange"}]}}\\n\\n',
+    'data: {"type":"done"}\\n\\n',
+  ];
+  let index = 0;
+
+  return {
+    ok: true,
+    text: async () => "",
+    body: {
+      getReader() {
+        return {
+          async read() {
+            if (index >= events.length) {
+              return { done: true, value: undefined };
+            }
+
+            const value = new TextEncoder().encode(events[index]);
+            index += 1;
+            return { done: false, value };
+          },
+        };
+      },
+    },
+  };
+};
+
+async function main() {
+  const unhandled: Array<Record<string, unknown>> = [];
+  let nextState: unknown = null;
+  const messages: SharedChatMessage[] = [];
+
+  await streamSharedChatResponse(
+    {
+      host: {
+        authBootstrapPath: "/api/chat/auth-token",
+        chatbotApiBase: "http://localhost:9000",
+      },
+      message: "옵션 변경할래",
+      previousState: null,
+      bootstrap: {
+        authenticated: true,
+        site_id: "site-c",
+        siteId: "site-c",
+        access_token: "bridge-token-123",
+        accessToken: "bridge-token-123",
+      },
+      fetchImpl: fakeFetch as typeof fetch,
+    },
+    {
+      onMessage(message) {
+        messages.push(message);
+      },
+      onUnhandledUiAction(payload) {
+        unhandled.push(payload);
+      },
+      onStateChange(state) {
+        nextState = state;
+      },
+    },
+  );
+
+  process.stdout.write(JSON.stringify({ unhandled, nextState, messages }));
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+        """,
+    )
+
+    payload = json.loads(output)
+    assert payload["messages"] == []
+    assert payload["unhandled"] == [
+        {
+            "ui_action": "show_option_list",
+            "action": "select_option",
+            "message": "교환할 옵션을 선택해주세요.",
+            "ui_data": [
+                {
+                    "option_id": 12361,
+                    "label": "옵션 12361 · 사이즈 M · 색상 블랙 · 재고 3",
+                    "size_name": "M",
+                    "color": "블랙",
+                    "quantity": 3,
+                }
+            ],
+            "prior_action": "exchange",
+        }
+    ]
+    assert payload["nextState"] == {
+        "conversation_id": "conv-opt-123",
+        "awaiting_interrupt": True,
+        "pending_interrupt": [
+            {
+                "ui_action": "show_option_list",
+                "action": "select_option",
+                "message": "교환할 옵션을 선택해주세요.",
+                "ui_data": [
+                    {
+                        "option_id": 12361,
+                        "label": "옵션 12361 · 사이즈 M · 색상 블랙 · 재고 3",
+                        "size_name": "M",
+                        "color": "블랙",
+                        "quantity": 3,
+                    }
+                ],
+                "prior_action": "exchange",
+            }
+        ],
+    }
