@@ -1,0 +1,15 @@
+.widgetRoot {
+  display: grid;
+  gap: 12px;
+}
+
+.widgetMessageList {
+  display: grid;
+  gap: 12px;
+}
+
+.widgetTextMessage {
+  margin: 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}

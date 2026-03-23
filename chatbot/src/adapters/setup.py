@@ -48,18 +48,16 @@ def setup_adapters() -> None:
     ecommerce_adapter = SiteCAdapter(client=ecommerce_client)
 
     # 레지스트리 등록
-    AdapterRegistry.register_many([
-        food_adapter,
-        bilyeo_adapter,
-        ecommerce_adapter
-    ])
+    AdapterRegistry.register_many([food_adapter, bilyeo_adapter, ecommerce_adapter])
 
     setup_adapters._initialized = True
+
 
 # 전역 함수로 바로 호출 가능하도록 초기화 지원
 def resolve_site_adapter(site_id: str):
     setup_adapters()
     return AdapterRegistry.get(site_id)
+
 
 # Alias for backward compatibility
 get_adapter = resolve_site_adapter

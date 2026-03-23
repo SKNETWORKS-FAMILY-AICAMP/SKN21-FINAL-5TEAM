@@ -93,7 +93,7 @@ type ProductListMessage = {
   role: 'bot';
   type: 'product_list';
   message: string;
-  ui_data: UiProduct[];
+  products: UiProduct[];
 };
 
 type ReviewFormMessage = {
@@ -911,7 +911,7 @@ export default function ChatbotFab({
                     role: 'bot',
                     type: 'product_list',
                     message: message.message,
-                    ui_data: message.products,
+                    products: message.products,
                   },
                 ];
               }
@@ -931,6 +931,19 @@ export default function ChatbotFab({
             setIsLoading(false);
             setStatusMessage(null);
             setMessages((prev) => {
+              if (data.ui_action === 'show_product_list') {
+                const products = Array.isArray(data.ui_data) ? data.ui_data : [];
+                return [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'product_list',
+                    message: data.message || '추천 상품',
+                    products,
+                  },
+                ];
+              }
+
               if (data.ui_action === 'show_address_search') {
                 return [
                   ...prev,

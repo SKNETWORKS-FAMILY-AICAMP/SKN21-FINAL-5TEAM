@@ -44,6 +44,15 @@ def _should_preload_heavy_models_once_per_reload_session() -> bool:
     return True
 
 
+def _should_preload_clip_on_startup() -> bool:
+    return os.getenv("PRELOAD_CLIP_ON_STARTUP", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 # ============================================
 # 자동 컬럼 마이그레이션
 # ============================================
@@ -142,7 +151,9 @@ async def lifespan(app: FastAPI):
     # 2. 누락된 컬럼 자동 추가
     step_t0 = time.perf_counter()
     auto_add_missing_columns()
-    logging.info(f"[startup] 컬럼 마이그레이션 완료: {time.perf_counter() - step_t0:.2f}s")
+    logging.info(
+        f"[startup] 컬럼 마이그레이션 완료: {time.perf_counter() - step_t0:.2f}s"
+    )
 
     # 3. 초기 데이터 적재 (Seed)
     from ecommerce.backend.app.database import SessionLocal
@@ -152,7 +163,9 @@ async def lifespan(app: FastAPI):
     try:
         step_t0 = time.perf_counter()
         init_db(db)
-        logging.info(f"[startup] 초기 데이터 적재 완료: {time.perf_counter() - step_t0:.2f}s")
+        logging.info(
+            f"[startup] 초기 데이터 적재 완료: {time.perf_counter() - step_t0:.2f}s"
+        )
     finally:
         db.close()
 
@@ -177,7 +190,6 @@ app = FastAPI(
     title="E-commerce Platform",
     lifespan=lifespan,  # Lifespan 이벤트 적용
 )
-
 
 
 # ============================================
