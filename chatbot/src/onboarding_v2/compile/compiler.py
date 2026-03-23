@@ -12,7 +12,12 @@ from chatbot.src.onboarding_v2.compile.strategies.chatbot.generated_adapter impo
 from chatbot.src.onboarding_v2.compile.strategies.frontend.react_api import compile_react_api_bundle
 from chatbot.src.onboarding_v2.compile.strategies.frontend.react_mount import compile_react_mount_bundle
 from chatbot.src.onboarding_v2.models.analysis import AnalysisSnapshot
-from chatbot.src.onboarding_v2.models.compile import ChatbotEditProgram, EditProgram, HostEditProgram
+from chatbot.src.onboarding_v2.models.compile import (
+    ChatbotEditProgram,
+    CompilePreflightSpec,
+    EditProgram,
+    HostEditProgram,
+)
 from chatbot.src.onboarding_v2.models.planning import IntegrationPlan
 
 
@@ -59,6 +64,7 @@ def compile_plan(
         chatbot_program=ChatbotEditProgram(
             bridge_bundles=[chatbot_bridge_bundle],
             supporting_artifact_bundles=list(chatbot_bridge_bundle.supporting_files),
+            compile_preflight=CompilePreflightSpec(),
         ),
         execution_metadata={
             "host_backend_strategy": plan.host_backend.strategy,

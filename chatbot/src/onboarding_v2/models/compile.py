@@ -76,6 +76,13 @@ class ChatbotBridgeBundle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class CompilePreflightSpec(BaseModel):
+    artifact_type: str = "compile-preflight"
+    check_name: str = "chatbot_runtime_import"
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class HostEditProgram(BaseModel):
     backend_wiring_bundles: list[BackendWiringBundle] = Field(default_factory=list)
     frontend_mount_bundles: list[FrontendMountBundle] = Field(default_factory=list)
@@ -88,6 +95,7 @@ class HostEditProgram(BaseModel):
 class ChatbotEditProgram(BaseModel):
     bridge_bundles: list[ChatbotBridgeBundle] = Field(default_factory=list)
     supporting_artifact_bundles: list[SupportingArtifactBundle] = Field(default_factory=list)
+    compile_preflight: CompilePreflightSpec | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -114,4 +122,3 @@ class EditProgram(BaseModel):
     @property
     def supporting_artifact_bundles(self) -> list[SupportingArtifactBundle]:
         return self.host_program.supporting_artifact_bundles
-

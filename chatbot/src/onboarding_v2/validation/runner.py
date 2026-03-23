@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import os
+import subprocess
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -34,6 +36,9 @@ from chatbot.src.onboarding_v2.validation.backend_runtime import (
     stop_backend_runtime,
 )
 from chatbot.src.onboarding_v2.validation.signatures import build_failure_signature
+from fastapi.testclient import TestClient
+from chatbot import server_fastapi
+from chatbot.src.api.v1.endpoints import chat as chat_endpoint
 
 
 @dataclass(slots=True)
@@ -41,6 +46,7 @@ class ValidationRunResult:
     bundle: ValidationBundle
     backend_runtime_prep: BackendRuntimePrepResult
     backend_runtime_state: BackendRuntimeState
+    chatbot_runtime_boot: dict[str, Any]
     host_auth_bootstrap: dict[str, Any]
     chatbot_adapter_auth: dict[str, Any]
     widget_order_e2e: WidgetOrderE2EResult
@@ -84,8 +90,11 @@ def run_validation_cycle(
     host_runtime_workspace = Path(host_runtime_workspace)
     chatbot_runtime_workspace = Path(chatbot_runtime_workspace)
 
-    prep_result = prepare_backend_runtime(workspace=host_runtime_workspace, snapshot=snapshot)
+    prep_result = prepare_backend_runtime(
+        workspace=host_runtime_workspace, snapshot=snapshot
+    )
     runtime_state: BackendRuntimeState
+    chatbot_runtime_boot: dict[str, Any]
     host_auth_bootstrap: dict[str, Any]
     chatbot_adapter_auth: dict[str, Any]
     widget_order_e2e: WidgetOrderE2EResult
@@ -105,6 +114,22 @@ def run_validation_cycle(
         )
 
     if prep_result.passed and runtime_state.passed and runtime_plan is not None:
+        chatbot_runtime_boot = validate_chatbot_runtime_boot(
+            chatbot_runtime_workspace=chatbot_runtime_workspace
+        )
+    else:
+        chatbot_runtime_boot = _skipped_result(
+            "chatbot runtime boot skipped because backend runtime boot failed"
+            if prep_result.passed
+            else "chatbot runtime boot skipped because backend runtime prep failed"
+        )
+
+    if (
+        prep_result.passed
+        and runtime_state.passed
+        and runtime_plan is not None
+        and chatbot_runtime_boot.get("passed")
+    ):
         try:
             host_auth_bootstrap = validate_host_auth_bootstrap(
                 run_root=run_root,
@@ -130,9 +155,19 @@ def run_validation_cycle(
         finally:
             stop_backend_runtime(runtime_state)
     else:
-        reason = "backend runtime boot failed" if prep_result.passed else "backend runtime prep failed"
-        host_auth_bootstrap = _skipped_result("host auth bootstrap skipped because " + reason)
-        chatbot_adapter_auth = _skipped_result("chatbot adapter auth skipped because " + reason)
+        reason = (
+            "backend runtime boot failed"
+            if prep_result.passed
+            else "backend runtime prep failed"
+        )
+        if prep_result.passed and runtime_state.passed and not chatbot_runtime_boot.get("passed"):
+            reason = "chatbot runtime boot failed"
+        host_auth_bootstrap = _skipped_result(
+            "host auth bootstrap skipped because " + reason
+        )
+        chatbot_adapter_auth = _skipped_result(
+            "chatbot adapter auth skipped because " + reason
+        )
         widget_order_e2e = WidgetOrderE2EResult(
             passed=False,
             failure_summary="widget order e2e skipped because " + reason,
@@ -159,6 +194,12 @@ def run_validation_cycle(
             details=runtime_state.model_dump(mode="json"),
         ),
         ValidationCheck(
+            name="chatbot_runtime_boot",
+            passed=bool(chatbot_runtime_boot["passed"]),
+            summary=chatbot_runtime_boot["failure_summary"],
+            details=chatbot_runtime_boot,
+        ),
+        ValidationCheck(
             name="host_auth_bootstrap",
             passed=bool(host_auth_bootstrap["passed"]),
             summary=host_auth_bootstrap["failure_summary"],
@@ -179,7 +220,9 @@ def run_validation_cycle(
         ValidationCheck(
             name="replay_apply",
             passed=bool(replay_result.passed),
-            summary="replay apply passed" if replay_result.passed else "replay apply failed",
+            summary="replay apply passed"
+            if replay_result.passed
+            else "replay apply failed",
             details=replay_result.model_dump(mode="json"),
         ),
         ValidationCheck(
@@ -196,11 +239,14 @@ def run_validation_cycle(
 
     first_failure = next((check for check in checks if not check.passed), None)
     related_artifacts = [ref for ref in artifact_refs.values() if ref is not None]
-    input_artifact_versions = {name: ref.version for name, ref in artifact_refs.items() if ref is not None}
+    input_artifact_versions = {
+        name: ref.version for name, ref in artifact_refs.items() if ref is not None
+    }
     related_files = sorted(
         {
             *prep_result.related_files,
             *runtime_state.related_files,
+            *chatbot_runtime_boot.get("related_files", []),
             *host_auth_bootstrap.get("related_files", []),
             *chatbot_adapter_auth.get("related_files", []),
             *widget_order_e2e.related_files,
@@ -213,7 +259,9 @@ def run_validation_cycle(
         failure_signature=(
             None
             if first_failure is None
-            else build_failure_signature(check_name=first_failure.name, summary=first_failure.summary)
+            else build_failure_signature(
+                check_name=first_failure.name, summary=first_failure.summary
+            )
         ),
         failure_summary=None if first_failure is None else first_failure.summary,
         related_files=related_files,
@@ -224,6 +272,7 @@ def run_validation_cycle(
         bundle=bundle,
         backend_runtime_prep=prep_result,
         backend_runtime_state=runtime_state,
+        chatbot_runtime_boot=chatbot_runtime_boot,
         host_auth_bootstrap=host_auth_bootstrap,
         chatbot_adapter_auth=chatbot_adapter_auth,
         widget_order_e2e=widget_order_e2e,
@@ -240,12 +289,16 @@ def validate_host_auth_bootstrap(
     onboarding_credentials: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     del run_root, host_runtime_workspace, snapshot
-    base_url = runtime_plan.readiness_url.removesuffix(plan.host_backend.chat_auth_contract_path).rstrip("/")
+    base_url = runtime_plan.readiness_url.removesuffix(
+        plan.host_backend.chat_auth_contract_path
+    ).rstrip("/")
     credentials = {
         "email": "test1@example.com",
         "password": "password123",
     }
-    credentials.update({key: value for key, value in (onboarding_credentials or {}).items() if value})
+    credentials.update(
+        {key: value for key, value in (onboarding_credentials or {}).items() if value}
+    )
     login_url = f"{base_url}/api/users/login/"
     bootstrap_url = f"{base_url}{plan.host_backend.chat_auth_contract_path}"
 
@@ -297,16 +350,25 @@ def validate_chatbot_adapter_auth(
 ) -> dict[str, Any]:
     payload = dict(bootstrap_result.get("bootstrap_payload") or {})
     if not bootstrap_result.get("passed"):
-        return _skipped_result("chatbot adapter auth skipped because host auth bootstrap failed")
+        return _skipped_result(
+            "chatbot adapter auth skipped because host auth bootstrap failed"
+        )
 
     module_prefix = f"src.adapters.generated.{plan.chatbot_bridge.site_key}"
     with _prepend_path(chatbot_runtime_workspace):
         _drop_import_cache(module_prefix)
         adapter_module = importlib.import_module(f"{module_prefix}.adapter")
         client_module = importlib.import_module(f"{module_prefix}.client")
-        adapter_class = getattr(adapter_module, f"Generated{_class_name(plan.chatbot_bridge.site_key)}Adapter")
-        client_class = getattr(client_module, f"Generated{_class_name(plan.chatbot_bridge.site_key)}Client")
-        adapter = adapter_class(client=client_class(base_url=_runtime_base_url(runtime_plan)))
+        adapter_class = getattr(
+            adapter_module,
+            f"Generated{_class_name(plan.chatbot_bridge.site_key)}Adapter",
+        )
+        client_class = getattr(
+            client_module, f"Generated{_class_name(plan.chatbot_bridge.site_key)}Client"
+        )
+        adapter = adapter_class(
+            client=client_class(base_url=_runtime_base_url(runtime_plan))
+        )
         try:
             validated_user = asyncio.run(
                 adapter.validate_auth(
@@ -330,12 +392,70 @@ def validate_chatbot_adapter_auth(
     user_id = str(getattr(validated_user, "id", "") or "").strip()
     return {
         "passed": bool(user_id),
-        "failure_summary": "chatbot adapter auth passed" if user_id else "chatbot adapter auth missing user.id",
+        "failure_summary": "chatbot adapter auth passed"
+        if user_id
+        else "chatbot adapter auth missing user.id",
         "validated_user": validated_user.model_dump(mode="json"),
         "related_files": [
             f"{plan.chatbot_bridge.adapter_package}/adapter.py",
             f"{plan.chatbot_bridge.adapter_package}/auth.py",
             plan.chatbot_bridge.setup_target,
+        ],
+    }
+
+
+def validate_chatbot_runtime_boot(
+    *,
+    chatbot_runtime_workspace: Path,
+) -> dict[str, Any]:
+    command = [
+        sys.executable,
+        "-c",
+        (
+            "import server_fastapi as module; "
+            "app = getattr(module, 'app', None); "
+            "assert app is not None, 'server_fastapi.app missing'; "
+            "print('chatbot runtime boot passed')"
+        ),
+    ]
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{chatbot_runtime_workspace}{os.pathsep}{existing_pythonpath}"
+        if existing_pythonpath
+        else str(chatbot_runtime_workspace)
+    )
+    result = subprocess.run(
+        command,
+        cwd=str(chatbot_runtime_workspace),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        summary = "chatbot runtime boot passed"
+    else:
+        failure_line = next(
+            (
+                line.strip()
+                for line in reversed(result.stderr.splitlines())
+                if line.strip()
+            ),
+            f"exit code {result.returncode}",
+        )
+        summary = f"chatbot runtime boot failed: {failure_line}"
+    return {
+        "passed": result.returncode == 0,
+        "failure_summary": summary,
+        "command": command,
+        "cwd": str(chatbot_runtime_workspace),
+        "returncode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "related_files": [
+            "server_fastapi.py",
+            "src/tools/adapter_order_tools.py",
+            "src/tools/order_tools.py",
         ],
     }
 
@@ -347,10 +467,6 @@ def validate_widget_order_e2e(
     adapter_auth_result: dict[str, Any],
     plan: IntegrationPlan,
 ) -> WidgetOrderE2EResult:
-    from fastapi.testclient import TestClient
-
-    from chatbot import server_fastapi
-    from chatbot.src.api.v1.endpoints import chat as chat_endpoint
 
     if not bootstrap_result.get("passed"):
         return WidgetOrderE2EResult(
@@ -366,7 +482,9 @@ def validate_widget_order_e2e(
         )
 
     payload = dict(bootstrap_result.get("bootstrap_payload") or {})
-    adapter = _load_generated_adapter(chatbot_runtime_workspace=chatbot_runtime_workspace, plan=plan)
+    adapter = _load_generated_adapter(
+        chatbot_runtime_workspace=chatbot_runtime_workspace, plan=plan
+    )
     flow_reports = _collect_widget_order_flow_report(
         adapter=adapter,
         adapter_auth_result=adapter_auth_result,
@@ -389,17 +507,23 @@ def _collect_widget_order_flow_report(
 ) -> dict[str, dict[str, Any]]:
     auth_context = AuthenticatedContext(
         siteId=plan.chatbot_bridge.site_key,
-        userId=str((adapter_auth_result.get("validated_user") or {}).get("id") or "__bridge__"),
+        userId=str(
+            (adapter_auth_result.get("validated_user") or {}).get("id") or "__bridge__"
+        ),
         accessToken=str(payload.get("access_token") or ""),
     )
-    status_input = importlib.import_module("src.adapters.schema").GetOrderStatusInput(orderId="1")
+    status_input = importlib.import_module("src.adapters.schema").GetOrderStatusInput(
+        orderId="1"
+    )
     flow_reports: dict[str, dict[str, Any]] = {}
     try:
         order_status = asyncio.run(adapter.get_order_status(auth_context, status_input))
         flow_reports["get_order_status"] = {
             "passed": True,
             "steps": [],
-            "status": getattr(getattr(order_status, "order", None), "status", None).value
+            "status": getattr(
+                getattr(order_status, "order", None), "status", None
+            ).value
             if getattr(getattr(order_status, "order", None), "status", None) is not None
             else None,
         }
@@ -410,7 +534,9 @@ def _collect_widget_order_flow_report(
             "failure_summary": f"get_order_status failed: {exc}",
         }
 
-    with patch.object(chat_endpoint.adapter_setup, "resolve_site_adapter", lambda site_id: adapter):
+    with patch.object(
+        chat_endpoint.adapter_setup, "resolve_site_adapter", lambda site_id: adapter
+    ):
         client = TestClient(server_fastapi.app)
         flow_reports["list_orders"] = _exercise_widget_order_flow(
             client=client,
@@ -544,7 +670,9 @@ def _evaluate_widget_order_flow_report(
     if not status_report.get("passed"):
         return WidgetOrderE2EResult(
             passed=False,
-            failure_summary=str(status_report.get("failure_summary") or "get_order_status failed"),
+            failure_summary=str(
+                status_report.get("failure_summary") or "get_order_status failed"
+            ),
             covered_flows=covered_flows,
             flow_reports=flow_reports,
             related_files=_widget_order_related_files(plan),
@@ -574,7 +702,11 @@ def _exercise_widget_order_flow(
     fragments: list[str] = []
     observed_steps: list[str] = []
     pending_interrupt: list[dict[str, Any]] = []
-    with patch.object(server_fastapi.graph_app, "astream_events", _build_widget_astream_events(step_specs)):
+    with patch.object(
+        server_fastapi.graph_app,
+        "astream_events",
+        _build_widget_astream_events(step_specs),
+    ):
         for index, step_spec in enumerate(step_specs):
             request_payload: dict[str, Any] = {
                 "message": message if index == 0 else "계속",
@@ -636,7 +768,14 @@ def _interrupt_value_for_step(step_spec: dict[str, Any]) -> dict[str, Any]:
         "ui_action": step_spec["ui_action"],
         "message": step_spec["message"],
     }
-    for key in ("action", "ui_data", "requires_selection", "prior_action", "order_id", "new_option_id"):
+    for key in (
+        "action",
+        "ui_data",
+        "requires_selection",
+        "prior_action",
+        "order_id",
+        "new_option_id",
+    ):
         if key in step_spec:
             value[key] = step_spec[key]
     return value
@@ -687,10 +826,14 @@ def _sample_option_item(option_id: str) -> dict[str, Any]:
     }
 
 
-def _find_missing_flow_step(expected_steps: list[str], actual_steps: list[str]) -> str | None:
+def _find_missing_flow_step(
+    expected_steps: list[str], actual_steps: list[str]
+) -> str | None:
     actual_index = 0
     for expected in expected_steps:
-        while actual_index < len(actual_steps) and actual_steps[actual_index] != expected:
+        while (
+            actual_index < len(actual_steps) and actual_steps[actual_index] != expected
+        ):
             actual_index += 1
         if actual_index >= len(actual_steps):
             return expected
@@ -734,7 +877,9 @@ def _evaluate_backend(workspace: Path) -> dict[str, Any]:
         "failed_files": failed_files,
         "route_wiring": route_wiring,
         "failure_summary": failure_summary or "backend evaluation passed",
-        "related_files": sorted(set(checked_files) | set(route_wiring.get("files") or [])),
+        "related_files": sorted(
+            set(checked_files) | set(route_wiring.get("files") or [])
+        ),
     }
 
 
@@ -754,7 +899,9 @@ def _evaluate_frontend(workspace: Path) -> dict[str, Any]:
         "mount_candidates": mount_candidates,
         "mount_path": str(mount_path) if mount_path else None,
         "validation_errors": validation_errors,
-        "failure_summary": validation_errors[0] if validation_errors else "frontend evaluation passed",
+        "failure_summary": validation_errors[0]
+        if validation_errors
+        else "frontend evaluation passed",
         "related_files": mount_candidates,
     }
 
@@ -767,7 +914,9 @@ def _evaluate_replay_workspaces(
 ) -> dict[str, Any]:
     host_backend = _evaluate_backend(host_workspace)
     host_frontend = _evaluate_frontend(host_workspace)
-    generated_adapter = chatbot_workspace / plan.chatbot_bridge.adapter_package / "adapter.py"
+    generated_adapter = (
+        chatbot_workspace / plan.chatbot_bridge.adapter_package / "adapter.py"
+    )
     setup_path = chatbot_workspace / plan.chatbot_bridge.setup_target
     passed = (
         host_backend["passed"]
@@ -806,7 +955,9 @@ def _skipped_runtime_state(*, framework: str, reason: str) -> BackendRuntimeStat
         framework=framework,
         passed=False,
         failure_summary=reason,
-        related_files=["backend/manage.py", "backend/chat_auth.py"] if framework == "django" else ["chat_auth.py"],
+        related_files=["backend/manage.py", "backend/chat_auth.py"]
+        if framework == "django"
+        else ["chat_auth.py"],
     )
 
 
@@ -818,7 +969,9 @@ def _skipped_result(reason: str) -> dict[str, Any]:
     }
 
 
-def _coerce_widget_order_e2e_result(value: WidgetOrderE2EResult | dict[str, Any]) -> WidgetOrderE2EResult:
+def _coerce_widget_order_e2e_result(
+    value: WidgetOrderE2EResult | dict[str, Any],
+) -> WidgetOrderE2EResult:
     if isinstance(value, WidgetOrderE2EResult):
         return value
     payload = dict(value or {})
@@ -844,8 +997,13 @@ def _load_generated_adapter(*, chatbot_runtime_workspace: Path, plan: Integratio
         _drop_import_cache(module_prefix)
         adapter_module = importlib.import_module(f"{module_prefix}.adapter")
         client_module = importlib.import_module(f"{module_prefix}.client")
-        adapter_class = getattr(adapter_module, f"Generated{_class_name(plan.chatbot_bridge.site_key)}Adapter")
-        client_class = getattr(client_module, f"Generated{_class_name(plan.chatbot_bridge.site_key)}Client")
+        adapter_class = getattr(
+            adapter_module,
+            f"Generated{_class_name(plan.chatbot_bridge.site_key)}Adapter",
+        )
+        client_class = getattr(
+            client_module, f"Generated{_class_name(plan.chatbot_bridge.site_key)}Client"
+        )
         return adapter_class(client=client_class(base_url="http://127.0.0.1:8000"))
 
 

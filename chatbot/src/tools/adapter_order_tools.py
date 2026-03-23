@@ -25,13 +25,90 @@ from chatbot.src.adapters.schema import (
     SubmitOrderActionInput,
 )
 from chatbot.src.adapters.setup import ORDER_CS_BRIDGE_OPERATIONS, get_adapter
-from chatbot.src.tools.order_tools import (
-    _extract_new_option_id_from_resume,
-    _extract_optional_confirmation_from_resume,
-    _extract_order_id_from_resume,
-    _is_langgraph_interrupt_error,
-    _require_human_confirmation,
-)
+
+
+def _is_langgraph_interrupt_error(error: Exception) -> bool:
+    """LangGraph interrupt 예외 여부를 안전하게 판별합니다."""
+    name = error.__class__.__name__
+    if name in {"GraphInterrupt", "NodeInterrupt"}:
+        return True
+    return "Interrupt(value=" in str(error)
+
+
+def _resolve_confirmation_from_resume(resume_value: object) -> bool:
+    extracted = _extract_optional_confirmation_from_resume(resume_value)
+    if extracted is not None:
+        return extracted
+    return False
+
+
+def _extract_optional_confirmation_from_resume(resume_value: object) -> bool | None:
+    if isinstance(resume_value, bool):
+        return resume_value
+
+    if isinstance(resume_value, dict):
+        for key in ("approved", "confirmed", "confirm", "proceed"):
+            if key in resume_value:
+                raw = resume_value.get(key)
+                if isinstance(raw, bool):
+                    return raw
+
+    return None
+
+
+def _extract_order_id_from_resume(resume_value: object) -> str | None:
+    if isinstance(resume_value, dict):
+        for key in ("selected_order_id", "order_id", "selectedOrderId"):
+            value = resume_value.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    return None
+
+
+def _extract_new_option_id_from_resume(resume_value: object) -> int | str | None:
+    if not isinstance(resume_value, dict):
+        return None
+
+    for key in (
+        "new_option_id",
+        "selected_option_id",
+        "option_id",
+        "selectedOptionId",
+    ):
+        value = resume_value.get(key)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip()
+            if not normalized:
+                continue
+            if normalized.isdigit():
+                return int(normalized)
+            return normalized
+
+    return None
+
+
+def _require_human_confirmation(
+    *,
+    action: str,
+    prompt: str,
+    context: dict,
+    confirmed: bool | None,
+) -> bool:
+    if confirmed is not None:
+        return confirmed
+
+    resume_value = interrupt(
+        {
+            "ui_action": "confirm_order_action",
+            "action": action,
+            "message": prompt,
+            **context,
+        }
+    )
+    return _resolve_confirmation_from_resume(resume_value)
 
 
 def _run(coro):

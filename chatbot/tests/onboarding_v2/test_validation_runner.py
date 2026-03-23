@@ -98,6 +98,14 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
         lambda state: None,
     )
     monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
         lambda **kwargs: {
             "passed": True,
@@ -146,13 +154,14 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
     assert [check.name for check in bundle.checks] == [
         "backend_runtime_prep",
         "backend_runtime_boot",
+        "chatbot_runtime_boot",
         "host_auth_bootstrap",
         "chatbot_adapter_auth",
         "widget_order_e2e",
         "replay_apply",
         "replay_validation",
     ]
-    assert bundle.checks[4].details["covered_flows"] == [
+    assert bundle.checks[5].details["covered_flows"] == [
         "list_orders",
         "get_order_status",
         "cancel",
@@ -188,9 +197,85 @@ def test_validation_runner_does_not_allow_static_fallback_success(monkeypatch, t
     assert bundle.failure_signature.startswith("backend_runtime_prep")
 
 
+def test_validation_runner_fails_when_chatbot_runtime_boot_fails(monkeypatch, tmp_path: Path):
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
+        readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
+    )
+    runtime_state = BackendRuntimeState(
+        framework="django",
+        passed=True,
+        pid=1234,
+        command=runtime_plan.command,
+        readiness_url=runtime_plan.readiness_url,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.prepare_backend_runtime",
+        lambda **kwargs: BackendRuntimePrepResult(framework="django", passed=True),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.build_backend_runtime_plan",
+        lambda **kwargs: runtime_plan,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
+        lambda plan: runtime_state,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
+        lambda state: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": False,
+            "failure_summary": "chatbot runtime boot failed: No module named 'ecommerce.backend'",
+            "related_files": ["server_fastapi.py", "src/tools/order_tools.py"],
+        },
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "host auth bootstrap passed",
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "session-token",
+                "user": {"id": "7"},
+            },
+            "related_files": [],
+        },
+    )
+    runtime_context = _build_food_runtime_artifacts(tmp_path)
+
+    bundle = run_validation(
+        run_root=runtime_context["generated_root"],
+        host_runtime_workspace=runtime_context["apply_result"].host_workspace_path,
+        chatbot_runtime_workspace=runtime_context["apply_result"].chatbot_workspace_path,
+        snapshot=runtime_context["snapshot"],
+        plan=runtime_context["plan"],
+        replay_result=runtime_context["replay_result"],
+        artifact_refs=runtime_context["artifact_refs"],
+    )
+
+    assert bundle.passed is False
+    assert [check.name for check in bundle.checks][:3] == [
+        "backend_runtime_prep",
+        "backend_runtime_boot",
+        "chatbot_runtime_boot",
+    ]
+    assert bundle.checks[2].passed is False
+    assert bundle.failure_signature == "chatbot_runtime_boot_chatbot_runtime_boot_failed_no_module_named_ecommerce_backend"
+
+
 def test_failure_signature_distinguishes_runtime_validation_phases():
     assert build_failure_signature(check_name="backend_runtime_prep", summary="dependency install failed") == "backend_runtime_prep_dependency_install_failed"
     assert build_failure_signature(check_name="backend_runtime_boot", summary="django app boot failed") == "backend_runtime_boot_django_app_boot_failed"
+    assert build_failure_signature(check_name="chatbot_runtime_boot", summary="chatbot runtime boot failed: No module named 'ecommerce.backend'") == "chatbot_runtime_boot_chatbot_runtime_boot_failed_no_module_named_ecommerce_backend"
     assert build_failure_signature(check_name="widget_order_e2e", summary="show_order_list missing") == "widget_order_e2e_show_order_list_missing"
 
 
@@ -261,6 +346,14 @@ def test_validation_runner_uses_explicit_credentials_without_manifest(monkeypatc
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
         lambda state: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
     )
     captured = {}
 
@@ -351,6 +444,14 @@ def test_validation_runner_requires_site_id_in_host_bootstrap(monkeypatch, tmp_p
         lambda state: None,
     )
     monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
         lambda **kwargs: {
             "passed": False,
@@ -379,5 +480,5 @@ def test_validation_runner_requires_site_id_in_host_bootstrap(monkeypatch, tmp_p
     )
 
     assert bundle.passed is False
-    assert bundle.checks[2].name == "host_auth_bootstrap"
+    assert bundle.checks[3].name == "host_auth_bootstrap"
     assert bundle.failure_signature == "host_auth_bootstrap_host_auth_bootstrap_missing_site_id"

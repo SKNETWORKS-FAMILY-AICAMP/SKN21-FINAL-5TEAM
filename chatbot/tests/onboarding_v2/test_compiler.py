@@ -55,6 +55,9 @@ def test_compiler_builds_complete_food_program():
         "src/adapters/generated/food/mappers.py",
         "src/adapters/generated/food/adapter.py",
     }
+    assert program.chatbot_program.compile_preflight is not None
+    assert program.chatbot_program.compile_preflight.artifact_type == "compile-preflight"
+    assert program.chatbot_program.compile_preflight.check_name == "chatbot_runtime_import"
 
 
 def test_compiler_tolerates_multiline_models_import_and_next_def_boundary(tmp_path: Path):

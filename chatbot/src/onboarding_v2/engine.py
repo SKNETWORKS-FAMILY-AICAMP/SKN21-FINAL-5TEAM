@@ -7,6 +7,10 @@ from typing import Any
 from chatbot.src.onboarding_v2.analysis import build_analysis_snapshot
 from chatbot.src.onboarding_v2.apply import apply_edit_program
 from chatbot.src.onboarding_v2.compile import compile_plan
+from chatbot.src.onboarding_v2.compile.preflight import (
+    CompilePreflightResult,
+    run_chatbot_compile_preflight,
+)
 from chatbot.src.onboarding_v2.export import export_and_replay
 from chatbot.src.onboarding_v2.models import (
     AnalysisSnapshot,
@@ -47,6 +51,8 @@ class _RunState:
     edit_program: EditProgram | None = None
     compile_ref: ArtifactRef | None = None
     chatbot_compile_ref: ArtifactRef | None = None
+    compile_preflight_ref: ArtifactRef | None = None
+    compile_preflight_result: CompilePreflightResult | None = None
     apply_result: ApplyResult | None = None
     apply_ref: ArtifactRef | None = None
     patch_ref: ArtifactRef | None = None
@@ -57,6 +63,7 @@ class _RunState:
     validation_run: ValidationRunResult | None = None
     prep_ref: ArtifactRef | None = None
     state_ref: ArtifactRef | None = None
+    chatbot_runtime_boot_ref: ArtifactRef | None = None
     host_auth_ref: ArtifactRef | None = None
     chatbot_adapter_auth_ref: ArtifactRef | None = None
     widget_order_ref: ArtifactRef | None = None
@@ -382,6 +389,12 @@ def run_onboarding_generation_v2(
         "latest_chatbot_compile_artifact": _artifact_abspath(
             run_root, state.chatbot_compile_ref
         ),
+        "latest_compile_preflight_artifact": _artifact_abspath(
+            run_root, state.compile_preflight_ref
+        ),
+        "compile_preflight_result": None
+        if state.compile_preflight_result is None
+        else state.compile_preflight_result.model_dump(mode="json"),
         "latest_apply_artifact": _artifact_abspath(run_root, state.apply_ref),
         "latest_validation_artifact": _artifact_abspath(run_root, state.validation_ref),
         "latest_export_artifact": _artifact_abspath(run_root, state.export_bundle_ref),
@@ -476,6 +489,31 @@ def _run_from_stage(
                 attempt=attempt,
             )
         elif stage == "validation":
+            if state.apply_result is None or state.apply_ref is None:
+                run_apply_stage(
+                    source_root=source_root,
+                    chatbot_source_root=chatbot_source_root,
+                    runtime_root=runtime_root,
+                    site=site,
+                    run_id=run_id,
+                    state=state,
+                    event_store=event_store,
+                    artifact_store=artifact_store,
+                    attempt=attempt,
+                )
+            if state.replay_result is None or state.replay_ref is None:
+                run_export_stage(
+                    source_root=source_root,
+                    chatbot_source_root=chatbot_source_root,
+                    runtime_root=runtime_root,
+                    run_root=run_root,
+                    site=site,
+                    run_id=run_id,
+                    state=state,
+                    event_store=event_store,
+                    artifact_store=artifact_store,
+                    attempt=attempt,
+                )
             run_validation_stage(
                 run_root=run_root,
                 run_id=run_id,
@@ -814,6 +852,13 @@ def run_apply_stage(
         )
         state.apply_result = apply_result
         state.apply_ref = apply_ref
+        run_compile_preflight_stage(
+            run_id=run_id,
+            state=state,
+            event_store=event_store,
+            artifact_store=artifact_store,
+            attempt=attempt,
+        )
     except _StageFailure:
         raise
     except Exception as exc:
@@ -973,6 +1018,154 @@ def run_export_stage(
         )
 
 
+def run_compile_preflight_stage(
+    *,
+    run_id: str,
+    state: _RunState,
+    event_store: EventStore,
+    artifact_store: ArtifactStore,
+    attempt: int,
+) -> None:
+    try:
+        if (
+            state.edit_program is None
+            or state.compile_ref is None
+            or state.chatbot_compile_ref is None
+            or state.apply_result is None
+            or state.apply_ref is None
+        ):
+            raise ValueError(
+                "compile artifacts and apply result are required before compile preflight"
+            )
+        preflight_spec = state.edit_program.chatbot_program.compile_preflight
+        if preflight_spec is None:
+            return
+
+        started = event_store.write_event(
+            run_id=run_id,
+            stage="compile",
+            phase="preflight_start",
+            event_type="compile_preflight_started",
+            summary="chatbot compile preflight started",
+            input_refs=[state.compile_ref, state.chatbot_compile_ref, state.apply_ref],
+            attempt=attempt,
+        )
+        preflight_result = run_chatbot_compile_preflight(
+            Path(state.apply_result.chatbot_workspace_path)
+        )
+        preflight_payload = {
+            "artifact_type": preflight_spec.artifact_type,
+            "check_name": preflight_spec.check_name,
+            "chatbot_workspace_path": state.apply_result.chatbot_workspace_path,
+            **preflight_result.model_dump(mode="json"),
+        }
+        preflight_ref = artifact_store.write_json_artifact(
+            stage="compile",
+            artifact_type=preflight_spec.artifact_type,
+            payload=preflight_payload,
+            producer="compiler",
+            input_artifact_refs=[state.compile_ref, state.chatbot_compile_ref, state.apply_ref],
+            event_ref=started.event_id,
+            status="completed" if preflight_result.passed else "failed",
+            attempt=attempt,
+        )
+        state.compile_preflight_ref = preflight_ref
+        state.compile_preflight_result = preflight_result
+
+        if preflight_result.passed:
+            event_store.write_event(
+                run_id=run_id,
+                stage="compile",
+                phase="preflight_finish",
+                event_type="compile_preflight_completed",
+                summary="chatbot compile preflight completed",
+                artifact_refs=[preflight_ref],
+                input_refs=[state.compile_ref, state.chatbot_compile_ref, state.apply_ref],
+                attempt=attempt,
+            )
+            return
+
+        failure_summary = preflight_result.failure_summary or "chatbot compile preflight failed"
+        failure_signature = build_failure_signature(
+            check_name=preflight_spec.check_name,
+            summary=f"{preflight_result.failure_code or 'compile_preflight_failed'}: {failure_summary}",
+        )
+        failed_event = event_store.write_event(
+            run_id=run_id,
+            stage="compile",
+            phase="preflight_finish",
+            event_type="stage_failed",
+            summary="chatbot compile preflight failed",
+            artifact_refs=[preflight_ref],
+            input_refs=[state.compile_ref, state.chatbot_compile_ref, state.apply_ref],
+            failure_signature=failure_signature,
+            attempt=attempt,
+        )
+        raise _StageFailure(
+            stage="compile",
+            failure_signature=failure_signature,
+            failure_summary=failure_summary,
+            trigger_event_id=failed_event.event_id,
+            related_artifacts=[
+                state.compile_ref,
+                state.chatbot_compile_ref,
+                state.apply_ref,
+                preflight_ref,
+            ],
+            related_files=preflight_result.related_files,
+            input_artifact_versions=_artifact_versions(state),
+            workspace_root=state.apply_result.chatbot_workspace_path,
+            payload=preflight_payload,
+        )
+    except _StageFailure:
+        raise
+    except Exception as exc:
+        failure_summary = (
+            f"unexpected compile preflight error: {exc.__class__.__name__}: {exc}"
+        )
+        failure_signature = build_failure_signature(
+            check_name="chatbot_runtime_import",
+            summary=failure_summary,
+        )
+        failed_event = event_store.write_event(
+            run_id=run_id,
+            stage="compile",
+            phase="preflight_finish",
+            event_type="stage_failed",
+            summary="chatbot compile preflight crashed",
+            details={"error": str(exc), "error_type": exc.__class__.__name__},
+            input_refs=[state.compile_ref, state.chatbot_compile_ref, state.apply_ref]
+            if state.compile_ref is not None
+            and state.chatbot_compile_ref is not None
+            and state.apply_ref is not None
+            else [],
+            failure_signature=failure_signature,
+            attempt=attempt,
+        )
+        raise _StageFailure(
+            stage="compile",
+            failure_signature=failure_signature,
+            failure_summary=failure_summary,
+            trigger_event_id=failed_event.event_id,
+            related_artifacts=[
+                ref
+                for ref in [
+                    state.compile_ref,
+                    state.chatbot_compile_ref,
+                    state.apply_ref,
+                    state.compile_preflight_ref,
+                ]
+                if ref is not None
+            ],
+            related_files=[],
+            input_artifact_versions=_artifact_versions(state),
+            workspace_root=state.apply_result.chatbot_workspace_path
+            if state.apply_result is not None
+            else None,
+            payload={"error": str(exc), "error_type": exc.__class__.__name__},
+        )
+
+
 def run_validation_stage(
     *,
     run_root: Path,
@@ -1104,12 +1297,22 @@ def run_validation_stage(
         ),
         attempt=attempt,
     )
+    chatbot_runtime_boot_ref = artifact_store.write_json_artifact(
+        stage="validation",
+        artifact_type="chatbot-runtime-boot",
+        payload=validation_run.chatbot_runtime_boot,
+        producer="validator",
+        input_artifact_refs=[state_ref],
+        event_ref=validation_started.event_id,
+        status="completed" if validation_run.chatbot_runtime_boot["passed"] else "failed",
+        attempt=attempt,
+    )
     host_auth_ref = artifact_store.write_json_artifact(
         stage="validation",
         artifact_type="host-auth-bootstrap",
         payload=validation_run.host_auth_bootstrap,
         producer="validator",
-        input_artifact_refs=[state_ref],
+        input_artifact_refs=[state_ref, chatbot_runtime_boot_ref],
         event_ref=validation_started.event_id,
         status="completed" if validation_run.host_auth_bootstrap["passed"] else "failed",
         attempt=attempt,
@@ -1175,6 +1378,7 @@ def run_validation_stage(
             state.replay_ref,
             prep_ref,
             state_ref,
+            chatbot_runtime_boot_ref,
             host_auth_ref,
             chatbot_adapter_auth_ref,
             widget_order_ref,
@@ -1205,6 +1409,7 @@ def run_validation_stage(
         state.validation_run = validation_run
         state.prep_ref = prep_ref
         state.state_ref = state_ref
+        state.chatbot_runtime_boot_ref = chatbot_runtime_boot_ref
         state.host_auth_ref = host_auth_ref
         state.chatbot_adapter_auth_ref = chatbot_adapter_auth_ref
         state.widget_order_ref = widget_order_ref
@@ -1257,6 +1462,7 @@ def run_validation_stage(
     state.validation_run = validation_run
     state.prep_ref = prep_ref
     state.state_ref = state_ref
+    state.chatbot_runtime_boot_ref = chatbot_runtime_boot_ref
     state.host_auth_ref = host_auth_ref
     state.chatbot_adapter_auth_ref = chatbot_adapter_auth_ref
     state.widget_order_ref = widget_order_ref
@@ -1281,6 +1487,7 @@ def _artifact_versions(state: _RunState) -> dict[str, int]:
         "planning": state.plan_ref,
         "compile": state.compile_ref,
         "compile_chatbot": state.chatbot_compile_ref,
+        "compile_preflight": state.compile_preflight_ref,
         "apply": state.apply_ref,
         "export": state.export_bundle_ref,
         "validation": state.validation_ref,
@@ -1328,11 +1535,15 @@ def _clear_from_stage(state: _RunState, stage: str) -> None:
         state.edit_program = None
         state.compile_ref = None
         state.chatbot_compile_ref = None
+        state.compile_preflight_ref = None
+        state.compile_preflight_result = None
         _clear_from_stage(state, "apply")
         return
     if stage == "apply":
         state.apply_result = None
         state.apply_ref = None
+        state.compile_preflight_ref = None
+        state.compile_preflight_result = None
         _clear_from_stage(state, "export")
         return
     if stage == "export":
@@ -1347,6 +1558,7 @@ def _clear_from_stage(state: _RunState, stage: str) -> None:
         state.validation_run = None
         state.prep_ref = None
         state.state_ref = None
+        state.chatbot_runtime_boot_ref = None
         state.host_auth_ref = None
         state.chatbot_adapter_auth_ref = None
         state.widget_order_ref = None

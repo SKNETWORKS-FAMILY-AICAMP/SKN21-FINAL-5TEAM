@@ -8,6 +8,7 @@ os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
 os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
 from chatbot.src.onboarding_v2.engine import run_onboarding_generation_v2
+from chatbot.src.onboarding_v2.compile.preflight import CompilePreflightResult
 from chatbot.src.onboarding_v2.models.repair import RepairDecision
 from chatbot.src.onboarding_v2.models.validation import (
     BackendRuntimePlan,
@@ -47,6 +48,14 @@ def test_engine_entry_returns_v2_payload(monkeypatch, tmp_path: Path):
         lambda state: None,
     )
     monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
         lambda **kwargs: {
             "passed": True,
@@ -77,6 +86,17 @@ def test_engine_entry_returns_v2_payload(monkeypatch, tmp_path: Path):
             "related_files": [],
         },
     )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
+        lambda workspace: CompilePreflightResult(
+            passed=True,
+            failure_code=None,
+            failure_summary=None,
+            related_files=[],
+            details={"import_smoke": "passed"},
+        ),
+        raising=False,
+    )
     result = run_onboarding_generation_v2(
         site="food",
         source_root=str(ROOT / "food"),
@@ -91,10 +111,111 @@ def test_engine_entry_returns_v2_payload(monkeypatch, tmp_path: Path):
     assert result["latest_analysis_artifact"].endswith("v0001.json")
     assert result["latest_compile_artifact"].endswith("host-edit-program/v0001.json")
     assert result["latest_chatbot_compile_artifact"].endswith("chatbot-edit-program/v0001.json")
+    assert result["latest_compile_preflight_artifact"].endswith("compile-preflight/v0001.json")
+    assert result["compile_preflight_result"] == {
+        "passed": True,
+        "failure_code": None,
+        "failure_summary": None,
+        "related_files": [],
+        "details": {"import_smoke": "passed"},
+    }
     assert result["approved_patch_path"].endswith("host-approved.patch/v0001.patch")
     assert result["chatbot_approved_patch_path"].endswith("chatbot-approved.patch/v0001.patch")
     assert result["latest_repair_artifact"] is None
     assert result["repair_attempt_count"] == 0
+
+
+def test_engine_stops_at_compile_when_chatbot_preflight_fails(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
+        lambda workspace: CompilePreflightResult(
+            passed=False,
+            failure_code="banned_import_detected",
+            failure_summary="banned import detected: ecommerce.backend",
+            related_files=["src/tools/order_tools.py"],
+            details={"matches": [{"pattern": "ecommerce.backend"}]},
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.export_and_replay",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("export should not run")),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.diagnose_failure",
+        lambda **kwargs: RepairDecision(
+            failure_signature="banned_import_detected",
+            diagnosis="stop on compile preflight failure",
+            rewind_to="compile",
+            preserve_artifacts=["analysis", "planning", "compile", "apply"],
+            required_rechecks=["compile_preflight"],
+            additional_discovery=[],
+            artifact_overrides={},
+            stop=True,
+            stop_reason="compile_preflight_failed",
+        ),
+    )
+
+    result = run_onboarding_generation_v2(
+        site="food",
+        source_root=str(ROOT / "food"),
+        generated_root=str(tmp_path / "generated"),
+        runtime_root=str(tmp_path / "runtime"),
+        run_id="food-run-v2-preflight-fail",
+        chatbot_server_base_url="http://localhost:8100",
+    )
+
+    assert result["status"] == "failed_human_review"
+    assert result["latest_export_artifact"] is None
+    assert result["latest_validation_artifact"] is None
+    assert result["latest_compile_preflight_artifact"].endswith("compile-preflight/v0001.json")
+    assert result["compile_preflight_result"] == {
+        "passed": False,
+        "failure_code": "banned_import_detected",
+        "failure_summary": "banned import detected: ecommerce.backend",
+        "related_files": ["src/tools/order_tools.py"],
+        "details": {"matches": [{"pattern": "ecommerce.backend"}]},
+    }
+    assert result["failure_signature"].startswith("chatbot_runtime_import")
+    assert result["repair_attempt_count"] == 1
+
+
+def test_engine_reports_compile_stage_on_preflight_crash(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
+        lambda workspace: (_ for _ in ()).throw(RuntimeError("preflight boom")),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.diagnose_failure",
+        lambda **kwargs: RepairDecision(
+            failure_signature="chatbot_runtime_import_preflight_boom",
+            diagnosis="stop on compile preflight crash",
+            rewind_to="compile",
+            preserve_artifacts=["analysis", "planning", "compile", "apply"],
+            required_rechecks=["compile_preflight"],
+            additional_discovery=[],
+            artifact_overrides={},
+            stop=True,
+            stop_reason="compile_preflight_crashed",
+        ),
+    )
+
+    result = run_onboarding_generation_v2(
+        site="food",
+        source_root=str(ROOT / "food"),
+        generated_root=str(tmp_path / "generated"),
+        runtime_root=str(tmp_path / "runtime"),
+        run_id="food-run-v2-preflight-crash",
+        chatbot_server_base_url="http://localhost:8100",
+    )
+
+    assert result["status"] == "failed_human_review"
+    assert result["latest_export_artifact"] is None
+    assert result["latest_validation_artifact"] is None
+    assert result["latest_compile_preflight_artifact"] is None
+    assert result["failure_signature"].startswith("chatbot_runtime_import")
+    assert result["repair_attempt_count"] == 1
 
 
 def test_engine_entry_rewinds_validation_failures(monkeypatch, tmp_path: Path):
@@ -128,6 +249,14 @@ def test_engine_entry_rewinds_validation_failures(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
         lambda state: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
     )
 
     def _host_bootstrap(**kwargs):
@@ -178,6 +307,30 @@ def test_engine_entry_rewinds_validation_failures(monkeypatch, tmp_path: Path):
         },
     )
     monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
+        lambda workspace: CompilePreflightResult(
+            passed=True,
+            failure_code=None,
+            failure_summary=None,
+            related_files=[],
+            details={"import_smoke": "passed"},
+        ),
+        raising=False,
+    )
+    from chatbot.src.onboarding_v2 import engine as onboarding_engine
+
+    compile_preflight_calls = {"count": 0}
+    original_run_compile_preflight_stage = onboarding_engine.run_compile_preflight_stage
+
+    def _counting_compile_preflight_stage(*args, **kwargs):
+        compile_preflight_calls["count"] += 1
+        return original_run_compile_preflight_stage(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_compile_preflight_stage",
+        _counting_compile_preflight_stage,
+    )
+    monkeypatch.setattr(
         "chatbot.src.onboarding_v2.engine.diagnose_failure",
         lambda **kwargs: RepairDecision(
             failure_signature="host_auth_bootstrap_missing_site_id",
@@ -206,6 +359,7 @@ def test_engine_entry_rewinds_validation_failures(monkeypatch, tmp_path: Path):
     assert result["repair_attempt_count"] == 1
     assert result["latest_repair_artifact"].endswith("v0001.json")
     assert smoke_attempts["count"] == 2
+    assert compile_preflight_calls["count"] == 1
 
 
 def test_engine_entry_stops_after_repeated_failure_signature(monkeypatch, tmp_path: Path):
@@ -240,6 +394,14 @@ def test_engine_entry_stops_after_repeated_failure_signature(monkeypatch, tmp_pa
         lambda state: None,
     )
     monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
         lambda **kwargs: {
             "passed": False,
@@ -269,6 +431,17 @@ def test_engine_entry_stops_after_repeated_failure_signature(monkeypatch, tmp_pa
             "failure_summary": "widget order e2e passed",
             "related_files": [],
         },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
+        lambda workspace: CompilePreflightResult(
+            passed=True,
+            failure_code=None,
+            failure_summary=None,
+            related_files=[],
+            details={"import_smoke": "passed"},
+        ),
+        raising=False,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.engine.diagnose_failure",

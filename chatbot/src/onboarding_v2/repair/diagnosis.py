@@ -29,9 +29,40 @@ Rules:
 - additional_discovery must be an array of objects with keys path and reason.
 - artifact_overrides must be a JSON object.
 - If the failure can be retried without changing strategy, prefer validation.
+- Compile-stage failures that mention compile-preflight, banned imports, server_fastapi import failures, or chatbot_runtime_import* are import-graph defects. Prefer rewind_to=compile with required_rechecks including compile_preflight.
 - If strategy or target changes are required, use planning or analysis.
 - If you cannot diagnose safely, set stop=true and stop_reason to a short machine-friendly reason.
 Do not include markdown."""
+
+
+def _is_compile_import_graph_failure(failure_bundle: FailureBundle) -> bool:
+    if failure_bundle.failed_stage != "compile":
+        return False
+    artifact_types = {artifact.artifact_type for artifact in failure_bundle.related_artifacts}
+    haystack = (
+        f"{failure_bundle.failure_signature}\n"
+        f"{failure_bundle.failure_summary}"
+    ).lower()
+    if "compile-preflight" in artifact_types:
+        return True
+    return "chatbot_runtime_import" in haystack or "banned import" in haystack
+
+
+def _build_compile_import_graph_decision(failure_bundle: FailureBundle) -> RepairDecision:
+    return RepairDecision(
+        failure_signature=failure_bundle.failure_signature,
+        diagnosis=(
+            "compile import-graph defect detected from compile preflight; "
+            "rewind to compile and rerun compile_preflight"
+        ),
+        rewind_to="compile",
+        preserve_artifacts=["analysis", "planning"],
+        required_rechecks=["compile_preflight"],
+        additional_discovery=[],
+        artifact_overrides={},
+        stop=False,
+        stop_reason=None,
+    )
 
 
 def diagnose_failure(
@@ -53,6 +84,20 @@ def diagnose_failure(
         "edit_program": edit_program_payload,
         "validation": validation_payload,
     }
+    if _is_compile_import_graph_failure(failure_bundle):
+        decision = _build_compile_import_graph_decision(failure_bundle)
+        debug_store.write_record(
+            stage="repair",
+            record=DebugRecord(
+                stage="repair",
+                prompt=payload,
+                response={"heuristic": "compile_import_graph_failure"},
+                normalized_response=decision.model_dump(mode="json"),
+                parse_result={"status": "heuristic"},
+                artifact_refs=failure_bundle.related_artifacts,
+            ),
+        )
+        return decision
     factory = llm_factory or build_repair_llm_factory(provider=llm_provider, model=llm_model)
     try:
         llm = factory()

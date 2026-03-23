@@ -43,6 +43,14 @@ def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: P
         lambda state: None,
     )
     monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
         lambda **kwargs: {
             "passed": True,
@@ -96,6 +104,7 @@ def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: P
     assert (run_root / "artifacts" / "04-apply" / "apply-result" / "v0001.json").exists()
     assert (run_root / "artifacts" / "05-validation" / "backend-runtime-prep" / "v0001.json").exists()
     assert (run_root / "artifacts" / "05-validation" / "backend-runtime-state" / "v0001.json").exists()
+    assert (run_root / "artifacts" / "05-validation" / "chatbot-runtime-boot" / "v0001.json").exists()
     assert (run_root / "artifacts" / "05-validation" / "host-auth-bootstrap" / "v0001.json").exists()
     assert (run_root / "artifacts" / "05-validation" / "chatbot-adapter-auth" / "v0001.json").exists()
     assert (run_root / "artifacts" / "05-validation" / "widget-order-e2e" / "v0001.json").exists()
