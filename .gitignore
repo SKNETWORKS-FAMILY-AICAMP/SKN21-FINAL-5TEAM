@@ -38,11 +38,9 @@ results/
 ecommerce/backend/data/raw/
 ecommerce/backend/data/raw/fashion-dataset
 ecommerce/backend/data/processed
-chatbot/chatbot_eval/benchmark/FunctionChat-Bench/output/
 chatbot/chatbot_eval/benchmark/KOLD/result.md
 chatbot/src/vector_store/image_index.faiss
 chatbot/benchmark/datasets/operational_eval_dataset_50.jsonl
-chatbot/chatbot_eval/benchmark/FunctionChat-Bench/output/
 ecommerce/backend/app/static/chatbot_uploads/
 ecommerce/frontend/public/products
 **/public/products/

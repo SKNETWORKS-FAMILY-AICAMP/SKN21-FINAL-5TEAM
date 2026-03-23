@@ -1,0 +1,217 @@
+[
+    {
+        "type": "function",
+        "function": {
+            "name": "shipping",
+            "description": "주문의 배송 현황과 택배사 정보를 통합 조회합니다. 배송 상태, 현재 위치, 예상 도착일, 택배사 정보(이름/전화번호) 등을 반환합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {
+                        "type": "string",
+                        "description": "주문번호"
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "요청자 사용자 ID",
+                        "default": 1
+                    },
+                    "access_token": {
+                        "type": "string",
+                        "description": "인증 토큰",
+                        "default": null
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel",
+            "description": "주문을 즉시 취소합니다. 배송 시작 전 단계(결제 완료, 상품 준비중)에서만 사용 가능합니다. 취소 사유가 포함될 수 있습니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {
+                        "type": "string",
+                        "description": "주문번호"
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "요청자 사용자 ID",
+                        "default": 1
+                    },
+                    "access_token": {
+                        "type": "string",
+                        "description": "인증 토큰",
+                        "default": null
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "취소 사유",
+                        "default": "단순 변심"
+                    },
+                    "confirmed": {
+                        "type": "boolean",
+                        "description": "사용자 확인 여부 (True일 경우에만 실제 처리)",
+                        "default": null
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "refund",
+            "description": "반품을 접수합니다 (배송 후 수거). 배송중 또는 배송완료 상태에서만 가능합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {
+                        "type": "string",
+                        "description": "주문번호"
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "요청자 사용자 ID",
+                        "default": 1
+                    },
+                    "access_token": {
+                        "type": "string",
+                        "description": "인증 토큰",
+                        "default": null
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "반품 사유",
+                        "default": "단순 변심"
+                    },
+                    "pickup_address": {
+                        "type": "string",
+                        "description": "(선택) 반품 수거지 주소. 입력되지 않은 경우 주문 시 배송지를 사용합니다.",
+                        "default": null
+                    },
+                    "confirmed": {
+                        "type": "boolean",
+                        "description": "사용자 확인 여부 (True일 경우에만 실제 처리)",
+                        "default": null
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "change_option",
+            "description": "주문 옵션을 변경합니다 (배송 전 전용). 결제 완료 또는 상품준비중 상태에서만 옵션 변경이 가능합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {
+                        "type": "string",
+                        "description": "주문번호"
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "요청자 사용자 ID",
+                        "default": 1
+                    },
+                    "new_option_id": {
+                        "type": "integer",
+                        "description": "변경할 새로운 옵션 ID",
+                        "default": null
+                    },
+                    "confirmed": {
+                        "type": "boolean",
+                        "description": "사용자 확인 여부",
+                        "default": null
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "exchange",
+            "description": "교환을 접수합니다 (배송 후, 회수/재배송). 배송중 또는 배송완료 상태에서만 가능합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {
+                        "type": "string",
+                        "description": "주문번호"
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "요청자 사용자 ID",
+                        "default": 1
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "교환 사유",
+                        "default": "단순 변심"
+                    },
+                    "pickup_address": {
+                        "type": "string",
+                        "description": "(선택) 반품 수거지 주소. 입력되지 않은 경우 주문 시 배송지를 사용합니다.",
+                        "default": null
+                    },
+                    "new_option_id": {
+                        "type": "integer",
+                        "description": "(선택) 교환할 새로운 옵션 ID",
+                        "default": null
+                    },
+                    "confirmed": {
+                        "type": "boolean",
+                        "description": "사용자 확인 여부",
+                        "default": null
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_user_orders",
+            "description": "사용자의 최근 주문 목록을 조회합니다. 주문번호를 모를 때 주문 목록을 띄워주는 용도로 사용됩니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "integer",
+                        "description": "The user ID"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "조회 개수"
+                    },
+                    "days": {
+                        "type": "integer",
+                        "description": "조회 기간(일)"
+                    },
+                    "requires_selection": {
+                        "type": "boolean",
+                        "description": "UI에서 주문 선택이 필요한지 여부"
+                    },
+                    "action_context": {
+                        "type": "string",
+                        "description": "선택 후 진행할 액션 컨텍스트 (e.g. shipping, cancel, refund)"
+                    }
+                },
+                "required": [
+                    "user_id"
+                ]
+            }
+        }
+    }
+]

@@ -1,0 +1,16 @@
+{
+    "fcb_version": "",
+    "fcb_environments": "new_feature#0acba30",
+    "llm_judge_model": "gpt-4o-mini",
+    "target_model_path": "gpt-4o-mini",
+    "singlecall_score": {},
+    "dialog_score": {
+        "call pass cnt": 50,
+        "call pass rate": 1.0,
+        "total_pass_cnt": 50,
+        "total_cnt": 50,
+        "total_pass_rate": 1.0,
+        "avg(micro)": 1.0
+    },
+    "calldecision_score": {}
+}

@@ -76,6 +76,11 @@ def guardrail_node(state: GlobalAgentState) -> dict:
     입력 필터링 노드.
     모델이 로드되지 않은 경우 통과 처리 (fail-open 정책).
     """
+    # 제어용 플래그 확인 (비활성화 상태면 즉시 통과)
+    if state.get("use_guardrail") is False:
+        logger.debug("[Guardrail] 가드레일 비활성화 설정(use_guardrail=False) — 통과합니다.")
+        return {"guardrail_passed": True}
+
     # 모델 미로드 → 통과 (서비스 가용성 우선)
     if _GUARDRAIL_PIPELINE is None:
         logger.warning("[Guardrail] 모델 미로드 상태 — 입력을 통과 처리합니다.")
@@ -146,17 +151,35 @@ def _get_last_user_message(messages: list) -> str | None:
 
 
 def _is_safe_service_intent(text: str | None) -> bool:
-    return _is_order_list_intent(text) or _is_review_write_intent(text)
+    return (
+        _is_order_list_intent(text) 
+        or _is_review_write_intent(text)
+        or _is_order_management_intent(text)
+    )
 
 
 def _is_order_list_intent(text: str | None) -> bool:
     if not text:
         return False
     normalized = text.lower()
-    return (
-        "주문" in normalized
-        and any(token in normalized for token in ("목록", "내역", "조회", "보여", "내 주문", "주문 내역"))
+    # 주문 관련 키워드 + 목록/조회 관련 키워드 조합
+    has_order_ref = "주문" in normalized or "구매" in normalized or "결제" in normalized
+    
+    list_tokens = (
+        "목록", "내역", "조회", "보여", "내 주문", "주문 내역", 
+        "리스트", "리스트업", "보여줘", "확인", "기록", "본 거", "산 거"
     )
+    
+    return has_order_ref and any(token in normalized for token in list_tokens)
+
+
+def _is_order_management_intent(text: str | None) -> bool:
+    """배송, 취소, 환불, 교환 등 핵심 주문 관리 서비스 의도인지 확인"""
+    if not text:
+        return False
+    normalized = text.lower()
+    management_tokens = ("배송", "취소", "환불", "반품", "교환", "송장", "위치", "언제")
+    return any(token in normalized for token in management_tokens)
 
 
 def _is_review_write_intent(text: str | None) -> bool:
@@ -165,7 +188,7 @@ def _is_review_write_intent(text: str | None) -> bool:
 
     normalized = text.lower().replace(" ", "")
     review_tokens = ("리뷰", "후기")
-    write_tokens = ("작성", "쓰기", "쓰고", "등록", "남기", "적고", "적을")
+    write_tokens = ("작성", "쓰기", "쓰고", "등록", "남기", "적고", "적을", "남길")
 
     return any(token in normalized for token in review_tokens) and any(
         token in normalized for token in write_tokens

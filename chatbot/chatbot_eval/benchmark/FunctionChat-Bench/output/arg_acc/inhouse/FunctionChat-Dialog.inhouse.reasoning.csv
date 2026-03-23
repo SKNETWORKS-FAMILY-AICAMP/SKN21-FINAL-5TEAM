@@ -1,6 +1,4 @@
 serial_num,is_pass,reasoning
-2,FAIL,"[정밀 비교 결과]
-인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0002', 'user_id': 1, 'reason': '파손'}) | 모델({""order_id"": ""ORD-eval_dataset-0002"", ""user_id"": 1})"
 6,FAIL,"[정밀 비교 결과]
 인자값 불일치: 정답({'query': '반팔 티셔츠'}) | 모델({""query"": ""\uc5ec\ub984\uc5d0 \uc785\uae30 \uc88b\uc740 \uc2dc\uc6d0\ud55c \ubc18\ud314 \ud2f0\uc154\uce20 .""})"
 7,FAIL,"[정밀 비교 결과]
@@ -14,7 +12,7 @@ serial_num,is_pass,reasoning
 12,FAIL,"[정밀 비교 결과]
 인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0006', 'user_id': 2, 'reason': '사이즈 불일치'}) | 모델({""order_id"": ""ORD-eval_dataset-0006"", ""user_id"": 1})"
 13,FAIL,"[정밀 비교 결과]
-함수명 불일치: 정답(shipping) | 모델(refund)"
+함수명 불일치: 정답(shipping) | 모델(order_list)"
 14,FAIL,"[정밀 비교 결과]
 인자값 불일치: 정답({'order_id': 'ORD-eval_dataset-0004', 'user_id': 2}) | 모델({""order_id"": ""ORD-eval_dataset-0004"", ""user_id"": 1})"
 15,FAIL,"[정밀 비교 결과]

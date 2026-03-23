@@ -368,7 +368,7 @@ class APIExecutorFactory:
 
         The method uses the model name to determine which API executor class to instantiate and returns an object of that class.
         """
-        if model_name == 'inhouse':  # In-house developed model
+        if model_name == 'inhouse' or model_name.startswith('qwen3'):  # In-house developed model
             return InhouseModelAPI(model_name, api_key, base_url=base_url, served_model_name=served_model_name)
         if model_name == 'inhouse-local':  # In-house developed model
             return InhouseModelAPI(model_name, api_key, base_url=base_url, served_model_name=served_model_name)
@@ -377,6 +377,8 @@ class APIExecutorFactory:
         elif model_name.lower().startswith('solar'):  # Upstage developed model
             return SolarModelAPI(model_name, api_key=api_key, base_url=base_url)
         elif model_name.lower().startswith('gpt'):  # OpenAI developed model
+            if base_url:
+                return OpenaiModelAPI(model_name, api_key, base_url=base_url)
             return OpenaiModelAPI(model_name, api_key)
         elif model_name.startswith('mistral'):  # Mistral developed model
             return MistralModelAPI(model_name, api_key)

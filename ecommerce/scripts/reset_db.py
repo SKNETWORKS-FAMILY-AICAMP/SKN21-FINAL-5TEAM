@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 # 프로젝트 루트 디렉토리를 sys.path에 추가 (ecommerce 패키지 인식을 위해)
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(BASE_DIR))
 
 from ecommerce.backend.app.database import engine, Base
