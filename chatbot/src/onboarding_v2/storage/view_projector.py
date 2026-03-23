@@ -21,6 +21,9 @@ class ViewProjector:
         site: str,
         status: str,
         latest_failure_signature: str | None = None,
+        latest_rewind_to: str | None = None,
+        repair_attempt_count: int = 0,
+        stopped_for_review: bool = False,
     ) -> RunSummaryView:
         stages: list[StageLatestView] = []
         for stage, stage_dir in STAGE_DIRECTORY_MAP.items():
@@ -42,6 +45,9 @@ class ViewProjector:
             site=site,
             status=status,
             latest_failure_signature=latest_failure_signature,
+            latest_rewind_to=latest_rewind_to,
+            repair_attempt_count=repair_attempt_count,
+            stopped_for_review=stopped_for_review,
             latest_event_id=latest_event_id,
             stages=stages,
         )

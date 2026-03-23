@@ -18,10 +18,12 @@ from chatbot.src.onboarding_v2.models import (
     BackendWiringPlan,
     DomainIntegration,
     EditProgram,
+    FailureBundle,
     FrontendIntegrationPlan,
     FrontendSeams,
     IntegrationPlan,
     PathCandidate,
+    RepairDecision,
     RepoProfile,
     RunSummaryView,
     ValidationBundle,
@@ -69,7 +71,14 @@ def test_model_contracts_round_trip():
         producer="test",
         payload=snapshot.model_dump(mode="json"),
     )
-    summary = RunSummaryView(run_id="food-run-v2", site="food", status="pending")
+    summary = RunSummaryView(
+        run_id="food-run-v2",
+        site="food",
+        status="pending",
+        latest_rewind_to="validation",
+        repair_attempt_count=2,
+        stopped_for_review=False,
+    )
     prep = BackendRuntimePrepResult(framework="django", passed=True)
     runtime_plan = BackendRuntimePlan(
         framework="django",
@@ -94,3 +103,47 @@ def test_model_contracts_round_trip():
     assert prep.framework == "django"
     assert runtime_plan.readiness_url.endswith("/api/chat/auth-token")
     assert runtime_state.passed is True
+    assert summary.latest_rewind_to == "validation"
+    assert summary.repair_attempt_count == 2
+
+
+def test_repair_model_contracts_round_trip():
+    artifact_ref = ArtifactRef(
+        stage="validation",
+        artifact_type="validation-bundle",
+        version=1,
+        path="v0001.json",
+        content_hash="abc123",
+    )
+    failure = FailureBundle(
+        failed_stage="validation",
+        failure_signature="smoke_step_order_api_returned_500",
+        failure_summary="step order-api returned 500",
+        trigger_event_id="evt-123",
+        related_artifacts=[artifact_ref],
+        related_files=["backend/orders/views.py"],
+        related_file_samples=[
+            {
+                "path": "backend/orders/views.py",
+                "content": "def list_orders(request):\n    return None\n",
+            }
+        ],
+        input_artifact_versions={"validation": 1},
+        attempt_number=2,
+        repeat_count=1,
+    )
+    decision = RepairDecision(
+        failure_signature=failure.failure_signature,
+        diagnosis="order api runtime failure requires validation rerun",
+        rewind_to="validation",
+        preserve_artifacts=["analysis", "planning", "compile", "apply", "export"],
+        required_rechecks=["smoke"],
+        additional_discovery=[],
+        artifact_overrides={},
+        stop=False,
+    )
+
+    assert failure.failed_stage == "validation"
+    assert failure.related_file_samples[0]["path"] == "backend/orders/views.py"
+    assert decision.rewind_to == "validation"
+    assert decision.stop_reason is None

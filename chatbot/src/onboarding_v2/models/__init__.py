@@ -32,6 +32,7 @@ from .planning import (
     PlanningNotes,
     SupportingArtifactSpec,
 )
+from .repair import FailureBundle, RepairDecision
 from .validation import (
     ApplyResult,
     BackendRuntimeCommandResult,
@@ -63,6 +64,7 @@ __all__ = [
     "EditOperation",
     "EditProgram",
     "EventRecord",
+    "FailureBundle",
     "FrontendApiBundle",
     "FrontendIntegrationPlan",
     "FrontendMountBundle",
@@ -71,6 +73,7 @@ __all__ = [
     "PathCandidate",
     "PlanningNotes",
     "ReplayResult",
+    "RepairDecision",
     "RepoProfile",
     "RunSummaryView",
     "SmokeRunResult",

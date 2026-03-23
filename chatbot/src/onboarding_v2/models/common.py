@@ -67,6 +67,9 @@ class RunSummaryView(BaseModel):
     site: str
     status: str
     latest_failure_signature: str | None = None
+    latest_rewind_to: str | None = None
+    repair_attempt_count: int = 0
+    stopped_for_review: bool = False
     latest_event_id: str | None = None
     stages: list[StageLatestView] = Field(default_factory=list)
 
