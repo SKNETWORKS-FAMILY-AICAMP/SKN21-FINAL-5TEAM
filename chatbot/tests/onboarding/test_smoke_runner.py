@@ -1,5 +1,7 @@
+import io
 import json
 import sys
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -78,6 +80,257 @@ def test_run_smoke_tests_builds_request_response_summary(tmp_path: Path):
     assert isinstance(result.get("response"), dict)
     assert isinstance(result["response"].get("status"), int)
     assert "stdout" in result
+
+
+def test_run_smoke_tests_rejects_empty_required_json_path(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-auth-empty"
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-auth-empty" / "workspace"
+    run_root.mkdir(parents=True)
+    runtime_workspace.mkdir(parents=True)
+
+    plan = SmokeTestPlan(
+        steps=[
+            {
+                "id": "chat-auth-token",
+                "kind": "http",
+                "category": "auth",
+                "method": "POST",
+                "url": "http://127.0.0.1:8000/api/chat/auth-token",
+                "expects": {
+                    "status": 200,
+                    "json_path_equals": {"authenticated": True},
+                    "json_path_not_empty": ["access_token"],
+                },
+            },
+        ]
+    )
+
+    probe_responses = iter([_FakeHttpResponse(200, {}, '{"authenticated": true, "access_token": ""}')])
+
+    with patch("chatbot.src.onboarding.smoke_runner.urllib.request.urlopen", side_effect=lambda request, timeout=0: next(probe_responses)):
+        results = run_smoke_tests(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            plan=plan,
+        )
+
+    assert results[0]["returncode"] == 1
+
+
+def test_run_smoke_tests_validates_headers_and_body_substrings(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-widget-bundle"
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-widget-bundle" / "workspace"
+    run_root.mkdir(parents=True)
+    runtime_workspace.mkdir(parents=True)
+
+    plan = SmokeTestPlan(
+        steps=[
+            {
+                "id": "widget-bundle",
+                "kind": "http",
+                "category": "frontend",
+                "method": "GET",
+                "url": "http://127.0.0.1:8000/widget.js",
+                "expects": {
+                    "status": 200,
+                    "header_contains": {"content-type": "javascript"},
+                    "body_contains": ["order-cs-widget"],
+                },
+            },
+        ]
+    )
+
+    probe_responses = iter(
+        [
+            _FakeHttpResponse(
+                200,
+                {"content-type": "application/javascript; charset=utf-8"},
+                "customElements.define('order-cs-widget', Widget);",
+            )
+        ]
+    )
+
+    with patch("chatbot.src.onboarding.smoke_runner.urllib.request.urlopen", side_effect=lambda request, timeout=0: next(probe_responses)):
+        results = run_smoke_tests(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            plan=plan,
+        )
+
+    assert results[0]["returncode"] == 0
+
+
+def test_run_smoke_tests_builds_chat_stream_probe_with_bootstrap_context(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-chat-stream"
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-chat-stream" / "workspace"
+    run_root.mkdir(parents=True)
+    runtime_workspace.mkdir(parents=True)
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "credentials": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    plan = SmokeTestPlan(
+        steps=[
+            {
+                "id": "chat-auth-token",
+                "kind": "http",
+                "category": "auth",
+                "method": "POST",
+                "url": "http://127.0.0.1:8000/api/chat/auth-token",
+                "expects": {
+                    "status": 200,
+                    "json_keys": ["access_token", "site_id"],
+                },
+                "exports": {
+                    "chat_auth.access_token": "json.access_token",
+                    "chat_auth.site_id": "json.site_id",
+                },
+            },
+            {
+                "id": "chat-stream",
+                "kind": "http",
+                "category": "chat",
+                "method": "POST",
+                "url": "http://127.0.0.1:8000/api/v1/chat/stream",
+                "body": {
+                    "message": "주문 상태를 확인해줘",
+                    "access_token": "{{chat_auth.access_token}}",
+                    "site_id": "{{chat_auth.site_id}}",
+                },
+                "expects": {
+                    "status": 200,
+                    "header_contains": {"content-type": "text/event-stream"},
+                    "body_contains": ["data:"],
+                },
+                "uses": ["chat_auth.access_token", "chat_auth.site_id"],
+            },
+        ]
+    )
+
+    captured_requests: list[object] = []
+
+    def _fake_urlopen(request, timeout=0):
+        captured_requests.append(request)
+        if request.full_url.endswith("/api/chat/auth-token"):
+            return _FakeHttpResponse(
+                200,
+                {"content-type": "application/json; charset=utf-8"},
+                '{"access_token": "token-123", "site_id": "site-c"}',
+            )
+        return _StreamingOnlyHttpResponse(
+            200,
+            {"content-type": "text/event-stream; charset=utf-8"},
+            'data: {"type":"metadata"}\n\n',
+        )
+
+    with patch("chatbot.src.onboarding.smoke_runner.urllib.request.urlopen", side_effect=_fake_urlopen):
+        results = run_smoke_tests(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            plan=plan,
+        )
+
+    assert results[0]["returncode"] == 0
+    assert results[1]["returncode"] == 0
+    assert json.loads(results[1]["request"]["body"]) == {
+        "message": "주문 상태를 확인해줘",
+        "access_token": "token-123",
+        "site_id": "site-c",
+    }
+    request_body = captured_requests[1].data.decode("utf-8")
+    assert '"access_token": "token-123"' in request_body
+    assert '"site_id": "site-c"' in request_body
+
+
+def test_run_smoke_tests_parses_json_expectations_from_http_error(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-unauth"
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-unauth" / "workspace"
+    run_root.mkdir(parents=True)
+    runtime_workspace.mkdir(parents=True)
+
+    plan = SmokeTestPlan(
+        steps=[
+            {
+                "id": "chat-auth-token-unauthenticated",
+                "kind": "http",
+                "category": "auth",
+                "method": "POST",
+                "url": "http://127.0.0.1:8000/api/chat/auth-token",
+                "expects": {
+                    "status": 401,
+                    "json_path_equals": {"authenticated": False},
+                },
+            },
+        ]
+    )
+
+    http_error = urllib.error.HTTPError(
+        url="http://127.0.0.1:8000/api/chat/auth-token",
+        code=401,
+        msg="Unauthorized",
+        hdrs={"content-type": "application/json"},
+        fp=io.BytesIO(b'{"authenticated": false}'),
+    )
+
+    with patch("chatbot.src.onboarding.smoke_runner.urllib.request.urlopen", side_effect=http_error):
+        results = run_smoke_tests(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            plan=plan,
+        )
+
+    assert results[0]["returncode"] == 0
+
+
+def test_run_smoke_tests_ignores_extra_recovery_payload_fields(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-recovery-extra"
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-recovery-extra" / "workspace"
+    run_root.mkdir(parents=True)
+    runtime_workspace.mkdir(parents=True)
+
+    plan = SmokeTestPlan(
+        steps=[
+            {
+                "id": "chat-auth-token",
+                "kind": "http",
+                "category": "auth",
+                "method": "POST",
+                "url": "http://127.0.0.1:8000/api/chat/auth-token",
+                "expects": {
+                    "status": 200,
+                    "json_path_equals": {"authenticated": True},
+                    "json_path_not_empty": ["access_token"],
+                },
+            },
+        ]
+    )
+
+    probe_responses = iter(
+        [_FakeHttpResponse(200, {}, '{"authenticated": true, "access_token": "token"}')]
+    )
+
+    with patch(
+        "chatbot.src.onboarding.smoke_runner.urllib.request.urlopen",
+        side_effect=lambda request, timeout=0: next(probe_responses),
+    ):
+        results = run_smoke_tests(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            plan=plan,
+            recovery_payload={
+                "classification": "backend_server_startup_failure",
+                "should_retry": True,
+                "repair_scope": "run_only",
+                "recommendation_source": "deterministic",
+                "guardrail_rejection_reason": None,
+            },
+        )
+
+    assert results[0]["returncode"] == 0
 
 
 def test_run_smoke_tests_executes_scripts_and_collects_results(tmp_path: Path):
@@ -252,11 +505,20 @@ class _FakeHttpResponse:
     def getcode(self) -> int:
         return self._status
 
-    def read(self) -> bytes:
-        return self._body
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            return self._body
+        return self._body[:size]
 
     def getheaders(self):
         return list(self._headers.items())
+
+
+class _StreamingOnlyHttpResponse(_FakeHttpResponse):
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            raise TimeoutError("streaming probe must not read until EOF")
+        return super().read(size)
 
 
 def test_run_smoke_tests_executes_http_probes_and_exports_context(tmp_path: Path):

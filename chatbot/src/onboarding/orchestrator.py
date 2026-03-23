@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -8,43 +9,56 @@ from collections import defaultdict
 from collections import defaultdict
 from typing import Any, Callable
 
-from .agent_contracts import RecoveryAttempt, RunState
+from .agent_contracts import AgentMessage, RecoveryAttempt, RunState
 from .agent_orchestrator import AgentOrchestrator
 from .approval_store import ApprovalStore
 from .backend_evaluator import evaluate_backend_workspace
+from .backend_integration import CHAT_AUTH_BOOTSTRAP_PATH
 from .codebase_mapper import (
     build_llm_codebase_interpretation_factory,
     write_codebase_map,
     write_llm_codebase_interpretation,
 )
 from .debug_logging import append_execution_trace, append_generation_log, append_onboarding_event, append_recovery_event, update_file_activity
-from .exporter import export_patch_artifact, export_runtime_patch
+from .exporter import export_patch_artifact, export_runtime_patch, update_export_metadata
+from .frontend_generator import build_frontend_mount_contract
 from .frontend_evaluator import evaluate_frontend_workspace
 from .overlay_generator import generate_overlay_scaffold
 from .patch_planner import (
     build_llm_patch_proposal_factory,
     build_llm_patch_factory,
-    write_patch_comparison_report,
+    write_edit_plan,
+    write_llm_edit_draft,
     write_llm_first_patch_proposal,
-    write_llm_patch_draft,
     write_patch_proposal,
-    write_unified_diff_draft,
 )
 from .role_runner import ReliableLLMRoleRunner, RoleRunner, build_llm_role_runner
 from .recovery_artifacts import write_recovered_smoke_plan
+from .promotion_judge import PromotionJudge
+from .repair_history import read_failure_count, write_repair_history
 from .recovery_planner import build_recovery_plan
 from .run_generator import generate_run_bundle
 from .run_resume import analyze_run_checkpoint
+from .runtime_completion_runner import (
+    _build_backend_probe_plan as _build_validation_backend_probe_plan,
+    _build_frontend_probe_plan as _build_validation_frontend_probe_plan,
+    _classify_probe_failure_reason,
+    _collect_process_output,
+    _launch_server_process,
+    _probe_http_ready,
+    _terminate_process,
+    run_runtime_completion,
+)
+from .runtime_llm_repair import attempt_llm_runtime_repair, build_runtime_repair_factory
+from .runtime_repair_toolkit import repair_python_import_from_traceback
 from .slack_bridge import InMemorySlackBridge
 from .smoke_runner import load_smoke_plan, run_smoke_tests, summarize_smoke_results
-from .runtime_runner import prepare_runtime_workspace, simulate_runtime_merge
-from .runtime_runner import simulate_candidate_patch_merge
+from .runtime_runner import apply_overlay_edit_artifacts, prepare_runtime_workspace, simulate_exported_patch_replay, simulate_runtime_merge
 from .manifest import OverlayManifest
 from .template_generator import (
     generate_backend_route_patch,
     generate_backend_tool_registry,
     generate_chat_auth_template,
-    generate_frontend_widget_artifact,
     generate_frontend_mount_patch,
     generate_order_adapter_template,
     generate_product_adapter_template,
@@ -70,6 +84,7 @@ def run_onboarding_generation(
     llm_provider: str = "openai",
     llm_model: str = "gpt-4o-mini",
     generate_llm_patch_draft: bool = False,
+    enable_runtime_completion_loop: bool = False,
     llm_patch_factory: Any | None = None,
     terminal_logger: Callable[[str], None] | None = None,
     event_store: RedisRunJobStore | None = None,
@@ -102,7 +117,7 @@ def run_onboarding_generation(
                 "evidence": context["evidence"],
                 "confidence": 0.81,
                 "risk": "medium",
-                "next_action": "제안된 파일과 patch를 실제 산출물로 생성합니다",
+                "next_action": "제안된 파일과 edit plan을 실제 산출물로 생성합니다",
                 "blocking_issue": "없음",
                 "metadata": {
                     "proposed_files": context["proposed_files"],
@@ -197,6 +212,17 @@ def run_onboarding_generation(
     def finalize_result(*, runtime_workspace: Path | None) -> dict[str, Any]:
         _write_llm_role_execution_report(run_root=run_root, runner=active_role_runner)
         _write_llm_debug_artifacts(run_root=run_root, runner=active_role_runner)
+        repair_history_summary = _write_final_repair_history(
+            generated_root=generated_root,
+            run_root=run_root,
+            site=site,
+            run_id=run_id,
+        )
+        generator_repair_request = _write_generator_repair_request(
+            run_root=run_root,
+            run_id=run_id,
+            repair_history_summary=repair_history_summary,
+        )
         result = _build_run_result(
             run_id=run_id,
             run_root=run_root,
@@ -206,6 +232,8 @@ def run_onboarding_generation(
             event_store=event_store,
         )
         result["resume_checkpoint"] = resume_checkpoint
+        result.update(repair_history_summary)
+        result.update(generator_repair_request)
         return result
 
     if bridge is not None:
@@ -227,7 +255,16 @@ def run_onboarding_generation(
             "failed_stage": checkpoint.failed_stage,
             "resume_from_stage": checkpoint.resume_from_stage,
             "reason": checkpoint.reason,
+            "latest_failure_signature": checkpoint.latest_failure_signature,
+            "failure_count_for_signature": checkpoint.failure_count_for_signature,
+            "repair_history_path": checkpoint.repair_history_path,
+            "generator_repair_request_path": checkpoint.generator_repair_request_path,
+            "requires_fresh_run": checkpoint.requires_fresh_run,
         }
+        if checkpoint.requires_fresh_run:
+            run_root = existing_run_root
+            agent.state = RunState.HUMAN_REVIEW_REQUIRED
+            return finalize_result(runtime_workspace=None)
         if checkpoint.resume_from_stage in {"validation", "export"}:
             run_root = existing_run_root
             manifest = OverlayManifest.model_validate_json((run_root / "manifest.json").read_text(encoding="utf-8"))
@@ -237,6 +274,16 @@ def run_onboarding_generation(
                 generated_run_root=run_root,
                 runtime_root=runtime_root,
             )
+            edit_execution_path = apply_overlay_edit_artifacts(
+                manifest=manifest,
+                generated_run_root=run_root,
+                workspace_root=runtime_workspace,
+                report_root=run_root / "reports",
+            )
+            edit_execution = json.loads(edit_execution_path.read_text(encoding="utf-8"))
+            if not edit_execution.get("passed", True):
+                agent.state = RunState.HUMAN_REVIEW_REQUIRED
+                return finalize_result(runtime_workspace=runtime_workspace)
             merge_simulation_path = simulate_runtime_merge(
                 manifest=manifest,
                 generated_run_root=run_root,
@@ -267,6 +314,14 @@ def run_onboarding_generation(
                     agent=agent,
                     bridge=bridge,
                     role_runner=active_role_runner,
+                    llm_runtime_repair_factory=build_runtime_repair_factory(
+                        enabled=generate_llm_patch_draft or llm_patch_factory is not None,
+                        llm_factory=llm_patch_factory,
+                        provider=llm_provider,
+                        model=llm_model,
+                    ),
+                    llm_provider=llm_provider,
+                    llm_model=llm_model,
                     event_store=event_store,
                     terminal_logger=terminal_logger,
                     run_role_with_events=_run_role_with_events,
@@ -298,7 +353,7 @@ def run_onboarding_generation(
                     approval_type=export_request["approval_type"],
                     summary="Export bundle is ready",
                     recommended_option="approve",
-                    risk_if_approved="patch export may still need manual review",
+                    risk_if_approved="final export patch may still need manual review",
                     risk_if_rejected="run remains local only",
                     available_actions=["approve", "reject"],
                 )
@@ -452,6 +507,10 @@ def run_onboarding_generation(
         message=analyzer_message,
     )
 
+    has_explicit_analysis_decision = _has_explicit_approval_decision(
+        decisions=approvals,
+        approval_type="analysis",
+    )
     if bridge is not None:
         bridge.post_agent_message(
             event=active_role_runner.build_event(
@@ -463,35 +522,35 @@ def run_onboarding_generation(
             ),
             message=analyzer_message,
         )
-
-        analysis_request = agent.request_analysis_approval(
-            summary="Analysis is ready for review",
-            recommended_option="approve",
-        )
-        should_publish_analysis_request = True
-        if approval_store is not None:
-            existing = approval_store.get_decision(run_id=run_id, approval_type="analysis")
-            if existing is None:
-                approval_store.create_request(
-                    run_id=run_id,
-                    approval_type="analysis",
-                    blocked_job_id=str(analysis_request.get("blocked_job_id") or ""),
-                )
-            else:
-                should_publish_analysis_request = existing["status"] == "pending"
-        _publish_approval_requested_event(event_store, run_id, analysis_request)
-        if should_publish_analysis_request:
-            bridge.post_approval_request(
-                run_id=run_id,
-                approval_type=analysis_request["approval_type"],
+        if not has_explicit_analysis_decision:
+            analysis_request = agent.request_analysis_approval(
                 summary="Analysis is ready for review",
                 recommended_option="approve",
-                risk_if_approved="downstream plan depends on this analysis",
-                risk_if_rejected="run stops before generation",
-                available_actions=["approve", "reject"],
             )
+            should_publish_analysis_request = True
+            if approval_store is not None:
+                existing = approval_store.get_decision(run_id=run_id, approval_type="analysis")
+                if existing is None:
+                    approval_store.create_request(
+                        run_id=run_id,
+                        approval_type="analysis",
+                        blocked_job_id=str(analysis_request.get("blocked_job_id") or ""),
+                    )
+                else:
+                    should_publish_analysis_request = existing["status"] == "pending"
+            _publish_approval_requested_event(event_store, run_id, analysis_request)
+            if should_publish_analysis_request:
+                bridge.post_approval_request(
+                    run_id=run_id,
+                    approval_type=analysis_request["approval_type"],
+                    summary="Analysis is ready for review",
+                    recommended_option="approve",
+                    risk_if_approved="downstream plan depends on this analysis",
+                    risk_if_rejected="run stops before generation",
+                    available_actions=["approve", "reject"],
+                )
 
-    elif approvals is not None or approval_store is not None:
+    elif not has_explicit_analysis_decision and (approvals is not None or approval_store is not None):
         agent.request_analysis_approval(
             summary="Analysis is ready for review",
             recommended_option="approve",
@@ -510,6 +569,12 @@ def run_onboarding_generation(
         decisions=approvals,
         approval_store=approval_store,
     )
+    if bridge is not None and has_explicit_analysis_decision and approval_result is not None:
+        bridge.record_approval_decision(
+            run_id=run_id,
+            approval_type="analysis",
+            decision=approval_result,
+        )
     _emit_stage_event(
         run_root=run_root,
         run_id=run_id,
@@ -687,22 +752,36 @@ def run_onboarding_generation(
         run_root=run_root,
         proposed_files=proposed_files,
         proposed_patches=proposed_patches,
+        supporting_generated_files=list(patch_proposal.get("supporting_generated_files") or []),
     )
-    write_unified_diff_draft(
+    edit_plan_path = run_root / "reports" / "edit-plan.json"
+    write_edit_plan(
         source_root=source_root,
-        generated_run_root=run_root,
-        proposal_path=run_root / "reports" / "patch-proposal.json",
-        output_path=run_root / "patches" / "proposed.patch",
+        patch_proposal=patch_proposal,
+        output_path=edit_plan_path,
+    )
+    _emit_generation_log(
+        run_root=run_root,
+        terminal_logger=terminal_logger,
+        component="orchestrator",
+        event="edit_plan_written",
+        message="edit plan artifact written",
+        details={"path": str(edit_plan_path)},
+    )
+    _emit_terminal_log(
+        terminal_logger,
+        f"[edit_plan] written path={edit_plan_path}",
     )
     if generate_llm_patch_draft:
-        write_llm_patch_draft(
+        llm_edit_plan_path = run_root / "reports" / "llm-edit-plan.json"
+        write_llm_edit_draft(
             source_root=source_root,
             analysis=analysis,
             codebase_map=codebase_map,
             patch_proposal=patch_proposal,
-            output_path=run_root / "patches" / "llm-proposed.patch",
-            llm_factory=llm_patch_factory
-            or build_llm_patch_factory(provider=llm_provider, model=llm_model),
+            output_path=llm_edit_plan_path,
+            execution_output_path=run_root / "reports" / "llm-edit-plan-execution.json",
+            llm_factory=llm_patch_factory or build_llm_patch_factory(provider=llm_provider, model=llm_model),
             provider=llm_provider,
             model=llm_model,
         )
@@ -710,33 +789,44 @@ def run_onboarding_generation(
             run_root=run_root,
             terminal_logger=terminal_logger,
             component="orchestrator",
-            event="llm_patch_draft_finished",
-            message="llm patch draft artifact written",
-            details={"path": str(run_root / "patches" / "llm-proposed.patch")},
+            event="llm_edit_plan_written",
+            message="llm edit plan artifact written",
+            details={"path": str(llm_edit_plan_path)},
         )
         _emit_terminal_log(
             terminal_logger,
-            f"[llm_patch_draft] written path={run_root / 'patches' / 'llm-proposed.patch'}",
+            f"[llm_edit_plan] written path={llm_edit_plan_path}",
         )
         _emit_latest_llm_usage(
             run_root=run_root,
             terminal_logger=terminal_logger,
-            component="llm_patch_draft",
+            component="llm_edit_draft",
         )
-        write_patch_comparison_report(
-            run_root=run_root,
-            output_path=run_root / "reports" / "patch-comparison.json",
-        )
+    _update_manifest_generated_outputs(
+        run_root=run_root,
+        generated_files=[],
+        patch_targets=[],
+        edit_artifacts=["reports/edit-plan.json"],
+    )
+    manifest = OverlayManifest.model_validate_json((run_root / "manifest.json").read_text(encoding="utf-8"))
     _emit_stage_event(
         run_root=run_root,
         run_id=run_id,
         stage="generation",
         event="stage_completed",
         summary="generation stage completed",
-        details={"proposed_files": len(proposed_files), "proposed_patches": len(proposed_patches)},
+        details={
+            "proposed_files": len(proposed_files),
+            "proposed_patches": len(proposed_patches),
+            "edit_artifacts": len(manifest.edit_artifacts),
+        },
     )
 
-    if bridge is not None:
+    has_explicit_apply_decision = _has_explicit_approval_decision(
+        decisions=approvals,
+        approval_type="apply",
+    )
+    if bridge is not None and not has_explicit_apply_decision:
         apply_request = agent.request_apply_approval(
             summary="Overlay bundle is ready to apply",
             recommended_option="approve",
@@ -759,11 +849,11 @@ def run_onboarding_generation(
                 approval_type=apply_request["approval_type"],
                 summary="Overlay bundle is ready to apply",
                 recommended_option="approve",
-                risk_if_approved="runtime patch may fail",
+                risk_if_approved="generated edits may still fail at runtime",
                 risk_if_rejected="run stops before validation",
                 available_actions=["approve", "reject"],
             )
-    else:
+    elif not has_explicit_apply_decision:
         agent.request_apply_approval(
             summary="Overlay bundle is ready to apply",
             recommended_option="approve",
@@ -782,6 +872,12 @@ def run_onboarding_generation(
         decisions=approvals,
         approval_store=approval_store,
     )
+    if bridge is not None and has_explicit_apply_decision and approval_result is not None:
+        bridge.record_approval_decision(
+            run_id=run_id,
+            approval_type="apply",
+            decision=approval_result,
+        )
     if approval_result != "approved":
         return finalize_result(runtime_workspace=None)
 
@@ -790,6 +886,16 @@ def run_onboarding_generation(
         generated_run_root=run_root,
         runtime_root=runtime_root,
     )
+    edit_execution_path = apply_overlay_edit_artifacts(
+        manifest=manifest,
+        generated_run_root=run_root,
+        workspace_root=runtime_workspace,
+        report_root=run_root / "reports",
+    )
+    edit_execution = json.loads(edit_execution_path.read_text(encoding="utf-8"))
+    if not edit_execution.get("passed", True):
+        agent.state = RunState.HUMAN_REVIEW_REQUIRED
+        return finalize_result(runtime_workspace=runtime_workspace)
     _emit_stage_event(
         run_root=run_root,
         run_id=run_id,
@@ -798,32 +904,6 @@ def run_onboarding_generation(
         summary="validation stage started",
         details={"runtime_workspace": str(runtime_workspace)},
     )
-    if generate_llm_patch_draft:
-        _emit_generation_log(
-            run_root=run_root,
-            terminal_logger=terminal_logger,
-            component="orchestrator",
-            event="llm_patch_simulation_started",
-            message="llm patch simulation started",
-            details={"patch_artifact": "patches/llm-proposed.patch"},
-        )
-        simulate_candidate_patch_merge(
-            manifest=manifest,
-            generated_run_root=run_root,
-            runtime_root=runtime_root,
-            report_root=run_root / "reports",
-            patch_artifact="patches/llm-proposed.patch",
-            report_name="llm-patch-simulation.json",
-        )
-        llm_patch_simulation = json.loads((run_root / "reports" / "llm-patch-simulation.json").read_text(encoding="utf-8"))
-        _emit_generation_log(
-            run_root=run_root,
-            terminal_logger=terminal_logger,
-            component="orchestrator",
-            event="llm_patch_simulation_completed",
-            message="llm patch simulation completed",
-            details={"passed": bool(llm_patch_simulation.get("passed")), "report": str(run_root / "reports" / "llm-patch-simulation.json")},
-        )
     _emit_generation_log(
         run_root=run_root,
         terminal_logger=terminal_logger,
@@ -838,30 +918,7 @@ def run_onboarding_generation(
         runtime_workspace=runtime_workspace,
         report_root=run_root / "reports",
     )
-    if generate_llm_patch_draft:
-        write_patch_comparison_report(
-            run_root=run_root,
-            output_path=run_root / "reports" / "patch-comparison.json",
-        )
     merge_simulation = json.loads(merge_simulation_path.read_text(encoding="utf-8"))
-    proposed_patch_simulation = simulate_candidate_patch_merge(
-        manifest=manifest,
-        generated_run_root=run_root,
-        runtime_root=runtime_root,
-        report_root=run_root / "reports",
-        patch_artifact="patches/proposed.patch",
-        report_name="proposed-patch-simulation.json",
-    )
-    proposed_patch_payload = json.loads(proposed_patch_simulation.read_text(encoding="utf-8"))
-    if proposed_patch_payload.get("failed_patch_artifacts"):
-        merge_simulation["failed_patch_artifacts"] = list(merge_simulation.get("failed_patch_artifacts") or []) + list(
-            proposed_patch_payload.get("failed_patch_artifacts") or []
-        )
-        merge_simulation["passed"] = False
-        merge_simulation_path.write_text(
-            json.dumps(merge_simulation, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
     _emit_generation_log(
         run_root=run_root,
         terminal_logger=terminal_logger,
@@ -917,6 +974,14 @@ def run_onboarding_generation(
         agent=agent,
         bridge=bridge,
         role_runner=active_role_runner,
+        llm_runtime_repair_factory=build_runtime_repair_factory(
+            enabled=generate_llm_patch_draft or llm_patch_factory is not None,
+            llm_factory=llm_patch_factory,
+            provider=llm_provider,
+            model=llm_model,
+        ),
+        llm_provider=llm_provider,
+        llm_model=llm_model,
         event_store=event_store,
         terminal_logger=terminal_logger,
         run_role_with_events=_run_role_with_events,
@@ -972,13 +1037,11 @@ def run_onboarding_generation(
         details={"passed": bool(smoke_summary["passed"])},
     )
 
+    has_explicit_export_decision = _has_explicit_approval_decision(
+        decisions=approvals,
+        approval_type="export",
+    )
     if bridge is not None:
-        export_request, should_publish_export_request = _prepare_export_approval_request(
-            agent=agent,
-            run_id=run_id,
-            approval_store=approval_store,
-            event_store=event_store,
-        )
         bridge.post_agent_message(
             event=active_role_runner.build_event(
                 run_id=run_id,
@@ -989,17 +1052,24 @@ def run_onboarding_generation(
             ),
             message=validator_message,
         )
-        if should_publish_export_request:
-            bridge.post_approval_request(
+        if not has_explicit_export_decision:
+            export_request, should_publish_export_request = _prepare_export_approval_request(
+                agent=agent,
                 run_id=run_id,
-                approval_type=export_request["approval_type"],
-                summary="Export bundle is ready",
-                recommended_option="approve",
-                risk_if_approved="patch export may still need manual review",
-                risk_if_rejected="run remains local only",
-                available_actions=["approve", "reject"],
+                approval_store=approval_store,
+                event_store=event_store,
             )
-    else:
+            if should_publish_export_request:
+                bridge.post_approval_request(
+                    run_id=run_id,
+                    approval_type=export_request["approval_type"],
+                    summary="Export bundle is ready",
+                    recommended_option="approve",
+                    risk_if_approved="final export patch may still need manual review",
+                    risk_if_rejected="run remains local only",
+                    available_actions=["approve", "reject"],
+                )
+    elif not has_explicit_export_decision:
         _prepare_export_approval_request(
             agent=agent,
             run_id=run_id,
@@ -1013,6 +1083,12 @@ def run_onboarding_generation(
         decisions=approvals,
         approval_store=approval_store,
     )
+    if bridge is not None and has_explicit_export_decision and approval_result is not None:
+        bridge.record_approval_decision(
+            run_id=run_id,
+            approval_type="export",
+            decision=approval_result,
+        )
     if approval_result != "approved":
         return finalize_result(runtime_workspace=runtime_workspace)
 
@@ -1038,22 +1114,22 @@ def run_onboarding_generation(
         message="export started",
         details={"export_source": export_source},
     )
-    if export_source == "llm" and selected_patch_path is not None:
-        export_patch_artifact(
-            patch_path=selected_patch_path,
-            report_root=run_root / "reports",
-            export_source="llm",
-            strategy_provenance=strategy_provenance,
-            recovery_provenance=recovery_provenance,
-        )
-    else:
-        export_runtime_patch(
-            source_root=source_root,
-            runtime_workspace=runtime_workspace,
-            report_root=run_root / "reports",
-            strategy_provenance=strategy_provenance,
-            recovery_provenance=recovery_provenance,
-        )
+    export_result = _export_with_replay_validation(
+        run_root=run_root,
+        source_root=Path(source_root),
+        runtime_root=Path(runtime_root),
+        runtime_workspace=runtime_workspace,
+        site=site,
+        run_id=run_id,
+        export_source=export_source,
+        selected_patch_path=selected_patch_path,
+        strategy_provenance=strategy_provenance,
+        recovery_provenance=recovery_provenance,
+        terminal_logger=terminal_logger,
+    )
+    if export_result.get("replay_passed") is False:
+        agent.state = RunState.HUMAN_REVIEW_REQUIRED
+        return finalize_result(runtime_workspace=runtime_workspace)
     agent.mark_export_completed()
     _emit_stage_event(
         run_root=run_root,
@@ -1071,6 +1147,29 @@ def run_onboarding_generation(
         message="export completed",
         details={"export_source": export_source, "metadata_path": str(run_root / "reports" / "export-metadata.json")},
     )
+    if enable_runtime_completion_loop and runtime_workspace is not None:
+        completion_result = _run_runtime_completion_with_retries(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            source_root=Path(source_root),
+            runtime_root=Path(runtime_root),
+            site=site,
+            run_id=run_id,
+            agent=agent,
+            terminal_logger=terminal_logger,
+            strategy_provenance=strategy_provenance,
+            runtime_repair_llm_factory=build_runtime_repair_factory(
+                enabled=generate_llm_patch_draft or llm_patch_factory is not None,
+                llm_factory=llm_patch_factory,
+                provider=llm_provider,
+                model=llm_model,
+            ),
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+        )
+        if not completion_result.get("passed", False):
+            agent.state = RunState.HUMAN_REVIEW_REQUIRED
+            return finalize_result(runtime_workspace=runtime_workspace)
 
     return finalize_result(runtime_workspace=runtime_workspace)
 
@@ -1092,11 +1191,6 @@ def _ensure_patch_companion_files(
 
     companion_map = {
         "patches/backend_chat_auth_route.patch": ["files/backend/chat_auth.py"],
-        "patches/frontend_widget_mount.patch": [
-            path
-            for path in fallback_files
-            if path.startswith("files/frontend/src/chatbot/SharedChatbotWidget.")
-        ],
     }
     for patch_path in proposed_patches:
         for companion in companion_map.get(str(patch_path or "").strip(), []):
@@ -1147,6 +1241,17 @@ def _apply_approval_decision(
     raise ValueError(f"Unsupported approval decision for {approval_type}: {decision}")
 
 
+def _has_explicit_approval_decision(
+    *,
+    decisions: dict[str, str] | None,
+    approval_type: str,
+) -> bool:
+    if decisions is None:
+        return False
+    value = decisions.get(approval_type)
+    return value is not None and bool(str(value).strip())
+
+
 def _prepare_export_approval_request(
     *,
     agent: AgentOrchestrator,
@@ -1173,6 +1278,234 @@ def _prepare_export_approval_request(
     return export_request, should_publish_export_request
 
 
+def _start_validation_runtime_servers(*, runtime_workspace: Path, run_root: Path) -> dict[str, dict[str, Any]]:
+    backend_plan = _build_validation_backend_probe_plan(runtime_workspace)
+    if _should_skip_validation_runtime_probe(plan=backend_plan, probe_name="backend"):
+        backend = _build_skipped_validation_probe_result(plan=backend_plan)
+    else:
+        backend = _launch_validation_runtime_server(
+            plan=backend_plan,
+            probe_name="backend",
+        )
+    frontend_plan = _build_validation_frontend_probe_plan(runtime_workspace)
+    if _should_skip_validation_runtime_probe(plan=frontend_plan, probe_name="frontend"):
+        frontend = _build_skipped_validation_probe_result(plan=frontend_plan)
+    else:
+        frontend = _launch_validation_runtime_server(
+            plan=frontend_plan,
+            probe_name="frontend",
+        )
+    return {
+        "backend": backend,
+        "frontend": frontend,
+    }
+
+
+def _stop_validation_runtime_servers(server_state: dict[str, dict[str, Any]]) -> None:
+    for probe_state in server_state.values():
+        process = probe_state.get("process")
+        if process is not None:
+            _terminate_process(process)
+
+
+def _launch_validation_runtime_server(*, plan: dict[str, Any], probe_name: str) -> dict[str, Any]:
+    command = plan.get("command")
+    readiness_url = str(plan.get("readiness_url") or "")
+    working_directory = Path(str(plan.get("working_directory") or "."))
+    if not command:
+        return {
+            "plan": plan,
+            "passed": False,
+            "status": "command_missing",
+            "failure_reason": f"{probe_name}_command_missing",
+            "stdout": "",
+            "stderr": "",
+            "pid": None,
+            "readiness": None,
+            "process": None,
+        }
+
+    try:
+        process = _launch_server_process(command=list(command), cwd=working_directory)
+    except OSError as exc:
+        return {
+            "plan": plan,
+            "passed": False,
+            "status": "boot_failed",
+            "failure_reason": f"{probe_name}_server_boot_failed",
+            "stdout": "",
+            "stderr": str(exc),
+            "pid": None,
+            "readiness": None,
+            "process": None,
+        }
+
+    if process.poll() is not None:
+        stdout, stderr = _collect_validation_process_output(process=process, probe_name=probe_name)
+        failure_reason = _classify_probe_failure_reason(
+            probe_name=probe_name,
+            stdout=stdout,
+            stderr=stderr,
+            default_reason=f"{probe_name}_server_boot_failed",
+        )
+        return {
+            "plan": plan,
+            "passed": False,
+            "status": "boot_failed",
+            "failure_reason": failure_reason,
+            "stdout": stdout,
+            "stderr": stderr,
+            "pid": getattr(process, "pid", None),
+            "readiness": None,
+            "process": None,
+        }
+
+    readiness = _probe_http_ready(readiness_url)
+    if not readiness.get("passed"):
+        _terminate_process(process)
+        stdout, stderr = _collect_validation_process_output(process=process, probe_name=probe_name)
+        return {
+            "plan": plan,
+            "passed": False,
+            "status": "readiness_failed",
+            "failure_reason": f"{probe_name}_readiness_failed",
+            "stdout": stdout,
+            "stderr": stderr,
+            "pid": getattr(process, "pid", None),
+            "readiness": readiness,
+            "process": None,
+        }
+    return {
+        "plan": plan,
+        "passed": True,
+        "status": "ready",
+        "failure_reason": None,
+        "stdout": "",
+        "stderr": "",
+        "pid": getattr(process, "pid", None),
+        "readiness": readiness,
+        "process": process,
+    }
+
+
+def _collect_validation_process_output(*, process: Any, probe_name: str) -> tuple[str, str]:
+    if probe_name == "frontend" and hasattr(process, "stdout") and hasattr(process, "stderr"):
+        stdout = _read_validation_stream(process.stdout)
+        stderr = _read_validation_stream(process.stderr)
+        return stdout, stderr
+    return _collect_process_output(process)
+
+
+def _read_validation_stream(stream: Any) -> str:
+    if stream is None or not hasattr(stream, "read"):
+        return ""
+    try:
+        stream.seek(0)
+    except Exception:
+        return ""
+    content = stream.read()
+    return str(content or "")
+
+
+def _should_skip_validation_runtime_probe(*, plan: dict[str, Any], probe_name: str) -> bool:
+    if not plan.get("command"):
+        return True
+    if probe_name != "backend" or plan.get("framework") != "flask":
+        return False
+    command = list(plan.get("command") or [])
+    if len(command) < 2:
+        return False
+    candidate = Path(str(plan.get("working_directory") or ".")) / str(command[1])
+    if not candidate.exists():
+        return False
+    text = candidate.read_text(encoding="utf-8", errors="ignore")
+    return "app.run(" not in text
+
+
+def _build_skipped_validation_probe_result(*, plan: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "plan": plan,
+        "passed": True,
+        "status": "skipped",
+        "failure_reason": None,
+        "stdout": "",
+        "stderr": "",
+        "pid": None,
+        "readiness": None,
+        "process": None,
+    }
+
+
+def _build_validation_runtime_failure_results(server_state: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for probe_name, probe_state in server_state.items():
+        if probe_state.get("passed"):
+            continue
+        failure_reason = str(probe_state.get("failure_reason") or f"{probe_name}_runtime_failed")
+        stderr = str(probe_state.get("stderr") or "").strip()
+        results.append(
+            {
+                "step": f"validation/{probe_name}-runtime",
+                "step_id": f"validation-{probe_name}-runtime",
+                "returncode": 1,
+                "required": True,
+                "category": "runtime",
+                "timed_out": False,
+                "stdout": str(probe_state.get("stdout") or ""),
+                "stderr": "\n".join(part for part in [failure_reason, stderr] if part),
+            }
+        )
+    return results
+
+
+def _run_validation_smoke_cycle(
+    *,
+    run_root: Path,
+    runtime_workspace: Path,
+    plan,
+    recovery_payload: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    server_state = _start_validation_runtime_servers(
+        runtime_workspace=runtime_workspace,
+        run_root=run_root,
+    )
+    if any(not probe_state.get("passed", False) for probe_state in server_state.values()):
+        _stop_validation_runtime_servers(server_state)
+        return _build_validation_runtime_failure_results(server_state)
+
+    try:
+        return _run_smoke_tests_with_optional_recovery(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            plan=plan,
+            recovery_payload=recovery_payload,
+        )
+    finally:
+        _stop_validation_runtime_servers(server_state)
+
+
+def _attempt_llm_runtime_repair_cycle(
+    *,
+    run_root: Path,
+    runtime_workspace: Path,
+    failure_signature: str,
+    evidence_payload: dict[str, Any],
+    llm_runtime_repair_factory: Callable[[], Any] | None,
+    llm_provider: str | None,
+    llm_model: str | None,
+) -> dict[str, Any]:
+    return attempt_llm_runtime_repair(
+        run_root=run_root,
+        runtime_workspace=runtime_workspace,
+        failure_signature=failure_signature,
+        evidence_payload=evidence_payload,
+        attempt_id="validation-retry",
+        llm_factory=llm_runtime_repair_factory,
+        provider=llm_provider,
+        model=llm_model,
+    )
+
+
 def _run_validation_with_retries(
     *,
     run_id: str,
@@ -1182,13 +1515,17 @@ def _run_validation_with_retries(
     agent: AgentOrchestrator,
     bridge: InMemorySlackBridge | None,
     role_runner: RoleRunner,
+    llm_runtime_repair_factory: Callable[[], Any] | None = None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
     terminal_logger: Callable[[str], None] | None = None,
     event_store: RedisRunJobStore | None = None,
     run_role_with_events: Callable[..., AgentMessage] | None = None,
 ) -> list[dict]:
     recovery_attempts: list[RecoveryAttempt] = []
     seen_retry_signatures: set[str] = set()
-    smoke_results = _run_smoke_tests_with_optional_recovery(
+    llm_repair_attempted_signatures: set[str] = set()
+    smoke_results = _run_validation_smoke_cycle(
         run_root=run_root,
         runtime_workspace=runtime_workspace,
         plan=smoke_plan,
@@ -1197,6 +1534,24 @@ def _run_validation_with_retries(
         failure_policy = _classify_failure_policy(smoke_results)
         failed_steps = failure_policy["failed_steps"]
         failure_signature = failure_policy["failure_signature"]
+        if llm_runtime_repair_factory is not None and failure_signature not in llm_repair_attempted_signatures:
+            llm_repair_attempted_signatures.add(failure_signature)
+            llm_repair_result = _attempt_llm_runtime_repair_cycle(
+                run_root=run_root,
+                runtime_workspace=runtime_workspace,
+                failure_signature=failure_signature,
+                evidence_payload={"smoke_results": smoke_results},
+                llm_runtime_repair_factory=llm_runtime_repair_factory,
+                llm_provider=llm_provider,
+                llm_model=llm_model,
+            )
+            if llm_repair_result.get("applied"):
+                smoke_results = _run_validation_smoke_cycle(
+                    run_root=run_root,
+                    runtime_workspace=runtime_workspace,
+                    plan=smoke_plan,
+                )
+                continue
         if failure_policy["retryable"]:
             agent.mark_failure()
         else:
@@ -1246,6 +1601,19 @@ def _run_validation_with_retries(
                 "failed_results": [result for result in smoke_results if result.get("returncode") != 0],
                 "backend_evaluation": _read_json_if_exists(run_root / "reports" / "backend-evaluation.json") or {},
                 "frontend_evaluation": _read_json_if_exists(run_root / "reports" / "frontend-evaluation.json") or {},
+                "llm_repair_recommendation": {
+                    "classification": diagnoser_message.metadata.get("classification"),
+                    "should_retry": diagnoser_message.metadata.get("should_retry"),
+                    "repair_scope": diagnoser_message.metadata.get("repair_scope"),
+                    "root_cause_hypothesis": diagnoser_message.metadata.get("root_cause_hypothesis"),
+                    "proposed_fix": diagnoser_message.metadata.get("proposed_fix"),
+                    "failure_signature": diagnoser_message.metadata.get("failure_signature"),
+                    "guardrail_rejection_reason": diagnoser_message.metadata.get("guardrail_rejection_reason"),
+                    "proposed_probe_updates": diagnoser_message.metadata.get("proposed_probe_updates"),
+                    "proposed_schema_overrides": diagnoser_message.metadata.get("proposed_schema_overrides"),
+                    "repair_actions": diagnoser_message.metadata.get("repair_actions"),
+                },
+                "guardrail_rejection_reason": diagnoser_message.metadata.get("guardrail_rejection_reason"),
             }
         )
         recovery_artifact_path = run_root / "reports" / "recovery-plan.json"
@@ -1323,7 +1691,7 @@ def _run_validation_with_retries(
             recovery_payload=recovery_payload,
         )
         agent.state = RunState.VALIDATING
-        smoke_results = _run_smoke_tests_with_optional_recovery(
+        smoke_results = _run_validation_smoke_cycle(
             run_root=run_root,
             runtime_workspace=runtime_workspace,
             plan=smoke_plan,
@@ -1491,6 +1859,7 @@ def _build_run_result(
     bridge: InMemorySlackBridge | None,
     event_store: RedisRunJobStore | None,
 ) -> dict[str, Any]:
+    runtime_completion_summary = _read_runtime_completion_summary(run_root)
     result: dict[str, Any] = {
         "run_root": str(run_root),
         "runtime_workspace": str(runtime_workspace) if runtime_workspace is not None else None,
@@ -1502,18 +1871,22 @@ def _build_run_result(
         "llm_codebase_interpretation_path": str(run_root / "reports" / "llm-codebase-interpretation.json"),
         "patch_proposal_path": str(run_root / "reports" / "patch-proposal.json"),
         "llm_patch_proposal_execution_path": str(run_root / "reports" / "llm-patch-proposal-execution.json"),
+        "edit_plan_path": str(run_root / "reports" / "edit-plan.json"),
+        "edit_execution_path": str(run_root / "reports" / "edit-execution.json"),
         "merge_simulation_path": str(run_root / "reports" / "merge-simulation.json"),
         "backend_evaluation_path": str(run_root / "reports" / "backend-evaluation.json"),
         "frontend_evaluation_path": str(run_root / "reports" / "frontend-evaluation.json"),
         "frontend_build_validation_path": str(run_root / "reports" / "frontend-build-validation.json"),
+        "runtime_completion_path": str(run_root / "reports" / "runtime-completion.json"),
         "recovery_artifact_path": str(run_root / "reports" / "recovery-plan.json"),
         "recovery_attempts_path": str(run_root / "reports" / "recovery-attempts.json"),
         "recovered_smoke_plan_path": str(run_root / "reports" / "recovered-smoke-plan.json"),
-        "proposed_patch_path": str(run_root / "patches" / "proposed.patch"),
-        "llm_proposed_patch_path": str(run_root / "patches" / "llm-proposed.patch"),
-        "llm_patch_simulation_path": str(run_root / "reports" / "llm-patch-simulation.json"),
-        "patch_comparison_path": str(run_root / "reports" / "patch-comparison.json"),
+        "proposed_patch_path": None,
+        "llm_proposed_patch_path": None,
+        "llm_patch_simulation_path": None,
+        "patch_comparison_path": None,
         "export_metadata_path": str(run_root / "reports" / "export-metadata.json"),
+        "export_replay_validation_path": str(run_root / "reports" / "export-replay-validation.json"),
         "onboarding_event_log_path": str(run_root / "reports" / "execution-trace.jsonl"),
         "execution_trace_path": str(run_root / "reports" / "execution-trace.jsonl"),
         "generation_log_path": str(run_root / "reports" / "generation.log"),
@@ -1526,6 +1899,9 @@ def _build_run_result(
         "blocked_jobs": dict(agent.blocked_jobs),
         "final_recovery_source": _read_recovery_provenance(run_root).get("final_recovery_source"),
         "runtime_failure_summary": _read_runtime_failure_summary(run_root),
+        "launcher_visible": runtime_completion_summary.get("launcher_visible"),
+        "auth_bootstrap_passed": runtime_completion_summary.get("auth_bootstrap_passed"),
+        "chat_stream_passed": runtime_completion_summary.get("chat_stream_passed"),
     }
     if bridge is not None:
         bridge.post_run_summary(
@@ -1536,6 +1912,139 @@ def _build_run_result(
         )
         result["slack_message_count"] = len(bridge.messages)
     return result
+
+
+def _read_runtime_completion_summary(run_root: Path) -> dict[str, Any]:
+    path = run_root / "reports" / "runtime-completion.json"
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        "launcher_visible": payload.get("launcher_visible"),
+        "auth_bootstrap_passed": payload.get("auth_bootstrap_passed"),
+        "chat_stream_passed": payload.get("chat_stream_passed"),
+    }
+
+
+def _write_final_repair_history(
+    *,
+    generated_root: str | Path,
+    run_root: Path,
+    site: str,
+    run_id: str,
+) -> dict[str, Any]:
+    failure_signature = _read_final_failure_signature(run_root)
+    if not failure_signature:
+        return {
+            "repair_history_path": None,
+            "site_repair_history_path": None,
+            "failure_signature": None,
+            "failure_count_for_signature": None,
+            "repair_scope": None,
+            "repair_recommendation": None,
+            "promotion_decision": None,
+        }
+    repair_recommendation = _read_repair_recommendation(run_root)
+    failure_count = read_failure_count(
+        generated_root=generated_root,
+        site=site,
+        failure_signature=failure_signature,
+    ) + 1
+    promotion_decision = PromotionJudge(threshold=2).decide(
+        failure_signature=failure_signature,
+        count=failure_count,
+        current_scope="run_only",
+        recommendation_scope=str((repair_recommendation or {}).get("repair_scope") or "") or None,
+    )
+    return write_repair_history(
+        generated_root=generated_root,
+        run_root=run_root,
+        site=site,
+        run_id=run_id,
+        failure_signature=failure_signature,
+        repair_scope=str(promotion_decision["repair_scope"]),
+        repair_recommendation=repair_recommendation,
+        promotion_decision=promotion_decision,
+    )
+
+
+def _read_final_failure_signature(run_root: Path) -> str | None:
+    attempts_path = run_root / "reports" / "recovery-attempts.json"
+    if attempts_path.exists():
+        try:
+            attempts_payload = json.loads(attempts_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            attempts_payload = []
+        if isinstance(attempts_payload, list):
+            for attempt in reversed(attempts_payload):
+                if not isinstance(attempt, dict):
+                    continue
+                signature = str(attempt.get("failure_signature") or "").strip()
+                if signature:
+                    return signature
+
+    for path in (
+        run_root / "reports" / "runtime-completion.json",
+        run_root / "reports" / "smoke-summary.json",
+        run_root / "reports" / "frontend-evaluation.json",
+    ):
+        payload = _read_json_if_exists(path) or {}
+        signature = str(payload.get("failure_signature") or "").strip()
+        if signature:
+            return signature
+    return None
+
+
+def _read_repair_recommendation(run_root: Path) -> dict[str, Any]:
+    payload = _read_json_if_exists(run_root / "reports" / "recovery-plan.json") or {}
+    repair_scope = str(payload.get("repair_scope") or "").strip()
+    recommendation_source = str(payload.get("recommendation_source") or "").strip()
+    if not repair_scope and not recommendation_source:
+        return {}
+    return {
+        "repair_scope": repair_scope or "run_only",
+        "recommendation_source": recommendation_source or "deterministic",
+        "guardrail_rejection_reason": payload.get("guardrail_rejection_reason"),
+    }
+
+
+def _write_generator_repair_request(
+    *,
+    run_root: Path,
+    run_id: str,
+    repair_history_summary: dict[str, Any],
+) -> dict[str, Any]:
+    if repair_history_summary.get("repair_scope") != "generator_promoted":
+        return {
+            "generator_repair_request_path": None,
+            "generator_repair_request": None,
+        }
+
+    payload = {
+        "run_id": run_id,
+        "repair_scope": "generator_promoted",
+        "failure_signature": repair_history_summary.get("failure_signature"),
+        "promotion_decision": repair_history_summary.get("promotion_decision") or {},
+        "ownership_root": "chatbot/src/onboarding",
+        "target_paths": ["chatbot/src/onboarding"],
+        "requires_fresh_run": True,
+        "fresh_run_reason": "generator promotion must be validated on a new run id",
+    }
+    path = run_root / "reports" / "generator-repair-request.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return {
+        "generator_repair_request_path": str(path),
+        "generator_repair_request": payload,
+    }
 
 
 def _run_event_stream_key(run_id: str) -> str:
@@ -1607,6 +2116,74 @@ def _read_json_if_exists(path: Path) -> dict[str, Any] | None:
         return None
 
 
+def _export_with_replay_validation(
+    *,
+    run_root: Path,
+    source_root: Path,
+    runtime_root: Path,
+    runtime_workspace: Path,
+    site: str,
+    run_id: str,
+    export_source: str,
+    selected_patch_path: Path | None,
+    strategy_provenance: dict[str, str],
+    recovery_provenance: dict[str, str],
+    terminal_logger: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    manifest_payload = _read_json_if_exists(run_root / "manifest.json") or {}
+    edit_artifacts = list(manifest_payload.get("edit_artifacts") or [])
+    if export_source == "llm" and selected_patch_path is not None:
+        patch_path = export_patch_artifact(
+            patch_path=selected_patch_path,
+            report_root=run_root / "reports",
+            export_source="llm",
+            strategy_provenance=strategy_provenance,
+            recovery_provenance=recovery_provenance,
+            edit_artifacts=edit_artifacts,
+        )
+    else:
+        patch_path = export_runtime_patch(
+            source_root=source_root,
+            runtime_workspace=runtime_workspace,
+            report_root=run_root / "reports",
+            strategy_provenance=strategy_provenance,
+            recovery_provenance=recovery_provenance,
+            edit_artifacts=edit_artifacts,
+        )
+
+    patch_path = Path(patch_path)
+    replay_report_path: Path | None = None
+    replay_passed: bool | None = None
+    if patch_path.exists():
+        replay_report_path = simulate_exported_patch_replay(
+            source_root=source_root,
+            runtime_root=runtime_root,
+            report_root=run_root / "reports",
+            patch_path=patch_path,
+            site=site,
+            run_id=run_id,
+        )
+        replay_payload = _read_json_if_exists(replay_report_path) or {}
+        replay_passed = replay_payload.get("passed")
+        if terminal_logger is not None:
+            _emit_terminal_log(
+                terminal_logger,
+                f"[export_replay] passed={bool(replay_passed)} path={replay_report_path}",
+            )
+
+    update_export_metadata(
+        report_root=run_root / "reports",
+        edit_artifacts=edit_artifacts,
+        replay_report_path=replay_report_path,
+        replay_passed=replay_passed,
+    )
+    return {
+        "patch_path": str(patch_path),
+        "replay_report_path": str(replay_report_path) if replay_report_path is not None else None,
+        "replay_passed": replay_passed,
+    }
+
+
 def _attempt_runtime_validation_repair(
     *,
     run_root: Path,
@@ -1666,11 +2243,167 @@ def _attempt_runtime_validation_repair(
     return applied
 
 
+def _run_runtime_completion_with_retries(
+    *,
+    run_root: Path,
+    runtime_workspace: Path,
+    source_root: Path,
+    runtime_root: Path,
+    site: str,
+    run_id: str,
+    agent: AgentOrchestrator,
+    terminal_logger: Callable[[str], None] | None,
+    strategy_provenance: dict[str, str],
+    runtime_repair_llm_factory: Callable[[], Any] | None = None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+) -> dict[str, Any]:
+    backend_evaluation = _read_json_if_exists(run_root / "reports" / "backend-evaluation.json") or {}
+    frontend_evaluation = _read_json_if_exists(run_root / "reports" / "frontend-evaluation.json") or {}
+    retry_budget = max(1, agent.retry_budget - agent.retry_count)
+    attempts_payload: list[dict[str, Any]] = []
+    latest_result: dict[str, Any] = {
+        "passed": False,
+        "failure_reason": "runtime_completion_not_started",
+    }
+
+    for attempt_index in range(1, retry_budget + 1):
+        latest_result = run_runtime_completion(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            site=site,
+            run_id=run_id,
+            terminal_logger=terminal_logger,
+        )
+        attempt_record: dict[str, Any] = {
+            "attempt": attempt_index,
+            "passed": bool(latest_result.get("passed", False)),
+            "failure_reason": latest_result.get("failure_reason"),
+            "backend_probe_status": (latest_result.get("backend_probe") or {}).get("status"),
+            "frontend_probe_status": (latest_result.get("frontend_probe") or {}).get("status"),
+            "mount_probe_passed": (latest_result.get("mount_probe") or {}).get("passed"),
+        }
+        attempts_payload.append(attempt_record)
+        if latest_result.get("passed", False):
+            recovery_provenance = _read_recovery_provenance(run_root)
+            if attempts_payload and attempts_payload[-1].get("classification"):
+                recovery_provenance = {
+                    **recovery_provenance,
+                    "final_recovery_source": str(attempts_payload[-1]["classification"]),
+                }
+            export_result = _export_with_replay_validation(
+                run_root=run_root,
+                source_root=source_root,
+                runtime_root=runtime_root,
+                runtime_workspace=runtime_workspace,
+                site=site,
+                run_id=run_id,
+                export_source="runtime",
+                selected_patch_path=None,
+                strategy_provenance=strategy_provenance,
+                recovery_provenance=recovery_provenance,
+                terminal_logger=terminal_logger,
+            )
+            attempt_record["export_replay_passed"] = export_result.get("replay_passed")
+            if export_result.get("replay_passed") is False:
+                latest_result = {
+                    **latest_result,
+                    "passed": False,
+                    "failure_reason": "export_replay_validation_failed",
+                    "replay_report_path": export_result.get("replay_report_path"),
+                }
+                _write_runtime_completion_attempts(run_root=run_root, attempts=attempts_payload)
+                return latest_result
+            _write_runtime_completion_attempts(run_root=run_root, attempts=attempts_payload)
+            return latest_result
+
+        recovery_payload = build_recovery_plan(
+            {
+                "failure_signature": str(latest_result.get("failure_reason") or "runtime_completion_failed"),
+                "retry_count": attempt_index - 1,
+                "retry_budget": retry_budget,
+                "failed_results": [],
+                "backend_evaluation": backend_evaluation,
+                "frontend_evaluation": frontend_evaluation,
+            }
+        )
+        attempt_record["classification"] = recovery_payload.get("classification")
+        attempt_record["should_retry"] = recovery_payload.get("should_retry", False)
+        attempt_record["repair_actions"] = recovery_payload.get("repair_actions") or []
+
+        llm_repair_factory = runtime_repair_llm_factory
+        if _should_attempt_llm_runtime_repair(latest_result):
+            llm_repair_result = attempt_llm_runtime_repair(
+                run_root=run_root,
+                runtime_workspace=runtime_workspace,
+                failure_signature=str(latest_result.get("failure_reason") or "runtime_completion_failed"),
+                evidence_payload=latest_result,
+                attempt_id=f"runtime-completion-{attempt_index}",
+                llm_factory=llm_repair_factory,
+                provider=llm_provider,
+                model=llm_model,
+            )
+            attempt_record["llm_repair_applied"] = llm_repair_result.get("applied", False)
+            attempt_record["llm_repair_failure_reason"] = llm_repair_result.get("failure_reason")
+            attempt_record["llm_repair_guardrail_rejection_reason"] = llm_repair_result.get("guardrail_rejection_reason")
+            attempt_record["llm_repair_applied_edits"] = llm_repair_result.get("applied_edits") or []
+            if llm_repair_result.get("applied", False):
+                continue
+
+        if not recovery_payload.get("should_retry", False):
+            break
+        applied = _apply_repair_actions(
+            runtime_workspace=runtime_workspace,
+            recovery_payload=recovery_payload,
+            backend_evaluation=backend_evaluation,
+            runtime_completion_result=latest_result,
+        )
+        attempt_record["repair_applied"] = applied
+        if not applied:
+            break
+
+    _write_runtime_completion_attempts(run_root=run_root, attempts=attempts_payload)
+    return latest_result
+
+
+def _should_attempt_llm_runtime_repair(result: dict[str, Any]) -> bool:
+    failure_reason = str(result.get("failure_reason") or "").strip()
+    if not failure_reason:
+        return False
+    if failure_reason.endswith("import_resolution_failed"):
+        return True
+    if failure_reason in {
+        "chatbot_mount_missing",
+        "chatbot_status_not_rendered",
+        "django_urlconf_import_failed",
+    }:
+        return True
+
+    mount_probe = result.get("mount_probe") or {}
+    if mount_probe.get("passed") is False:
+        return True
+    if result.get("auth_bootstrap_passed") is False:
+        return True
+    if result.get("chat_stream_passed") is False:
+        return True
+    return False
+
+
+def _write_runtime_completion_attempts(*, run_root: Path, attempts: list[dict[str, Any]]) -> None:
+    path = run_root / "reports" / "runtime-completion-attempts.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(attempts, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def _apply_repair_actions(
     *,
     runtime_workspace: Path,
     recovery_payload: dict[str, Any],
     backend_evaluation: dict[str, Any],
+    runtime_completion_result: dict[str, Any] | None = None,
 ) -> bool:
     applied = False
     for action in recovery_payload.get("repair_actions") or []:
@@ -1681,6 +2414,15 @@ def _apply_repair_actions(
             target_path.parent.mkdir(parents=True, exist_ok=True)
             target_path.write_text(_build_runtime_chat_auth_stub(framework), encoding="utf-8")
             applied = True
+        elif action_name == "repair_frontend_mount_target":
+            applied = _repair_frontend_mount_target(runtime_workspace) or applied
+        elif action_name == "repair_frontend_mount_bundle":
+            applied = _repair_frontend_mount_bundle(runtime_workspace) or applied
+        elif action_name == "repair_backend_entrypoint":
+            applied = _repair_backend_entrypoint(
+                runtime_workspace=runtime_workspace,
+                runtime_completion_result=runtime_completion_result,
+            ) or applied
     return applied
 
 
@@ -1689,23 +2431,122 @@ def _build_runtime_chat_auth_stub(framework: str) -> str:
         return (
             'from flask import Blueprint, jsonify\n\n'
             'chat_auth_bp = Blueprint("chat_auth", __name__)\n\n'
-            '@chat_auth_bp.route("/api/chat/auth-token", methods=["POST"])\n'
+            f'@chat_auth_bp.route("{CHAT_AUTH_BOOTSTRAP_PATH}", methods=["POST"])\n'
             'def chat_auth_token():\n'
-            '    return jsonify({"authenticated": True, "access_token": "runtime-token"})\n'
+            '    return jsonify({"authenticated": True, "site_id": "site-unknown", "access_token": "runtime-token", "user": {"id": "runtime-user", "email": "", "name": "Runtime User"}})\n'
         )
     if framework == "fastapi":
         return (
             "from fastapi import APIRouter\n\n"
             'router = APIRouter(tags=["chat-auth"])\n\n'
-            '@router.post("/api/chat/auth-token")\n'
+            f'@router.post("{CHAT_AUTH_BOOTSTRAP_PATH}")\n'
             "def chat_auth_token():\n"
-            '    return {"authenticated": True, "access_token": "runtime-token"}\n'
+            '    return {"authenticated": True, "site_id": "site-unknown", "access_token": "runtime-token", "user": {"id": "runtime-user", "email": "", "name": "Runtime User"}}\n'
         )
     return (
         "from django.http import JsonResponse\n\n"
         "def chat_auth_token(request):\n"
-        '    return JsonResponse({"authenticated": True, "access_token": "runtime-token"})\n'
+        '    return JsonResponse({"authenticated": True, "site_id": "site-unknown", "access_token": "runtime-token", "user": {"id": "runtime-user", "email": "", "name": "Runtime User"}})\n'
     )
+
+
+def _repair_frontend_mount_target(runtime_workspace: Path) -> bool:
+    frontend_src = runtime_workspace / "frontend" / "src"
+    if not frontend_src.exists():
+        frontend_src = runtime_workspace / "src"
+    frontend_src.mkdir(parents=True, exist_ok=True)
+
+    mount_candidates = [
+        frontend_src / "App.js",
+        frontend_src / "App.jsx",
+        frontend_src / "main.jsx",
+        frontend_src / "main.js",
+    ]
+    mount_path = next((path for path in mount_candidates if path.exists()), frontend_src / "App.js")
+    content = mount_path.read_text(encoding="utf-8") if mount_path.exists() else ""
+    host_contract = build_frontend_mount_contract()
+    bootstrap_block = (
+        "const ORDER_CS_WIDGET_HOST_CONTRACT = {\n"
+        f'  chatbotServerBaseUrl: "{host_contract["chatbotServerBaseUrl"]}",\n'
+        f'  authBootstrapPath: "{host_contract["authBootstrapPath"]}",\n'
+        f'  widgetBundlePath: "{host_contract["widgetBundlePath"]}",\n'
+        f'  widgetElementTag: "{host_contract["widgetElementTag"]}",\n'
+        f'  mountMode: "{host_contract["mountMode"]}",\n'
+        "};\n\n"
+        'if (typeof globalThis === "object") {\n'
+        '  globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"] = ORDER_CS_WIDGET_HOST_CONTRACT;\n'
+        "}\n\n"
+        'if (typeof document !== "undefined" && !document.querySelector(\'script[data-order-cs-widget-bundle="true"]\')) {\n'
+        '  const orderCsWidgetScript = document.createElement("script");\n'
+        "  orderCsWidgetScript.src = `${ORDER_CS_WIDGET_HOST_CONTRACT.chatbotServerBaseUrl}${ORDER_CS_WIDGET_HOST_CONTRACT.widgetBundlePath}`;\n"
+        "  orderCsWidgetScript.async = true;\n"
+        '  orderCsWidgetScript.dataset.orderCsWidgetBundle = "true";\n'
+        "  document.head.appendChild(orderCsWidgetScript);\n"
+        "}\n\n"
+    )
+    if '__ORDER_CS_WIDGET_HOST_CONTRACT__' not in content:
+        content = bootstrap_block + content
+    if "<order-cs-widget />" not in content:
+        if "return <main>Home</main>;" in content:
+            content = content.replace(
+                "return <main>Home</main>;",
+                "return <><main>Home</main><order-cs-widget /></>;",
+            )
+        elif "return null;" in content:
+            content = content.replace("return null;", "return <order-cs-widget />;")
+        else:
+            content = content.rstrip() + "\n\nexport function RuntimeCompletionMountRepair() { return <order-cs-widget />; }\n"
+    mount_path.write_text(content, encoding="utf-8")
+    return True
+
+
+def _repair_frontend_mount_bundle(runtime_workspace: Path) -> bool:
+    frontend_src = runtime_workspace / "frontend" / "src"
+    if not frontend_src.exists():
+        frontend_src = runtime_workspace / "src"
+    if not frontend_src.exists():
+        return False
+
+    repaired = False
+    for mount_path in [
+        frontend_src / "App.js",
+        frontend_src / "App.jsx",
+        frontend_src / "main.jsx",
+        frontend_src / "main.js",
+    ]:
+        if not mount_path.exists():
+            continue
+        content = mount_path.read_text(encoding="utf-8", errors="ignore")
+        updated_lines = [
+            line
+            for line in content.splitlines(True)
+            if "@shared-chatbot/ChatbotWidget" not in line
+            and 'from "./chatbot/' not in line
+            and "from './chatbot/" not in line
+        ]
+        updated = "".join(updated_lines)
+        updated = re.sub(r"<[A-Za-z0-9_]*ChatbotWidget\s*/>", "<order-cs-widget />", updated)
+        if updated != content:
+            mount_path.write_text(updated, encoding="utf-8")
+            repaired = True
+    return _repair_frontend_mount_target(runtime_workspace) or repaired
+
+
+def _repair_backend_entrypoint(
+    *,
+    runtime_workspace: Path,
+    runtime_completion_result: dict[str, Any] | None,
+) -> bool:
+    backend_probe = (runtime_completion_result or {}).get("backend_probe") or {}
+    stderr = str(backend_probe.get("stderr") or "")
+    if not stderr.strip():
+        return False
+
+    repair_result = repair_python_import_from_traceback(
+        workspace_root=runtime_workspace,
+        stderr=stderr,
+    )
+    return bool(repair_result.get("applied", False))
 
 
 def _publish_run_event(
@@ -1760,6 +2601,8 @@ def _existing_summary_artifacts(run_root: Path) -> dict[str, Path]:
         "llm_codebase_interpretation": run_root / "reports" / "llm-codebase-interpretation.json",
         "llm_patch_proposal_execution": run_root / "reports" / "llm-patch-proposal-execution.json",
         "patch_proposal": run_root / "reports" / "patch-proposal.json",
+        "edit_plan": run_root / "reports" / "edit-plan.json",
+        "edit_execution": run_root / "reports" / "edit-execution.json",
         "proposed_patch": run_root / "patches" / "proposed.patch",
         "llm_proposed_patch": run_root / "patches" / "llm-proposed.patch",
         "llm_patch_simulation": run_root / "reports" / "llm-patch-simulation.json",
@@ -1826,6 +2669,17 @@ def _read_runtime_failure_summary(run_root: Path) -> dict[str, str]:
         reason = str(frontend_build_payload.get("bootstrap_failure_reason") or "").strip()
         if reason:
             summary["frontend"] = reason
+
+    completion_path = run_root / "reports" / "runtime-completion.json"
+    if completion_path.exists():
+        try:
+            completion_payload = json.loads(completion_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            completion_payload = {}
+        if completion_payload and not completion_payload.get("passed", True):
+            reason = str(completion_payload.get("failure_reason") or "").strip()
+            if reason:
+                summary["completion"] = reason
 
     return summary
 
@@ -2033,7 +2887,6 @@ def _build_proposed_files(recommended_outputs: list[str]) -> list[str]:
         "chat_auth": "files/backend/chat_auth.py",
         "order_adapter": "files/backend/order_adapter_client.py",
         "product_adapter": "files/backend/product_adapter_client.py",
-        "frontend_patch": "files/frontend/src/chatbot/SharedChatbotWidget.jsx",
     }
     proposed = [file_map[item] for item in recommended_outputs if item in file_map]
     if any(item in recommended_outputs for item in {"order_adapter", "product_adapter"}):
@@ -2070,40 +2923,34 @@ def _materialize_generator_proposals(
     run_root: Path,
     proposed_files: list[str],
     proposed_patches: list[str],
+    supporting_generated_files: list[str] | None = None,
 ) -> None:
     file_generators = {
         "files/backend/chat_auth.py": generate_chat_auth_template,
         "files/backend/order_adapter_client.py": generate_order_adapter_template,
         "files/backend/product_adapter_client.py": generate_product_adapter_template,
         "files/backend/tool_registry.py": generate_backend_tool_registry,
-        "files/frontend/src/chatbot/SharedChatbotWidget.jsx": generate_frontend_widget_artifact,
     }
     patch_generators = {
         "patches/backend_chat_auth_route.patch": generate_backend_route_patch,
         "patches/frontend_widget_mount.patch": generate_frontend_mount_patch,
     }
-    materialized_frontend_artifacts: list[dict[str, str]] = []
+    materialized_files, materialized_patches = _partition_materialization_targets(
+        proposed_files=proposed_files,
+        proposed_patches=proposed_patches,
+        supporting_generated_files=supporting_generated_files,
+    )
     generated_files: list[str] = []
     patch_targets: list[str] = []
 
-    for file_path in proposed_files:
+    for file_path in materialized_files:
         generator = file_generators.get(file_path)
         if generator is not None:
-            result = generator(run_root)
+            generator(run_root)
             if file_path not in generated_files:
                 generated_files.append(file_path)
-            if isinstance(result, dict) and result.get("type") == "widget":
-                materialized_frontend_artifacts.append(
-                    {
-                        "type": str(result.get("type") or "widget"),
-                        "path": str(
-                            Path(str(result.get("path") or "")).relative_to(run_root).as_posix()
-                        ),
-                        "source": "llm",
-                    }
-                )
 
-    for patch_path in proposed_patches:
+    for patch_path in materialized_patches:
         generator = patch_generators.get(patch_path)
         if generator is not None:
             generator(run_root)
@@ -2117,31 +2964,72 @@ def _materialize_generator_proposals(
             patch_targets=patch_targets,
         )
 
-    if materialized_frontend_artifacts:
-        _update_manifest_frontend_artifacts(
-            run_root=run_root,
-            frontend_artifacts=materialized_frontend_artifacts,
-        )
 
-
-def _update_manifest_frontend_artifacts(
+def _partition_materialization_targets(
     *,
-    run_root: Path,
-    frontend_artifacts: list[dict[str, str]],
-) -> None:
-    manifest_path = run_root / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["frontend_artifacts"] = frontend_artifacts
-    generated_files = list(manifest.get("generated_files") or [])
-    for artifact in frontend_artifacts:
-        path = str(artifact.get("path") or "")
-        if path and path not in generated_files:
-            generated_files.append(path)
-    manifest["generated_files"] = generated_files
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    proposed_files: list[str],
+    proposed_patches: list[str],
+    supporting_generated_files: list[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    files: list[str] = []
+    patches: list[str] = []
+    seen_files: set[str] = set()
+    seen_patches: set[str] = set()
+
+    def append_file(path: str) -> None:
+        if path and path not in seen_files:
+            files.append(path)
+            seen_files.add(path)
+
+    def append_patch(path: str) -> None:
+        if path and path not in seen_patches:
+            patches.append(path)
+            seen_patches.add(path)
+
+    for path in proposed_files:
+        normalized = _normalize_materialization_target(path)
+        if normalized and normalized.startswith("files/"):
+            append_file(normalized)
+    for path in proposed_patches:
+        normalized = _normalize_materialization_target(path)
+        if normalized and normalized.startswith("patches/"):
+            append_patch(normalized)
+    for path in supporting_generated_files or []:
+        normalized = _normalize_materialization_target(path)
+        if not normalized:
+            continue
+        if normalized.startswith("files/"):
+            append_file(normalized)
+        elif normalized.startswith("patches/"):
+            append_patch(normalized)
+
+    return files, patches
+
+
+def _normalize_materialization_target(path: str | None) -> str | None:
+    normalized = str(path or "").strip().replace("\\", "/")
+    if not normalized:
+        return None
+
+    alias_map = {
+        "backend/chat_auth.py": "files/backend/chat_auth.py",
+        "files/backend/chat_auth.py": "files/backend/chat_auth.py",
+        "backend/order_adapter_client.py": "files/backend/order_adapter_client.py",
+        "backend/adapters/order_adapter.py": "files/backend/order_adapter_client.py",
+        "files/backend/order_adapter_client.py": "files/backend/order_adapter_client.py",
+        "backend/product_adapter_client.py": "files/backend/product_adapter_client.py",
+        "backend/adapters/product_adapter.py": "files/backend/product_adapter_client.py",
+        "files/backend/product_adapter_client.py": "files/backend/product_adapter_client.py",
+        "patches/backend_chat_auth_route.patch": "patches/backend_chat_auth_route.patch",
+        "backend_chat_auth_route.patch": "patches/backend_chat_auth_route.patch",
+        "patches/frontend_widget_mount.patch": "patches/frontend_widget_mount.patch",
+        "frontend_widget_mount.patch": "patches/frontend_widget_mount.patch",
+    }
+    if normalized in alias_map:
+        return alias_map[normalized]
+    if normalized.startswith(("files/", "patches/")):
+        return normalized
+    return None
 
 
 def _update_manifest_generated_outputs(
@@ -2149,19 +3037,25 @@ def _update_manifest_generated_outputs(
     run_root: Path,
     generated_files: list[str],
     patch_targets: list[str],
+    edit_artifacts: list[str] | None = None,
 ) -> None:
     manifest_path = run_root / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     current_generated_files = list(manifest.get("generated_files") or [])
     current_patch_targets = list(manifest.get("patch_targets") or [])
+    current_edit_artifacts = list(manifest.get("edit_artifacts") or [])
     for path in generated_files:
         if path and path not in current_generated_files:
             current_generated_files.append(path)
     for path in patch_targets:
         if path and path not in current_patch_targets:
             current_patch_targets.append(path)
+    for path in edit_artifacts or []:
+        if path and path not in current_edit_artifacts:
+            current_edit_artifacts.append(path)
     manifest["generated_files"] = current_generated_files
     manifest["patch_targets"] = current_patch_targets
+    manifest["edit_artifacts"] = current_edit_artifacts
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2),
         encoding="utf-8",

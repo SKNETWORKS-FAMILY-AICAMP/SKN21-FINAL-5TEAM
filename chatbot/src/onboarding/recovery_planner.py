@@ -9,10 +9,24 @@ _RECOVERABLE_CLASSIFICATIONS = {
     "missing_import_target",
     "route_wiring_failure",
     "frontend_mount_violation",
+    "frontend_import_resolution_failed",
+    "frontend_dev_server_boot_failed",
+    "frontend_readiness_failed",
+    "backend_server_boot_failed",
+    "backend_import_resolution_failed",
+    "django_urlconf_import_failed",
+    "backend_readiness_failed",
+    "chatbot_mount_missing",
+    "chatbot_status_not_rendered",
     "response_schema_mismatch",
     "probe_contract_mismatch",
     "transient_runtime_failure",
     "transient_timeout",
+}
+
+_SITE_LOCAL_CLASSIFICATIONS = {
+    "response_schema_mismatch",
+    "probe_contract_mismatch",
 }
 
 
@@ -22,7 +36,26 @@ def classify_failure_signature(signature: str) -> str:
     return normalized
 
 
+def is_site_local_failure_signature(signature: str) -> bool:
+    return classify_failure_signature(signature) in _SITE_LOCAL_CLASSIFICATIONS
+
+
 def build_recovery_plan(context: dict[str, Any]) -> dict[str, Any]:
+    llm_recommendation = _normalize_llm_repair_recommendation(
+        context.get("llm_repair_recommendation")
+    )
+    if llm_recommendation is not None:
+        return {
+            "classification": str(llm_recommendation["classification"]),
+            "should_retry": bool(llm_recommendation["should_retry"]),
+            "proposed_probe_updates": list(llm_recommendation.get("proposed_probe_updates") or []),
+            "proposed_schema_overrides": list(llm_recommendation.get("proposed_schema_overrides") or []),
+            "repair_actions": list(llm_recommendation.get("repair_actions") or []),
+            "repair_scope": str(llm_recommendation["repair_scope"]),
+            "recommendation_source": "llm",
+            "guardrail_rejection_reason": llm_recommendation.get("guardrail_rejection_reason"),
+        }
+
     failed_results = list(context.get("failed_results") or [])
     classification_payload = classify_onboarding_failure(
         failure_signature=str(context.get("failure_signature") or ""),
@@ -46,6 +79,9 @@ def build_recovery_plan(context: dict[str, Any]) -> dict[str, Any]:
             "proposed_probe_updates": [],
             "proposed_schema_overrides": [],
             "repair_actions": repair_actions,
+            "repair_scope": "run_only",
+            "recommendation_source": "deterministic",
+            "guardrail_rejection_reason": context.get("guardrail_rejection_reason"),
         }
 
     failed_step_ids = [
@@ -85,7 +121,75 @@ def build_recovery_plan(context: dict[str, Any]) -> dict[str, Any]:
         "proposed_probe_updates": proposed_probe_updates,
         "proposed_schema_overrides": proposed_schema_overrides,
         "repair_actions": repair_actions,
+        "repair_scope": "run_only",
+        "recommendation_source": "deterministic",
+        "guardrail_rejection_reason": context.get("guardrail_rejection_reason"),
     }
+
+
+def _normalize_llm_repair_recommendation(payload: Any) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+
+    classification = str(payload.get("classification") or "").strip()
+    repair_scope = str(payload.get("repair_scope") or "").strip()
+    should_retry = payload.get("should_retry")
+    proposed_probe_updates = _normalize_llm_recommendation_list(payload.get("proposed_probe_updates"))
+    proposed_schema_overrides = _normalize_llm_recommendation_list(payload.get("proposed_schema_overrides"))
+    repair_actions = _normalize_llm_repair_actions(payload.get("repair_actions"))
+    if not classification or repair_scope not in {"run_only", "generator_promoted"} or not isinstance(should_retry, bool):
+        return None
+    if payload.get("proposed_probe_updates") is not None and proposed_probe_updates is None:
+        return None
+    if payload.get("proposed_schema_overrides") is not None and proposed_schema_overrides is None:
+        return None
+    if payload.get("repair_actions") is not None and repair_actions is None:
+        return None
+
+    normalized = {
+        "classification": classification,
+        "should_retry": should_retry,
+        "repair_scope": repair_scope,
+        "root_cause_hypothesis": str(payload.get("root_cause_hypothesis") or "").strip(),
+        "proposed_fix": str(payload.get("proposed_fix") or "").strip(),
+        "failure_signature": str(payload.get("failure_signature") or "").strip(),
+        "guardrail_rejection_reason": payload.get("guardrail_rejection_reason"),
+        "proposed_probe_updates": proposed_probe_updates or [],
+        "proposed_schema_overrides": proposed_schema_overrides or [],
+        "repair_actions": repair_actions or [],
+    }
+    return normalized
+
+
+def _normalize_llm_recommendation_list(payload: Any) -> list[dict[str, Any]] | None:
+    if payload is None:
+        return []
+    if not isinstance(payload, list):
+        return None
+
+    normalized: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            return None
+        normalized.append(dict(item))
+    return normalized
+
+
+def _normalize_llm_repair_actions(payload: Any) -> list[dict[str, Any]] | None:
+    if payload is None:
+        return []
+    if not isinstance(payload, list):
+        return None
+
+    normalized: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            return None
+        action_name = str(item.get("action") or "").strip()
+        if not action_name:
+            return None
+        normalized.append(dict(item))
+    return normalized
 
 
 def _normalize_recovery_classification(*, signature: str, failed_results: list[dict[str, Any]]) -> str:

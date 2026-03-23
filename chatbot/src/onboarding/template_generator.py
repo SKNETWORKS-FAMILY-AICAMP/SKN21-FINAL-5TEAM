@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import difflib
 import json
-import os
 from pathlib import Path
 from typing import Any
 
-from .backend_integration import build_backend_route_patch, choose_backend_route_target
+from .backend_integration import CHAT_AUTH_BOOTSTRAP_PATH, build_backend_route_patch, choose_backend_route_target
 from .frontend_generator import (
+    build_frontend_mount_contract,
     generate_frontend_widget_artifact as _generate_frontend_widget_artifact,
-    resolve_widget_path as resolve_frontend_widget_path,
 )
 from .tool_registry_generator import generate_backend_tool_registry
 
@@ -24,6 +23,7 @@ LOCAL_CHAT_TOKEN_HELPER = """import base64
 import hashlib
 import hmac
 import json
+import os
 import time
 
 
@@ -56,6 +56,13 @@ def issue_bridge_token(
 
 def issue_chat_token(**kwargs) -> str:
     return issue_bridge_token(**kwargs)
+
+
+def require_bridge_secret() -> str:
+    secret = os.environ.get("CHATBOT_BRIDGE_SECRET", "").strip()
+    if not secret:
+        raise RuntimeError("CHATBOT_BRIDGE_SECRET is required for chat auth bridge token issuance")
+    return secret
 """
 
 
@@ -86,7 +93,16 @@ from users.models import SessionToken
 def chat_auth_token(request):
     session_token = request.COOKIES.get("session_token")
     if not session_token:
-        return JsonResponse({{"authenticated": False, "detail": "login required"}}, status=401)
+        return JsonResponse(
+            {{
+                "authenticated": False,
+                "site_id": "{site_id}",
+                "access_token": "",
+                "user": None,
+                "detail": "login required",
+            }},
+            status=401,
+        )
 
     session = (
         SessionToken.objects.select_related("user")
@@ -94,13 +110,22 @@ def chat_auth_token(request):
         .first()
     )
     if not session:
-        return JsonResponse({{"authenticated": False, "detail": "invalid session"}}, status=401)
+        return JsonResponse(
+            {{
+                "authenticated": False,
+                "site_id": "{site_id}",
+                "access_token": "",
+                "user": None,
+                "detail": "invalid session",
+            }},
+            status=401,
+        )
 
     user = session.user
     token = issue_chat_token(
         user_id=str(user.id),
         site_id="{site_id}",
-        secret="CHANGE_ME",
+        secret=require_bridge_secret(),
         name=user.get_full_name() or user.username,
         email=user.email,
         scopes=["chat"],
@@ -111,6 +136,11 @@ def chat_auth_token(request):
             "authenticated": True,
             "site_id": "{site_id}",
             "access_token": token,
+            "user": {{
+                "id": str(user.id),
+                "email": user.email,
+                "name": user.get_full_name() or user.username,
+            }},
         }}
     )
 """
@@ -125,18 +155,26 @@ def _build_bilyeo_chat_auth_template(site_id: str) -> str:
 chat_auth_bp = Blueprint("chat_auth", __name__)
 
 
-@chat_auth_bp.route("/api/chat/auth-token", methods=["POST"])
+@chat_auth_bp.route("{CHAT_AUTH_BOOTSTRAP_PATH}", methods=["POST"])
 def chat_auth_token():
     user_id = session.get("user_id")
     email = session.get("email")
     name = session.get("name")
     if not user_id:
-        return jsonify({{"authenticated": False, "error": "login required"}}), 401
+        return jsonify(
+            {{
+                "authenticated": False,
+                "site_id": "{site_id}",
+                "access_token": "",
+                "user": None,
+                "error": "login required",
+            }}
+        ), 401
 
     token = issue_chat_token(
         user_id=str(user_id),
         site_id="{site_id}",
-        secret="CHANGE_ME",
+        secret=require_bridge_secret(),
         name=name or f"user-{{user_id}}",
         email=email,
         scopes=["chat"],
@@ -147,13 +185,18 @@ def chat_auth_token():
             "authenticated": True,
             "site_id": "{site_id}",
             "access_token": token,
+            "user": {{
+                "id": str(user_id),
+                "email": email or "",
+                "name": name or f"user-{{user_id}}",
+            }},
         }}
     ), 200
 """
 
 
 def _build_ecommerce_chat_auth_template(site_id: str) -> str:
-    return f"""from fastapi import APIRouter, HTTPException, Request, status
+    return f"""from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 {LOCAL_CHAT_TOKEN_HELPER}
@@ -162,11 +205,20 @@ from fastapi.responses import JSONResponse
 router = APIRouter(tags=["chat-auth"])
 
 
-@router.post("/api/chat/auth-token")
+@router.post("{CHAT_AUTH_BOOTSTRAP_PATH}")
 def chat_auth_token(request: Request):
     access_token = request.cookies.get("access_token")
     if not access_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="login required")
+        return JSONResponse(
+            {{
+                "authenticated": False,
+                "site_id": "{site_id}",
+                "access_token": "",
+                "user": None,
+                "detail": "login required",
+            }},
+            status_code=401,
+        )
 
     # TODO: replace with the site's access_token decoder and user lookup.
     resolved_user_id = "resolved-user-id"
@@ -176,7 +228,7 @@ def chat_auth_token(request: Request):
     token = issue_chat_token(
         user_id=resolved_user_id,
         site_id="{site_id}",
-        secret="CHANGE_ME",
+        secret=require_bridge_secret(),
         name=resolved_name,
         email=resolved_email,
         scopes=["chat"],
@@ -187,6 +239,11 @@ def chat_auth_token(request: Request):
             "authenticated": True,
             "site_id": "{site_id}",
             "access_token": token,
+            "user": {{
+                "id": resolved_user_id,
+                "email": resolved_email,
+                "name": resolved_name,
+            }},
         }}
     )
 """
@@ -212,7 +269,16 @@ def chat_auth_token(request):
         scopes=["chat"],
         expires_in_seconds=600,
     )
-    return {{"site": "{site}", "site_id": "{site_id}", "access_token": token}}
+    return {{
+        "authenticated": True,
+        "site_id": "{site_id}",
+        "access_token": token,
+        "user": {{
+            "id": "resolved-user-id",
+            "email": "resolved-email@example.com",
+            "name": "resolved-name",
+        }},
+    }}
 """
 
 
@@ -257,6 +323,7 @@ def _build_food_order_adapter_template(order_api_base: str) -> str:
 
 
 ORDER_API_BASE = "{order_api_base}"
+ORDER_BRIDGE_OPERATIONS = ("list_orders", "get_order_status", "cancel", "refund", "exchange")
 
 
 class GeneratedOrderAdapterClient:
@@ -279,6 +346,9 @@ class GeneratedOrderAdapterClient:
             response.raise_for_status()
             return response.json()
 
+    async def get_order_status(self, order_id: int, headers: dict | None = None) -> dict:
+        return await self.get_order(order_id, headers=headers)
+
     async def submit_order_action(
         self,
         order_id: int,
@@ -293,6 +363,15 @@ class GeneratedOrderAdapterClient:
             )
             response.raise_for_status()
             return response.json()
+
+    async def cancel(self, order_id: int, headers: dict | None = None) -> dict:
+        return await self.submit_order_action(order_id, "cancel", headers=headers)
+
+    async def refund(self, order_id: int, headers: dict | None = None) -> dict:
+        return await self.submit_order_action(order_id, "refund", headers=headers)
+
+    async def exchange(self, order_id: int, headers: dict | None = None) -> dict:
+        return await self.submit_order_action(order_id, "exchange", headers=headers)
 """
 
 
@@ -301,6 +380,7 @@ def _build_bilyeo_order_adapter_template(order_api_base: str) -> str:
 
 
 ORDER_API_BASE = "{order_api_base}"
+ORDER_BRIDGE_OPERATIONS = ("list_orders", "get_order_status", "cancel", "refund", "exchange")
 
 
 class GeneratedOrderAdapterClient:
@@ -316,6 +396,43 @@ class GeneratedOrderAdapterClient:
             )
             response.raise_for_status()
             return response.json()
+
+    async def get_order(self, order_id: int, headers: dict | None = None) -> dict:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.get(
+                f"{{self.base_url}}{{ORDER_API_BASE}}/{{order_id}}",
+                headers=headers or {{}},
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def get_order_status(self, order_id: int, headers: dict | None = None) -> dict:
+        return await self.get_order(order_id, headers=headers)
+
+    async def submit_order_action(
+        self,
+        order_id: int,
+        action: str,
+        headers: dict | None = None,
+        payload: dict | None = None,
+    ) -> dict:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(
+                f"{{self.base_url}}{{ORDER_API_BASE}}/{{order_id}}/actions/",
+                headers=headers or {{}},
+                json={{"action": action, **(payload or {{}})}},
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def cancel(self, order_id: int, headers: dict | None = None) -> dict:
+        return await self.submit_order_action(order_id, "cancel", headers=headers)
+
+    async def refund(self, order_id: int, headers: dict | None = None) -> dict:
+        return await self.submit_order_action(order_id, "refund", headers=headers)
+
+    async def exchange(self, order_id: int, headers: dict | None = None) -> dict:
+        return await self.submit_order_action(order_id, "exchange", headers=headers)
 """
 
 
@@ -324,6 +441,7 @@ def _build_ecommerce_order_adapter_template(order_api_base: str) -> str:
 
 
 ORDER_API_BASE = "{order_api_base}"
+ORDER_BRIDGE_OPERATIONS = ("list_orders", "get_order_status", "cancel", "refund", "exchange")
 
 
 class GeneratedOrderAdapterClient:
@@ -360,6 +478,9 @@ class GeneratedOrderAdapterClient:
             response.raise_for_status()
             return response.json()
 
+    async def get_order_status(self, user_id: int, order_id: int, headers: dict | None = None) -> dict:
+        return await self.get_order(user_id, order_id, headers=headers)
+
     async def cancel_order(self, user_id: int, order_id: int, headers: dict | None = None) -> dict:
         order_base = self._order_base(user_id)
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -369,6 +490,35 @@ class GeneratedOrderAdapterClient:
             )
             response.raise_for_status()
             return response.json()
+
+    async def submit_order_action(
+        self,
+        user_id: int,
+        order_id: int,
+        action: str,
+        headers: dict | None = None,
+        payload: dict | None = None,
+    ) -> dict:
+        if action == "cancel":
+            return await self.cancel_order(user_id, order_id, headers=headers)
+        order_base = self._order_base(user_id)
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(
+                f"{{self.base_url}}{{order_base}}/{{order_id}}/{{action}}",
+                headers=headers or {{}},
+                json=payload or {{}},
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def cancel(self, user_id: int, order_id: int, headers: dict | None = None) -> dict:
+        return await self.submit_order_action(user_id, order_id, "cancel", headers=headers)
+
+    async def refund(self, user_id: int, order_id: int, headers: dict | None = None) -> dict:
+        return await self.submit_order_action(user_id, order_id, "refund", headers=headers)
+
+    async def exchange(self, user_id: int, order_id: int, headers: dict | None = None) -> dict:
+        return await self.submit_order_action(user_id, order_id, "exchange", headers=headers)
 """
 
 
@@ -383,12 +533,60 @@ def _build_order_adapter_template(site: str, order_api_base: str) -> str:
 
 
 ORDER_API_BASE = "{order_api_base}"
+ORDER_BRIDGE_OPERATIONS = ("list_orders", "get_order_status", "cancel", "refund", "exchange")
 
 
 class GeneratedOrderAdapterClient:
     def __init__(self, base_url: str, timeout: float = 10.0):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+
+    async def list_orders(self, headers: dict | None = None, params: dict | None = None) -> dict:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.get(
+                f"{{self.base_url}}{{ORDER_API_BASE}}",
+                headers=headers or {{}},
+                params=params or {{}},
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def get_order(self, order_id: str, headers: dict | None = None) -> dict:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.get(
+                f"{{self.base_url}}{{ORDER_API_BASE}}/{{order_id}}",
+                headers=headers or {{}},
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def get_order_status(self, order_id: str, headers: dict | None = None) -> dict:
+        return await self.get_order(order_id, headers=headers)
+
+    async def submit_order_action(
+        self,
+        order_id: str,
+        action: str,
+        headers: dict | None = None,
+        payload: dict | None = None,
+    ) -> dict:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(
+                f"{{self.base_url}}{{ORDER_API_BASE}}/{{order_id}}/{{action}}",
+                headers=headers or {{}},
+                json=payload or {{}},
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def cancel(self, order_id: str, headers: dict | None = None) -> dict:
+        return await self.submit_order_action(order_id, "cancel", headers=headers)
+
+    async def refund(self, order_id: str, headers: dict | None = None) -> dict:
+        return await self.submit_order_action(order_id, "refund", headers=headers)
+
+    async def exchange(self, order_id: str, headers: dict | None = None) -> dict:
+        return await self.submit_order_action(order_id, "exchange", headers=headers)
 """
 
 
@@ -603,32 +801,46 @@ def generate_frontend_widget_artifact(
     )
 
 
-_KNOWN_WIDGET_IMPORT_EXTENSIONS = (".js", ".jsx", ".ts", ".tsx", ".vue")
+def _build_shared_widget_bootstrap_lines() -> list[str]:
+    contract = build_frontend_mount_contract()
+    return [
+        "const ORDER_CS_WIDGET_HOST_CONTRACT = {\n",
+        f'  chatbotServerBaseUrl: "{contract["chatbotServerBaseUrl"]}",\n',
+        f'  authBootstrapPath: "{contract["authBootstrapPath"]}",\n',
+        f'  widgetBundlePath: "{contract["widgetBundlePath"]}",\n',
+        f'  widgetElementTag: "{contract["widgetElementTag"]}",\n',
+        f'  mountMode: "{contract["mountMode"]}",\n',
+        "};\n",
+        "\n",
+        'if (typeof globalThis === "object") {\n',
+        '  globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"] = ORDER_CS_WIDGET_HOST_CONTRACT;\n',
+        "}\n",
+        "\n",
+        (
+            'if (typeof document !== "undefined" && '
+            '!document.querySelector(\'script[data-order-cs-widget-bundle="true"]\')) {\n'
+        ),
+        '  const orderCsWidgetScript = document.createElement("script");\n',
+        (
+            "  orderCsWidgetScript.src = "
+            "`${ORDER_CS_WIDGET_HOST_CONTRACT.chatbotServerBaseUrl}"
+            "${ORDER_CS_WIDGET_HOST_CONTRACT.widgetBundlePath}`;\n"
+        ),
+        "  orderCsWidgetScript.async = true;\n",
+        '  orderCsWidgetScript.dataset.orderCsWidgetBundle = "true";\n',
+        "  document.head.appendChild(orderCsWidgetScript);\n",
+        "}\n",
+    ]
 
 
-def _strip_widget_extension(path: str) -> str:
-    for extension in _KNOWN_WIDGET_IMPORT_EXTENSIONS:
-        if path.endswith(extension):
-            return path[: -len(extension)]
-    return path
-
-
-def _build_widget_import_path(widget_path: str, target_file: str) -> str:
-    target_dir = Path(target_file).parent
-    relative_path = os.path.relpath(widget_path, start=str(target_dir))
-    normalized = Path(relative_path).as_posix()
-    if not normalized.startswith(".") and not normalized.startswith("/"):
-        normalized = f"./{normalized}"
-    return _strip_widget_extension(normalized)
-
-
-def _build_frontend_mount_patch(target_file: str, widget_import_path: str) -> str:
+def _build_frontend_mount_patch(target_file: str) -> str:
+    bootstrap = "".join(f"+{line}" for line in _build_shared_widget_bootstrap_lines()).rstrip()
     return f"""--- a/{target_file}
 +++ b/{target_file}
 @@
-+import SharedChatbotWidget from "{widget_import_path}";
+{bootstrap}
 @@
-+      <SharedChatbotWidget />
++      <order-cs-widget />
 """
 
 
@@ -647,8 +859,6 @@ def generate_frontend_mount_patch(
         "frontend/src/App.vue" if frontend_strategy == "vue" else "frontend/src/App.js"
     )
     source_root = Path(str(manifest.get("source_root") or "")).expanduser()
-    resolved_widget_path = widget_path or resolve_frontend_widget_path(manifest=manifest)
-    widget_import_path = _build_widget_import_path(resolved_widget_path, target_file)
 
     output_path = root / "patches" / "frontend_widget_mount.patch"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -658,7 +868,6 @@ def generate_frontend_mount_patch(
         updated_lines = _build_frontend_mount_updated_lines(
             source_lines,
             target_file,
-            widget_import_path,
         )
         diff = difflib.unified_diff(
             source_lines,
@@ -668,26 +877,28 @@ def generate_frontend_mount_patch(
         )
         output_path.write_text("".join(diff), encoding="utf-8")
     else:
-        output_path.write_text(_build_frontend_mount_patch(target_file, widget_import_path), encoding="utf-8")
+        output_path.write_text(_build_frontend_mount_patch(target_file), encoding="utf-8")
     return output_path
 
 
 def _build_frontend_mount_updated_lines(
     source_lines: list[str],
     target_file: str,
-    widget_import_path: str,
 ) -> list[str]:
-    from .patch_planner import _build_react_mount_updated_lines
-
     updated_lines = list(source_lines)
+    bootstrap_lines = _build_shared_widget_bootstrap_lines()
     lower = target_file.lower()
     if lower.endswith(".vue"):
-        widget_line = "  <SharedChatbotWidget />\n"
-        import_line = f'import SharedChatbotWidget from "{widget_import_path}";\n'
-        if import_line not in updated_lines:
-            updated_lines.append("\n<script setup>\n")
-            updated_lines.append(import_line)
-            updated_lines.append("</script>\n")
+        widget_line = "  <order-cs-widget />\n"
+        if 'globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"]' not in "".join(updated_lines):
+            script_close = next((index for index, line in enumerate(updated_lines) if "</script>" in line), None)
+            if script_close is not None:
+                insertion = list(bootstrap_lines)
+                if script_close > 0 and updated_lines[script_close - 1].strip():
+                    insertion.insert(0, "\n")
+                updated_lines[script_close:script_close] = insertion
+            else:
+                updated_lines.extend(["\n", "<script setup>\n", *bootstrap_lines, "</script>\n"])
         template_close = next((index for index, line in enumerate(updated_lines) if "</template>" in line), None)
         if widget_line not in updated_lines:
             if template_close is not None:
@@ -708,24 +919,67 @@ def _build_frontend_mount_updated_lines(
         indent = updated_lines[single_line_return_index].split("return", 1)[0]
         return_line = updated_lines[single_line_return_index].strip()
         jsx_expression = return_line[len("return ") : -1]
-        import_line = f'import SharedChatbotWidget from "{widget_import_path}";\n'
-        if import_line not in updated_lines:
-            updated_lines = [import_line] + updated_lines
-            single_line_return_index += 1
+        updated_lines = _insert_shared_widget_bootstrap_lines(updated_lines, bootstrap_lines)
+        single_line_return_index = next(
+            index
+            for index, line in enumerate(updated_lines)
+            if line.strip().startswith("return <") and line.strip().endswith(">;")
+        )
         updated_lines[single_line_return_index : single_line_return_index + 1] = [
             f"{indent}return (\n",
             f"{indent}  <>\n",
             f"{indent}    {jsx_expression}\n",
-            f"{indent}    <SharedChatbotWidget />\n",
+            f"{indent}    <order-cs-widget />\n",
             f"{indent}  </>\n",
             f"{indent});\n",
         ]
         return updated_lines
 
-    react_lines = _build_react_mount_updated_lines(updated_lines)
-    if widget_import_path != "./chatbot/SharedChatbotWidget":
-        react_lines = [
-            line.replace('./chatbot/SharedChatbotWidget', widget_import_path)
-            for line in react_lines
-        ]
-    return react_lines
+    updated_lines = _insert_shared_widget_bootstrap_lines(updated_lines, bootstrap_lines)
+    widget_line = "      <order-cs-widget />\n"
+    if widget_line in updated_lines:
+        return updated_lines
+
+    insert_index = _find_react_mount_insert_index(updated_lines)
+    if insert_index is None:
+        fallback_line = "  <order-cs-widget />\n"
+        if fallback_line not in updated_lines:
+            if updated_lines and not updated_lines[-1].endswith("\n"):
+                updated_lines[-1] = f"{updated_lines[-1]}\n"
+            updated_lines.extend(["\n", fallback_line])
+        return updated_lines
+
+    updated_lines.insert(insert_index, widget_line)
+    return updated_lines
+
+
+def _insert_shared_widget_bootstrap_lines(
+    source_lines: list[str],
+    bootstrap_lines: list[str],
+) -> list[str]:
+    updated_lines = list(source_lines)
+    if 'globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"]' in "".join(updated_lines):
+        return updated_lines
+
+    insert_index = 0
+    for index, line in enumerate(updated_lines):
+        stripped = line.strip()
+        if stripped.startswith("import ") or stripped.startswith("from "):
+            insert_index = index + 1
+            continue
+        if stripped == "":
+            if insert_index:
+                insert_index = index + 1
+            continue
+        break
+
+    updated_lines[insert_index:insert_index] = [*bootstrap_lines, "\n"]
+    return updated_lines
+
+
+def _find_react_mount_insert_index(lines: list[str]) -> int | None:
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped in {"</main>", "</BrowserRouter>", "</div>"}:
+            return index
+    return None

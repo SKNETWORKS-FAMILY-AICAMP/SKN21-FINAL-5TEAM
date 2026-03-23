@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
 
 from ecommerce.backend.app.database import SessionLocal
-from ecommerce.backend.app.router.chatbot_logs.models import (
+from chatbot.src.chatbot_logs.models import (
     ConversationSession,
     ConversationMessage,
     ToolCallLog,
@@ -19,7 +19,7 @@ from ecommerce.backend.app.router.chatbot_logs.models import (
     DatasetType,
     MessageRole
 )
-from ecommerce.backend.app.router.chatbot_logs.service import LogService
+from chatbot.src.chatbot_logs.service import LogService
 
 
 class DatasetExtractor:

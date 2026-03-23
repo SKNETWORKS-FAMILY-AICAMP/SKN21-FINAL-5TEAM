@@ -7,7 +7,13 @@ from .site_b.adapter import SiteBAdapter
 from .site_c.client import SiteCClient
 from .site_c.adapter import SiteCAdapter
 
-DEFAULT_SITE_ID = "site-c"
+ORDER_CS_BRIDGE_OPERATIONS = (
+    "list_orders",
+    "get_order_status",
+    "cancel",
+    "refund",
+    "exchange",
+)
 
 
 def resolve_ecommerce_backend_url() -> str:
@@ -42,20 +48,22 @@ def setup_adapters() -> None:
     ecommerce_adapter = SiteCAdapter(client=ecommerce_client)
 
     # 레지스트리 등록
-    AdapterRegistry.register_many([
-        food_adapter,
-        bilyeo_adapter,
-        ecommerce_adapter
-    ])
+    AdapterRegistry.register_many([food_adapter, bilyeo_adapter, ecommerce_adapter])
 
     setup_adapters._initialized = True
 
+
 # 전역 함수로 바로 호출 가능하도록 초기화 지원
-def get_adapter(site_id: str):
+def resolve_site_adapter(site_id: str):
     setup_adapters()
     return AdapterRegistry.get(site_id)
 
 
-def resolve_site_adapter(site_id: str | None):
-    normalized_site_id = (site_id or DEFAULT_SITE_ID).strip() or DEFAULT_SITE_ID
-    return get_adapter(normalized_site_id)
+# Alias for backward compatibility
+get_adapter = resolve_site_adapter
+
+
+def get_order_cs_bridge_operations(site_id: str | None = None) -> tuple[str, ...]:
+    if site_id:
+        resolve_site_adapter(site_id.strip())
+    return ORDER_CS_BRIDGE_OPERATIONS

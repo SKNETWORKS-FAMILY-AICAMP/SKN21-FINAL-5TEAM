@@ -9,6 +9,7 @@
 """
 
 import asyncio
+from typing import Callable
 
 from langchain_core.tools import tool
 from langgraph.types import interrupt
@@ -23,13 +24,12 @@ from chatbot.src.adapters.schema import (
     ProductSearchFilter,
     SubmitOrderActionInput,
 )
-from chatbot.src.adapters.setup import get_adapter
+from chatbot.src.adapters.setup import ORDER_CS_BRIDGE_OPERATIONS, get_adapter
 from chatbot.src.tools.order_tools import (
     _extract_optional_confirmation_from_resume,
     _extract_order_id_from_resume,
     _is_langgraph_interrupt_error,
     _require_human_confirmation,
-    get_user_orders,
 )
 
 
@@ -108,6 +108,8 @@ def _derive_site_order_actions(
     payment_status: str | None,
 ) -> dict[str, bool]:
     normalized_payment = str(payment_status or "").strip().lower()
+    if not normalized_payment and normalized_status in {"paid", "preparing", "shipped", "delivered"}:
+        normalized_payment = "paid"
     is_paid = normalized_payment == "paid"
     return {
         "can_cancel": normalized_status == "preparing",
@@ -126,13 +128,21 @@ def _build_order_ui_item(adapter, raw_order: dict) -> dict:
         raw_order.get("payment_status"),
     )
     product = raw_order.get("product") or {}
+    items = raw_order.get("items") or []
+    first_item = items[0] if isinstance(items, list) and items else {}
+    total_amount = raw_order.get("total_price")
+    if total_amount is None:
+        total_amount = raw_order.get("total_amount")
+    product_name = product.get("name")
+    if not product_name and isinstance(first_item, dict):
+        product_name = first_item.get("product_name") or first_item.get("productTitle")
     return {
         "order_id": str(raw_order.get("id")),
         "date": str(raw_order.get("created_at", ""))[:10],
         "status": normalized_status,
         "status_label": raw_order.get("status_label") or normalized_status,
-        "product_name": product.get("name", "상품 정보 없음"),
-        "amount": float(raw_order.get("total_price") or 0),
+        "product_name": product_name or "상품 정보 없음",
+        "amount": float(total_amount or 0),
         "delivered_at": (
             str(raw_order.get("created_at", ""))[:10]
             if normalized_status == "delivered"
@@ -140,6 +150,28 @@ def _build_order_ui_item(adapter, raw_order: dict) -> dict:
         ),
         **actions,
     }
+
+
+def _list_orders_via_adapter(
+    adapter,
+    ctx: AuthenticatedContext,
+    limit: int,
+) -> list[dict]:
+    if hasattr(adapter, "list_orders") and callable(getattr(adapter, "list_orders")):
+        raw_orders = _run(adapter.list_orders(ctx, limit=limit))
+    elif hasattr(adapter, "client") and hasattr(adapter.client, "list_orders"):
+        raw_orders = _run(adapter.client.list_orders(_build_auth_headers(ctx)))
+    else:
+        raise AdapterError(
+            "NOT_SUPPORTED",
+            f"해당 사이트({ctx.siteId})는 주문 목록 조회 API를 지원하지 않습니다.",
+        )
+
+    if isinstance(raw_orders, dict):
+        orders = raw_orders.get("orders")
+        return orders if isinstance(orders, list) else []
+
+    return raw_orders if isinstance(raw_orders, list) else []
 
 
 def _order_matches_action(order_item: dict, action_context: str | None) -> bool:
@@ -163,26 +195,9 @@ def get_user_orders_for_site(
     action_context: str | None = None,
 ) -> dict:
     effective_site_id = (site_id or "site-c").strip()
-    if effective_site_id == "site-c":
-        return get_user_orders(
-            user_id=user_id,
-            limit=limit,
-            days=days,
-            requires_selection=requires_selection,
-            action_context=action_context,
-        )
-
     adapter = _get_site_adapter(effective_site_id)
     ctx = _build_ctx(user_id, adapter.site_id, access_token)
-
-    if not hasattr(adapter, "client") or not hasattr(adapter.client, "list_orders"):
-        raise AdapterError(
-            "NOT_SUPPORTED",
-            f"해당 사이트({effective_site_id})는 주문 목록 조회 API를 지원하지 않습니다.",
-        )
-
-    raw_orders = _run(adapter.client.list_orders(_build_auth_headers(ctx)))
-    raw_list = raw_orders if isinstance(raw_orders, list) else []
+    raw_list = _list_orders_via_adapter(adapter, ctx, limit)
     ui_data = [
         _build_order_ui_item(adapter, raw_order)
         for raw_order in raw_list[:limit]
@@ -221,6 +236,103 @@ def get_user_orders_for_site(
         "requires_selection": requires_selection and action_context is not None,
         "prior_action": action_context,
     }
+
+
+def _normalize_order_list_bridge_payload(payload: dict) -> dict:
+    return {
+        "operation": "list_orders",
+        "message": payload.get("message"),
+        "total_orders": payload.get("total_orders", 0),
+        "orders": payload.get("ui_data", []),
+        "requires_selection": payload.get("requires_selection", False),
+        "prior_action": payload.get("prior_action"),
+    }
+
+
+def _normalize_action_bridge_payload(operation: str, payload: dict) -> dict:
+    if isinstance(payload, dict) and payload.get("operation") == operation:
+        return payload
+    normalized = dict(payload or {})
+    normalized.setdefault("operation", operation)
+    return normalized
+
+
+def build_order_cs_bridge(
+    *,
+    site_id: str,
+    user_id: int = 1,
+    access_token: str | None = None,
+) -> dict[str, Callable[..., dict]]:
+    effective_site_id = (site_id or "site-c").strip()
+
+    def list_orders(**kwargs) -> dict:
+        payload = get_user_orders_for_site(
+            user_id=user_id,
+            site_id=effective_site_id,
+            access_token=access_token,
+            **kwargs,
+        )
+        return _normalize_order_list_bridge_payload(payload)
+
+    def get_order_status(order_id: str, **kwargs) -> dict:
+        payload = get_order_status_via_adapter.invoke(
+            {
+                "user_id": user_id,
+                "site_id": effective_site_id,
+                "access_token": access_token,
+                "order_id": order_id,
+                **kwargs,
+            }
+        )
+        return _normalize_action_bridge_payload("get_order_status", payload)
+
+    def cancel(order_id: str = "", confirmed: bool = True, **kwargs) -> dict:
+        payload = cancel_order_via_adapter.invoke(
+            {
+                "user_id": user_id,
+                "site_id": effective_site_id,
+                "access_token": access_token,
+                "order_id": order_id,
+                "confirmed": confirmed,
+                **kwargs,
+            }
+        )
+        return _normalize_action_bridge_payload("cancel", payload)
+
+    def refund(order_id: str = "", confirmed: bool = True, **kwargs) -> dict:
+        payload = register_return_via_adapter.invoke(
+            {
+                "user_id": user_id,
+                "site_id": effective_site_id,
+                "access_token": access_token,
+                "order_id": order_id,
+                "confirmed": confirmed,
+                **kwargs,
+            }
+        )
+        return _normalize_action_bridge_payload("refund", payload)
+
+    def exchange(order_id: str = "", confirmed: bool = True, **kwargs) -> dict:
+        payload = register_exchange_via_adapter.invoke(
+            {
+                "user_id": user_id,
+                "site_id": effective_site_id,
+                "access_token": access_token,
+                "order_id": order_id,
+                "confirmed": confirmed,
+                **kwargs,
+            }
+        )
+        return _normalize_action_bridge_payload("exchange", payload)
+
+    bridge = {
+        "list_orders": list_orders,
+        "get_order_status": get_order_status,
+        "cancel": cancel,
+        "refund": refund,
+        "exchange": exchange,
+    }
+    return {name: bridge[name] for name in ORDER_CS_BRIDGE_OPERATIONS}
 
 
 def _resolve_order_id_or_payload_for_site(

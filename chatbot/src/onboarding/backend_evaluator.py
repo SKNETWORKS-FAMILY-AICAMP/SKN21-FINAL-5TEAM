@@ -144,7 +144,18 @@ def _evaluate_tool_registry(root: Path) -> dict[str, object]:
     enabled_tools = sorted(
         {
             tool
-            for tool in ["product_list", "product_get", "orders_list", "orders_get", "orders_action"]
+            for tool in [
+                "product_list",
+                "product_get",
+                "orders_list",
+                "orders_get",
+                "orders_action",
+                "list_orders",
+                "get_order_status",
+                "cancel",
+                "refund",
+                "exchange",
+            ]
             if f'"{tool}"' in content or f"'{tool}'" in content
         }
     )

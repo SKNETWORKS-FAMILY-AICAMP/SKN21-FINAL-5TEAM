@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>온보딩 자동화 파이프라인</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<main class="slide">
+    <div class="topbar">
+        <p class="eyebrow">Onboarding Pipeline</p>
+        <span class="page-badge">08</span>
+    </div>
+    <section class="hero compact">
+        <h1>사이트 분석부터 patch 생성까지 자동화</h1>
+        <div class="accent-line"></div>
+        <p class="lead">온보딩은 코드 생성 하나로 끝나는 도구가 아니라, 분석·생성·검증·복구를 포함하는 자동화 파이프라인입니다.</p>
+    </section>
+    <section class="flow-grid cols-6">
+        <article class="flow-step">
+            <div class="flow-index">01</div>
+            <h3>Analyze</h3>
+            <p>프레임워크, 인증, API, mount 지점 추론</p>
+        </article>
+        <article class="flow-step">
+            <div class="flow-index">02</div>
+            <h3>Map</h3>
+            <p>수정 후보, 라우트, 삽입 포인트 탐색</p>
+        </article>
+        <article class="flow-step">
+            <div class="flow-index">03</div>
+            <h3>Plan / Generate</h3>
+            <p>어댑터, 위젯, patch 산출물 생성</p>
+        </article>
+        <article class="flow-step">
+            <div class="flow-index">04</div>
+            <h3>Runtime Validate</h3>
+            <p>별도 workspace에서 적용 시뮬레이션</p>
+        </article>
+        <article class="flow-step">
+            <div class="flow-index">05</div>
+            <h3>Evaluate / Smoke</h3>
+            <p>frontend/backend evaluator와 smoke test</p>
+        </article>
+        <article class="flow-step">
+            <div class="flow-index">06</div>
+            <h3>Recover / Export</h3>
+            <p>recovery loop 이후 승인된 patch export</p>
+        </article>
+    </section>
+    <section class="pipeline-summary">
+        <article class="card soft">
+            <p class="kicker">Execution Roles</p>
+            <h3>Analyzer → Planner → Generator → Diagnostician</h3>
+            <p>발표에서는 메인 파이프라인을 먼저 보여주고, 실행 주체는 보조 설명으로 짧게 연결합니다.</p>
+        </article>
+        <article class="card accent">
+            <p class="kicker">Key Message</p>
+            <h3>생성 후 끝나는 것이 아니라<br>검증 후 export</h3>
+            <p>runtime validate, smoke test, recovery loop를 포함한 자동화라는 점이 핵심 차별점입니다.</p>
+        </article>
+    </section>
+</main>
+</body>
+</html>

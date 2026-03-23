@@ -198,3 +198,31 @@ def test_append_onboarding_event_renders_source_debug_path_and_recovery_reason_i
     assert "debug_artifact_path=reports/llm-debug/patch-proposal.json" in line
     assert event_payload["debug_artifact_path"] == "reports/llm-debug/patch-proposal.json"
     assert event_payload["recovery"] == {"applied": False, "reason": "invalid_llm_payload"}
+
+
+def test_append_generation_log_supports_direct_edit_and_export_replay_events(tmp_path: Path):
+    reports_root = tmp_path / "reports"
+
+    append_generation_log(
+        report_root=reports_root,
+        level="INFO",
+        component="orchestrator",
+        event="edit_plan_written",
+        message="edit plan artifact written",
+        details={"path": "reports/edit-plan.json"},
+    )
+    append_generation_log(
+        report_root=reports_root,
+        level="INFO",
+        component="runtime_runner",
+        event="export_replay_validation_completed",
+        message="export replay validation completed",
+        details={"passed": True},
+    )
+
+    lines = (reports_root / "generation.log").read_text(encoding="utf-8").splitlines()
+
+    assert "INFO orchestrator edit_plan_written edit plan artifact written" in lines[0]
+    assert "path=reports/edit-plan.json" in lines[0]
+    assert "INFO runtime_runner export_replay_validation_completed export replay validation completed" in lines[1]
+    assert "passed=True" in lines[1]

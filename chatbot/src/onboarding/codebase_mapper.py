@@ -82,6 +82,8 @@ def build_codebase_map(*, source_root: str | Path) -> dict:
                 reason = "backend route or handler candidate"
             elif frontend_candidate is not None:
                 reason = "frontend mount or integration candidate"
+            elif api_client_candidate is not None:
+                reason = str(api_client_candidate.get("reason") or "frontend api client candidate")
 
         if reason is not None:
             candidate_edit_targets.append(
@@ -111,6 +113,10 @@ def build_codebase_map(*, source_root: str | Path) -> dict:
     )
     frontend_mount_targets = _build_frontend_mount_targets(frontend_component_candidates)
     tool_registry_targets = _build_tool_registry_targets(auth_candidates, candidate_edit_targets)
+    order_bridge_targets = _build_order_bridge_targets(
+        analysis=analysis,
+        candidate_edit_targets=candidate_edit_targets,
+    )
     auth_session_resolver_candidates = _build_auth_session_resolver_candidates(auth_candidates)
     frontend_app_shell_candidates = _build_frontend_app_shell_candidates(frontend_component_candidates)
     frontend_router_boundaries = _build_frontend_router_boundaries(frontend_component_candidates)
@@ -134,6 +140,7 @@ def build_codebase_map(*, source_root: str | Path) -> dict:
         "frontend_mount_targets": frontend_mount_targets,
         "validated_frontend_mount_targets": validated_frontend_mount_targets,
         "tool_registry_targets": tool_registry_targets,
+        "order_bridge_targets": order_bridge_targets,
     }
 
 
@@ -220,6 +227,33 @@ def _build_tool_registry_targets(
         item
         for item in candidate_edit_targets
         if str(item.get("path") or "").startswith("backend/")
+    ][:3]
+
+
+def _build_order_bridge_targets(
+    *,
+    analysis: dict[str, Any],
+    candidate_edit_targets: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    explicit_targets = [
+        {
+            "path": str(path),
+            "reason": "host order bridge compatibility target",
+        }
+        for path in (analysis.get("order_bridge_targets") or [])
+        if str(path).strip()
+    ]
+    if explicit_targets:
+        return explicit_targets
+
+    return [
+        {
+            "path": str(item.get("path") or ""),
+            "reason": "host order bridge fallback target",
+        }
+        for item in candidate_edit_targets
+        if str(item.get("path") or "").startswith("backend/")
+        and "order" in str(item.get("path") or "").lower()
     ][:3]
 
 
@@ -382,17 +416,23 @@ def write_llm_codebase_interpretation(
         )
         raw_payload = json.loads(str(response.content))
         llm_payload = CodebaseInterpretationPayload.model_validate(raw_payload)
-        _validate_ranked_candidates(llm_payload=llm_payload, codebase_map=codebase_map)
-        debug_payload["status"] = "llm"
+        llm_payload, dropped_ranked_candidates, ranked_candidate_recovery_reason = _accept_ranked_candidates(
+            llm_payload=llm_payload,
+            codebase_map=codebase_map,
+        )
+        debug_payload["status"] = "recovered_llm" if ranked_candidate_recovery_reason else "llm"
+        debug_payload["recovery_reason"] = ranked_candidate_recovery_reason
         debug_payload["normalized_response"] = llm_payload.model_dump(mode="json")
+        debug_payload["dropped_ranked_candidates"] = dropped_ranked_candidates
         payload = {
-            "source": "llm",
-            "recovery_applied": False,
-            "recovery_reason": None,
+            "source": "recovered_llm" if ranked_candidate_recovery_reason else "llm",
+            "recovery_applied": bool(ranked_candidate_recovery_reason),
+            "recovery_reason": ranked_candidate_recovery_reason,
             "hard_fallback_reason": None,
             "fallback_reason": None,
             "validation_error": None,
             "recovered_payload": None,
+            "dropped_ranked_candidates": dropped_ranked_candidates,
             "structure_summary": llm_payload.structure_summary,
             "framework_assessment": llm_payload.framework_assessment,
             "ranked_candidates": llm_payload.model_dump(mode="json")["ranked_candidates"],
@@ -415,24 +455,52 @@ def write_llm_codebase_interpretation(
         )
         if recovered is not None:
             recovered_payload, recovery_reason = recovered
-            llm_payload = CodebaseInterpretationPayload.model_validate(recovered_payload)
-            _validate_ranked_candidates(llm_payload=llm_payload, codebase_map=codebase_map)
-            debug_payload["status"] = "recovered_llm"
-            debug_payload["recovery_reason"] = recovery_reason
-            debug_payload["normalized_response"] = llm_payload.model_dump(mode="json")
-            debug_payload["recovered_payload"] = recovered_payload
-            payload = {
-                "source": "recovered_llm",
-                "recovery_applied": True,
-                "recovery_reason": recovery_reason,
-                "hard_fallback_reason": None,
-                "fallback_reason": None,
-                "validation_error": str(exc),
-                "recovered_payload": recovered_payload,
-                "structure_summary": llm_payload.structure_summary,
-                "framework_assessment": llm_payload.framework_assessment,
-                "ranked_candidates": llm_payload.model_dump(mode="json")["ranked_candidates"],
-            }
+            try:
+                llm_payload = CodebaseInterpretationPayload.model_validate(recovered_payload)
+                llm_payload, dropped_ranked_candidates, ranked_candidate_recovery_reason = _accept_ranked_candidates(
+                    llm_payload=llm_payload,
+                    codebase_map=codebase_map,
+                )
+            except ValidationError:
+                debug_payload["status"] = "hard_fallback"
+                debug_payload["fallback_reason"] = "invalid_llm_payload"
+                debug_payload["hard_fallback_reason"] = "invalid_llm_payload"
+                debug_payload["recovered_payload"] = recovered_payload
+                payload["validation_error"] = str(exc)
+                payload["recovered_payload"] = recovered_payload
+                payload["hard_fallback_reason"] = "invalid_llm_payload"
+                payload["fallback_reason"] = "invalid_llm_payload"
+            except ValueError as recovered_exc:
+                debug_payload["status"] = "hard_fallback"
+                debug_payload["fallback_reason"] = "invalid_ranked_candidates"
+                debug_payload["hard_fallback_reason"] = "invalid_ranked_candidates"
+                debug_payload["error_type"] = type(recovered_exc).__name__
+                debug_payload["error_message"] = str(recovered_exc)
+                debug_payload["recovered_payload"] = recovered_payload
+                payload["validation_error"] = str(exc)
+                payload["recovered_payload"] = recovered_payload
+                payload["hard_fallback_reason"] = "invalid_ranked_candidates"
+                payload["fallback_reason"] = "invalid_ranked_candidates"
+            else:
+                effective_recovery_reason = ranked_candidate_recovery_reason or recovery_reason
+                debug_payload["status"] = "recovered_llm"
+                debug_payload["recovery_reason"] = effective_recovery_reason
+                debug_payload["normalized_response"] = llm_payload.model_dump(mode="json")
+                debug_payload["recovered_payload"] = recovered_payload
+                debug_payload["dropped_ranked_candidates"] = dropped_ranked_candidates
+                payload = {
+                    "source": "recovered_llm",
+                    "recovery_applied": True,
+                    "recovery_reason": effective_recovery_reason,
+                    "hard_fallback_reason": None,
+                    "fallback_reason": None,
+                    "validation_error": str(exc),
+                    "recovered_payload": recovered_payload,
+                    "dropped_ranked_candidates": dropped_ranked_candidates,
+                    "structure_summary": llm_payload.structure_summary,
+                    "framework_assessment": llm_payload.framework_assessment,
+                    "ranked_candidates": llm_payload.model_dump(mode="json")["ranked_candidates"],
+                }
         else:
             debug_payload["status"] = "hard_fallback"
             debug_payload["fallback_reason"] = "invalid_llm_payload"
@@ -787,12 +855,56 @@ def _validate_ranked_candidates(
             raise ValueError(f"invalid ranked candidate: {candidate.path}")
 
 
+def _accept_ranked_candidates(
+    *,
+    llm_payload: CodebaseInterpretationPayload,
+    codebase_map: dict[str, Any],
+) -> tuple[CodebaseInterpretationPayload, list[dict[str, str]], str | None]:
+    if not llm_payload.ranked_candidates:
+        raise ValueError("ranked_candidates must not be empty")
+    if len(llm_payload.ranked_candidates) > 8:
+        raise ValueError("ranked_candidates must remain conservative")
+    valid_paths = {
+        str(item.get("path") or "")
+        for item in (codebase_map.get("candidate_edit_targets") or [])
+    }
+
+    accepted_candidates: list[RankedCandidate] = []
+    dropped_candidates: list[dict[str, str]] = []
+    for candidate in llm_payload.ranked_candidates:
+        if candidate.path in valid_paths:
+            accepted_candidates.append(candidate)
+            continue
+        dropped_candidates.append(
+            {
+                "path": candidate.path,
+                "reason": candidate.reason,
+                "drop_reason": "invalid_ranked_candidate",
+            }
+        )
+
+    if not dropped_candidates:
+        return llm_payload, [], None
+    if not accepted_candidates:
+        raise ValueError(f"invalid ranked candidate: {dropped_candidates[0]['path']}")
+
+    return (
+        llm_payload.model_copy(update={"ranked_candidates": accepted_candidates}),
+        dropped_candidates,
+        "invalid_ranked_candidates_filtered",
+    )
+
+
 def _recover_codebase_interpretation_payload(
     payload: dict[str, Any],
     *,
     codebase_map: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str] | None:
     normalized = dict(payload)
+    structure_summary = normalized.get("structure_summary")
+    if isinstance(structure_summary, dict):
+        normalized["structure_summary"] = json.dumps(structure_summary, ensure_ascii=False, sort_keys=True)
+        return normalized, "structure_summary_object_to_string"
     framework_assessment = normalized.get("framework_assessment")
     if isinstance(framework_assessment, str):
         normalized["framework_assessment"] = {"summary": framework_assessment}

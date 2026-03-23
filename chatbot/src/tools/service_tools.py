@@ -17,10 +17,29 @@ from ecommerce.backend.app.models import (
     IssuedVoucher,
 )
 from chatbot.src.tools.base import BaseAPITool
+from chatbot.src.tools.adapter_order_tools import build_order_cs_bridge
+from chatbot.src.adapters.setup import get_order_cs_bridge_operations
 from chatbot.src.tools.order_tools import (
     _is_langgraph_interrupt_error,
     _require_order_id,
 )
+
+
+def get_order_cs_bridge_contract(
+    *,
+    site_id: str,
+    user_id: int = 1,
+    access_token: str | None = None,
+) -> dict:
+    return {
+        "site_id": site_id,
+        "operations": list(get_order_cs_bridge_operations(site_id)),
+        "bridge": build_order_cs_bridge(
+            site_id=site_id,
+            user_id=user_id,
+            access_token=access_token,
+        ),
+    }
 
 
 # Helper to get DB session
@@ -118,6 +137,8 @@ def create_review(
     rating: int = 0,
     content: str = "",
     user_id: int = 1,
+    site_id: str | None = None,
+    access_token: str | None = None,
 ) -> dict:
     """
     리뷰를 작성합니다.
@@ -138,6 +159,8 @@ def create_review(
             user_id=user_id,
             order_id=order_id,
             action_context="review",
+            site_id=site_id,
+            access_token=access_token,
         )
         if not resolved_order_id:
             return {

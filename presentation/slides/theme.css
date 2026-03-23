@@ -1,18 +1,45 @@
+/* ===================================================
+   SlidesGo "Quoting App Pitch Deck" 테마
+   크림/베이지 + 세이지 그린 + 코랄
+   =================================================== */
+
 :root {
-    --bg: #f4f7fb;
-    --surface: rgba(255, 255, 255, 0.88);
-    --surface-strong: #ffffff;
-    --surface-dark: #0f172a;
-    --line: rgba(15, 23, 42, 0.1);
-    --line-strong: rgba(15, 23, 42, 0.18);
-    --text: #0f172a;
-    --muted: #475569;
-    --soft: #64748b;
-    --accent: #0f766e;
-    --accent-soft: rgba(15, 118, 110, 0.12);
-    --accent-strong: #115e59;
-    --warning: #9f1239;
-    --shadow: 0 24px 60px rgba(15, 23, 42, 0.14);
+    /* Background & Surface */
+    --bg: #F2EDE3;
+    --surface: #FAF7F0;
+    --surface-alt: #EDE8DC;
+    --surface-dark: #4A6B5F;
+
+    /* Borders */
+    --line: rgba(74, 107, 95, 0.18);
+    --line-strong: rgba(74, 107, 95, 0.32);
+
+    /* Text */
+    --text: #1C1C1C;
+    --muted: #5A5A5A;
+    --soft: #8A8A7A;
+
+    /* Brand Colors */
+    --accent: #4A6B5F;           /* Sage Green */
+    --accent-soft: rgba(74, 107, 95, 0.14);
+    --accent-strong: #2E5045;
+    --accent-light: #6BAE9D;     /* Mint */
+    --coral: #C8614A;            /* Coral / Terracotta */
+    --coral-soft: rgba(200, 97, 74, 0.12);
+    --coral-strong: #A84030;
+
+    /* Header Bar */
+    --header-bg: #4A6B5F;
+    --header-height: 32px;
+    --dot-close: #C8614A;
+    --dot-min: #D4A853;
+    --dot-max: #6BAE9D;
+
+    /* Misc */
+    --radius: 20px;
+    --radius-sm: 12px;
+    --shadow: 0 4px 20px rgba(74, 107, 95, 0.12);
+    --shadow-strong: 0 8px 32px rgba(74, 107, 95, 0.2);
 }
 
 * {
@@ -30,58 +57,70 @@ body {
     height: 720px;
     overflow: hidden;
     font-family: "Noto Sans KR", sans-serif;
-    background:
-        radial-gradient(circle at top left, rgba(15, 118, 110, 0.16), transparent 32%),
-        radial-gradient(circle at bottom right, rgba(15, 23, 42, 0.12), transparent 30%),
-        var(--bg);
+    background: var(--bg);
     color: var(--text);
 }
+
+/* ===================================================
+   슬라이드 프레임 — 브라우저 창 스타일
+   =================================================== */
 
 .slide {
     position: relative;
     width: 1280px;
     height: 720px;
-    padding: 48px 56px;
     overflow: hidden;
+    border-radius: var(--radius);
+    /* 크림 배경 */
+    background: var(--bg);
+    /* 세이지 그린 외곽선 */
+    outline: 3px solid var(--accent);
+    outline-offset: -3px;
 }
 
+/* 상단 세이지 그린 헤더 바 */
 .slide::before {
     content: "";
     position: absolute;
-    inset: 22px;
-    border-radius: 30px;
-    border: 1px solid rgba(255, 255, 255, 0.55);
-    pointer-events: none;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--header-height);
+    background: var(--header-bg);
+    border-radius: var(--radius) var(--radius) 0 0;
+    z-index: 10;
 }
 
-.deco-ring,
-.deco-orb {
+/* macOS 스타일 3개 점 버튼 */
+.slide::after {
+    content: "";
     position: absolute;
-    border-radius: 999px;
-    pointer-events: none;
+    top: 10px;
+    right: 16px;
+    width: 54px;
+    height: 12px;
+    background-repeat: no-repeat;
+    background-image:
+        radial-gradient(circle at center, var(--dot-close) 5px, transparent 5px),
+        radial-gradient(circle at center, var(--dot-min) 5px, transparent 5px),
+        radial-gradient(circle at center, var(--dot-max) 5px, transparent 5px);
+    background-size: 12px 12px, 12px 12px, 12px 12px;
+    background-position: 0px 0, 21px 0, 42px 0;
+    z-index: 11;
 }
 
-.deco-ring {
-    width: 240px;
-    height: 240px;
-    border: 36px solid rgba(15, 23, 42, 0.05);
-    top: -80px;
-    right: -40px;
-}
-
-.deco-orb {
-    width: 220px;
-    height: 220px;
-    left: -70px;
-    bottom: -80px;
-    background: radial-gradient(circle, rgba(15, 118, 110, 0.2), transparent 70%);
-}
+/* ===================================================
+   상단 바 (슬라이드 내용 영역)
+   =================================================== */
 
 .topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 20px;
+    margin-top: var(--header-height);
+    padding: 16px 0 12px;
+    border-bottom: 1.5px solid var(--line);
+    margin-bottom: 16px;
     position: relative;
     z-index: 2;
 }
@@ -89,7 +128,7 @@ body {
 .eyebrow {
     margin: 0;
     font-family: "Montserrat", sans-serif;
-    font-size: 14px;
+    font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.22em;
     color: var(--accent);
@@ -98,11 +137,29 @@ body {
 
 .page-number {
     font-family: "Montserrat", sans-serif;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 800;
     color: var(--soft);
     letter-spacing: 0.16em;
+    background: var(--accent-soft);
+    padding: 3px 10px;
+    border-radius: 999px;
 }
+
+/* slide 패딩 (헤더 제외) */
+.slide > *:not(:is(::before, ::after)) {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* 콘텐츠 영역 여백 */
+.slide {
+    padding: 0 52px 36px;
+}
+
+/* ===================================================
+   히어로 / 타이틀
+   =================================================== */
 
 .hero {
     position: relative;
@@ -113,28 +170,33 @@ body {
 .title {
     margin: 0;
     font-family: "Montserrat", "Noto Sans KR", sans-serif;
-    font-size: 46px;
-    line-height: 1.1;
-    letter-spacing: -0.04em;
+    font-size: 44px;
+    line-height: 1.12;
+    letter-spacing: -0.03em;
     font-weight: 900;
+    color: var(--text);
     max-width: 1060px;
 }
 
 .lead {
-    margin: 14px 0 0;
-    max-width: 900px;
-    font-size: 16px;
-    line-height: 1.5;
+    margin: 12px 0 0;
+    max-width: 860px;
+    font-size: 15px;
+    line-height: 1.6;
     color: var(--muted);
 }
 
 .accent-bar {
-    width: 84px;
+    width: 72px;
     height: 5px;
-    margin-top: 18px;
+    margin-top: 16px;
     border-radius: 999px;
-    background: linear-gradient(90deg, var(--accent), rgba(15, 118, 110, 0.16));
+    background: linear-gradient(90deg, var(--coral), rgba(200, 97, 74, 0.2));
 }
+
+/* ===================================================
+   그리드 레이아웃
+   =================================================== */
 
 .grid-2,
 .grid-3,
@@ -143,7 +205,7 @@ body {
     position: relative;
     z-index: 2;
     display: grid;
-    gap: 14px;
+    gap: 12px;
 }
 
 .grid-2 {
@@ -162,6 +224,10 @@ body {
     grid-template-columns: repeat(12, minmax(0, 1fr));
 }
 
+/* ===================================================
+   카드 / 패널
+   =================================================== */
+
 .panel,
 .card,
 .metric,
@@ -170,10 +236,9 @@ body {
 .site-card,
 .video-card {
     background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 24px;
+    border: 1.5px solid var(--line);
+    border-radius: var(--radius-sm);
     box-shadow: var(--shadow);
-    backdrop-filter: blur(16px);
 }
 
 .panel,
@@ -182,17 +247,18 @@ body {
 .quote-box,
 .site-card,
 .video-card {
-    padding: 18px 20px;
+    padding: 16px 18px;
 }
 
+/* Dark 카드 → 세이지 그린 배경 */
 .card.dark,
 .metric.dark,
 .panel.dark,
 .quote-box.dark,
 .video-card.dark {
-    background: linear-gradient(160deg, #0f172a, #111827);
-    color: #f8fafc;
-    border-color: rgba(148, 163, 184, 0.18);
+    background: linear-gradient(140deg, var(--accent), var(--accent-strong));
+    color: #FAF7F0;
+    border-color: rgba(255, 255, 255, 0.15);
 }
 
 .card.dark p,
@@ -200,7 +266,7 @@ body {
 .panel.dark p,
 .quote-box.dark p,
 .video-card.dark p {
-    color: rgba(248, 250, 252, 0.78);
+    color: rgba(250, 247, 240, 0.82);
 }
 
 .card.dark .list li,
@@ -209,7 +275,7 @@ body {
 .quote-box.dark .list li,
 .site-card.dark .list li,
 .video-card.dark .list li {
-    color: rgba(248, 250, 252, 0.82);
+    color: rgba(250, 247, 240, 0.82);
 }
 
 .card.dark .list li::before,
@@ -218,7 +284,7 @@ body {
 .quote-box.dark .list li::before,
 .site-card.dark .list li::before,
 .video-card.dark .list li::before {
-    background: #67e8f9;
+    background: var(--accent-light);
 }
 
 .card.dark .table th,
@@ -231,19 +297,23 @@ body {
 .quote-box.dark .table td,
 .video-card.dark .table th,
 .video-card.dark .table td {
-    color: rgba(248, 250, 252, 0.84);
-    border-bottom-color: rgba(148, 163, 184, 0.18);
+    color: rgba(250, 247, 240, 0.88);
+    border-bottom-color: rgba(255, 255, 255, 0.14);
 }
+
+/* ===================================================
+   카드 내부 요소
+   =================================================== */
 
 .kicker,
 .card-label {
-    margin: 0 0 8px;
+    margin: 0 0 6px;
     font-family: "Montserrat", sans-serif;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 800;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--accent);
+    color: var(--coral);
 }
 
 .card.dark .card-label,
@@ -251,7 +321,7 @@ body {
 .panel.dark .card-label,
 .quote-box.dark .card-label,
 .video-card.dark .card-label {
-    color: #67e8f9;
+    color: var(--accent-light);
 }
 
 .card h3,
@@ -259,9 +329,10 @@ body {
 .metric h3,
 .site-card h3,
 .video-card h3 {
-    margin: 0 0 8px;
-    font-size: 20px;
-    line-height: 1.2;
+    margin: 0 0 7px;
+    font-size: 19px;
+    line-height: 1.22;
+    font-weight: 700;
 }
 
 .card p,
@@ -269,10 +340,14 @@ body {
 .site-card p,
 .video-card p {
     margin: 0;
-    font-size: 14px;
-    line-height: 1.45;
+    font-size: 13px;
+    line-height: 1.5;
     color: var(--muted);
 }
+
+/* ===================================================
+   리스트
+   =================================================== */
 
 .list {
     margin: 0;
@@ -283,9 +358,9 @@ body {
 .list li {
     position: relative;
     margin: 0;
-    padding-left: 18px;
-    font-size: 14px;
-    line-height: 1.45;
+    padding-left: 16px;
+    font-size: 13px;
+    line-height: 1.5;
     color: var(--muted);
 }
 
@@ -297,54 +372,63 @@ body {
     content: "";
     position: absolute;
     left: 0;
-    top: 10px;
-    width: 8px;
-    height: 8px;
+    top: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 999px;
-    background: var(--accent);
+    background: var(--coral);
 }
 
+/* ===================================================
+   메트릭
+   =================================================== */
+
 .metric .value {
-    margin: 6px 0 10px;
+    margin: 6px 0 8px;
     font-family: "Montserrat", sans-serif;
-    font-size: 42px;
+    font-size: 40px;
     line-height: 1;
     font-weight: 900;
     letter-spacing: -0.04em;
+    color: var(--text);
+}
+
+.metric.dark .value {
+    color: #FAF7F0;
 }
 
 .metric .caption {
     margin: 0;
-    font-size: 14px;
+    font-size: 13px;
     color: var(--muted);
     line-height: 1.5;
 }
+
+/* ===================================================
+   플레이스홀더 / 배지
+   =================================================== */
 
 .placeholder {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 12px;
+    padding: 5px 12px;
     border-radius: 999px;
-    background: var(--accent-soft);
-    color: var(--accent-strong);
-    font-size: 13px;
+    background: var(--coral-soft);
+    color: var(--coral-strong);
+    font-size: 12px;
     font-weight: 700;
 }
 
-.metric.dark .placeholder,
-.card.dark .placeholder,
-.panel.dark .placeholder,
-.video-card.dark .placeholder {
-    background: rgba(103, 232, 249, 0.14);
-    color: #a5f3fc;
-}
+/* ===================================================
+   레이아웃 헬퍼
+   =================================================== */
 
 .split {
     display: grid;
     grid-template-columns: 1.1fr 0.9fr;
-    gap: 16px;
-    margin-top: 18px;
+    gap: 14px;
+    margin-top: 14px;
     position: relative;
     z-index: 2;
 }
@@ -352,75 +436,85 @@ body {
 .stack {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
 }
+
+/* ===================================================
+   타임라인
+   =================================================== */
 
 .timeline {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 10px;
-    margin-top: 18px;
+    gap: 8px;
+    margin-top: 14px;
 }
 
 .timeline-step {
-    padding: 14px 12px;
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.78);
-    border: 1px solid var(--line);
+    padding: 12px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    border: 1.5px solid var(--line);
     box-shadow: var(--shadow);
 }
 
 .timeline-step strong {
     display: block;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     font-family: "Montserrat", sans-serif;
-    font-size: 12px;
+    font-size: 11px;
     letter-spacing: 0.08em;
+    color: var(--accent);
 }
 
 .timeline-step span {
     display: block;
-    font-size: 13px;
+    font-size: 12px;
     line-height: 1.4;
     color: var(--muted);
 }
 
+/* ===================================================
+   플로우
+   =================================================== */
+
 .flow {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 10px;
-    margin-top: 18px;
+    gap: 8px;
+    margin-top: 14px;
 }
 
 .flow-step {
-    padding: 16px 14px;
-    min-height: 176px;
+    padding: 14px 12px;
+    min-height: 166px;
     position: relative;
 }
 
 .flow-step .index {
     display: inline-flex;
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     align-items: center;
     justify-content: center;
     border-radius: 999px;
-    background: var(--surface-dark);
+    background: var(--coral);
     color: #fff;
     font-family: "Montserrat", sans-serif;
     font-weight: 800;
-    margin-bottom: 12px;
+    font-size: 13px;
+    margin-bottom: 10px;
 }
 
 .flow-step h3 {
-    margin: 0 0 8px;
-    font-size: 18px;
+    margin: 0 0 7px;
+    font-size: 17px;
     line-height: 1.25;
 }
 
 .flow-step p {
     margin: 0;
-    font-size: 13px;
+    font-size: 12px;
     line-height: 1.45;
     color: var(--muted);
 }
@@ -428,15 +522,19 @@ body {
 .flow-step::after {
     content: "→";
     position: absolute;
-    right: -10px;
-    top: 40%;
-    font-size: 24px;
-    color: rgba(15, 23, 42, 0.26);
+    right: -9px;
+    top: 38%;
+    font-size: 22px;
+    color: var(--accent-light);
 }
 
 .flow-step:last-child::after {
     content: "";
 }
+
+/* ===================================================
+   테이블
+   =================================================== */
 
 .table {
     width: 100%;
@@ -446,120 +544,148 @@ body {
 .table th,
 .table td {
     text-align: left;
-    padding: 10px 0;
+    padding: 9px 0;
     border-bottom: 1px solid var(--line);
     vertical-align: top;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .table th {
     font-family: "Montserrat", sans-serif;
     font-weight: 800;
-    font-size: 11px;
+    font-size: 10px;
     letter-spacing: 0.14em;
-    color: var(--soft);
+    color: var(--accent);
     text-transform: uppercase;
 }
+
+/* ===================================================
+   필
+   =================================================== */
 
 .tag-row,
 .pill-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 12px;
+    gap: 7px;
+    margin-top: 10px;
 }
 
 .pill,
 .tag {
     display: inline-flex;
     align-items: center;
-    padding: 7px 11px;
+    padding: 6px 12px;
     border-radius: 999px;
-    background: rgba(15, 23, 42, 0.06);
-    color: var(--text);
+    background: rgba(74, 107, 95, 0.1);
+    color: var(--accent-strong);
     font-size: 12px;
     font-weight: 700;
+    border: 1px solid var(--line);
 }
 
 .tag.strong,
 .pill.strong {
-    background: var(--surface-dark);
-    color: #fff;
+    background: var(--accent);
+    color: #FAF7F0;
+    border-color: transparent;
 }
 
+/* ===================================================
+   섹션 텍스트
+   =================================================== */
+
 .section-title {
-    margin: 0 0 12px;
-    font-size: 24px;
+    margin: 0 0 10px;
+    font-size: 22px;
     line-height: 1.2;
+    font-weight: 700;
 }
 
 .section-copy {
     margin: 0;
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 13px;
+    line-height: 1.55;
     color: var(--muted);
 }
 
 .dense-grid-2 {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px 14px;
+    gap: 10px 12px;
 }
+
+/* ===================================================
+   푸터 노트
+   =================================================== */
 
 .footnote {
     position: absolute;
-    left: 64px;
-    bottom: 42px;
-    font-size: 13px;
+    left: 52px;
+    bottom: 18px;
+    font-size: 11px;
     line-height: 1.5;
     color: var(--soft);
     z-index: 2;
 }
 
+/* ===================================================
+   데모 프레임
+   =================================================== */
+
 .demo-frame {
-    min-height: 208px;
-    border-radius: 22px;
-    border: 1px dashed rgba(255, 255, 255, 0.28);
-    background:
-        linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(15, 23, 42, 0.24)),
-        rgba(15, 23, 42, 0.32);
+    min-height: 196px;
+    border-radius: var(--radius-sm);
+    border: 1.5px solid var(--line);
+    background: var(--surface-alt);
     display: flex;
     flex-direction: column;
     justify-content: center;
     gap: 10px;
-    padding: 24px;
+    padding: 22px;
 }
 
 .demo-frame strong {
-    font-size: 24px;
+    font-size: 22px;
+    color: var(--text);
 }
 
 .demo-caption {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px;
-    margin-top: 16px;
+    gap: 8px;
+    margin-top: 12px;
 }
 
 .demo-caption span {
     display: block;
-    padding: 10px 12px;
-    border-radius: 14px;
-    background: rgba(255, 255, 255, 0.09);
-    color: #e2e8f0;
-    font-size: 13px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    font-size: 12px;
     text-align: center;
+    font-weight: 600;
 }
+
+/* ===================================================
+   인용구
+   =================================================== */
 
 .big-quote {
-    margin: 12px 0 0;
-    font-size: 22px;
-    line-height: 1.38;
+    margin: 10px 0 0;
+    font-size: 20px;
+    line-height: 1.4;
     font-weight: 700;
+    color: var(--text);
 }
 
+/* ===================================================
+   중앙 레이아웃
+   =================================================== */
+
 .center-layout {
-    height: calc(100% - 64px);
+    height: calc(100% - var(--header-height) - 64px);
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -569,39 +695,70 @@ body {
 
 .center-layout .hero h1,
 .center-layout .title {
-    max-width: 980px;
+    max-width: 960px;
 }
+
+/* ===================================================
+   요약 그리드
+   =================================================== */
 
 .summary-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 14px;
-    margin-top: 18px;
+    gap: 12px;
+    margin-top: 14px;
 }
 
 .summary-grid .card {
-    min-height: 168px;
+    min-height: 160px;
 }
 
 .compact-grid-4 {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 14px;
-    margin-top: 18px;
+    gap: 12px;
+    margin-top: 14px;
     position: relative;
     z-index: 2;
 }
 
 .compact-grid-4 .card {
-    min-height: 154px;
+    min-height: 148px;
 }
 
 .banner {
-    margin-top: 18px;
+    margin-top: 14px;
     position: relative;
     z-index: 2;
 }
 
 .banner .quote-box {
-    padding: 18px 22px;
+    padding: 16px 20px;
+}
+
+/* ===================================================
+   장식 요소 (구버전 호환 — 실제 렌더 비활성)
+   =================================================== */
+
+.deco-ring,
+.deco-orb {
+    display: none;
+}
+
+/* ===================================================
+   배경 유기적 패턴 (서브틀한 텍스처)
+   =================================================== */
+
+body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background:
+        radial-gradient(ellipse at 8% 12%, rgba(107, 174, 157, 0.15) 0%, transparent 40%),
+        radial-gradient(ellipse at 92% 88%, rgba(200, 97, 74, 0.08) 0%, transparent 35%);
+    pointer-events: none;
+    z-index: 0;
 }

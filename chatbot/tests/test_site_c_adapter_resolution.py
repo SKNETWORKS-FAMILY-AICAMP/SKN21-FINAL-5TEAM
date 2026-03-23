@@ -5,6 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from chatbot.src.adapters import setup as adapter_setup
 from chatbot.src.adapters.schema import (
     AuthenticatedContext,
     GetOrderStatusInput,
@@ -33,6 +34,25 @@ def _build_order_payload(order_id: int = 42, order_number: str = "ORD-20260303-0
         "payment": None,
         "shipping_info": None,
     }
+
+
+def test_resolve_site_adapter_uses_central_registry(monkeypatch):
+    calls: list[str] = []
+
+    def fake_setup_adapters() -> None:
+        calls.append("setup")
+
+    def fake_get(site_id: str):
+        calls.append(site_id)
+        return SiteCAdapter(SiteCClient(base_url="http://localhost:8000"))
+
+    monkeypatch.setattr(adapter_setup, "setup_adapters", fake_setup_adapters)
+    monkeypatch.setattr(adapter_setup.AdapterRegistry, "get", fake_get)
+
+    adapter = adapter_setup.resolve_site_adapter("site-c")
+
+    assert calls == ["setup", "site-c"]
+    assert adapter.site_id == "site-c"
 
 
 @pytest.mark.anyio

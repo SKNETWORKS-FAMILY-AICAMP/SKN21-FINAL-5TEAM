@@ -147,6 +147,12 @@ metadata must be an object and should include:
 - proposed_patches: array
 - patch_intents: array
 - generation_risks: array
+- target_paths: array
+
+If context.repair_scope is "generator_promoted":
+- limit ownership to chatbot/src/onboarding only
+- set metadata.target_paths to files under chatbot/src/onboarding
+- assume validation must happen on a fresh run id rather than mutating the old run in place
 """,
     "Validator": """You are the Validator role for a website onboarding agent.
 Return only JSON with keys: claim, evidence, confidence, risk, next_action, blocking_issue, metadata.
@@ -191,9 +197,14 @@ Your job:
 metadata must be an object and should include:
 - classification: string
 - should_retry: boolean
+- repair_scope: run_only | generator_promoted
 - root_cause_hypothesis: string
 - proposed_fix: string
 - failure_signature: string
+- guardrail_rejection_reason: string | null
+- proposed_probe_updates: array | null
+- proposed_schema_overrides: array | null
+- repair_actions: array | null
 Use metadata.should_retry as a boolean when recommending a retry.
 """,
 }

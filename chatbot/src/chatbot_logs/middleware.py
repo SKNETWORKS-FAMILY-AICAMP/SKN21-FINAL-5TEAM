@@ -8,8 +8,8 @@ from typing import Dict, Any, Optional
 from contextlib import contextmanager
 
 from ecommerce.backend.app.database import SessionLocal
-from ecommerce.backend.app.router.chatbot_logs.service import LogService
-from ecommerce.backend.app.router.chatbot_logs.models import (
+from chatbot.src.chatbot_logs.service import LogService
+from chatbot.src.chatbot_logs.models import (
     MessageRole,
     ConversationStatus
 )

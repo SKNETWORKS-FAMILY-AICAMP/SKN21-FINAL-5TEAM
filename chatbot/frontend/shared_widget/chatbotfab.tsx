@@ -5,18 +5,16 @@ import ReactMarkdown from 'react-markdown';
 import ChatbotWidget, {
   bootstrapSharedChatAuth,
   streamSharedChatResponse,
+  type FetchLike,
   type SharedChatBootstrap,
+  type SharedWidgetCapabilities,
   type SharedWidgetHostConfig,
-} from './shared/ChatbotWidget';
+} from '@skn/shared-chatbot/ChatbotWidget';
 import styles from './chatbotfab.module.css';
 import OrderListUI from './OrderListUI';
-import ProductListUI, {
-  ECOMMERCE_SHARED_WIDGET_CAPABILITIES,
-  type UiProduct,
-} from './ProductListUI';
+import ProductListUI, { type UiProduct } from './ProductListUI';
 import ReviewFormUI from './ReviewFormUI';
 import UsedSaleFormUI from './UsedSaleFormUI';
-import { useAuth } from '../authcontext';
 
 const INITIAL_BOT_MESSAGE: TextMessage = { role: 'bot', type: 'text', text: '안녕하세요. MOYEO 챗봇입니다.' };
 
@@ -196,12 +194,27 @@ declare global {
   }
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE_URL = process.env.NEXT_PUBLIC_CHATBOT_API_URL || 'http://localhost:8100';
 const SHARED_WIDGET_HOST: SharedWidgetHostConfig = {
   authBootstrapPath: `${API_BASE_URL || ''}/api/v1/chat/auth-token`,
   chatbotApiBase: API_BASE_URL || '',
   streamPath: '/api/v1/chat/stream',
 };
+
+export async function ensureFloatingLauncherBootstrapOnOpen(args: {
+  isOpen: boolean;
+  bootstrap: SharedChatBootstrap | null;
+  host: SharedWidgetHostConfig;
+  fetchImpl: FetchLike;
+}): Promise<SharedChatBootstrap | null> {
+  if (!args.isOpen) {
+    return args.bootstrap;
+  }
+  if (args.bootstrap?.authenticated && args.bootstrap.access_token) {
+    return args.bootstrap;
+  }
+  return bootstrapSharedChatAuth(args.host, args.fetchImpl);
+}
 const ORDER_LIST_BASE_MESSAGE = '최근 30일간의 주문 목록입니다.';
 
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.2'] as const;
@@ -610,8 +623,14 @@ function OptionSelectCard({
   );
 }
 
-export default function ChatbotFab() {
-  const { isLoggedIn } = useAuth();
+export default function ChatbotFab({
+  isLoggedIn,
+  host,
+}: {
+  isLoggedIn: boolean;
+  host?: SharedWidgetHostConfig;
+}) {
+  const effectiveHost = host ?? SHARED_WIDGET_HOST;
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMsg[]>([INITIAL_BOT_MESSAGE]);
@@ -769,8 +788,35 @@ export default function ChatbotFab() {
 
   const sharedFetch = (input: string, init?: Record<string, unknown>) => fetch(input, init as RequestInit);
 
+  useEffect(() => {
+    let active = true;
+
+    async function bootstrapOnFirstOpen() {
+      try {
+        const nextBootstrap = await ensureFloatingLauncherBootstrapOnOpen({
+          isOpen: open,
+          bootstrap: chatBootstrap,
+          host: effectiveHost,
+          fetchImpl: sharedFetch,
+        });
+        if (active && nextBootstrap && nextBootstrap !== chatBootstrap) {
+          setChatBootstrap(nextBootstrap);
+        }
+      } catch (error) {
+        if (active) {
+          console.error('Shared chat bootstrap error:', error);
+        }
+      }
+    }
+
+    void bootstrapOnFirstOpen();
+    return () => {
+      active = false;
+    };
+  }, [open, chatBootstrap]);
+
   const ensureSharedChatBootstrap = async () => {
-    if (!SHARED_WIDGET_HOST.chatbotApiBase) {
+    if (!effectiveHost.chatbotApiBase) {
       throw new Error('API 주소가 설정되지 않았습니다.');
     }
 
@@ -778,7 +824,7 @@ export default function ChatbotFab() {
       return chatBootstrap;
     }
 
-    const nextBootstrap = await bootstrapSharedChatAuth(SHARED_WIDGET_HOST, sharedFetch);
+    const nextBootstrap = await bootstrapSharedChatAuth(effectiveHost, sharedFetch);
     setChatBootstrap(nextBootstrap);
     return nextBootstrap;
   };
@@ -817,7 +863,7 @@ export default function ChatbotFab() {
       const provider = resolveProviderByModel(selectedModel);
       await streamSharedChatResponse(
         {
-          host: SHARED_WIDGET_HOST,
+          host: effectiveHost,
           message: text,
           previousState: conversationState,
           resumePayload,
@@ -1035,7 +1081,7 @@ export default function ChatbotFab() {
       const payload = new FormData();
       payload.append('file', file);
 
-      const response = await fetch(`${SHARED_WIDGET_HOST.chatbotApiBase}/api/v1/chat/upload-image`, {
+      const response = await fetch(`${effectiveHost.chatbotApiBase}/api/v1/chat/upload-image`, {
         method: 'POST',
         credentials: 'include',
         body: payload,
@@ -1305,7 +1351,7 @@ export default function ChatbotFab() {
     setFeedbackError(null);
 
     try {
-      const response = await fetch(`${SHARED_WIDGET_HOST.chatbotApiBase}/api/v1/chat/feedback`, {
+      const response = await fetch(`${effectiveHost.chatbotApiBase}/api/v1/chat/feedback`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -1337,7 +1383,13 @@ export default function ChatbotFab() {
   return (
     <>
       {/* 우측 하단 원형 버튼 */}
-      <button type="button" className={styles.fab} onClick={toggle} aria-label="챗봇 열기">
+      <button
+        type="button"
+        className={styles.fab}
+        onClick={toggle}
+        aria-label="챗봇 열기"
+        data-launcher-mode="floating"
+      >
         💬
       </button>
 
@@ -1346,6 +1398,7 @@ export default function ChatbotFab() {
         ref={panelRef}
         className={`${styles.panel} ${open ? styles.open : ''}`}
         aria-hidden={!open}
+        data-launcher-mode="floating"
         style={{ width: panelSize.w, height: panelSize.h }}
         onWheelCapture={handlePanelWheelCapture}
       >
@@ -1365,7 +1418,7 @@ export default function ChatbotFab() {
         <div className={styles.msgList} ref={listRef}>
           <ChatbotWidget
             messages={messages}
-            capabilities={ECOMMERCE_SHARED_WIDGET_CAPABILITIES}
+            capabilities="full"
             renderTextMessage={(message, index) => {
               if (message.role === 'user') {
                 return (
@@ -1402,6 +1455,29 @@ export default function ChatbotFab() {
                       requiresSelection={message.requiresSelection}
                       prior_action={message.prior_action}
                       ui_config={message.ui_config}
+                      classNames={{
+                        orderListContainer: styles.orderListContainer,
+                        orderListMessage: styles.orderListMessage,
+                        orderCards: styles.orderCards,
+                        orderCard: styles.orderCard,
+                        orderCheckbox: styles.orderCheckbox,
+                        orderContent: styles.orderContent,
+                        orderHeader: styles.orderHeader,
+                        orderId: styles.orderId,
+                        orderStatus: styles.orderStatus,
+                        orderProduct: styles.orderProduct,
+                        orderMeta: styles.orderMeta,
+                        orderAmount: styles.orderAmount,
+                        orderDelivered: styles.orderDelivered,
+                        orderActions: styles.orderActions,
+                        actionBadge: styles.actionBadge,
+                        confirmBtn: styles.confirmBtn,
+                        confirmationContainer: styles.confirmationContainer,
+                        confirmationMessage: styles.confirmationMessage,
+                        confirmationActions: styles.confirmationActions,
+                        confirmationApproveBtn: styles.confirmationApproveBtn,
+                        confirmationRejectBtn: styles.confirmationRejectBtn,
+                      }}
                     />
                   </div>
                 </div>

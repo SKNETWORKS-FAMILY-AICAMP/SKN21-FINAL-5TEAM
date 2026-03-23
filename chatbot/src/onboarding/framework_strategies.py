@@ -2,6 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
+_DISALLOWED_SEAM_PARTS = {
+    ".venv",
+    "node_modules",
+    "__pycache__",
+    ".next",
+    "build",
+    "dist",
+}
+
 
 def build_strategy_allowlist(
     *,
@@ -36,6 +45,8 @@ def build_strategy_allowlist(
 
     frontend_outputs = {"frontend_patch", "frontend_widget", "frontend_mount"}
     if set(recommended_outputs).intersection(frontend_outputs):
+        allowlist.update(str(path).strip() for path in frontend.get("auth_store_paths") or [])
+        allowlist.update(str(path).strip() for path in frontend.get("api_client_paths") or [])
         allowlist.update(str(path).strip() for path in frontend.get("widget_mount_points") or [])
         app_shell_path = str(frontend.get("app_shell_path") or "").strip()
         router_boundary_path = str(frontend.get("router_boundary_path") or "").strip()
@@ -44,7 +55,11 @@ def build_strategy_allowlist(
         if router_boundary_path:
             allowlist.add(router_boundary_path)
 
-    return {path for path in allowlist if path}
+    return {
+        path
+        for path in allowlist
+        if path and seam_target_rejection_reason(path) is None
+    }
 
 
 def select_strategy_target_candidates(
@@ -84,6 +99,8 @@ def select_strategy_target_candidates(
 
     frontend_outputs = {"frontend_patch", "frontend_widget", "frontend_mount"}
     if set(recommended_outputs).intersection(frontend_outputs):
+        selected_paths.extend(str(path).strip() for path in frontend.get("auth_store_paths") or [])
+        selected_paths.extend(str(path).strip() for path in frontend.get("api_client_paths") or [])
         selected_paths.extend(str(path).strip() for path in frontend.get("widget_mount_points") or [])
         selected_paths.append(str(frontend.get("app_shell_path") or "").strip())
         selected_paths.append(str(frontend.get("router_boundary_path") or "").strip())
@@ -93,12 +110,26 @@ def select_strategy_target_candidates(
     for path in selected_paths:
         if not path or path in seen:
             continue
+        if seam_target_rejection_reason(path) is not None:
+            continue
         candidate = candidate_sources.get(path)
         if candidate is None:
             continue
         selected.append(candidate)
         seen.add(path)
     return selected
+
+
+def seam_target_rejection_reason(path: str) -> str | None:
+    normalized = str(path or "").strip()
+    if not normalized:
+        return "empty_target_path"
+    parts = set(part for part in normalized.split("/") if part)
+    if parts.intersection(_DISALLOWED_SEAM_PARTS):
+        return "build_artifact_target"
+    if not (normalized.startswith("frontend/") or normalized.startswith("backend/")):
+        return "non_source_target"
+    return None
 
 
 def _candidate_sources_by_path(codebase_map: dict[str, Any]) -> dict[str, dict[str, str]]:

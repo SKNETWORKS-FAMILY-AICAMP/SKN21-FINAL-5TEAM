@@ -3,90 +3,21 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .shared_chatbot_assets import (
+    DEFAULT_AUTH_BOOTSTRAP_PATH,
+    build_shared_widget_host_contract,
+)
 
-DEFAULT_WIDGET_PATH = "frontend/src/chatbot/SharedChatbotWidget.jsx"
-DEFAULT_VUE_WIDGET_PATH = "frontend/src/chatbot/SharedChatbotWidget.vue"
-DEFAULT_WIDGET_CONTENT = """import React, { useEffect, useState } from 'react';
 
-export default function SharedChatbotWidget() {
-  const [status, setStatus] = useState('loading');
-  const [accessToken, setAccessToken] = useState('');
+DEFAULT_WIDGET_PATH = "frontend/src/chatbot/orderCsWidgetHost.js"
+DEFAULT_VUE_WIDGET_PATH = DEFAULT_WIDGET_PATH
+LEGACY_WIDGET_MARKER = "SharedChatbotWidget"
 
-  useEffect(() => {
-    let active = true;
 
-    async function bootstrapChatAuth() {
-      try {
-        const response = await fetch('/api/chat/auth-token', {
-          method: 'POST',
-          credentials: 'include',
-        });
-        const payload = await response.json();
-        if (!active) return;
-        if (!response.ok || !payload.authenticated) {
-          setStatus('unauthenticated');
-          return;
-        }
-        setAccessToken(payload.access_token || '');
-        setStatus('authenticated');
-      } catch (error) {
-        if (active) {
-          setStatus('error');
-        }
-      }
-    }
-
-    bootstrapChatAuth();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (status === 'loading') {
-    return <div data-chatbot-status="loading">Connecting chat...</div>;
-  }
-  if (status === 'unauthenticated') {
-    return <div data-chatbot-status="unauthenticated">Login required for chat.</div>;
-  }
-  if (status === 'error') {
-    return <div data-chatbot-status="error">Chat is temporarily unavailable.</div>;
-  }
-
-  return <div data-chatbot-status="authenticated" data-access-token={accessToken}>Chatbot</div>;
-}
-"""
-DEFAULT_VUE_WIDGET_CONTENT = """<script setup>
-import { onMounted, ref } from "vue";
-
-const status = ref("loading");
-const accessToken = ref("");
-
-onMounted(async () => {
-  try {
-    const response = await fetch("/api/chat/auth-token", {
-      method: "POST",
-      credentials: "include",
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.authenticated) {
-      status.value = "unauthenticated";
-      return;
-    }
-    accessToken.value = payload.access_token || "";
-    status.value = "authenticated";
-  } catch (_error) {
-    status.value = "error";
-  }
-});
-</script>
-
-<template>
-  <div v-if="status === 'loading'" data-chatbot-status="loading">Connecting chat...</div>
-  <div v-else-if="status === 'unauthenticated'" data-chatbot-status="unauthenticated">Login required for chat.</div>
-  <div v-else-if="status === 'error'" data-chatbot-status="error">Chat is temporarily unavailable.</div>
-  <div v-else data-chatbot-status="authenticated" :data-access-token="accessToken">Chatbot</div>
-</template>
-"""
+def build_frontend_mount_contract(*, chatbot_server_base_url: str = "") -> dict[str, str]:
+    return build_shared_widget_host_contract(
+        chatbot_server_base_url=chatbot_server_base_url,
+    )
 
 
 def _prepare_frontend_widget_proposal(
@@ -113,6 +44,8 @@ def _default_widget_path(frontend_strategy: str | None) -> str:
 
 def _normalize_widget_path(path: str | None, *, frontend_strategy: str | None = None) -> str:
     if not path:
+        return _default_widget_path(frontend_strategy)
+    if LEGACY_WIDGET_MARKER in str(path):
         return _default_widget_path(frontend_strategy)
     candidate = Path(path)
     if candidate.is_absolute():
@@ -148,7 +81,7 @@ def resolve_widget_path(
 
 def _prepare_widget_content(proposal: dict[str, Any]) -> str:
     explicit = proposal.get("content")
-    if isinstance(explicit, str) and explicit.strip():
+    if isinstance(explicit, str) and explicit.strip() and LEGACY_WIDGET_MARKER not in explicit:
         return explicit if explicit.endswith("\n") else f"{explicit}\n"
     frontend_strategy = str(proposal.get("frontend_strategy") or "").strip().lower()
     widget_path = str(proposal.get("widget_path") or "").strip().lower()
@@ -164,12 +97,10 @@ def _prepare_widget_content(proposal: dict[str, Any]) -> str:
     if imports:
         lines.extend(imports)
         lines.append("")
-    if component_str:
+    if component_str and LEGACY_WIDGET_MARKER not in component_str:
         lines.append(component_str)
-    elif frontend_strategy == "vue" or widget_path.endswith(".vue"):
-        lines.append(DEFAULT_VUE_WIDGET_CONTENT.strip())
     else:
-        lines.append(DEFAULT_WIDGET_CONTENT.strip())
+        lines.append(_build_default_widget_host_content().strip())
     content = "\n".join(lines)
     return f"{content}\n" if not content.endswith("\n") else content
 
@@ -203,3 +134,42 @@ def generate_frontend_widget_artifact(
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return {"type": "widget", "path": str(target)}
+
+
+def _build_default_widget_host_content() -> str:
+    contract = build_frontend_mount_contract()
+    return """export const ORDER_CS_WIDGET_HOST_CONTRACT = {
+  chatbotServerBaseUrl: "%s",
+  authBootstrapPath: "%s",
+  widgetBundlePath: "%s",
+  widgetElementTag: "%s",
+  mountMode: "%s",
+};
+
+export function ensureOrderCsWidgetHost(globalTarget = typeof globalThis === "object" ? globalThis : undefined) {
+  if (globalTarget) {
+    globalTarget["__ORDER_CS_WIDGET_HOST_CONTRACT__"] = ORDER_CS_WIDGET_HOST_CONTRACT;
+  }
+
+  if (
+    typeof document !== "undefined" &&
+    !document.querySelector('script[data-order-cs-widget-bundle="true"]')
+  ) {
+    const orderCsWidgetScript = document.createElement("script");
+    orderCsWidgetScript.src = `${ORDER_CS_WIDGET_HOST_CONTRACT.chatbotServerBaseUrl}${ORDER_CS_WIDGET_HOST_CONTRACT.widgetBundlePath}`;
+    orderCsWidgetScript.async = true;
+    orderCsWidgetScript.dataset.orderCsWidgetBundle = "true";
+    document.head.appendChild(orderCsWidgetScript);
+  }
+
+  return ORDER_CS_WIDGET_HOST_CONTRACT;
+}
+
+export default ensureOrderCsWidgetHost;
+""" % (
+        contract["chatbotServerBaseUrl"],
+        contract["authBootstrapPath"] or DEFAULT_AUTH_BOOTSTRAP_PATH,
+        contract["widgetBundlePath"],
+        contract["widgetElementTag"],
+        contract["mountMode"],
+    )

@@ -76,7 +76,7 @@ def test_slack_bridge_posts_approval_request_payload():
         approval_type=ApprovalType.APPLY,
         summary="Overlay is ready to apply",
         recommended_option="approve",
-        risk_if_approved="runtime patch may fail",
+        risk_if_approved="generated edits may still fail at runtime",
         risk_if_rejected="run will stop before validation",
         available_actions=["approve", "reject"],
     )
@@ -161,6 +161,41 @@ def test_slack_bridge_can_record_export_approval_decision():
     assert payload["thread_key"] == "food-run-001"
     assert payload["message"]["approval_type"] == "export"
     assert payload["message"]["decision"] == "approve"
+
+
+def test_slack_web_bridge_localizes_terminal_approval_states():
+    class FakeWebClient:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def chat_postMessage(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"ok": True, "ts": "1710000000.100"}
+
+    client = FakeWebClient()
+    bridge = SlackWebBridge(channel="#onboarding-runs", web_client=client)
+    bridge.post_run_root(
+        run_id="food-run-001",
+        site="food",
+        source_root="/workspace/food",
+        goal="generate onboarding overlay",
+        current_state=RunState.QUEUED,
+        approval_status="not_requested",
+    )
+
+    bridge.record_approval_decision(
+        run_id="food-run-001",
+        approval_type="analysis",
+        decision="approved",
+    )
+    bridge.record_approval_decision(
+        run_id="food-run-001",
+        approval_type="apply",
+        decision="rejected",
+    )
+
+    assert "`분석` 단계에 대해 `승인` 결정이 기록되었습니다." in client.calls[-2]["text"]
+    assert "`적용` 단계에 대해 `거절` 결정이 기록되었습니다." in client.calls[-1]["text"]
 
 
 def test_slack_bridge_can_record_run_summary():
@@ -248,7 +283,7 @@ def test_slack_web_bridge_posts_block_kit_approval_message():
         approval_type=ApprovalType.APPLY,
         summary="Overlay is ready to apply",
         recommended_option="approve",
-        risk_if_approved="runtime patch may fail",
+        risk_if_approved="generated edits may still fail at runtime",
         risk_if_rejected="run will stop before validation",
         available_actions=["approve", "reject"],
     )
@@ -258,6 +293,7 @@ def test_slack_web_bridge_posts_block_kit_approval_message():
     assert blocks[-1]["elements"][0]["type"] == "button"
     assert blocks[1]["text"]["text"] == "승인 확인: 적용"
     assert "왜 필요한가" in blocks[2]["text"]["text"]
+    assert "생성된 edit plan과 파일 변경을 적용해도 되는지 확인이 필요합니다." in blocks[2]["text"]["text"]
     assert "다음 단계" in blocks[3]["text"]["text"]
     assert blocks[-1]["elements"][0]["text"]["text"] == "진행"
     assert blocks[-1]["elements"][1]["text"]["text"] == "보류"
@@ -355,7 +391,6 @@ def test_slack_web_bridge_posts_human_readable_generator_narrative():
         metadata={
             "proposed_files": [
                 "files/backend/chat_auth.py",
-                "files/frontend/src/chatbot/SharedChatbotWidget.jsx",
             ],
             "proposed_patches": ["patches/frontend_widget_mount.patch"],
         },
@@ -369,7 +404,7 @@ def test_slack_web_bridge_posts_human_readable_generator_narrative():
     assert "요약" in narrative_text
     assert "대상 파일" in narrative_text
     assert "핵심 근거" in narrative_text
-    assert "SharedChatbotWidget.jsx" in narrative_text
+    assert "chat_auth.py" in narrative_text
     assert "frontend_widget_mount.patch" in narrative_text
     assert "상세 산출물" not in narrative_text
 
@@ -441,7 +476,7 @@ def test_slack_web_bridge_posts_human_readable_run_summary_from_patch_proposal(t
                 ],
                 "supporting_generated_files": [
                     "files/backend/chat_auth.py",
-                    "files/frontend/src/chatbot/SharedChatbotWidget.jsx",
+                    "patches/frontend_widget_mount.patch",
                 ],
                 "recommended_outputs": ["chat_auth", "frontend_patch"],
                 "analysis_summary": {
@@ -470,7 +505,7 @@ def test_slack_web_bridge_posts_human_readable_run_summary_from_patch_proposal(t
     assert "만든 것" in summary_text
     assert "수정 대상" in summary_text
     assert "핵심 판단" in summary_text
-    assert "SharedChatbotWidget.jsx" in summary_text
+    assert "frontend_widget_mount.patch" in summary_text
     assert "frontend/src/App.js" in summary_text
     assert "session_cookie" in summary_text
 

@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+import types
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
+os.environ.setdefault("QDRANT_API_KEY", "test-key")
+sys.modules.setdefault("langchain_ollama", types.SimpleNamespace(ChatOllama=object))
 
 from chatbot.src.onboarding.patch_planner import (
     build_patch_proposal,
+    write_edit_plan,
+    write_llm_edit_draft,
     write_llm_first_patch_proposal,
     write_llm_patch_draft,
     write_unified_diff_draft,
@@ -40,6 +47,572 @@ def test_build_patch_proposal_includes_strategy_summary_and_route_targets():
     assert proposal["analysis_summary"]["backend_route_targets"] == ["backend/shop/urls.py"]
     assert proposal["analysis_summary"]["frontend_mount_targets"] == ["frontend/src/App.js"]
     assert proposal["analysis_summary"]["tool_registry_targets"] == ["backend/shop/views.py"]
+
+
+def test_write_edit_plan_builds_operations_from_patch_proposal(tmp_path: Path):
+    output_path = tmp_path / "reports" / "edit-plan.json"
+
+    proposal = {
+        "target_files": [
+            {
+                "path": "backend/users/views.py",
+                "reason": "auth handler",
+                "intent": "extend backend auth/session handler for onboarding-compatible chat auth",
+            },
+            {
+                "path": "backend/foodshop/urls.py",
+                "reason": "route target",
+                "intent": "wire onboarding-related route entrypoint without touching the original source directly",
+                "insertion_hint": {"anchor": 'path("api/users/", include("users.urls")),'},
+            },
+        ],
+        "supporting_generated_files": ["files/backend/chat_auth.py"],
+        "recommended_outputs": ["chat_auth"],
+        "analysis_summary": {"auth_style": "session_cookie"},
+    }
+
+    path = write_edit_plan(
+        patch_proposal=proposal,
+        output_path=output_path,
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert path == output_path
+    assert payload["supporting_generated_files"] == ["files/backend/chat_auth.py"]
+    assert payload["recommended_outputs"] == ["chat_auth"]
+    assert payload["operations"][0]["path"] == "backend/users/views.py"
+    assert payload["operations"][0]["operation"] == "append_text"
+    assert "onboarding_chat_auth_token" in payload["operations"][0]["content"]
+    assert payload["operations"][1]["path"] == "backend/foodshop/urls.py"
+    assert payload["operations"][1]["operation"] == "insert_after"
+    assert payload["operations"][1]["anchor"] == 'path("api/users/", include("users.urls")),'
+
+
+def test_write_edit_plan_uses_urlpatterns_anchor_for_url_targets_without_anchor_hint(tmp_path: Path):
+    output_path = tmp_path / "reports" / "edit-plan.json"
+
+    path = write_edit_plan(
+        patch_proposal={
+            "target_files": [
+                {
+                    "path": "backend/foodshop/urls.py",
+                    "reason": "route target",
+                    "intent": "wire onboarding-related route entrypoint without touching the original source directly",
+                }
+            ],
+            "supporting_generated_files": [],
+            "recommended_outputs": ["chat_auth"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["operations"][0]["path"] == "backend/foodshop/urls.py"
+    assert payload["operations"][0]["operation"] == "insert_after"
+    assert payload["operations"][0]["anchor"] == "urlpatterns = ["
+    assert "api/chat/auth-token" in payload["operations"][0]["content"]
+
+
+def test_write_edit_plan_marks_invalid_url_anchor_as_unsupported_when_source_is_available(tmp_path: Path):
+    source_root = tmp_path / "source"
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "reports" / "edit-plan.json"
+
+    path = write_edit_plan(
+        source_root=source_root,
+        patch_proposal={
+            "target_files": [
+                {
+                    "path": "backend/orders/urls.py",
+                    "reason": "route target",
+                    "intent": "wire onboarding-related route entrypoint without touching the original source directly",
+                }
+            ],
+            "supporting_generated_files": [],
+            "recommended_outputs": ["chat_auth"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["operations"] == []
+    assert payload["unsupported_targets"] == [
+        {
+            "path": "backend/orders/urls.py",
+            "reason": "edit_target_rejected",
+        }
+    ]
+
+
+def test_write_edit_plan_marks_unsupported_targets_without_placeholder_operations(tmp_path: Path):
+    output_path = tmp_path / "reports" / "edit-plan.json"
+
+    path = write_edit_plan(
+        patch_proposal={
+            "target_files": [
+                {
+                    "path": "backend/services/catalog_client.py",
+                    "reason": "api client target",
+                    "intent": "support chat auth capability",
+                }
+            ],
+            "supporting_generated_files": [],
+            "recommended_outputs": ["chat_auth"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["operations"] == []
+    assert payload["unsupported_targets"] == [
+        {
+            "path": "backend/services/catalog_client.py",
+            "reason": "unsupported_edit_target",
+        }
+    ]
+
+
+def test_write_edit_plan_builds_role_based_frontend_page_mount_from_source(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "edit-plan.json"
+
+    target = source_root / "frontend" / "src" / "pages" / "Products" / "index.jsx"
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        'import React from "react";\n\n'
+        "export default function ProductsPage() {\n"
+        "  return (\n"
+        "    <main>\n"
+        "      <section>Products</section>\n"
+        "    </main>\n"
+        "  );\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    path = write_edit_plan(
+        source_root=source_root,
+        patch_proposal={
+            "target_files": [
+                {
+                    "path": "frontend/src/pages/Products/index.jsx",
+                    "reason": "frontend page shell",
+                    "intent": "prepare frontend chatbot mount draft for runtime-only integration review",
+                    "insertion_hint": {"mount_context": "outside_routes"},
+                }
+            ],
+            "supporting_generated_files": [],
+            "recommended_outputs": ["frontend_patch"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["unsupported_targets"] == []
+    assert payload["operations"][0]["path"] == "frontend/src/pages/Products/index.jsx"
+    assert payload["operations"][0]["operation"] == "replace_text"
+    assert "<order-cs-widget />" in payload["operations"][0]["new"]
+    assert "__ORDER_CS_WIDGET_HOST_CONTRACT__" in payload["operations"][0]["new"]
+
+
+def test_write_edit_plan_builds_frontend_api_client_support_from_source(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "edit-plan.json"
+
+    target = source_root / "frontend" / "src" / "api" / "api.js"
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        'import axios from "axios";\n\n'
+        "export const api = axios.create({\n"
+        '  baseURL: "/api",\n'
+        "});\n",
+        encoding="utf-8",
+    )
+
+    path = write_edit_plan(
+        source_root=source_root,
+        patch_proposal={
+            "target_files": [
+                {
+                    "path": "frontend/src/api/api.js",
+                    "reason": "frontend api client",
+                    "intent": "prepare frontend auth bootstrap client support for onboarding chat auth",
+                }
+            ],
+            "supporting_generated_files": [],
+            "recommended_outputs": ["chat_auth"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["unsupported_targets"] == []
+    assert payload["operations"][0]["path"] == "frontend/src/api/api.js"
+    assert payload["operations"][0]["operation"] == "replace_text"
+    assert "/api/chat/auth-token" in payload["operations"][0]["new"]
+    assert "withCredentials" in payload["operations"][0]["new"]
+
+
+def test_write_llm_edit_draft_uses_hard_fallback_for_invalid_target_path(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "edit-plan.json"
+    execution_path = tmp_path / "reports" / "llm-edit-draft-execution.json"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+
+    class InvalidTargetLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "operations": [
+                                {
+                                    "path": "backend/orders/views.py",
+                                    "operation": "append_text",
+                                    "content": "\n# bad target\n",
+                                }
+                            ]
+                        }
+                    )
+                },
+            )()
+
+    write_llm_edit_draft(
+        source_root=source_root,
+        analysis={"auth": {"auth_style": "session_cookie"}},
+        codebase_map={"candidate_edit_targets": [{"path": "backend/users/views.py", "reason": "auth handler"}]},
+        patch_proposal={
+            "target_files": [{"path": "backend/users/views.py", "intent": "add auth stub"}],
+            "supporting_generated_files": ["files/backend/chat_auth.py"],
+            "recommended_outputs": ["chat_auth"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: InvalidTargetLLM(),
+    )
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+
+    assert payload["operations"][0]["path"] == "backend/users/views.py"
+    assert execution["source"] == "hard_fallback"
+    assert execution["hard_fallback_reason"] == "invalid_target_selection"
+
+
+def test_write_llm_edit_draft_uses_hard_fallback_for_missing_required_operation_fields(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "edit-plan.json"
+    execution_path = tmp_path / "reports" / "llm-edit-draft-execution.json"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "urls.py").write_text(
+        'from django.urls import path\n\nurlpatterns = [\n]\n',
+        encoding="utf-8",
+    )
+
+    class MissingAnchorLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "operations": [
+                                {
+                                    "path": "backend/users/urls.py",
+                                    "operation": "insert_after",
+                                    "content": '\n    path("api/chat/auth-token", onboarding_chat_auth_token),',
+                                }
+                            ]
+                        }
+                    )
+                },
+            )()
+
+    write_llm_edit_draft(
+        source_root=source_root,
+        analysis={"auth": {"auth_style": "session_cookie"}},
+        codebase_map={"candidate_edit_targets": [{"path": "backend/users/urls.py", "reason": "route target"}]},
+        patch_proposal={
+            "target_files": [{"path": "backend/users/urls.py", "intent": "add chat auth route"}],
+            "supporting_generated_files": [],
+            "recommended_outputs": ["chat_auth"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: MissingAnchorLLM(),
+    )
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+
+    assert payload["operations"][0]["path"] == "backend/users/urls.py"
+    assert execution["source"] == "hard_fallback"
+    assert execution["hard_fallback_reason"] == "invalid_edit_payload"
+
+
+def test_write_llm_edit_draft_uses_hard_fallback_for_empty_operations(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "edit-plan.json"
+    execution_path = tmp_path / "reports" / "llm-edit-draft-execution.json"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+
+    class EmptyOperationsLLM:
+        def invoke(self, messages):
+            return type("LLMResponse", (), {"content": json.dumps({"operations": []})})()
+
+    write_llm_edit_draft(
+        source_root=source_root,
+        analysis={"auth": {"auth_style": "session_cookie"}},
+        codebase_map={"candidate_edit_targets": [{"path": "backend/users/views.py", "reason": "auth handler"}]},
+        patch_proposal={
+            "target_files": [{"path": "backend/users/views.py", "intent": "add auth stub"}],
+            "supporting_generated_files": [],
+            "recommended_outputs": ["chat_auth"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: EmptyOperationsLLM(),
+    )
+
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+
+    assert execution["source"] == "hard_fallback"
+    assert execution["hard_fallback_reason"] == "invalid_edit_payload"
+
+
+def test_write_llm_edit_draft_drops_unsupported_targets_covered_by_llm_operations(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "edit-plan.json"
+    execution_path = tmp_path / "reports" / "llm-edit-draft-execution.json"
+
+    (source_root / "frontend" / "src" / "api").mkdir(parents=True)
+    (source_root / "frontend" / "src" / "api" / "api.js").write_text(
+        "export async function login() {\n  return fetch('/login');\n}\n",
+        encoding="utf-8",
+    )
+
+    class ApiClientLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "operations": [
+                                {
+                                    "path": "frontend/src/api/api.js",
+                                    "operation": "append_text",
+                                    "content": "\nexport const AUTH_BOOTSTRAP_PATH = '/api/chat/auth-token';\n",
+                                }
+                            ]
+                        }
+                    )
+                },
+            )()
+
+    write_llm_edit_draft(
+        source_root=source_root,
+        analysis={"auth": {"auth_style": "session_cookie"}},
+        codebase_map={"candidate_edit_targets": [{"path": "frontend/src/api/api.js", "reason": "api client target"}]},
+        patch_proposal={
+            "target_files": [{"path": "frontend/src/api/api.js", "intent": "support chat auth capability"}],
+            "supporting_generated_files": [],
+            "recommended_outputs": ["chat_auth"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: ApiClientLLM(),
+    )
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+
+    assert payload["operations"][0]["path"] == "frontend/src/api/api.js"
+    assert payload["unsupported_targets"] == []
+    assert execution["source"] == "llm"
+
+
+def test_write_llm_edit_draft_uses_hard_fallback_for_missing_content(tmp_path: Path):
+    output_path = tmp_path / "reports" / "edit-plan.json"
+    execution_path = tmp_path / "reports" / "llm-edit-draft-execution.json"
+
+    class MissingContentLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "operations": [
+                                {
+                                    "path": "backend/users/views.py",
+                                    "operation": "append_text",
+                                }
+                            ]
+                        }
+                    )
+                },
+            )()
+
+    write_llm_edit_draft(
+        source_root=tmp_path / "source",
+        analysis={"auth": {"auth_style": "session_cookie"}},
+        codebase_map={"candidate_edit_targets": [{"path": "backend/users/views.py", "reason": "auth handler"}]},
+        patch_proposal={
+            "target_files": [{"path": "backend/users/views.py", "intent": "add chat auth stub"}],
+            "supporting_generated_files": [],
+            "recommended_outputs": ["chat_auth"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: MissingContentLLM(),
+    )
+
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+
+    assert execution["source"] == "hard_fallback"
+    assert execution["hard_fallback_reason"] == "invalid_edit_payload"
+
+
+def test_write_llm_edit_draft_uses_hard_fallback_for_empty_string_content(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "edit-plan.json"
+    execution_path = tmp_path / "reports" / "llm-edit-draft-execution.json"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+
+    class EmptyStringContentLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "operations": [
+                                {
+                                    "path": "backend/users/views.py",
+                                    "operation": "append_text",
+                                    "content": "",
+                                }
+                            ]
+                        }
+                    )
+                },
+            )()
+
+    write_llm_edit_draft(
+        source_root=source_root,
+        analysis={"auth": {"auth_style": "session_cookie"}},
+        codebase_map={"candidate_edit_targets": [{"path": "backend/users/views.py", "reason": "auth handler"}]},
+        patch_proposal={
+            "target_files": [{"path": "backend/users/views.py", "intent": "add chat auth stub"}],
+            "supporting_generated_files": [],
+            "recommended_outputs": ["chat_auth"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: EmptyStringContentLLM(),
+    )
+
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+
+    assert execution["source"] == "hard_fallback"
+    assert execution["hard_fallback_reason"] == "invalid_edit_payload"
+
+
+def test_write_llm_edit_draft_uses_hard_fallback_for_anchor_missing_in_source(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "edit-plan.json"
+    execution_path = tmp_path / "reports" / "llm-edit-draft-execution.json"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "urls.py").write_text(
+        "urlpatterns = [\n    path('login/', login),\n]\n",
+        encoding="utf-8",
+    )
+
+    class MissingSourceAnchorLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "operations": [
+                                {
+                                    "path": "backend/users/urls.py",
+                                    "operation": "insert_after",
+                                    "anchor": "path('missing/', missing),",
+                                    "content": "\n    path('chat/', chat_auth),",
+                                }
+                            ]
+                        }
+                    )
+                },
+            )()
+
+    write_llm_edit_draft(
+        source_root=source_root,
+        analysis={"auth": {"auth_style": "session_cookie"}},
+        codebase_map={"candidate_edit_targets": [{"path": "backend/users/urls.py", "reason": "route target"}]},
+        patch_proposal={
+            "target_files": [{"path": "backend/users/urls.py", "intent": "add chat auth route"}],
+            "supporting_generated_files": [],
+            "recommended_outputs": ["chat_auth"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: MissingSourceAnchorLLM(),
+    )
+
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+
+    assert execution["source"] == "hard_fallback"
+    assert execution["hard_fallback_reason"] == "invalid_edit_payload"
 
 
 def test_strategy_patch_proposal_for_food_avoids_orders_auth_targets():
@@ -81,6 +654,140 @@ def test_strategy_patch_proposal_for_food_avoids_orders_auth_targets():
     assert "backend/orders/views.py" not in paths
     assert "backend/users/urls.py" in paths
     assert "frontend/src/App.js" in paths
+
+
+def test_strategy_patch_proposal_for_food_allows_frontend_api_client_targets():
+    contract = {
+        "site": "food",
+        "backend": {
+            "framework": "django",
+            "auth_style": "session_cookie",
+            "route_registration_points": ["backend/foodshop/urls.py"],
+            "auth_source_paths": ["backend/users/views.py"],
+            "user_resolver_paths": ["backend/users/views.py"],
+        },
+        "frontend": {
+            "framework": "react",
+            "app_shell_path": "frontend/src/App.js",
+            "router_boundary_path": "frontend/src/App.js",
+            "api_client_paths": ["frontend/src/api/api.js"],
+            "widget_mount_points": ["frontend/src/App.js"],
+        },
+    }
+    proposal = build_patch_proposal(
+        analysis={"integration_contract": contract},
+        codebase_map={
+            "integration_contract": contract,
+            "candidate_edit_targets": [
+                {"path": "backend/users/views.py", "reason": "users auth handler"},
+                {"path": "backend/foodshop/urls.py", "reason": "project route target"},
+                {"path": "frontend/src/App.js", "reason": "react app shell"},
+                {"path": "frontend/src/api/api.js", "reason": "api client target"},
+            ],
+            "backend_strategy": "django",
+            "frontend_strategy": "react",
+            "backend_route_targets": [{"path": "backend/foodshop/urls.py", "reason": "project urlconf"}],
+            "frontend_mount_targets": [{"path": "frontend/src/App.js", "reason": "app shell"}],
+            "tool_registry_targets": [{"path": "backend/users/views.py", "reason": "users auth handler"}],
+        },
+        recommended_outputs=["chat_auth", "frontend_patch"],
+        llm_codebase_interpretation={
+            "ranked_candidates": [
+                {"path": "frontend/src/api/api.js", "reason": "api bootstrap integration point"},
+                {"path": "frontend/src/App.js", "reason": "widget mount"},
+            ]
+        },
+    )
+
+    paths = {item["path"] for item in proposal["target_files"]}
+    assert "frontend/src/api/api.js" in paths
+    assert proposal["analysis_summary"]["strategy_allowlist"] == sorted(
+        [
+            "backend/foodshop/urls.py",
+            "backend/users/views.py",
+            "frontend/src/App.js",
+            "frontend/src/api/api.js",
+        ]
+    )
+
+
+def test_build_patch_proposal_filters_ranked_candidates_outside_strategy_allowlist():
+    contract = {
+        "site": "food",
+        "backend": {
+            "framework": "django",
+            "auth_style": "session_cookie",
+            "route_registration_points": ["backend/foodshop/urls.py"],
+            "auth_source_paths": ["backend/users/views.py"],
+            "user_resolver_paths": ["backend/users/views.py"],
+        },
+        "frontend": {
+            "framework": "react",
+            "app_shell_path": "frontend/src/App.js",
+            "router_boundary_path": "frontend/src/App.js",
+            "widget_mount_points": ["frontend/src/App.js"],
+        },
+    }
+    proposal = build_patch_proposal(
+        analysis={"integration_contract": contract},
+        codebase_map={
+            "integration_contract": contract,
+            "candidate_edit_targets": [
+                {"path": "backend/users/views.py", "reason": "users auth handler"},
+                {"path": "backend/foodshop/urls.py", "reason": "project route target"},
+                {"path": "frontend/src/App.js", "reason": "react app shell"},
+                {"path": "frontend/src/views/Orders.js", "reason": "orders screen"},
+            ],
+            "backend_route_targets": [{"path": "backend/foodshop/urls.py", "reason": "project urlconf"}],
+            "frontend_mount_targets": [{"path": "frontend/src/App.js", "reason": "app shell"}],
+            "tool_registry_targets": [{"path": "backend/users/views.py", "reason": "users auth handler"}],
+        },
+        recommended_outputs=["chat_auth", "frontend_patch"],
+        llm_codebase_interpretation={
+            "ranked_candidates": [
+                {"path": "frontend/src/views/Orders.js", "reason": "incorrect frontend target"},
+            ]
+        },
+    )
+
+    paths = {item["path"] for item in proposal["target_files"]}
+    assert "frontend/src/views/Orders.js" not in paths
+    assert "frontend/src/App.js" in paths
+
+
+def test_build_patch_proposal_rejects_build_artifact_mount_target():
+    contract = {
+        "site": "food",
+        "frontend": {
+            "framework": "react",
+            "app_shell_path": "frontend/build/static/js/main.abc.js",
+            "widget_mount_points": ["frontend/build/static/js/main.abc.js"],
+        },
+    }
+    proposal = build_patch_proposal(
+        analysis={"integration_contract": contract},
+        codebase_map={
+            "integration_contract": contract,
+            "candidate_edit_targets": [
+                {"path": "frontend/build/static/js/main.abc.js", "reason": "bundled mount target"},
+                {"path": "frontend/src/App.js", "reason": "source app shell"},
+            ],
+            "frontend_mount_targets": [
+                {"path": "frontend/build/static/js/main.abc.js", "reason": "bundled mount target"},
+                {"path": "frontend/src/App.js", "reason": "source app shell"},
+            ],
+        },
+        recommended_outputs=["frontend_patch"],
+    )
+
+    paths = {item["path"] for item in proposal["target_files"]}
+    assert "frontend/build/static/js/main.abc.js" not in paths
+    assert proposal["analysis_summary"]["target_rejections"] == [
+        {
+            "path": "frontend/build/static/js/main.abc.js",
+            "reason": "build_artifact_target",
+        }
+    ]
 
 
 def test_strategy_patch_proposal_for_bilyeo_targets_flask_auth_and_vue_shell():
@@ -264,9 +971,10 @@ def test_write_unified_diff_draft_inserts_react_widget_inside_component_markup(t
 
     content = output_path.read_text(encoding="utf-8")
 
-    assert '+import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";\n' in content
-    assert '+      <SharedChatbotWidget />\n' in content
-    assert '-}\n+\n+  <SharedChatbotWidget />\n+}\n' not in content
+    assert '+const ORDER_CS_WIDGET_HOST_CONTRACT = {\n' in content
+    assert '+  widgetBundlePath: "/widget.js",\n' in content
+    assert '+      <order-cs-widget />\n' in content
+    assert 'SharedChatbotWidget' not in content
 
 
 def test_write_unified_diff_draft_inserts_fastapi_router_near_app_setup(tmp_path: Path):
@@ -502,7 +1210,7 @@ def test_write_unified_diff_draft_falls_back_when_insertion_hint_missing(tmp_pat
     )
 
     content = output_path.read_text(encoding="utf-8")
-    assert '+      <SharedChatbotWidget />\n' in content
+    assert '+      <order-cs-widget />\n' in content
 
 
 def test_write_llm_first_patch_proposal_prefers_llm_output_when_valid(tmp_path: Path):
@@ -564,6 +1272,257 @@ def test_write_llm_first_patch_proposal_prefers_llm_output_when_valid(tmp_path: 
     assert execution["fallback_reason"] is None
 
 
+def test_write_llm_first_patch_proposal_retries_after_build_artifact_rejection(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "patch-proposal.json"
+    execution_path = tmp_path / "reports" / "llm-patch-proposal-execution.json"
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text("def login(request):\n    return None\n", encoding="utf-8")
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "frontend" / "src" / "App.js").write_text("export default function App() { return null; }\n", encoding="utf-8")
+    codebase_map = {
+        "integration_contract": {
+            "site": "food",
+            "backend": {
+                "framework": "django",
+                "auth_style": "session_cookie",
+                "route_registration_points": ["backend/users/urls.py"],
+                "auth_source_paths": ["backend/users/views.py"],
+                "user_resolver_paths": ["backend/users/views.py"],
+            },
+            "frontend": {
+                "framework": "react",
+                "app_shell_path": "frontend/src/App.js",
+                "widget_mount_points": ["frontend/src/App.js"],
+            },
+        },
+        "candidate_edit_targets": [
+            {"path": "backend/users/views.py", "reason": "auth handler"},
+            {"path": "backend/users/urls.py", "reason": "route target"},
+            {"path": "frontend/build/static/js/main.abc.js", "reason": "bundled mount target"},
+            {"path": "frontend/src/App.js", "reason": "react app shell"},
+        ],
+        "backend_strategy": "django",
+        "frontend_strategy": "react",
+        "backend_route_targets": [{"path": "backend/users/urls.py", "reason": "users urlconf"}],
+        "frontend_mount_targets": [{"path": "frontend/src/App.js", "reason": "app shell"}],
+        "tool_registry_targets": [{"path": "backend/users/views.py", "reason": "users auth handler"}],
+    }
+
+    class RetryingLLM:
+        def __init__(self) -> None:
+            self.calls: list[list[object]] = []
+
+        def invoke(self, messages):
+            self.calls.append(messages)
+            if len(self.calls) == 1:
+                return type(
+                    "LLMResponse",
+                    (),
+                    {
+                        "content": json.dumps(
+                            {
+                                "target_files": [
+                                    {
+                                        "path": "frontend/build/static/js/main.abc.js",
+                                        "reason": "bundled widget mount target",
+                                        "intent": "mount chatbot widget",
+                                    }
+                                ],
+                                "supporting_generated_files": ["patches/frontend_widget_mount.patch"],
+                                "recommended_outputs": ["frontend_patch"],
+                                "analysis_summary": {
+                                    "auth_style": "session_cookie",
+                                    "frontend_mount_points": ["frontend/src/App.js"],
+                                    "route_prefixes": ["/api"],
+                                },
+                            }
+                        )
+                    },
+                )()
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "target_files": [
+                                {
+                                    "path": "frontend/src/App.js",
+                                    "reason": "source app shell",
+                                    "intent": "mount chatbot widget",
+                                }
+                            ],
+                            "supporting_generated_files": ["patches/frontend_widget_mount.patch"],
+                            "recommended_outputs": ["frontend_patch"],
+                            "analysis_summary": {
+                                "auth_style": "session_cookie",
+                                "frontend_mount_points": ["frontend/src/App.js"],
+                                "route_prefixes": ["/api"],
+                            },
+                        }
+                    )
+                },
+            )()
+
+    llm = RetryingLLM()
+    write_llm_first_patch_proposal(
+        source_root=source_root,
+        analysis={
+            "auth": {"auth_style": "session_cookie"},
+            "integration_contract": codebase_map["integration_contract"],
+        },
+        codebase_map=codebase_map,
+        recommended_outputs=["frontend_patch"],
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: llm,
+    )
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+    debug_payload = json.loads((tmp_path / "reports" / "llm-debug" / "patch-proposal.json").read_text(encoding="utf-8"))
+    retry_prompt = str(llm.calls[1][1].content)
+
+    assert payload["target_files"][0]["path"] == "frontend/src/App.js"
+    assert execution["source"] == "recovered_llm"
+    assert execution["fallback_reason"] is None
+    assert execution["rejection_reason"] == {
+        "path": "frontend/build/static/js/main.abc.js",
+        "reason": "build_artifact_target",
+        "message": "invalid seam target path: frontend/build/static/js/main.abc.js (build_artifact_target)",
+    }
+    assert execution["retry_attempt_count"] == 1
+    assert execution["retry_source"] == "llm"
+    assert debug_payload["rejection_reason"] == execution["rejection_reason"]
+    assert debug_payload["retry_attempt_count"] == 1
+    assert debug_payload["retry_source"] == "llm"
+    assert "build_artifact_target" in retry_prompt
+    assert "frontend/build/static/js/main.abc.js" in retry_prompt
+    assert "guardrail_rejection" in retry_prompt
+
+
+def test_write_llm_first_patch_proposal_retries_after_inside_routes_mount_context_rejection(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "patch-proposal.json"
+    execution_path = tmp_path / "reports" / "llm-patch-proposal-execution.json"
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        'import { Routes } from "react-router-dom";\n'
+        "export default function App() {\n"
+        "  return (\n"
+        "    <Routes>\n"
+        "      <main>Home</main>\n"
+        "    </Routes>\n"
+        "  );\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    codebase_map = {
+        "integration_contract": {
+            "site": "food",
+            "frontend": {
+                "framework": "react",
+                "app_shell_path": "frontend/src/App.js",
+                "router_boundary_path": "frontend/src/App.js",
+                "widget_mount_points": ["frontend/src/App.js"],
+            },
+        },
+        "candidate_edit_targets": [
+            {"path": "frontend/src/App.js", "reason": "react app shell"},
+        ],
+        "frontend_mount_targets": [{"path": "frontend/src/App.js", "reason": "app shell"}],
+    }
+
+    class RetryingLLM:
+        def __init__(self) -> None:
+            self.calls: list[list[object]] = []
+
+        def invoke(self, messages):
+            self.calls.append(messages)
+            if len(self.calls) == 1:
+                return type(
+                    "LLMResponse",
+                    (),
+                    {
+                        "content": json.dumps(
+                            {
+                                "target_files": [
+                                    {
+                                        "path": "frontend/src/App.js",
+                                        "reason": "react app shell",
+                                        "intent": "mount chatbot widget",
+                                        "insertion_hint": {
+                                            "anchor_text": "<Routes>",
+                                            "position": "after",
+                                            "mount_context": "inside_routes",
+                                        },
+                                    }
+                                ],
+                                "supporting_generated_files": ["patches/frontend_widget_mount.patch"],
+                                "recommended_outputs": ["frontend_patch"],
+                                "analysis_summary": {
+                                    "frontend_mount_points": ["frontend/src/App.js"],
+                                },
+                            }
+                        )
+                    },
+                )()
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "target_files": [
+                                {
+                                    "path": "frontend/src/App.js",
+                                    "reason": "react app shell",
+                                    "intent": "mount chatbot widget",
+                                    "insertion_hint": {
+                                        "anchor_text": "</Routes>",
+                                        "position": "after",
+                                        "mount_context": "outside_routes",
+                                    },
+                                }
+                            ],
+                            "supporting_generated_files": ["patches/frontend_widget_mount.patch"],
+                            "recommended_outputs": ["frontend_patch"],
+                            "analysis_summary": {
+                                "frontend_mount_points": ["frontend/src/App.js"],
+                            },
+                        }
+                    )
+                },
+            )()
+
+    llm = RetryingLLM()
+    write_llm_first_patch_proposal(
+        source_root=source_root,
+        analysis={"integration_contract": codebase_map["integration_contract"]},
+        codebase_map=codebase_map,
+        recommended_outputs=["frontend_patch"],
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: llm,
+    )
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+    retry_prompt = str(llm.calls[1][1].content)
+
+    assert payload["target_files"][0]["insertion_hint"]["mount_context"] == "outside_routes"
+    assert execution["source"] == "recovered_llm"
+    assert execution["rejection_reason"] == {
+        "path": "frontend/src/App.js",
+        "reason": "routes_child_violation",
+        "message": "invalid mount context for frontend/src/App.js: inside_routes would place order-cs-widget inside <Routes>",
+    }
+    assert execution["retry_attempt_count"] == 1
+    assert "inside_routes" in retry_prompt
+    assert "outside_routes" in retry_prompt
+
+
 def test_write_llm_first_patch_proposal_recovery_normalizes_single_target_shape(tmp_path: Path):
     source_root = tmp_path / "source"
     output_path = tmp_path / "reports" / "patch-proposal.json"
@@ -620,6 +1579,56 @@ def test_write_llm_first_patch_proposal_recovery_normalizes_single_target_shape(
     assert execution["hard_fallback_reason"] is None
 
 
+def test_write_llm_first_patch_proposal_recovery_normalizes_alias_fields_and_string_targets(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "patch-proposal.json"
+    execution_path = tmp_path / "reports" / "llm-patch-proposal-execution.json"
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text("def login(request):\n    return None\n", encoding="utf-8")
+    codebase_map = {
+        "candidate_edit_targets": [
+            {"path": "backend/users/views.py", "reason": "auth handler"},
+        ]
+    }
+
+    class RecoverableAliasLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "targetFiles": ["backend/users/views.py"],
+                            "supportingGeneratedFiles": "files/backend/chat_auth.py",
+                            "recommendedOutputs": "chat_auth",
+                        }
+                    )
+                },
+            )()
+
+    write_llm_first_patch_proposal(
+        source_root=source_root,
+        analysis={"auth": {"auth_style": "session_cookie"}},
+        codebase_map=codebase_map,
+        recommended_outputs=["chat_auth"],
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: RecoverableAliasLLM(),
+    )
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+
+    assert payload["target_files"][0]["path"] == "backend/users/views.py"
+    assert payload["target_files"][0]["reason"] == "auth handler"
+    assert "chat auth" in payload["target_files"][0]["intent"]
+    assert payload["analysis_summary"]["auth_style"] == "session_cookie"
+    assert execution["source"] == "recovered_llm"
+    assert execution["recovery_reason"] == "patch_proposal_shape_normalized"
+    assert execution["hard_fallback_reason"] is None
+
+
 def test_write_llm_first_patch_proposal_falls_back_on_invalid_json(tmp_path: Path):
     source_root = tmp_path / "source"
     output_path = tmp_path / "reports" / "patch-proposal.json"
@@ -662,6 +1671,56 @@ def test_write_llm_first_patch_proposal_falls_back_on_invalid_json(tmp_path: Pat
     assert ("patch_planner", "llm_call_started") in events
     assert ("patch_planner", "hard_fallback_used") in events
     assert ("patch_planner", "artifact_written") in events
+
+
+def test_write_llm_first_patch_proposal_writes_debug_artifact_for_invalid_payload(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "patch-proposal.json"
+    execution_path = tmp_path / "reports" / "llm-patch-proposal-execution.json"
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text("def login(request):\n    return None\n", encoding="utf-8")
+    codebase_map = {
+        "candidate_edit_targets": [
+            {"path": "backend/users/views.py", "reason": "auth handler"},
+        ]
+    }
+
+    class InvalidPayloadLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "target_files": [123],
+                            "supporting_generated_files": ["files/backend/chat_auth.py"],
+                            "recommended_outputs": ["chat_auth"],
+                            "analysis_summary": [],
+                        }
+                    )
+                },
+            )()
+
+    write_llm_first_patch_proposal(
+        source_root=source_root,
+        analysis={"auth": {"auth_style": "session_cookie"}},
+        codebase_map=codebase_map,
+        recommended_outputs=["chat_auth"],
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: InvalidPayloadLLM(),
+    )
+
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+    debug_payload = json.loads((tmp_path / "reports" / "llm-debug" / "patch-proposal.json").read_text(encoding="utf-8"))
+
+    assert execution["source"] == "hard_fallback"
+    assert execution["hard_fallback_reason"] == "invalid_llm_payload"
+    assert debug_payload["status"] == "hard_fallback"
+    assert debug_payload["hard_fallback_reason"] == "invalid_llm_payload"
+    assert debug_payload["error_type"] == "invalid_llm_payload"
+    assert "target_files" in debug_payload["error_message"]
 
 
 def test_write_llm_first_patch_proposal_emits_acceptance_event_for_recovered_payload(tmp_path: Path):
@@ -894,3 +1953,59 @@ def test_write_llm_first_patch_proposal_includes_file_samples_in_prompt(tmp_path
     assert "file_samples" in prompt
     assert "def login(request):" in prompt
     assert payload["target_files"][0]["insertion_hint"]["anchor_text"] == "def login(request):"
+
+
+def test_write_unified_diff_draft_respects_outside_routes_mount_context(tmp_path: Path):
+    source_root = tmp_path / "source"
+    run_root = tmp_path / "generated"
+    proposal_path = run_root / "reports" / "patch-proposal.json"
+    output_path = run_root / "patches" / "frontend_widget_mount.patch"
+
+    target_file = source_root / "frontend" / "src" / "App.js"
+    target_file.parent.mkdir(parents=True)
+    target_file.write_text(
+        'import { BrowserRouter, Routes, Route } from "react-router-dom";\n\n'
+        "export default function App() {\n"
+        "  return (\n"
+        "    <BrowserRouter>\n"
+        "      <Routes>\n"
+        "        <Route path=\"/\" element={<main>Home</main>} />\n"
+        "      </Routes>\n"
+        "    </BrowserRouter>\n"
+        "  );\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    proposal_path.parent.mkdir(parents=True, exist_ok=True)
+    proposal_path.write_text(
+        json.dumps(
+            {
+                "target_files": [
+                    {
+                        "path": "frontend/src/App.js",
+                        "reason": "app shell",
+                        "intent": "mount chatbot widget",
+                        "insertion_hint": {
+                            "anchor_text": "</Routes>",
+                            "position": "after",
+                            "mount_context": "outside_routes",
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    write_unified_diff_draft(
+        source_root=source_root,
+        generated_run_root=run_root,
+        proposal_path=proposal_path,
+        output_path=output_path,
+    )
+
+    content = output_path.read_text(encoding="utf-8")
+    assert "       </Routes>\n+      <order-cs-widget />\n     </BrowserRouter>\n" in content
+    assert "+      <order-cs-widget />\n" in content
+    assert "+        <order-cs-widget />\n" not in content
