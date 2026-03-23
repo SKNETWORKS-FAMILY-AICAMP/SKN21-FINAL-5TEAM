@@ -1,0 +1,4123 @@
+[
+  {
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T11:23:09.076668",
+    "elapsed_seconds": 23.96,
+    "difficulty_filter": "easy",
+    "total_samples": 54,
+    "metrics": {
+      "accuracy": 1.0,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 12
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 18
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 18
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 18
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 12
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 18
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 54,
+        "correct": 54,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 54,
+      "correct": 54
+    }
+  },
+  {
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T11:24:53.514339",
+    "elapsed_seconds": 19.39,
+    "difficulty_filter": "hard",
+    "total_samples": 34,
+    "metrics": {
+      "accuracy": 1.0,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 7
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 8
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 13
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 13
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 7
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 8
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 34,
+        "correct": 34,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 34,
+      "correct": 34
+    }
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T11:26:30.631107",
+    "elapsed_seconds": 7.21,
+    "difficulty_filter": "easy",
+    "total_samples": 54,
+    "metrics": {
+      "accuracy": 0.8519,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 12
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8333,
+          "f1": 0.9091,
+          "support": 18
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 0.7778,
+          "f1": 0.875,
+          "support": 18
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 0.8333,
+          "f1": 0.9091,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 0.8,
+          "recall": 0.6889,
+          "f1": 0.7386
+        }
+      },
+      "macro_f1": 0.7386,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 14,
+          "final_generator": 4
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 12
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 5,
+          "final_generator": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 15,
+          "final_generator": 3
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 54,
+        "correct": 46,
+        "accuracy": 0.8519
+      }
+    },
+    "summary": {
+      "total": 54,
+      "correct": 46
+    }
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T11:28:35.194625",
+    "elapsed_seconds": 5.5,
+    "difficulty_filter": "hard",
+    "total_samples": 34,
+    "metrics": {
+      "accuracy": 0.8824,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 7
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.75,
+          "f1": 0.8571,
+          "support": 8
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 0.8462,
+          "f1": 0.9167,
+          "support": 13
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 0.8,
+          "recall": 0.7192,
+          "f1": 0.7548
+        }
+      },
+      "macro_f1": 0.7548,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 11,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 7
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 6,
+          "final_generator": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 34,
+        "correct": 30,
+        "accuracy": 0.8824
+      }
+    },
+    "summary": {
+      "total": 34,
+      "correct": 30
+    }
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T11:40:49.450807",
+    "elapsed_seconds": 578.29,
+    "difficulty_filter": "easy",
+    "total_samples": 54,
+    "metrics": {
+      "accuracy": 0.6852,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.6429,
+          "recall": 0.75,
+          "f1": 0.6923,
+          "support": 12
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.6667,
+          "f1": 0.8,
+          "support": 18
+        },
+        "order_intent_router": {
+          "precision": 0.8125,
+          "recall": 0.7222,
+          "f1": 0.7647,
+          "support": 18
+        },
+        "policy_rag_subagent": {
+          "precision": 0.6,
+          "recall": 0.5,
+          "f1": 0.5455,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 0.6111,
+          "recall": 0.5278,
+          "f1": 0.5605
+        }
+      },
+      "macro_f1": 0.5605,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 13,
+          "policy_rag_subagent": 2,
+          "discovery_subagent": 2,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "final_generator": 2,
+          "discovery_subagent": 9,
+          "order_intent_router": 1
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 3,
+          "discovery_subagent": 1,
+          "order_intent_router": 1,
+          "final_generator": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 12,
+          "discovery_subagent": 2,
+          "order_intent_router": 1,
+          "final_generator": 3
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 54,
+        "correct": 37,
+        "accuracy": 0.6852
+      }
+    },
+    "summary": {
+      "total": 54,
+      "correct": 37
+    }
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T11:54:27.483465",
+    "elapsed_seconds": 313.48,
+    "difficulty_filter": "hard",
+    "total_samples": 34,
+    "metrics": {
+      "accuracy": 0.5294,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.75,
+          "recall": 0.8571,
+          "f1": 0.8,
+          "support": 7
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.375,
+          "f1": 0.5455,
+          "support": 8
+        },
+        "order_intent_router": {
+          "precision": 0.625,
+          "recall": 0.3846,
+          "f1": 0.4762,
+          "support": 13
+        },
+        "policy_rag_subagent": {
+          "precision": 0.5714,
+          "recall": 0.6667,
+          "f1": 0.6154,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 0.5893,
+          "recall": 0.4567,
+          "f1": 0.4874
+        }
+      },
+      "macro_f1": 0.4874,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 5,
+          "policy_rag_subagent": 3,
+          "final_generator": 4,
+          "discovery_subagent": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 6,
+          "final_generator": 1
+        },
+        "policy_rag_subagent": {
+          "discovery_subagent": 1,
+          "policy_rag_subagent": 4,
+          "order_intent_router": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 3,
+          "final_generator": 3,
+          "order_intent_router": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 34,
+        "correct": 18,
+        "accuracy": 0.5294
+      }
+    },
+    "summary": {
+      "total": 34,
+      "correct": 18
+    }
+  },
+  {
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T16:06:20.702252",
+    "elapsed_seconds": 25.49,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 1.0,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 10
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 10
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 30
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 70,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 70
+    }
+  },
+  {
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T16:07:13.146840",
+    "elapsed_seconds": 38.19,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.9286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.9,
+          "f1": 0.9474,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8889,
+          "recall": 0.8,
+          "f1": 0.8421,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.7692,
+          "recall": 1.0,
+          "f1": 0.8696,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7316,
+          "recall": 0.74,
+          "f1": 0.7318
+        }
+      },
+      "macro_f1": 0.7318,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "policy_rag_subagent": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 10
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 27,
+          "final_generator": 1,
+          "order_intent_router": 1,
+          "policy_rag_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 65,
+        "accuracy": 0.9286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 65
+    }
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T16:08:41.351085",
+    "elapsed_seconds": 12.88,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8857,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8667,
+          "f1": 0.9286,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 0.8,
+          "f1": 0.8889,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8889,
+          "recall": 0.8,
+          "f1": 0.8421,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7778,
+          "recall": 0.6933,
+          "f1": 0.7319
+        }
+      },
+      "macro_f1": 0.7319,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 8,
+          "final_generator": 2
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 26,
+          "policy_rag_subagent": 1,
+          "final_generator": 3
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 62,
+        "accuracy": 0.8857
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 62
+    }
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T16:09:39.925493",
+    "elapsed_seconds": 11.48,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8714,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.9,
+          "f1": 0.9474,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8571,
+          "recall": 0.6,
+          "f1": 0.7059,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7314,
+          "recall": 0.66,
+          "f1": 0.6907
+        }
+      },
+      "macro_f1": 0.6907,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "final_generator": 1,
+          "policy_rag_subagent": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6,
+          "order_intent_router": 1,
+          "final_generator": 3
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 27,
+          "order_intent_router": 1,
+          "final_generator": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 61,
+        "accuracy": 0.8714
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 61
+    }
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T16:18:41.144911",
+    "elapsed_seconds": 496.72,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.7286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.7917,
+          "recall": 0.95,
+          "f1": 0.8636,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.6333,
+          "f1": 0.7755,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1": 0.6667,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7183,
+          "recall": 0.5767,
+          "f1": 0.6212
+        }
+      },
+      "macro_f1": 0.6212,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "discovery_subagent": 1,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 19,
+          "final_generator": 1
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 5,
+          "final_generator": 5
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 19,
+          "order_intent_router": 2,
+          "discovery_subagent": 4,
+          "final_generator": 5
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 51,
+        "accuracy": 0.7286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 51
+    }
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T16:40:49.173509",
+    "elapsed_seconds": 1253.61,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.5714,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.7826,
+          "recall": 0.9,
+          "f1": 0.8372,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.4,
+          "f1": 0.5714,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.4286,
+          "recall": 0.6,
+          "f1": 0.5,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.5714,
+          "recall": 0.4,
+          "f1": 0.4706,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.5565,
+          "recall": 0.46,
+          "f1": 0.4758
+        }
+      },
+      "macro_f1": 0.4758,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 6,
+          "policy_rag_subagent": 3,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 18,
+          "final_generator": 2
+        },
+        "policy_rag_subagent": {
+          "order_intent_router": 4,
+          "policy_rag_subagent": 4,
+          "final_generator": 2
+        },
+        "form_action_subagent": {
+          "final_generator": 9,
+          "discovery_subagent": 5,
+          "order_intent_router": 4,
+          "form_action_subagent": 12
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 40,
+        "accuracy": 0.5714
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 40
+    }
+  },
+  {
+    "model": "vllm/gemma2:2b",
+    "timestamp": "2026-03-19T11:40:25.454196",
+    "elapsed_seconds": 307.62,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.7407,
+          "recall": 1.0,
+          "f1": 0.8511,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.9,
+          "f1": 0.9474,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8333,
+          "recall": 0.5,
+          "f1": 0.625,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8571,
+          "recall": 0.6,
+          "f1": 0.7059,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.6862,
+          "recall": 0.6,
+          "f1": 0.6259
+        }
+      },
+      "macro_f1": 0.6259,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 5,
+          "policy_rag_subagent": 1,
+          "discovery_subagent": 3,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6,
+          "discovery_subagent": 2,
+          "final_generator": 1,
+          "order_intent_router": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 27,
+          "discovery_subagent": 2,
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 58,
+        "accuracy": 0.8286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 58
+    }
+  },
+  {
+    "model": "vllm/llama3.2:3b",
+    "timestamp": "2026-03-19T11:45:28.567049",
+    "elapsed_seconds": 257.97,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.6286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 0.55,
+          "f1": 0.7097,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.6667,
+          "f1": 0.8,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.2857,
+          "recall": 1.0,
+          "f1": 0.4444,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.75,
+          "recall": 0.3,
+          "f1": 0.4286,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7589,
+          "recall": 0.6292,
+          "f1": 0.5957
+        }
+      },
+      "macro_f1": 0.5957,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 10
+        },
+        "discovery_subagent": {
+          "order_intent_router": 9,
+          "discovery_subagent": 11
+        },
+        "policy_rag_subagent": {
+          "order_intent_router": 7,
+          "policy_rag_subagent": 3
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 20,
+          "order_intent_router": 9,
+          "policy_rag_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 44,
+        "accuracy": 0.6286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 44
+    }
+  },
+  {
+    "model": "vllm/granite3.1-dense:2b",
+    "timestamp": "2026-03-19T11:50:03.957333",
+    "elapsed_seconds": 245.88,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.7286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.6452,
+          "recall": 1.0,
+          "f1": 0.7843,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.6,
+          "f1": 0.75,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.5714,
+          "recall": 0.8,
+          "f1": 0.6667,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.7143,
+          "recall": 0.5,
+          "f1": 0.5882,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7327,
+          "recall": 0.725,
+          "f1": 0.6973
+        }
+      },
+      "macro_f1": 0.6973,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "discovery_subagent": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "order_intent_router": 4,
+          "discovery_subagent": 1,
+          "policy_rag_subagent": 5
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 18,
+          "discovery_subagent": 8,
+          "order_intent_router": 2,
+          "policy_rag_subagent": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 51,
+        "accuracy": 0.7286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 51
+    }
+  },
+  {
+    "model": "vllm/llama3.1",
+    "timestamp": "2026-03-19T11:56:32.996968",
+    "elapsed_seconds": 343.98,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.9857,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.9667,
+          "f1": 0.9831,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.8,
+          "recall": 0.7933,
+          "f1": 0.7966
+        }
+      },
+      "macro_f1": 0.7966,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 10
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 10
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 29,
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 69,
+        "accuracy": 0.9857
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 69
+    }
+  },
+  {
+    "model": "vllm/phi4-mini",
+    "timestamp": "2026-03-19T12:01:27.555232",
+    "elapsed_seconds": 251.56,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.7571,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.6897,
+          "recall": 1.0,
+          "f1": 0.8163,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.7,
+          "f1": 0.8235,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.5455,
+          "recall": 0.6,
+          "f1": 0.5714,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.6667,
+          "recall": 0.6,
+          "f1": 0.6316,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7255,
+          "recall": 0.725,
+          "f1": 0.7107
+        }
+      },
+      "macro_f1": 0.7107,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 6,
+          "discovery_subagent": 2,
+          "policy_rag_subagent": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6,
+          "order_intent_router": 3,
+          "discovery_subagent": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 21,
+          "discovery_subagent": 6,
+          "order_intent_router": 2,
+          "policy_rag_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 53,
+        "accuracy": 0.7571
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 53
+    }
+  },
+  {
+    "model": "vllm/mistral-nemo",
+    "timestamp": "2026-03-19T12:13:11.311634",
+    "elapsed_seconds": 541.62,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.9,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.9091,
+          "recall": 1.0,
+          "f1": 0.9524,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8667,
+          "f1": 0.9286,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.7692,
+          "recall": 1.0,
+          "f1": 0.8696,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.7778,
+          "recall": 0.7,
+          "f1": 0.7368,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.864,
+          "recall": 0.8917,
+          "f1": 0.8719
+        }
+      },
+      "macro_f1": 0.8719,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 10
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 7,
+          "order_intent_router": 3
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 26,
+          "discovery_subagent": 2,
+          "policy_rag_subagent": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 63,
+        "accuracy": 0.9
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 63
+    }
+  },
+  {
+    "model": "vllm/LFM2.5-Thinking:1.2B",
+    "timestamp": "2026-03-19T13:40:23.754301",
+    "elapsed_seconds": 5067.63,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.3571,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.5263,
+          "recall": 0.5,
+          "f1": 0.5128,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.2333,
+          "f1": 0.3784,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.3182,
+          "recall": 0.7,
+          "f1": 0.4375,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 0.1,
+          "f1": 0.1818,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.5689,
+          "recall": 0.3067,
+          "f1": 0.3021
+        }
+      },
+      "macro_f1": 0.3021,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 7,
+          "discovery_subagent": 1,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "final_generator": 7,
+          "discovery_subagent": 10,
+          "order_intent_router": 3
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 1,
+          "order_intent_router": 3,
+          "final_generator": 6
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 7,
+          "order_intent_router": 9,
+          "discovery_subagent": 8,
+          "final_generator": 6
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 25,
+        "accuracy": 0.3571
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 25
+    }
+  },
+  {
+    "model": "vllm/Qwen3.5:2b",
+    "timestamp": "2026-03-19T15:27:17.298661",
+    "elapsed_seconds": 5197.51,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.0,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "macro_f1": 0.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "final_generator": 10
+        },
+        "discovery_subagent": {
+          "final_generator": 20
+        },
+        "policy_rag_subagent": {
+          "final_generator": 10
+        },
+        "form_action_subagent": {
+          "final_generator": 30
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 0,
+        "accuracy": 0.0
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 0
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:09:58.095893",
+    "elapsed_seconds": 576.76,
+    "difficulty_filter": "hard",
+    "total_samples": 140,
+    "metrics": {
+      "accuracy": 0.4286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.9643,
+          "recall": 0.675,
+          "f1": 0.7941,
+          "support": 40
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.25,
+          "f1": 0.4,
+          "support": 60
+        },
+        "order_intent_router": {
+          "precision": 0.4,
+          "recall": 0.9,
+          "f1": 0.5538,
+          "support": 20
+        },
+        "policy_rag_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 20
+        },
+        "macro_avg": {
+          "precision": 0.4729,
+          "recall": 0.365,
+          "f1": 0.3496
+        }
+      },
+      "macro_f1": 0.3496,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 18,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "order_intent_router": 10,
+          "discovery_subagent": 27,
+          "final_generator": 3
+        },
+        "policy_rag_subagent": {
+          "order_intent_router": 11,
+          "final_generator": 9
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 15,
+          "order_intent_router": 6,
+          "final_generator": 38,
+          "discovery_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 30,
+        "accuracy": 0.4286
+      },
+      "hard": {
+        "total": 70,
+        "correct": 30,
+        "accuracy": 0.4286
+      }
+    },
+    "summary": {
+      "total": 140,
+      "correct": 60
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:25:38.420648",
+    "elapsed_seconds": 37.86,
+    "difficulty_filter": "hard",
+    "total_samples": 1,
+    "metrics": {
+      "accuracy": 0.0,
+      "per_node_f1": {
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "order_intent_router": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 1
+        },
+        "macro_avg": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "macro_f1": 0.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 1,
+        "correct": 0,
+        "accuracy": 0.0
+      }
+    },
+    "summary": {
+      "total": 1,
+      "correct": 0
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:37:49.151930",
+    "elapsed_seconds": 20.9,
+    "difficulty_filter": "hard",
+    "total_samples": 1,
+    "metrics": {
+      "accuracy": 1.0,
+      "per_node_f1": {
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 1
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 1,
+        "correct": 1,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 1,
+      "correct": 1
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:42:32.424660",
+    "elapsed_seconds": 982.41,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.0,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "macro_f1": 0.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "final_generator": 10
+        },
+        "discovery_subagent": {
+          "final_generator": 20
+        },
+        "policy_rag_subagent": {
+          "final_generator": 10
+        },
+        "form_action_subagent": {
+          "final_generator": 30
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 0,
+        "accuracy": 0.0
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 0
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:49:30.688274",
+    "elapsed_seconds": 8.67,
+    "difficulty_filter": "hard",
+    "total_samples": 1,
+    "metrics": {
+      "accuracy": 1.0,
+      "per_node_f1": {
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 1
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 1,
+        "correct": 1,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 1,
+      "correct": 1
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:59:09.820221",
+    "elapsed_seconds": 121.89,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.8571,
+          "recall": 0.9,
+          "f1": 0.878,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8333,
+          "f1": 0.9091,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.7778,
+          "recall": 0.7,
+          "f1": 0.7368,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.687,
+          "recall": 0.6467,
+          "f1": 0.6648
+        }
+      },
+      "macro_f1": 0.6648,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "policy_rag_subagent": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 18,
+          "final_generator": 2
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 7,
+          "order_intent_router": 1,
+          "final_generator": 2
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 25,
+          "order_intent_router": 1,
+          "discovery_subagent": 3,
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 58,
+        "accuracy": 0.8286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 58
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T17:13:40.538655",
+    "elapsed_seconds": 126.17,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8429,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.8571,
+          "recall": 0.9,
+          "f1": 0.878,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8333,
+          "f1": 0.9091,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8,
+          "recall": 0.8889,
+          "f1": 0.8421,
+          "support": 9
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8889,
+          "recall": 0.7273,
+          "f1": 0.8,
+          "support": 11
+        },
+        "macro_avg": {
+          "precision": 0.7092,
+          "recall": 0.6699,
+          "f1": 0.6858
+        }
+      },
+      "macro_f1": 0.6858,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "policy_rag_subagent": 1
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 8,
+          "order_intent_router": 1,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 18,
+          "final_generator": 2
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 25,
+          "order_intent_router": 1,
+          "discovery_subagent": 3,
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 59,
+        "accuracy": 0.8429
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 59
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T17:19:48.108770",
+    "elapsed_seconds": 84.66,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.9857,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.9,
+          "recall": 1.0,
+          "f1": 0.9474,
+          "support": 9
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 0.9091,
+          "f1": 0.9524,
+          "support": 11
+        },
+        "macro_avg": {
+          "precision": 0.975,
+          "recall": 0.9773,
+          "f1": 0.9749
+        }
+      },
+      "macro_f1": 0.9749,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 9
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 10,
+          "order_intent_router": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 30
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 69,
+        "accuracy": 0.9857
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 69
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T17:25:47.218784",
+    "elapsed_seconds": 134.57,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8714,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 0.95,
+          "f1": 0.9744,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8667,
+          "f1": 0.9286,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8889,
+          "recall": 0.8,
+          "f1": 0.8421,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7378,
+          "recall": 0.6833,
+          "f1": 0.709
+        }
+      },
+      "macro_f1": 0.709,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "policy_rag_subagent": 1,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 19,
+          "final_generator": 1
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 8,
+          "final_generator": 1,
+          "order_intent_router": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 26,
+          "final_generator": 3,
+          "policy_rag_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 61,
+        "accuracy": 0.8714
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 61
+    }
+  },
+  {
+    "model": "openai/gpt-5.4-mini",
+    "timestamp": "2026-03-23T09:31:21.166854",
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 65,
+        "accuracy": 0.9286
+      }
+    },
+    "details": [
+      {
+        "input": "주문을 취소하고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "방금 결제한 걸 취소해주실 수 있나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "잘못 주문했는데, 취소할 수 있을까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "환불 요청하고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "반품할게요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사이즈를 바꾸고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "다른 색으로 교환할 수 있을까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송 현황 좀 알려주세요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "택배 도착 예정일이 언제예요?",
+        "predicted_node": "final_generator",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "내 주문 목록 좀 보여줄래요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "봄철에 어울리는 옷 추천해줄래?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "데이트룩으로 입기 좋은 코디 좀 찾아줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "출근할 때 입을 정장 보여줄 수 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "운동할 때 입기 편한 바지 추천해줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "캐주얼한 아우터 어떤 거 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "여름에 입기 좋은 시원한 린넨 셔츠 있나?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "겨울철에 따뜻한 패딩 추천해 줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "가성비 좋은 니트 제품 알고 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "요즘 유행하는 와이드 팬츠 좀 보여줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "비즈니스 캐주얼 코디로 어떤 게 좋을까?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 사진이랑 비슷한 제품 좀 찾아줄래? /products/36505.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 스타일의 옷 또 보여줄 수 있어? /products/37940.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거랑 비슷한 제품 있나요? /products/58548.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "SNS에서 본 스타일인데, 비슷한 거 있으면 알려줘 /products/40591.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 옷과 비슷한 거 추천해 줘 /products/52510.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 느낌의 옷 더 찾아줄래? /products/55351.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거랑 비슷한 브랜드 제품은 어디서 사나요? /products/42974.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거와 같은 브랜드의 다른 제품도 있을까? /products/37940.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 사진 속 바지와 비슷한 제품 찾아줘 /products/55351.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 느낌의 코트 있어? /products/36526.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "환불은 어떻게 진행되죠?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송은 얼마나 걸리나요?",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "교환할 수 있는 기간이 언제까지인가요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "반품할 때 택배비는 누가 내야 해요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "포장을 뜯은 상품도 반품 가능한가요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "제주도에 배송할 때 추가 요금이 있나요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "무료 배송이 되려면 어떤 조건이 있어야 해요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "회원 등급에 따라 어떤 혜택이 있지?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "적립금 사용에 대한 조건이 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "주문한 상품 취소는 몇 일 내에 가능해요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "중고 물건 올리고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "안 쓰는 옷 좀 팔아야겠어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사이즈가 안 맞아서 중고로 내놓고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "옷장 정리하면서 안 입는 것들 처분하려고 해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "거의 새 같은 신발을 판매하려고 해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "중고 판매 등록하는 방법 좀 알려주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사용하지 않는 가방을 팔고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "선물 받은 옷이 안 맞아서 중고로 판매할게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "작아진 옷을 중고로 거래하고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "한 번 입었던 원피스 팔고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "리뷰를 남기고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "후기를 작성하고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "착용 샷과 함께 후기 올릴게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "별점은 어디서 줄 수 있나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "구매 후기를 쓰는 곳이 어디예요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 제품에 대한 평가를 남기고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "주문한 옷에 대한 리뷰 쓸게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사용 후기를 남기려면 어떻게 해야 해?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품 별점과 간단한 평 올리고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송에 대한 후기를 작성하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품권 등록 좀 해주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "기프트카드 번호를 입력하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "모바일 상품권 적용 방법 알려주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이벤트 당첨 코드는 어디에 넣어야 하나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "회사에서 받은 포인트 코드 등록 부탁해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품권 번호 입력하는 곳이 어디인지 알려줘",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "기프트카드 잔액 어떻게 확인하죠?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "쿠폰 코드 적용하는 방법이 궁금해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "선물 받은 상품권 사용할 수 있게 해주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "종이 상품권 온라인으로 등록할 수 있나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      }
+    ]
+  },
+  {
+    "model": "openai/gpt-5.4-mini",
+    "timestamp": "2026-03-23T09:32:24.036271",
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 63,
+        "accuracy": 0.9
+      }
+    },
+    "details": [
+      {
+        "input": "주문했는데 혹시 취소할 수 있을까요? 필요 없는 것 같아서요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송된 제품이랑 사진이랑 너무 다른데, 반품은 어떻게 하나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "아이에게 맞는 옷을 샀는데 입혀보니 안 맞아서 교환하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "선물로 주문했는데 이미 같은 걸 가지고 있다고 하네요. 포장은 뜯었는데 환불 가능한가요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송 조회를 하고 싶은데, 제 주문 상태가 궁금해요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "사이즈를 잘못 선택한 것 같아서, 변경할 수 있는지 알고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "주문 취소를 하고 싶은데, 아직 배송 전이면 가능할까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "택배를 받았는데 색상이 마음에 안 들어서 다른 걸로 바꿀 수 있나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송이 너무 지연되고 있어서 확인해보고 싶어요. 언제쯤 도착하나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "결제한 지 얼마 안 됐는데, 환불 절차가 궁금해요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "이번 주말에 소개팅이 있는데, 세련되면서도 너무 튀지 않는 옷 추천해 줄 수 있어요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "다음 달 제주도로 여행 가는데, 사진 찍을 때 예쁘게 나올 수 있는 편한 옷이 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "요즘 직장 상사가 복장에 대해 신경 쓰라고 하셔서, 캐주얼하지 않으면서도 답답하지 않은 옷을 찾고 있어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "매일 아침 뭘 입을까 고민하는데, 아무거나 걸쳐도 괜찮은 기본템 있으면 좋겠어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구 결혼식에 하객으로 가야 하는데, 나중에 평소에도 입을 수 있는 옷 추천해 줄 수 있어요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "곧 면접이 있는데, 너무 딱딱하지 않으면서 신뢰감을 줄 수 있는 옷이 뭐가 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "체형이 통통한 편인데, 날씬해 보이면서도 편안한 옷 찾고 있어요. 추천해 주세요!",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "40대 남성인데, 너무 젊어 보이지 않고 올드하지 않은 적당한 캐주얼룩 찾아주세요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "키가 작아서 비율이 좋아 보이는 코디가 필요해요. 어떤 스타일이 나을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "재택근무할 때 편하면서도 갑자기 화상회의가 잡혀도 괜찮은 옷 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "어제 길에서 본 옷이 너무 예뻐서 사진을 찍었어요. 이거랑 비슷한 거 찾을 수 있을까요? /products/12345.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "유튜브에서 본 스타일인데 캡처해놓은 게 있어요. 이런 느낌의 옷 찾아주세요! /products/67890.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "인스타그램에서 본 코디인데, 이 사진처럼 비슷한 옷을 추천해주실 수 있나요? /products/54321.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "쇼핑몰 광고에서 본 옷이 너무 마음에 들어요. 이거랑 비슷하면서 가격이 더 저렴한 거 있을까요? /products/98765.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "드라마에서 주인공이 입었던 옷인데, 그 사진으로 비슷한 상품 찾아줄 수 있어요? /products/11111.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구가 입고 온 옷이 진짜 예뻤어요. 사진 찍어왔는데, 같은 건 아니어도 비슷한 느낌의 옷이 있을까요? /products/22222.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외 쇼핑몰에서 본 옷인데, 직구는 좀 부담스러워서 국내에서 비슷한 제품 찾고 있어요. /products/33333.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "잡지에서 잘라둔 코디인데, 이런 느낌의 아이템들 추천해주시면 좋겠어요. /products/44444.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "작년에 구입한 옷인데 절판됐더라고요. 사진만 가지고 있는데, 이와 비슷한 디자인 찾을 수 있을까요? /products/55555.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "핀터레스트에 저장해둔 코디인데, 이 분위기를 그대로 재현할 수 있는 옷이 있을까요? /products/66666.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "여기서 사면 2주 안에 배송된다고 들었는데, 그게 맞는지 확인하고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "택배를 받았는데 제품에 문제가 있어요. 개봉하면 반품이 불가능한지 궁금합니다.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "도서산간 지역에 사는데, 배송비가 추가로 얼마 더 드는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구가 선물해줬는데 영수증 없이도 교환이나 환불이 가능한지 궁금해요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "세일 상품은 반품할 때 일반 상품이랑 같은 조건인지 아니면 다른 규정이 있는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외에서 구매한 제품인데 국내에서 반품할 때 절차가 어떻게 되는지 알고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "요즘 직구 많이 하는데, 관세 관련 안내가 있는지 여기는 어떤지 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "적립금이 좀 쌓였는데, 이걸 현금처럼 자유롭게 쓸 수 있는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "한 달 넘게 사용했는데, 이런 경우에도 교환이나 환불이 가능한가요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "명절 기간에는 배송이 지연된다고 들었는데, 정확히 언제부터 언제까지 늦어지는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "작년에 구매한 코트가 거의 새것 같은데, 필요한 분께 드리고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "다이어트를 성공해서 예전 옷들이 다 커버렸는데, 그냥 버리기엔 아깝고 필요한 분께 주고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "임산부 때 입었던 옷이 이제 필요 없어서, 정리하려고 해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외에서 사온 브랜드 옷이 스타일에 안 맞아서 좋은 가격에 판매하고 싶은데, 가능할까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "결혼식 때만 입은 정장이 앞으로는 안 입을 것 같아서 상태 좋은 걸 넘기고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "유행이 지나서 더 이상 안 입는 옷들이 있는데, 상태가 괜찮아서 버리기 아까워요. 올릴 수 있을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "아이가 금방 커버려서 한 번도 못 입힌 아동복이 있는데, 필요한 분께 저렴하게 드리고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "온라인으로 샀는데 색상이 마음에 안 들어서 교환 대신 중고로 판매하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "이사 준비 중이라서 옷이 너무 많아요. 상태 좋은 것들 위주로 한꺼번에 판매하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "헬스장을 그만두면서 운동복이 필요 없어졌는데, 거의 새것이라 누군가에게 쓰이면 좋겠어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "최근에 산 신발이 너무 편하고 예뻐서 다른 분들에게 추천하고 싶어요. 어떻게 후기를 남기면 좋을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "솔직히 가격 대비 품질이 아쉬워서 제 경험을 공유해서 다른 분들이 실수하지 않게 하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "사이즈 고민하시는 분들 위해서 제 체형과 착용 사진을 공유하고 싶은데 어떻게 하면 될까요?",
+        "predicted_node": "final_generator",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "한 달 정도 사용해보고 후기를 남기고 싶은데, 구매한 지 좀 됐어도 괜찮나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "이 옷을 사기 전에 후기가 없어서 고민했었는데, 제 경험을 다른 분들과 나누고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "세탁 후에 약간 변형이 있었는데, 이런 점도 다른 구매자분들이 알면 좋을 것 같아서 공유할게요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송이 아주 빠르고 포장도 완벽해서 칭찬 후기를 어디에 남기면 좋을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "실제 착용 사진과 함께 자세한 후기를 남겨서 비슷한 체형분들에게 도움이 되고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "교환 과정에서 고객 서비스가 정말 좋았는데, 이런 경험도 후기로 남길 수 있을까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "선물로 받은 제품이 너무 마음에 들어서 추천 후기를 꼭 남기고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "생일 선물로 받은 상품권에 숫자 코드가 있는데, 이거 어디에 입력해야 할지 모르겠어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "회사 행사에서 받은 모바일 쿠폰 바코드 번호를 어떻게 등록해야 할까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "부모님이 주신 명절 상품권에 코드가 적혀 있는데, 등록하는 방법이 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "명절에 받은 상품권 여러 장을 한 번에 등록할 수 있는지, 아니면 하나씩 해야 하는지 알고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "경품으로 받은 모바일 상품권 유효기간이 임박해서 빨리 등록해야 하는데, 방법을 알려주세요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "카카오톡 선물함에 있는 상품권 코드 입력하는 곳이 어디인지 알고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "신용카드 포인트로 받은 상품권 코드 등록 방법이 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "직원 복지 포인트로 받은 온라인 상품권, 이 쇼핑몰에서 쓸 수 있는지 확인하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "결혼 축하로 받은 상품권 여러 장을 합쳐서 등록할 수 있는지 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "중고로 구매한 상품권이 일부 사용된 건지 확인하고 등록하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      }
+    ]
+  },
+  {
+    "model": "openai/gpt-5.4-nano",
+    "timestamp": "2026-03-23T09:38:05.780118",
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 67,
+        "accuracy": 0.9571
+      }
+    },
+    "details": [
+      {
+        "input": "주문을 취소하고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "방금 결제한 걸 취소해주실 수 있나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "잘못 주문했는데, 취소할 수 있을까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "환불 요청하고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "반품할게요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사이즈를 바꾸고 싶어요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "다른 색으로 교환할 수 있을까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송 현황 좀 알려주세요",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "택배 도착 예정일이 언제예요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "내 주문 목록 좀 보여줄래요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "봄철에 어울리는 옷 추천해줄래?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "데이트룩으로 입기 좋은 코디 좀 찾아줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "출근할 때 입을 정장 보여줄 수 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "운동할 때 입기 편한 바지 추천해줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "캐주얼한 아우터 어떤 거 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "여름에 입기 좋은 시원한 린넨 셔츠 있나?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "겨울철에 따뜻한 패딩 추천해 줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "가성비 좋은 니트 제품 알고 있어?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "요즘 유행하는 와이드 팬츠 좀 보여줘",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "비즈니스 캐주얼 코디로 어떤 게 좋을까?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 사진이랑 비슷한 제품 좀 찾아줄래? /products/36505.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 스타일의 옷 또 보여줄 수 있어? /products/37940.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거랑 비슷한 제품 있나요? /products/58548.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "SNS에서 본 스타일인데, 비슷한 거 있으면 알려줘 /products/40591.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 옷과 비슷한 거 추천해 줘 /products/52510.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 느낌의 옷 더 찾아줄래? /products/55351.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거랑 비슷한 브랜드 제품은 어디서 사나요? /products/42974.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이거와 같은 브랜드의 다른 제품도 있을까? /products/37940.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 사진 속 바지와 비슷한 제품 찾아줘 /products/55351.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이런 느낌의 코트 있어? /products/36526.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "환불은 어떻게 진행되죠?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송은 얼마나 걸리나요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "교환할 수 있는 기간이 언제까지인가요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "반품할 때 택배비는 누가 내야 해요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "포장을 뜯은 상품도 반품 가능한가요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "제주도에 배송할 때 추가 요금이 있나요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "무료 배송이 되려면 어떤 조건이 있어야 해요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "회원 등급에 따라 어떤 혜택이 있지?",
+        "predicted_node": "final_generator",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "적립금 사용에 대한 조건이 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "주문한 상품 취소는 몇 일 내에 가능해요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "easy",
+        "correct": false
+      },
+      {
+        "input": "중고 물건 올리고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "안 쓰는 옷 좀 팔아야겠어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사이즈가 안 맞아서 중고로 내놓고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "옷장 정리하면서 안 입는 것들 처분하려고 해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "거의 새 같은 신발을 판매하려고 해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "중고 판매 등록하는 방법 좀 알려주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사용하지 않는 가방을 팔고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "선물 받은 옷이 안 맞아서 중고로 판매할게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "작아진 옷을 중고로 거래하고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "한 번 입었던 원피스 팔고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "리뷰를 남기고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "후기를 작성하고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "착용 샷과 함께 후기 올릴게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "별점은 어디서 줄 수 있나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "구매 후기를 쓰는 곳이 어디예요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이 제품에 대한 평가를 남기고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "주문한 옷에 대한 리뷰 쓸게요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "사용 후기를 남기려면 어떻게 해야 해?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품 별점과 간단한 평 올리고 싶어",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "배송에 대한 후기를 작성하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품권 등록 좀 해주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "기프트카드 번호를 입력하고 싶어요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "모바일 상품권 적용 방법 알려주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "이벤트 당첨 코드는 어디에 넣어야 하나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "회사에서 받은 포인트 코드 등록 부탁해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "상품권 번호 입력하는 곳이 어디인지 알려줘",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "기프트카드 잔액 어떻게 확인하죠?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "쿠폰 코드 적용하는 방법이 궁금해요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "선물 받은 상품권 사용할 수 있게 해주세요",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      },
+      {
+        "input": "종이 상품권 온라인으로 등록할 수 있나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "easy",
+        "correct": true
+      }
+    ]
+  },
+  {
+    "model": "openai/gpt-5.4-nano",
+    "timestamp": "2026-03-23T09:38:39.845834",
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 67,
+        "accuracy": 0.9571
+      }
+    },
+    "details": [
+      {
+        "input": "주문했는데 혹시 취소할 수 있을까요? 필요 없는 것 같아서요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송된 제품이랑 사진이랑 너무 다른데, 반품은 어떻게 하나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "아이에게 맞는 옷을 샀는데 입혀보니 안 맞아서 교환하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "선물로 주문했는데 이미 같은 걸 가지고 있다고 하네요. 포장은 뜯었는데 환불 가능한가요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송 조회를 하고 싶은데, 제 주문 상태가 궁금해요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "사이즈를 잘못 선택한 것 같아서, 변경할 수 있는지 알고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "주문 취소를 하고 싶은데, 아직 배송 전이면 가능할까요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "택배를 받았는데 색상이 마음에 안 들어서 다른 걸로 바꿀 수 있나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송이 너무 지연되고 있어서 확인해보고 싶어요. 언제쯤 도착하나요?",
+        "predicted_node": "order_intent_router",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "결제한 지 얼마 안 됐는데, 환불 절차가 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "order_intent_router",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "이번 주말에 소개팅이 있는데, 세련되면서도 너무 튀지 않는 옷 추천해 줄 수 있어요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "다음 달 제주도로 여행 가는데, 사진 찍을 때 예쁘게 나올 수 있는 편한 옷이 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "요즘 직장 상사가 복장에 대해 신경 쓰라고 하셔서, 캐주얼하지 않으면서도 답답하지 않은 옷을 찾고 있어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "매일 아침 뭘 입을까 고민하는데, 아무거나 걸쳐도 괜찮은 기본템 있으면 좋겠어요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구 결혼식에 하객으로 가야 하는데, 나중에 평소에도 입을 수 있는 옷 추천해 줄 수 있어요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "곧 면접이 있는데, 너무 딱딱하지 않으면서 신뢰감을 줄 수 있는 옷이 뭐가 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "체형이 통통한 편인데, 날씬해 보이면서도 편안한 옷 찾고 있어요. 추천해 주세요!",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "40대 남성인데, 너무 젊어 보이지 않고 올드하지 않은 적당한 캐주얼룩 찾아주세요.",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "키가 작아서 비율이 좋아 보이는 코디가 필요해요. 어떤 스타일이 나을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "재택근무할 때 편하면서도 갑자기 화상회의가 잡혀도 괜찮은 옷 있을까요?",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "어제 길에서 본 옷이 너무 예뻐서 사진을 찍었어요. 이거랑 비슷한 거 찾을 수 있을까요? /products/12345.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "유튜브에서 본 스타일인데 캡처해놓은 게 있어요. 이런 느낌의 옷 찾아주세요! /products/67890.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "인스타그램에서 본 코디인데, 이 사진처럼 비슷한 옷을 추천해주실 수 있나요? /products/54321.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "쇼핑몰 광고에서 본 옷이 너무 마음에 들어요. 이거랑 비슷하면서 가격이 더 저렴한 거 있을까요? /products/98765.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "드라마에서 주인공이 입었던 옷인데, 그 사진으로 비슷한 상품 찾아줄 수 있어요? /products/11111.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구가 입고 온 옷이 진짜 예뻤어요. 사진 찍어왔는데, 같은 건 아니어도 비슷한 느낌의 옷이 있을까요? /products/22222.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외 쇼핑몰에서 본 옷인데, 직구는 좀 부담스러워서 국내에서 비슷한 제품 찾고 있어요. /products/33333.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "잡지에서 잘라둔 코디인데, 이런 느낌의 아이템들 추천해주시면 좋겠어요. /products/44444.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "작년에 구입한 옷인데 절판됐더라고요. 사진만 가지고 있는데, 이와 비슷한 디자인 찾을 수 있을까요? /products/55555.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "핀터레스트에 저장해둔 코디인데, 이 분위기를 그대로 재현할 수 있는 옷이 있을까요? /products/66666.jpg",
+        "predicted_node": "discovery_subagent",
+        "expected_node": "discovery_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "여기서 사면 2주 안에 배송된다고 들었는데, 그게 맞는지 확인하고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "택배를 받았는데 제품에 문제가 있어요. 개봉하면 반품이 불가능한지 궁금합니다.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "도서산간 지역에 사는데, 배송비가 추가로 얼마 더 드는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "친구가 선물해줬는데 영수증 없이도 교환이나 환불이 가능한지 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "세일 상품은 반품할 때 일반 상품이랑 같은 조건인지 아니면 다른 규정이 있는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외에서 구매한 제품인데 국내에서 반품할 때 절차가 어떻게 되는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "요즘 직구 많이 하는데, 관세 관련 안내가 있는지 여기는 어떤지 궁금해요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "적립금이 좀 쌓였는데, 이걸 현금처럼 자유롭게 쓸 수 있는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "한 달 넘게 사용했는데, 이런 경우에도 교환이나 환불이 가능한가요?",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "명절 기간에는 배송이 지연된다고 들었는데, 정확히 언제부터 언제까지 늦어지는지 알고 싶어요.",
+        "predicted_node": "policy_rag_subagent",
+        "expected_node": "policy_rag_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "작년에 구매한 코트가 거의 새것 같은데, 필요한 분께 드리고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "다이어트를 성공해서 예전 옷들이 다 커버렸는데, 그냥 버리기엔 아깝고 필요한 분께 주고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "임산부 때 입었던 옷이 이제 필요 없어서, 정리하려고 해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "해외에서 사온 브랜드 옷이 스타일에 안 맞아서 좋은 가격에 판매하고 싶은데, 가능할까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "결혼식 때만 입은 정장이 앞으로는 안 입을 것 같아서 상태 좋은 걸 넘기고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "유행이 지나서 더 이상 안 입는 옷들이 있는데, 상태가 괜찮아서 버리기 아까워요. 올릴 수 있을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "아이가 금방 커버려서 한 번도 못 입힌 아동복이 있는데, 필요한 분께 저렴하게 드리고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "온라인으로 샀는데 색상이 마음에 안 들어서 교환 대신 중고로 판매하고 싶어요.",
+        "predicted_node": "order_intent_router",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": false
+      },
+      {
+        "input": "이사 준비 중이라서 옷이 너무 많아요. 상태 좋은 것들 위주로 한꺼번에 판매하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "헬스장을 그만두면서 운동복이 필요 없어졌는데, 거의 새것이라 누군가에게 쓰이면 좋겠어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "최근에 산 신발이 너무 편하고 예뻐서 다른 분들에게 추천하고 싶어요. 어떻게 후기를 남기면 좋을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "솔직히 가격 대비 품질이 아쉬워서 제 경험을 공유해서 다른 분들이 실수하지 않게 하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "사이즈 고민하시는 분들 위해서 제 체형과 착용 사진을 공유하고 싶은데 어떻게 하면 될까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "한 달 정도 사용해보고 후기를 남기고 싶은데, 구매한 지 좀 됐어도 괜찮나요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "이 옷을 사기 전에 후기가 없어서 고민했었는데, 제 경험을 다른 분들과 나누고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "세탁 후에 약간 변형이 있었는데, 이런 점도 다른 구매자분들이 알면 좋을 것 같아서 공유할게요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "배송이 아주 빠르고 포장도 완벽해서 칭찬 후기를 어디에 남기면 좋을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "실제 착용 사진과 함께 자세한 후기를 남겨서 비슷한 체형분들에게 도움이 되고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "교환 과정에서 고객 서비스가 정말 좋았는데, 이런 경험도 후기로 남길 수 있을까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "선물로 받은 제품이 너무 마음에 들어서 추천 후기를 꼭 남기고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "생일 선물로 받은 상품권에 숫자 코드가 있는데, 이거 어디에 입력해야 할지 모르겠어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "회사 행사에서 받은 모바일 쿠폰 바코드 번호를 어떻게 등록해야 할까요?",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "부모님이 주신 명절 상품권에 코드가 적혀 있는데, 등록하는 방법이 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "명절에 받은 상품권 여러 장을 한 번에 등록할 수 있는지, 아니면 하나씩 해야 하는지 알고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "경품으로 받은 모바일 상품권 유효기간이 임박해서 빨리 등록해야 하는데, 방법을 알려주세요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "카카오톡 선물함에 있는 상품권 코드 입력하는 곳이 어디인지 알고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "신용카드 포인트로 받은 상품권 코드 등록 방법이 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "직원 복지 포인트로 받은 온라인 상품권, 이 쇼핑몰에서 쓸 수 있는지 확인하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "결혼 축하로 받은 상품권 여러 장을 합쳐서 등록할 수 있는지 궁금해요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      },
+      {
+        "input": "중고로 구매한 상품권이 일부 사용된 건지 확인하고 등록하고 싶어요.",
+        "predicted_node": "form_action_subagent",
+        "expected_node": "form_action_subagent",
+        "difficulty": "hard",
+        "correct": true
+      }
+    ]
+  }
+]

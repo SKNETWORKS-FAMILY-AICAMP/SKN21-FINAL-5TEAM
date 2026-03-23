@@ -1,0 +1,57 @@
+{
+  "id": "spring-thymeleaf-basic",
+  "site": "spring-mall",
+  "input": {
+    "analysis": {
+      "framework": {
+        "backend": "spring",
+        "frontend": "thymeleaf"
+      },
+      "auth": {
+        "auth_style": "session",
+        "signals": [
+          "SecurityFilterChain",
+          "HttpSession",
+          "@Controller"
+        ]
+      },
+      "product_api": [
+        "/api/v1/products"
+      ],
+      "order_api": [
+        "/api/v1/orders"
+      ],
+      "frontend_mount_points": [
+        "src/main/resources/templates/layout.html"
+      ],
+      "backend_entrypoints": [
+        "src/main/java/com/example/mall/Application.java"
+      ],
+      "route_prefixes": [
+        "/api/v1"
+      ]
+    },
+    "recommended_outputs": [
+      "chat_auth",
+      "order_adapter",
+      "product_adapter",
+      "frontend_patch"
+    ]
+  },
+  "expected": {
+    "proposed_files": [
+      "files/backend/chat_auth.py",
+      "files/backend/order_adapter_client.py",
+      "files/backend/product_adapter_client.py"
+    ],
+    "proposed_patches": [
+      "patches/frontend_widget_mount.patch"
+    ]
+  },
+  "forbidden": [
+    "spring-mall/src/main/java/",
+    "spring-mall/src/main/resources/",
+    "runtime/"
+  ],
+  "notes": "non-python storefront fixture broadens generator eval coverage without changing the MVP artifact contract"
+}

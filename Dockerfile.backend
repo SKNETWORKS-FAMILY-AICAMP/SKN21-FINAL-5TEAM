@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -6,20 +6,16 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libffi-dev \
+    libopenblas-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# uv 설치
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-# 의존성 먼저 복사 (캐시 활용)
-COPY pyproject.toml uv.lock ./
-
-# 의존성 설치
-RUN uv sync --frozen --no-dev
+# 백엔드 의존성 설치 (torch/torchvision 포함)
+COPY ecommerce/platform/backend/requirements.txt /app/ecommerce/platform/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/ecommerce/platform/backend/requirements.txt
 
 # 소스 코드 복사
 COPY . .
 
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "ecommerce.platform.backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "ecommerce.backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>RAG 평가와 고도화</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="theme.css" rel="stylesheet"/>
+</head>
+<body>
+<main class="slide">
+<div class="deco-ring"></div>
+<div class="deco-orb"></div>
+<div class="topbar">
+<p class="eyebrow">Result 02</p>
+<span class="page-number">10</span>
+</div>
+<section class="hero">
+<h1>RAG도 별도 평가 구조 적용,<br/>고도화 효과 확인</h1>
+<div class="accent-bar"></div>
+<p class="lead">정책성 응답과 설명형 답변의 핵심인 검색 품질과 grounding, 독립 평가셋 기반 측정</p>
+</section>
+<section class="split">
+<article class="panel dark">
+<p class="card-label">RAG Evaluation Structure</p>
+<table class="table" style="color:#f8fafc;">
+<tr><th>Retrieval</th><td>관련 문서 확보 여부</td></tr>
+<tr><th>Grounding</th><td>응답의 실제 근거 연결 여부</td></tr>
+<tr><th>Policy Fit</th><td>서비스 정책 충돌 여부</td></tr>
+<tr><th>Risk</th><td>환각, 일반화, 오래된 정보 인용</td></tr>
+</table>
+<div class="tag-row">
+<span class="tag">RAG</span>
+<span class="tag">Grounded Answer</span>
+<span class="tag">Hallucination Control</span>
+</div>
+</article>
+<div class="stack">
+<article class="metric">
+<p class="card-label">Retrieval Relevance</p>
+<div class="value">00.0%</div>
+<p class="caption"><span class="placeholder">실측값 입력</span> 검색 결과 적합도</p>
+</article>
+<article class="metric">
+<p class="card-label">Grounded Response</p>
+<div class="value">00.0%</div>
+<p class="caption"><span class="placeholder">실측값 입력</span> 근거 기반 응답 비율</p>
+</article>
+<article class="card">
+<p class="card-label">Refinement Message</p>
+<p>“RAG 추가”보다 “평가 가능한 모듈화”, 검색 품질 개선과 응답 신뢰도 개선의 분리 제시</p>
+</article>
+</div>
+</section>
+</main>
+</body>
+</html>

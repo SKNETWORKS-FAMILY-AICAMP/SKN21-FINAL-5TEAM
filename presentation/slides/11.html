@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>왜 평가 데이터셋이 필요했나</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="theme.css" rel="stylesheet"/>
+</head>
+<body>
+<main class="slide">
+<div class="deco-ring"></div>
+<div class="deco-orb"></div>
+<div class="topbar">
+<p class="eyebrow">Evaluation Need</p>
+<span class="page-number">07</span>
+</div>
+<section class="hero">
+<h1>문제는 수정 자체가 아니라<br/>개선 정도를 말할 수 없다는 점</h1>
+<div class="accent-bar"></div>
+<p class="lead">정성적 수정 기록만으로는 아키텍처 선택 근거 부족</p>
+</section>
+<section class="banner">
+<article class="quote-box dark">
+<p class="card-label">Turning Point</p>
+<p class="big-quote">좋아진 것 같다는 감각만으로는<br/>아키텍처 선택 근거 부족</p>
+</article>
+</section>
+<section class="grid-2" style="margin-top:16px;">
+<article class="card">
+<p class="card-label">Why It Was Necessary</p>
+<h3>평가셋 구축 필요</h3>
+<ul class="list">
+<li>정성 테스트만으로는 전후 비교 한계</li>
+<li>부분 개선이 전체 체감 품질을 왜곡 가능</li>
+<li>실패 지점 미분리 시 개선 방향 불명확</li>
+</ul>
+</article>
+<article class="card">
+<p class="card-label">Design Choice</p>
+<h3>구성 요소별 분리 평가</h3>
+<p>의도 해석, 툴 호출, RAG를 분리해 실제 효과가 난 개선 지점 식별</p>
+</article>
+</section>
+<p class="footnote">Research note: tool-using agent와 grounded response는 단일 점수보다 오류 유형 분리가 중요</p>
+</main>
+</body>
+</html>

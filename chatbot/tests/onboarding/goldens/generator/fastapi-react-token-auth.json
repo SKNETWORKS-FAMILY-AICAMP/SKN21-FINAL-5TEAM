@@ -1,0 +1,59 @@
+{
+  "id": "fastapi-react-token-auth",
+  "site": "saas-admin",
+  "input": {
+    "analysis": {
+      "framework": {
+        "backend": "fastapi",
+        "frontend": "react"
+      },
+      "auth": {
+        "auth_style": "bearer_token",
+        "signals": [
+          "Authorization",
+          "Depends(get_current_user)",
+          "access_token"
+        ]
+      },
+      "product_api": [
+        "/api/catalog/products",
+        "/api/catalog/products/{product_id}"
+      ],
+      "order_api": [
+        "/api/orders",
+        "/api/orders/{order_id}"
+      ],
+      "frontend_mount_points": [
+        "frontend/src/pages/Dashboard.tsx"
+      ],
+      "backend_entrypoints": [
+        "backend/app/main.py"
+      ],
+      "route_prefixes": [
+        "/api"
+      ]
+    },
+    "recommended_outputs": [
+      "chat_auth",
+      "order_adapter",
+      "product_adapter",
+      "frontend_patch"
+    ]
+  },
+  "expected": {
+    "proposed_files": [
+      "files/backend/chat_auth.py",
+      "files/backend/order_adapter_client.py",
+      "files/backend/product_adapter_client.py"
+    ],
+    "proposed_patches": [
+      "patches/frontend_widget_mount.patch"
+    ]
+  },
+  "forbidden": [
+    "saas-admin/backend/",
+    "saas-admin/frontend/",
+    "runtime/"
+  ],
+  "notes": "fastapi plus react token auth case should still be covered by the generic overlay artifact set"
+}

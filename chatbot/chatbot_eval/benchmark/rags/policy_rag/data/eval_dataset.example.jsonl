@@ -1,0 +1,1 @@
+{"id":"policy_001","user_query":"개봉한 상품도 환불할 수 있나요?","expected_query":"개봉 상품 환불 가능 조건","expected_doc_ids":["terms_12_2"],"must_include":["개봉 여부에 따른 조건"],"must_not_include":["문서에 없는 예외 규정"]}

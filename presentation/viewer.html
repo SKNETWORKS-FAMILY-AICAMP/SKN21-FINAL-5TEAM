@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation Viewer - AI Chatbot Project</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-bg: #0f172a;
+            --accent-color: #38bdf8;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans KR', 'Montserrat', sans-serif;
+            background-color: #000;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Slide Container */
+        .presentation-frame {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            background: #000;
+            overflow: hidden;
+        }
+
+        @media (max-height: 800px) {
+            .presentation-frame {
+                height: 85vh;
+                width: calc(85vh * 16 / 9);
+            }
+        }
+
+        iframe {
+            width: 1280px;
+            height: 720px;
+            border: none;
+            transition: opacity 0.3s ease;
+            transform-origin: top left;
+            position: absolute;
+        }
+
+        /* Navigation Controls */
+        .controls {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 12px 24px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 50px;
+            z-index: 100;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+
+        .controls:hover {
+            opacity: 1;
+        }
+
+        .nav-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            font-size: 1.2rem;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .nav-btn:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--accent-color);
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .slide-info {
+            font-weight: 600;
+            min-width: 80px;
+            text-align: center;
+            font-family: 'Montserrat', sans-serif;
+            letter-spacing: 1px;
+        }
+
+        /* Progress Bar - Hidden */
+        .progress-container {
+            display: none;
+        }
+
+        /* Controls - Hidden */
+        .controls {
+            display: none;
+        }
+
+        /* Slide List Drawer - Hidden */
+        .slide-list-trigger {
+            display: none;
+        }
+
+        .drawer {
+            display: none;
+        }
+
+        /* Keyboard Hint - Hidden */
+        .keyboard-hint {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="progress-container">
+        <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <button class="slide-list-trigger" id="openDrawer">
+        <i class="fas fa-list"></i> Slides
+    </button>
+
+    <div class="drawer" id="drawer">
+        <div class="drawer-header">
+            <span>Slide Deck</span>
+            <i class="fas fa-times close-drawer" id="closeDrawer"></i>
+        </div>
+        <div id="slideList">
+            <!-- Slide items will be injected here -->
+        </div>
+    </div>
+
+    <main class="presentation-frame">
+        <iframe id="slideFrame" src="slides/1.html"></iframe>
+    </main>
+
+    <div class="controls" id="controls">
+        <button class="nav-btn" id="prevBtn" title="Previous (Left Arrow)">
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        <div class="slide-info">
+            <span id="currentNum">1</span> / <span id="totalNum">16</span>
+        </div>
+        <button class="nav-btn" id="nextBtn" title="Next (Right Arrow)">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+        <button class="nav-btn" id="fullscreenBtn" title="Toggle Fullscreen (F)">
+            <i class="fas fa-expand"></i>
+        </button>
+    </div>
+
+    <div class="keyboard-hint">
+        Use Arrow Keys or Space to navigate
+    </div>
+
+    <script>
+        const slideDeck = [
+            { file: '1.html', title: '검증 가능한 고객상담 Action Agent' },
+            { file: '2.html', title: '발표 흐름' },
+            { file: '3.html', title: '왜 고객상담 문제인가' },
+            { file: '4.html', title: '왜 온라인 쇼핑, 왜 Action Agent인가' },
+            { file: '6.html', title: '개발 여정과 범위' },
+            { file: '10.html', title: '챗봇 아키텍처' },
+            { file: '11.html', title: '왜 평가 데이터셋이 필요했나' },
+            { file: '12.html', title: '평가 데이터셋 설계' },
+            { file: '13.html', title: '의도 및 툴 호출 평가 결과' },
+            { file: '15.html', title: 'RAG 평가와 고도화' },
+            { file: '7.html', title: '제품에서 플랫폼으로' },
+            { file: '8.html', title: '다중 웹사이트 검증 환경' },
+            { file: '9.html', title: '에이전틱 연동 워크플로우' },
+            { file: '16.html', title: '시연 흐름' },
+            { file: '19.html', title: '결론' },
+            { file: '20.html', title: 'Q&A' }
+        ];
+        const totalSlides = slideDeck.length;
+        const slideFrame = document.getElementById('slideFrame');
+        const currentNum = document.getElementById('currentNum');
+        const totalNum = document.getElementById('totalNum');
+        const slideList = document.getElementById('slideList');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const openDrawer = document.getElementById('openDrawer');
+        const closeDrawer = document.getElementById('closeDrawer');
+        const drawer = document.getElementById('drawer');
+        let currentSlide = parseInt(window.location.hash.substring(1), 10) || 1;
+
+        totalNum.textContent = totalSlides;
+
+        slideDeck.forEach((slide, index) => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'nav-btn';
+            item.style.width = '100%';
+            item.style.height = 'auto';
+            item.style.padding = '10px 12px';
+            item.style.borderRadius = '14px';
+            item.style.justifyContent = 'flex-start';
+            item.style.gap = '12px';
+            item.innerHTML = `<span style="font-family: Montserrat, sans-serif; min-width: 28px;">${String(index + 1).padStart(2, '0')}</span><span>${slide.title}</span>`;
+            item.onclick = () => jumpToSlide(index + 1);
+            slideList.appendChild(item);
+        });
+
+        function scaleSlide() {
+            const scaleX = window.innerWidth / 1280;
+            const scaleY = window.innerHeight / 720;
+            const scale = Math.min(scaleX, scaleY);
+            
+            slideFrame.style.transform = `scale(${scale})`;
+            
+            // 16:9 비율을 유지하면서 가득 찼을 때의 위치를 정중앙으로 계산
+            const left = (window.innerWidth - 1280 * scale) / 2;
+            const top = (window.innerHeight - 720 * scale) / 2;
+            
+            slideFrame.style.left = `${left}px`;
+            slideFrame.style.top = `${top}px`;
+        }
+
+        // 창 크기가 변할 때, 슬라이드가 로드될 때마다 리스케일링 및 포커스 관리
+        window.addEventListener('resize', scaleSlide);
+        
+        slideFrame.addEventListener('load', () => {
+            scaleSlide();
+            
+            // iframe 내부 클릭 시 키보드 입력이 씹히는 현상 방지:
+            // iframe 내부의 키 입력을 부모 창으로 전달합니다.
+            slideFrame.contentWindow.document.addEventListener('keydown', (e) => {
+                const eventClone = new KeyboardEvent('keydown', {
+                    key: e.key,
+                    code: e.code,
+                    location: e.location,
+                    ctrlKey: e.ctrlKey,
+                    shiftKey: e.shiftKey,
+                    altKey: e.altKey,
+                    metaKey: e.metaKey,
+                    repeat: e.repeat,
+                    bubbles: true
+                });
+                document.dispatchEvent(eventClone);
+                
+                // 스페이스바 방지 등 필요한 경우만
+                if ([' ', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)) {
+                    e.preventDefault();
+                }
+            });
+        });
+
+        // URL 해시(번호)가 직접 바뀌었을 때 (뒤로가기 등) 대응
+        window.addEventListener('hashchange', () => {
+            const hashNum = parseInt(window.location.hash.substring(1), 10);
+            if (hashNum && hashNum !== currentSlide) {
+                currentSlide = hashNum;
+                updateUI();
+            }
+        });
+
+        function updateUI() {
+            currentSlide = Math.max(1, Math.min(totalSlides, currentSlide));
+            window.location.hash = currentSlide;
+            currentNum.textContent = currentSlide;
+            const targetSrc = `slides/${slideDeck[currentSlide - 1].file}`;
+            if (slideFrame.src.indexOf(targetSrc) === -1) {
+                slideFrame.src = targetSrc;
+            }
+            prevBtn.disabled = currentSlide === 1;
+            nextBtn.disabled = currentSlide === totalSlides;
+        }
+
+        function jumpToSlide(num) {
+            currentSlide = Math.max(1, Math.min(totalSlides, num));
+            updateUI();
+            drawer.classList.remove('active');
+        }
+
+        function nextSlide() {
+            if (currentSlide < totalSlides) {
+                currentSlide++;
+                updateUI();
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlide > 1) {
+                currentSlide--;
+                updateUI();
+            }
+        }
+
+        // Event Listeners
+        prevBtn.onclick = prevSlide;
+        nextBtn.onclick = nextSlide;
+
+        fullscreenBtn.onclick = () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+                fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                    fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+                }
+            }
+        };
+
+        openDrawer.onclick = () => drawer.classList.add('active');
+        closeDrawer.onclick = () => drawer.classList.remove('active');
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            switch(e.key) {
+                case 'ArrowRight':
+                case 'ArrowDown':
+                case ' ':
+                case 'Enter':
+                    nextSlide();
+                    break;
+                case 'ArrowLeft':
+                case 'ArrowUp':
+                case 'Backspace':
+                    prevSlide();
+                    break;
+                case 'f':
+                case 'F':
+                    fullscreenBtn.click();
+                    break;
+                case 'l':
+                case 'L':
+                case 'Escape':
+                    if (drawer.classList.contains('active')) {
+                        drawer.classList.remove('active');
+                    } else if (e.key === 'l' || e.key === 'L') {
+                        drawer.classList.add('active');
+                    }
+                    break;
+            }
+        });
+
+        // Initialize
+        updateUI();
+        scaleSlide();
+    </script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>챗봇 아키텍처</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="theme.css" rel="stylesheet"/>
+</head>
+<body>
+<main class="slide">
+<div class="deco-ring"></div>
+<div class="deco-orb"></div>
+<div class="topbar">
+<p class="eyebrow">Architecture</p>
+<span class="page-number">06</span>
+</div>
+<section class="hero">
+<h1>신뢰도는 생성 품질보다<br/>파이프라인 실패율 관리의 문제</h1>
+<div class="accent-bar"></div>
+<p class="lead">의도 해석, 툴 호출, 실행, RAG, 응답 생성으로 분리한 평가 가능 구조</p>
+</section>
+<section class="flow" style="grid-template-columns:repeat(5, minmax(0, 1fr)); margin-top:24px;">
+<article class="flow-step"><span class="index">1</span><h3>User Query</h3><p>문의 수집, 세션·사용자 상태 전달</p></article>
+<article class="flow-step"><span class="index">2</span><h3>Intent Layer</h3><p>의도 해석, 액션 필요 여부 판단</p></article>
+<article class="flow-step"><span class="index">3</span><h3>Tool Policy</h3><p>대상 툴 선택, 파라미터 구성</p></article>
+<article class="flow-step"><span class="index">4</span><h3>Execution / RAG</h3><p>상태 조회, 정책 검색, 근거 확보</p></article>
+<article class="flow-step"><span class="index">5</span><h3>Response</h3><p>실행 결과 정리, 다음 행동 제안</p></article>
+</section>
+<section class="grid-2" style="margin-top:14px;">
+<article class="card"><p class="card-label">Evaluation Point</p><h3>평가 분리 필요</h3><p>의도 오류, 툴 오류, 근거 오류를 다른 문제로 분리</p></article>
+<article class="card dark"><p class="card-label">Design Principle</p><h3>실패 지점 측정 가능 구조</h3><p>오류 유형 분리와 전후 비교 가능성 중심 설계</p></article>
+</section>
+</main>
+</body>
+</html>

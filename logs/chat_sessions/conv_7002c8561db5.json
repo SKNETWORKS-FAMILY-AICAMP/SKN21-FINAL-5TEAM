@@ -1,0 +1,120 @@
+{
+  "conversation_id": "conv_7002c8561db5",
+  "user_id": 1,
+  "status": "completed",
+  "feedback_label": "good",
+  "messages": [
+    {
+      "role": "user",
+      "content": "교환하고싶어",
+      "at": "2026-03-14T04:39:14.019624+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다. 교환하실 주문을 선택해주세요.",
+      "at": "2026-03-14T04:39:14.019626+00:00"
+    },
+    {
+      "role": "user",
+      "content": "주문 선택 완료",
+      "at": "2026-03-14T04:39:17.802689+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "배송완료 정보가 없습니다. 배송 완료 후 환불/교환이 가능합니다.",
+      "at": "2026-03-14T04:39:17.802692+00:00"
+    },
+    {
+      "role": "user",
+      "content": "교환하고싶어",
+      "at": "2026-03-14T04:39:32.659396+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다. 교환하실 주문을 선택해주세요.",
+      "at": "2026-03-14T04:39:32.659400+00:00"
+    },
+    {
+      "role": "user",
+      "content": "주문 선택 완료",
+      "at": "2026-03-14T04:39:37.408762+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "교환할 옵션을 선택해주세요.",
+      "at": "2026-03-14T04:39:37.408774+00:00"
+    },
+    {
+      "role": "user",
+      "content": "옵션 선택 완료",
+      "at": "2026-03-14T04:39:42.188892+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "교환 접수를 진행할까요? (왕복 배송비: 6,000원, 요청 수량: 1, 가용 재고: 10)",
+      "at": "2026-03-14T04:39:42.188896+00:00"
+    },
+    {
+      "role": "user",
+      "content": "승인 선택",
+      "at": "2026-03-14T04:39:49.266251+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "교환 접수가 완료되었습니다. 수거 및 재배송이 진행됩니다.",
+      "at": "2026-03-14T04:39:49.266254+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": "상담원: 배송완료 정보가 없습니다. 배송 완료 후 환불/교환이 가능합니다.",
+    "order_context": {
+      "pending_action": "exchange",
+      "action_status": "completed",
+      "awaiting_resume_for": null,
+      "last_tool": "exchange",
+      "last_ui_payload": null,
+      "new_option_id": 12489,
+      "last_action_status": "processing (exchange)"
+    },
+    "search_context": {},
+    "ui_action_required": null,
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "교환하고싶어",
+      "output": "최근 30일 이내 주문 내역입니다. 교환하실 주문을 선택해주세요."
+    },
+    {
+      "turn_index": 1,
+      "input": "주문 선택 완료",
+      "output": "배송완료 정보가 없습니다. 배송 완료 후 환불/교환이 가능합니다."
+    },
+    {
+      "turn_index": 2,
+      "input": "교환하고싶어",
+      "output": "최근 30일 이내 주문 내역입니다. 교환하실 주문을 선택해주세요."
+    },
+    {
+      "turn_index": 3,
+      "input": "주문 선택 완료",
+      "output": "교환할 옵션을 선택해주세요."
+    },
+    {
+      "turn_index": 4,
+      "input": "옵션 선택 완료",
+      "output": "교환 접수를 진행할까요? (왕복 배송비: 6,000원, 요청 수량: 1, 가용 재고: 10)"
+    },
+    {
+      "turn_index": 5,
+      "input": "승인 선택",
+      "output": "교환 접수가 완료되었습니다. 수거 및 재배송이 진행됩니다."
+    }
+  ],
+  "started_at": "2026-03-14T04:39:14.019618+00:00",
+  "ended_at": "2026-03-14T04:39:54.128269+00:00",
+  "updated_at": "2026-03-14T04:39:54.128269+00:00",
+  "reset_required": true
+}

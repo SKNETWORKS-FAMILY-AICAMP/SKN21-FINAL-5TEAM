@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>평가 데이터셋 설계</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="theme.css" rel="stylesheet"/>
+</head>
+<body>
+<main class="slide">
+<div class="deco-ring"></div>
+<div class="deco-orb"></div>
+<div class="topbar">
+<p class="eyebrow">Evaluation Design</p>
+<span class="page-number">08</span>
+</div>
+<section class="hero">
+<h1>평가 구조,<br/>3개의 축으로 분리</h1>
+<div class="accent-bar"></div>
+<p class="lead">한 숫자만으로는 설명 불가능한 개선 지점, 의도·툴 호출·RAG로 분리한 평가 구조</p>
+</section>
+<section class="grid-3" style="margin-top:18px;">
+<article class="card dark">
+<p class="card-label">Axis 01</p>
+<h3>Intent Understanding</h3>
+<p>문의 요구 파악 정확도 평가</p>
+<div class="tag-row">
+<span class="tag">의도 분류</span>
+<span class="tag">슬롯 누락 탐지</span>
+<span class="tag">모호한 질의 처리</span>
+</div>
+</article>
+<article class="card">
+<p class="card-label">Axis 02</p>
+<h3>Tool Calling</h3>
+<p>툴 호출 시점, 툴 선택, 파라미터 구성 정확도 확인</p>
+<div class="tag-row">
+<span class="tag">툴 선택 정확도</span>
+<span class="tag">잘못된 호출 방지</span>
+<span class="tag">파라미터 완결성</span>
+</div>
+</article>
+<article class="card">
+<p class="card-label">Axis 03</p>
+<h3>RAG Quality</h3>
+<p>검색 정보의 응답 근거화와 환각 감소 여부 검증</p>
+<div class="tag-row">
+<span class="tag">retrieval relevance</span>
+<span class="tag">grounding</span>
+<span class="tag">정책 일치성</span>
+</div>
+</article>
+</section>
+<section class="grid-2" style="margin-top:14px;">
+<article class="card">
+<p class="card-label">Why This Matters</p>
+<h3>부분 실패 식별 가능</h3>
+<p>의도 오류와 툴 오류, 툴 오류와 근거 오류의 분리</p>
+</article>
+<article class="card">
+<p class="card-label">How To Present</p>
+<h3>축별 결과 분리 제시</h3>
+<p>의도·툴 호출 결과 우선, RAG 결과는 별도 슬라이드 구성</p>
+</article>
+</section>
+</main>
+</body>
+</html>

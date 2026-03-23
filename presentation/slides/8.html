@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>다중 웹사이트 검증 환경</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="theme.css" rel="stylesheet"/>
+</head>
+<body>
+<main class="slide">
+<div class="deco-ring"></div>
+<div class="deco-orb"></div>
+<div class="topbar">
+<p class="eyebrow">Validation Sites</p>
+<span class="page-number">12</span>
+</div>
+<section class="hero">
+<h1>두 개의 목업 사이트,<br/>의도적으로 다른 조건 구성</h1>
+<div class="accent-bar"></div>
+<p class="lead">같은 조건 반복보다, 서로 다른 프레임워크·로그인·데이터 구조에서의 일반화 가능성 확인</p>
+</section>
+<section class="grid-2" style="margin-top:28px;">
+<article class="site-card dark">
+<p class="card-label">Site A · Food</p>
+<h3>주문 중심 커머스 시나리오</h3>
+<ul class="list" style="color:rgba(248,250,252,0.82);">
+<li>음식 주문/상태 확인 중심의 빠른 상담 플로우</li>
+<li>한정된 액션을 빠르게 실행하는 운영형 구조</li>
+<li>즉시성 높은 문의에서 챗봇 개입 효과 확인</li>
+</ul>
+</article>
+<article class="site-card">
+<p class="card-label">Site B · Bilyeo</p>
+<h3>대여/예약 중심 서비스 시나리오</h3>
+<ul class="list">
+<li>상품 탐색과 예약/대여 조건 확인이 함께 필요한 구조</li>
+<li>로그인, 계정, 예약 정보가 결합된 복합 문의</li>
+<li>다른 스키마와 인증 흐름에서도 동일 구조가 통하는지 검증</li>
+</ul>
+</article>
+</section>
+<section class="grid-4" style="margin-top:18px;">
+<article class="card"><p class="card-label">Framework</p><h3 style="font-size:20px;">서로 다른 UI 구조</h3><p>하드코딩 의존을 줄이는 마운트 포인트 탐색</p></article>
+<article class="card"><p class="card-label">Auth</p><h3 style="font-size:20px;">서로 다른 로그인</h3><p>서로 다른 세션·인증 조건에서도 가능한 상담 액션 연결</p></article>
+<article class="card"><p class="card-label">Data</p><h3 style="font-size:20px;">서로 다른 DB</h3><p>주문·상품·예약 데이터 모델 차이를 흡수하는 어댑터 계층</p></article>
+<article class="card"><p class="card-label">Goal</p><h3 style="font-size:20px;">자동 연동 가능성</h3><p>특정 사이트 맞춤형 봇이 아닌 확장 가능한 SaaS 구조</p></article>
+</section>
+</main>
+</body>
+</html>

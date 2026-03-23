@@ -1,0 +1,13 @@
+{
+    "base": {
+        "class_a": 10000,
+        "class_b": 10000,
+        "storage_bytes": 1073741824
+    },
+    "current": {
+        "month": "2026-03",
+        "class_a": 10284,
+        "class_b": 12754,
+        "storage_bytes": 1086759739
+    }
+}

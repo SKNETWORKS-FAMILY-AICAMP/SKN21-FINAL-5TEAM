@@ -1,0 +1,72 @@
+{
+  "conversation_id": "conv_dd761306908b",
+  "user_id": 3,
+  "status": "in_progress",
+  "feedback_label": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "환불좀 해줘",
+      "at": "2026-03-14T00:48:23.458282+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다. (환불 가능한 주문이 없습니다.)",
+      "at": "2026-03-14T00:48:23.458284+00:00"
+    },
+    {
+      "role": "user",
+      "content": "교환좀 해줘",
+      "at": "2026-03-14T00:48:28.731928+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다. (환불 가능한 주문이 없습니다.)",
+      "at": "2026-03-14T00:48:28.731932+00:00"
+    },
+    {
+      "role": "user",
+      "content": "주문취소좀 해줘",
+      "at": "2026-03-14T00:48:34.486657+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다. (환불 가능한 주문이 없습니다.)",
+      "at": "2026-03-14T00:48:34.486660+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": null,
+    "order_context": {
+      "pending_action": "refund",
+      "action_status": "waiting_user",
+      "awaiting_resume_for": "order_selection",
+      "last_tool": "refund"
+    },
+    "search_context": {},
+    "ui_action_required": "show_order_list",
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "환불좀 해줘",
+      "output": "최근 30일 이내 주문 내역입니다. (환불 가능한 주문이 없습니다.)"
+    },
+    {
+      "turn_index": 1,
+      "input": "교환좀 해줘",
+      "output": "최근 30일 이내 주문 내역입니다. (환불 가능한 주문이 없습니다.)"
+    },
+    {
+      "turn_index": 2,
+      "input": "주문취소좀 해줘",
+      "output": "최근 30일 이내 주문 내역입니다. (환불 가능한 주문이 없습니다.)"
+    }
+  ],
+  "started_at": "2026-03-14T00:48:23.458270+00:00",
+  "ended_at": null,
+  "updated_at": "2026-03-14T00:48:34.486667+00:00",
+  "reset_required": false
+}

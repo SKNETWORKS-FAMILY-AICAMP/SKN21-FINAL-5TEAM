@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>마일스톤</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet"/>
+<style>body {
+    margin: 0;
+    padding: 0;
+    font-family: "Noto Sans KR", sans-serif;
+    background-color: #fff
+    }
+.slide-container {
+    width: 1280px;
+    height: 720px;
+    display: flex;
+    position: relative;
+    background-color: #fff;
+    overflow: hidden
+    }
+.left-content {
+    width: 35%;
+    height: 100%;
+    padding: 60px 50px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    z-index: 10
+    }
+.right-content {
+    width: 65%;
+    height: 100%;
+    padding: 60px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    z-index: 10
+    }
+.heading-medium {
+    font-family: "Montserrat", sans-serif;
+    font-weight: 700;
+    font-size: 22px;
+    color: #999;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 3px
+    }
+.heading-large {
+    font-family: "Montserrat", "Noto Sans KR", sans-serif;
+    font-weight: 900;
+    font-size: 56px;
+    line-height: 1.1;
+    color: #000;
+    margin-bottom: 30px
+    }
+.accent-bar {
+    width: 80px;
+    height: 6px;
+    background-color: #000;
+    margin-bottom: 30px
+    }
+.body-text {
+    font-family: "Noto Sans KR", sans-serif;
+    font-size: 18px;
+    color: #666;
+    line-height: 1.8
+    }
+.milestone-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px
+    }
+.milestone-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    background-color: #f8f8f8;
+    padding: 20px 25px;
+    border-radius: 8px;
+    border-left: 4px solid #000;
+    transition: all 0.3s ease
+    }
+.milestone-item:hover {
+    background-color: #f0f0f0;
+    transform: translatex(5px)
+    }
+.milestone-icon {
+    width: 45px;
+    height: 45px;
+    background-color: #000;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 18px;
+    flex-shrink: 0
+    }
+.milestone-content {
+    flex: 1
+    }
+.milestone-title {
+    font-family: "Noto Sans KR", sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    color: #000;
+    margin-bottom: 5px
+    }
+.milestone-date {
+    font-family: "Montserrat", sans-serif;
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 8px
+    }
+.milestone-desc {
+    font-family: "Noto Sans KR", sans-serif;
+    font-size: 13px;
+    color: #999;
+    line-height: 1.4
+    }
+.circle-decoration {
+    position: absolute;
+    border-radius: 50%;
+    z-index: 0
+    }
+.circle-1 {
+    width: 200px;
+    height: 200px;
+    border: 20px solid #f5f5f5;
+    bottom: -80px;
+    left: -80px;
+    opacity: 0.5
+    }
+.circle-2 {
+    width: 150px;
+    height: 150px;
+    border: 15px solid #f5f5f5;
+    top: 60px;
+    right: -60px;
+    opacity: 0.3
+    }
+.pattern-dots {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: radial-gradient(#000 1px, transparent 1px);
+    background-size: 25px 25px;
+    opacity: 0.02;
+    z-index: 0
+    }</style>
+</head>
+<body>
+<div class="slide-container">
+<div class="pattern-dots"></div>
+<div class="circle-decoration circle-1"></div>
+<div class="circle-decoration circle-2"></div>
+
+<!-- Left Content -->
+<div class="left-content">
+<div style="position: relative;
+z-index: 2">
+<p class="heading-medium">MILESTONES</p>
+<h1 class="heading-large">마일스톤</h1>
+<div class="accent-bar"></div>
+<p class="body-text">
+프로젝트의 주요 진행 단계와 핵심 성과물을 체계적으로 관리합니다.
+</p>
+</div>
+</div>
+
+<!-- Right Content -->
+<div class="right-content">
+<div class="milestone-list">
+<!-- Milestone 1 -->
+<div class="milestone-item">
+<div class="milestone-icon">
+<i class="fas fa-clipboard-list"></i>
+</div>
+<div class="milestone-content">
+<h3 class="milestone-title">요구사항 분석 완료</h3>
+<p class="milestone-date">2026.03.01 - 2026.03.31</p>
+<p class="milestone-desc">비즈니스 요구사항 정의서 및 기술 명세서 작성</p>
+</div>
+</div>
+
+<!-- Milestone 2 -->
+<div class="milestone-item">
+<div class="milestone-icon">
+<i class="fas fa-pencil-ruler"></i>
+</div>
+<div class="milestone-content">
+<h3 class="milestone-title">UI/UX 설계 완료</h3>
+<p class="milestone-date">2026.04.01 - 2026.04.15</p>
+<p class="milestone-desc">와이어프레임 및 프로토타입 제작, 디자인 시스템 구축</p>
+</div>
+</div>
+
+<!-- Milestone 3 -->
+<div class="milestone-item">
+<div class="milestone-icon">
+<i class="fas fa-code"></i>
+</div>
+<div class="milestone-content">
+<h3 class="milestone-title">개발 완료</h3>
+<p class="milestone-date">2026.04.16 - 2026.07.15</p>
+<p class="milestone-desc">프론트엔드/백엔드 개발, AI 챗봇 모델 학습 및 통합</p>
+</div>
+</div>
+
+<!-- Milestone 4 -->
+<div class="milestone-item">
+<div class="milestone-icon">
+<i class="fas fa-vial"></i>
+</div>
+<div class="milestone-content">
+<h3 class="milestone-title">테스트 및 QA 완료</h3>
+<p class="milestone-date">2026.07.16 - 2026.08.15</p>
+<p class="milestone-desc">기능 테스트, 성능 테스트, 사용자 테스트 진행</p>
+</div>
+</div>
+
+<!-- Milestone 5 -->
+<div class="milestone-item">
+<div class="milestone-icon">
+<i class="fas fa-rocket"></i>
+</div>
+<div class="milestone-content">
+<h3 class="milestone-title">정식 서비스 런칭</h3>
+<p class="milestone-date">2026.08.16 - 2026.08.31</p>
+<p class="milestone-desc">프로덕션 환경 배포, 모니터링 시스템 구축</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

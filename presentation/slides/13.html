@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>의도 및 툴 호출 평가 결과</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="theme.css" rel="stylesheet"/>
+</head>
+<body>
+<main class="slide">
+<div class="deco-ring"></div>
+<div class="deco-orb"></div>
+<div class="topbar">
+<p class="eyebrow">Result 01</p>
+<span class="page-number">09</span>
+</div>
+<section class="hero">
+<h1>의도 해석과 툴 호출,<br/>전후 비교가 바로 읽히는 결과 구성</h1>
+<div class="accent-bar"></div>
+<p class="lead">실측값 중심 결과 슬라이드, 숫자 자체보다 개선 항목과 줄어든 대표 오류가 핵심</p>
+</section>
+<section class="grid-4" style="margin-top:28px;">
+<article class="metric dark">
+<p class="card-label">Intent Accuracy</p>
+<div class="value">00.0%</div>
+<p class="caption"><span class="placeholder">실측값 입력</span> 의도 분류 정확도</p>
+</article>
+<article class="metric">
+<p class="card-label">Tool Selection</p>
+<div class="value">00.0%</div>
+<p class="caption"><span class="placeholder">실측값 입력</span> 툴 선택 정확도</p>
+</article>
+<article class="metric">
+<p class="card-label">Invalid Calls</p>
+<div class="value">-00.0%</div>
+<p class="caption"><span class="placeholder">실측값 입력</span> 잘못된 호출 감소율</p>
+</article>
+<article class="metric">
+<p class="card-label">Coverage</p>
+<div class="value">00 / 00</div>
+<p class="caption"><span class="placeholder">실측값 입력</span> 정상 처리 시나리오 수</p>
+</article>
+</section>
+<section class="grid-2" style="margin-top:20px;">
+<article class="card dark">
+<p class="card-label">Before vs After</p>
+<table class="table" style="color:#f8fafc;">
+<tr><th>Before</th><td>잘못된 툴 선택, 파라미터 누락, 실행 실패</td></tr>
+<tr><th>After</th><td>의도 해석·툴 정책 분리 개선, 오류 유형 감소</td></tr>
+<tr><th>Message</th><td>“성능 향상”보다 “줄어든 실패 유형” 중심 제시</td></tr>
+</table>
+</article>
+<article class="card">
+<p class="card-label">Representative Errors</p>
+<ul class="list">
+<li>배송 조회 질의를 FAQ 응답으로 처리한 케이스</li>
+<li>취소 가능 여부 확인 없이 취소 툴을 호출한 케이스</li>
+<li>사용자 식별 정보 누락으로 재질문이 길어진 케이스</li>
+</ul>
+</article>
+</section>
+<p class="footnote">주의: 임의 수치 입력 금지, 팀 실측값으로 최종 교체</p>
+</main>
+</body>
+</html>

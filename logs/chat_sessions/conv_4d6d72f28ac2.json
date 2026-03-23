@@ -1,0 +1,42 @@
+{
+  "conversation_id": "conv_4d6d72f28ac2",
+  "user_id": 3,
+  "status": "in_progress",
+  "feedback_label": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "교환해줘",
+      "at": "2026-03-14T00:54:58.136792+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "교환할 주문을 선택해주세요.",
+      "at": "2026-03-14T00:54:58.136795+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": null,
+    "order_context": {
+      "pending_action": "exchange",
+      "action_status": "waiting_user",
+      "awaiting_resume_for": null,
+      "last_tool": "exchange"
+    },
+    "search_context": {},
+    "ui_action_required": null,
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "교환해줘",
+      "output": "교환할 주문을 선택해주세요."
+    }
+  ],
+  "started_at": "2026-03-14T00:54:58.136787+00:00",
+  "ended_at": null,
+  "updated_at": "2026-03-14T00:54:58.136800+00:00",
+  "reset_required": false
+}

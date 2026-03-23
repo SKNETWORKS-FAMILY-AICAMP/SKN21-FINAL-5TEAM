@@ -1,0 +1,68 @@
+{
+  "conversation_id": "conv_f2281152751d",
+  "user_id": 1,
+  "status": "in_progress",
+  "feedback_label": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "리뷰를 작성하고싶어",
+      "at": "2026-03-16T04:56:06.129144+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다. 리뷰를 작성하실 주문을 선택해주세요.",
+      "at": "2026-03-16T04:56:06.129150+00:00"
+    },
+    {
+      "role": "user",
+      "content": "주문 선택 완료",
+      "at": "2026-03-16T04:56:11.397181+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "리뷰 세부 정보를 입력해주세요.",
+      "at": "2026-03-16T04:56:11.397196+00:00"
+    },
+    {
+      "role": "user",
+      "content": "{\"event\":\"review_submitted\",\"action\":\"create_review\",\"rating\":5,\"content\":\"Avirate Black Dress를 입었을 때, 마치 특별한 날의 주인공이 된 듯한 기분이 들었습니다. 고급스러운 소재와 완벽한 핏이 더해져 자신감이 넘쳤어요.\",\"order_id\":\"ORD-20260316-124034-972\",\"product_id\":\"59972\",\"source\":\"review_form_ui\"}",
+      "at": "2026-03-16T04:56:21.082151+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "리뷰가 성공적으로 등록되었습니다! 🎉\n\n- **리뷰 ID**: 1\n- **주문번호**: ORD-20260316-124034-972\n\n감사합니다! 다른 도움이 필요하시면 말씀해 주세요.",
+      "at": "2026-03-16T04:56:21.082164+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": "Avirate Black Dress를 입었을 때, 고급스러운 소재와 완벽한 핏이 더해져 자신감이 넘쳤다.",
+    "order_context": {},
+    "search_context": {},
+    "ui_action_required": null,
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "site_id": "site-c"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "리뷰를 작성하고싶어",
+      "output": "최근 30일 이내 주문 내역입니다. 리뷰를 작성하실 주문을 선택해주세요."
+    },
+    {
+      "turn_index": 1,
+      "input": "주문 선택 완료",
+      "output": "리뷰 세부 정보를 입력해주세요."
+    },
+    {
+      "turn_index": 2,
+      "input": "{\"event\":\"review_submitted\",\"action\":\"create_review\",\"rating\":5,\"content\":\"Avirate Black Dress를 입었을 때, 마치 특별한 날의 주인공이 된 듯한 기분이 들었습니다. 고급스러운 소재와 완벽한 핏이 더해져 자신감이 넘쳤어요.\",\"order_id\":\"ORD-20260316-124034-972\",\"product_id\":\"59972\",\"source\":\"review_form_ui\"}",
+      "output": "리뷰가 성공적으로 등록되었습니다! 🎉\n\n- **리뷰 ID**: 1\n- **주문번호**: ORD-20260316-124034-972\n\n감사합니다! 다른 도움이 필요하시면 말씀해 주세요."
+    }
+  ],
+  "started_at": "2026-03-16T04:56:06.129124+00:00",
+  "ended_at": null,
+  "updated_at": "2026-03-16T04:56:21.082180+00:00",
+  "reset_required": false
+}

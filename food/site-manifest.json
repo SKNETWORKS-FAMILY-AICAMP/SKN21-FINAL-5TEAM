@@ -1,0 +1,152 @@
+{
+  "site_id": "food",
+  "site_name": "YAAM Food Shop",
+  "environment": "development",
+
+  "frontend_framework": {
+    "name": "react",
+    "version": "18.0.0",
+    "rendering_mode": "csr"
+  },
+  "backend_framework": {
+    "name": "django_rest_framework",
+    "version": "4.2.x"
+  },
+
+  "routing_structure": {
+    "type": "file_based",
+    "patterns": [
+      "/",
+      "/login",
+      "/mypage",
+      "/orders",
+      "/api/products/",
+      "/api/orders/",
+      "/api/users/login/"
+    ]
+  },
+  "page_types": [
+    "home",
+    "login",
+    "orders",
+    "mypage"
+  ],
+
+  "auth": {
+    "auth_type": "session_cookie",
+    "login_methods": ["email_password"],
+    "session_storage": "http_only_cookie",
+    "token_location": "cookie",
+    "refresh_strategy": "unknown",
+    "user_identity_method": {
+      "type": "api_me",
+      "endpoint": "/api/users/me/",
+      "id_field": "user.id"
+    }
+  },
+
+  "data_sources": {
+    "main_product_source": {
+      "type": "rest_api",
+      "endpoint": "/api/products/",
+      "method": "GET"
+    },
+    "order_data_source": {
+      "type": "rest_api",
+      "endpoint": "/api/orders/",
+      "method": "GET"
+    },
+    "faq_policy_source": {
+      "type": "none",
+      "paths": []
+    },
+    "media_source": {
+      "type": "django_media",
+      "base_url": "http://localhost:8000/media/"
+    }
+  },
+
+  "api": {
+    "api_exists": true,
+    "api_style": "rest",
+    "base_url": "http://localhost:8000",
+    "public_apis": [
+      "/api/products/",
+      "/api/orders/",
+      "/api/orders/{order_id}/",
+      "/api/orders/{order_id}/actions/",
+      "/api/users/login/"
+    ],
+    "protected_apis": [
+      "/api/users/me/",
+      "/api/users/logout/"
+    ]
+  },
+
+  "database": {
+    "db_type": "sqlite3",
+    "rdb_core_tables": [
+      "auth_user",
+      "products_product",
+      "orders_order",
+      "users_sessiontoken"
+    ]
+  },
+
+  "widget": {
+    "widget_injection_point": "none",
+    "available_locations": [],
+    "floating_button_supported": false,
+    "page_context_extractable": false
+  },
+
+  "security": {
+    "robots_txt_restrictions": [],
+    "csp_restrictions": [],
+    "cors_restrictions": [],
+    "bot_protection": {
+      "enabled": false,
+      "type": null
+    },
+    "rate_limit_notes": "not_configured"
+  },
+
+  "product_domain": {
+    "product_id_field": "id",
+    "variant_id_field": null,
+    "category_id_field": null,
+    "price_field": "price",
+    "stock_field": "stock",
+    "image_fields": ["image"]
+  },
+
+  "agent_integration": {
+    "adapter_ready": false,
+    "retrieval_ready": false,
+    "tool_api_ready": false,
+    "login_required_for_chat": false,
+    "login_required_tools": [],
+    "public_tools": []
+  },
+
+  "retrieval_indexing": {
+    "index_targets": [
+      "products",
+      "orders"
+    ],
+    "image_vectorization_possible": false,
+    "chunking_strategy": {
+      "product": "entity_level",
+      "faq": "none",
+      "policy": "none",
+      "review": "none"
+    }
+  },
+
+  "notes": [
+    "React(CRA) + Django REST + SQLite 구조",
+    "세션은 커스텀 SessionToken 모델을 HttpOnly 쿠키(session_token)로 관리",
+    "카트/상품상세/FAQ/정책 페이지는 현재 구현되어 있지 않음",
+    "주문 API는 로그인 세션 기준으로 주문조회/취소/환불/교환 액션을 지원"
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "conversation_id": "conv_33cfa08ee765",
+  "user_id": 1,
+  "status": "completed",
+  "feedback_label": "good",
+  "messages": [
+    {
+      "role": "user",
+      "content": "주문 목록을 보여주세요",
+      "at": "2026-03-16T03:37:15.924490+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "최근 30일 이내 주문 내역입니다.",
+      "at": "2026-03-16T03:37:15.924500+00:00"
+    }
+  ],
+  "selected_state": {
+    "conversation_summary": null,
+    "order_context": {
+      "pending_action": "list_orders",
+      "action_status": "waiting_user",
+      "awaiting_resume_for": null,
+      "last_tool": "order_list",
+      "last_ui_payload": {
+        "ui_action": "show_order_list",
+        "ui_data": [
+          {
+            "order_id": "ORD-20260313-104549-378",
+            "date": "2026-03-13",
+            "status": "cancelled",
+            "status_label": "주문 취소",
+            "product_name": "상품 12489 등 1건",
+            "amount": 62912.0,
+            "delivered_at": null,
+            "can_cancel": false,
+            "can_return": false,
+            "can_exchange": false,
+            "cancel_reason": null,
+            "return_reason": null,
+            "exchange_reason": null,
+            "exchange_type": null
+          },
+          {
+            "order_id": "ORD-20260303-0003",
+            "date": "2026-03-03",
+            "status": "paid",
+            "status_label": "결제 완료",
+            "product_name": "상품 35 등 1건",
+            "amount": 63063.0,
+            "delivered_at": null,
+            "can_cancel": true,
+            "can_return": false,
+            "can_exchange": true,
+            "cancel_reason": null,
+            "return_reason": null,
+            "exchange_reason": null,
+            "exchange_type": "pre_shipment"
+          },
+          {
+            "order_id": "ORD-20260303-0002",
+            "date": "2026-03-03",
+            "status": "shipped",
+            "status_label": "배송중",
+            "product_name": "상품 12297 등 1건",
+            "amount": 33000.0,
+            "delivered_at": null,
+            "can_cancel": false,
+            "can_return": true,
+            "can_exchange": true,
+            "cancel_reason": null,
+            "return_reason": null,
+            "exchange_reason": null,
+            "exchange_type": "post_shipment"
+          },
+          {
+            "order_id": "ORD-20260303-0001",
+            "date": "2026-03-03",
+            "status": "refunded",
+            "status_label": "환불 완료",
+            "product_name": "상품 12297 등 1건",
+            "amount": 18000.0,
+            "delivered_at": null,
+            "can_cancel": false,
+            "can_return": false,
+            "can_exchange": false,
+            "cancel_reason": null,
+            "return_reason": null,
+            "exchange_reason": null,
+            "exchange_type": null
+          }
+        ],
+        "requires_selection": false,
+        "prior_action": "list_orders",
+        "message": "최근 30일 이내 주문 내역입니다."
+      }
+    },
+    "search_context": {},
+    "ui_action_required": "show_order_list",
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "site_id": "site-c"
+  },
+  "training_pairs": [
+    {
+      "turn_index": 0,
+      "input": "주문 목록을 보여주세요",
+      "output": "최근 30일 이내 주문 내역입니다."
+    }
+  ],
+  "started_at": "2026-03-16T03:37:15.924457+00:00",
+  "ended_at": "2026-03-16T03:37:19.156058+00:00",
+  "updated_at": "2026-03-16T03:37:19.156058+00:00",
+  "reset_required": true
+}
