@@ -14,6 +14,7 @@ from ecommerce.backend.app.models import (
     OrderItem,
     Product,
     ProductOption,
+    IssuedVoucher,
 )
 from chatbot.src.tools.base import BaseAPITool
 from chatbot.src.tools.order_tools import (
@@ -27,6 +28,39 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    finally:
+        db.close()
+
+
+@tool
+def register_gift_card(
+    voucher_code: str,
+    user_id: int = 1,
+) -> dict:
+    """
+    상품권을 등록하여 포인트로 충전합니다.
+
+    Args:
+        voucher_code: 상품권 코드 (문자열)
+        user_id: 사용자 ID (기본값 1)
+
+    Returns:
+        성공 여부 및 메시지
+    """
+    from ecommerce.backend.app.router.points.crud import redeem_voucher_to_point
+    
+    db = SessionLocal()
+    try:
+        voucher = redeem_voucher_to_point(db, user_id, voucher_code)
+        return {
+            "success": True,
+            "message": f"상품권({voucher_code})이 성공적으로 등록되었습니다. {voucher.amount:,.0f}포인트가 충전되었습니다.",
+            "amount": float(voucher.amount),
+        }
+    except ValueError as ve:
+        return {"success": False, "message": str(ve)}
+    except Exception as e:
+        return {"success": False, "message": f"상품권 등록 중 오류가 발생했습니다: {str(e)}"}
     finally:
         db.close()
 
