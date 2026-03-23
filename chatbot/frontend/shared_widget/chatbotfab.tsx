@@ -1719,9 +1719,8 @@ export default function ChatbotFab({
           </div>
           {uploadNotice && (
             <div
-              className={`${styles.uploadStatus} ${
-                uploadNotice.isError ? styles.uploadStatusError : ''
-              }`}
+              className={`${styles.uploadStatus} ${uploadNotice.isError ? styles.uploadStatusError : ''
+                }`}
             >
               {uploadNotice.text}
             </div>
