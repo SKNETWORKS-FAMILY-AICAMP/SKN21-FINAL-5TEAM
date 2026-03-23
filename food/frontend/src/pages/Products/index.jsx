@@ -1,10 +1,33 @@
 import React, { useEffect, useState } from "react";
+import { FOOD_API_BASE, buildFoodMediaUrl } from "../../api/api";
 import layout from "../../styles/layout.module.css";
 import styles from "./products.module.css";
 
-const PRODUCTS_ENDPOINT = "/api/products/";
+const PRODUCTS_ENDPOINT = FOOD_API_BASE ? `${FOOD_API_BASE}/api/products/` : "/api/products/";
 
 const PAGE_SIZE = 8;
+
+const buildPlaceholderImage = (name = "상품") => {
+  const safeName = String(name).slice(0, 24);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
+      <defs>
+        <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
+          <stop offset="0%" stop-color="#f6fbf4" />
+          <stop offset="100%" stop-color="#e3f2e8" />
+        </linearGradient>
+      </defs>
+      <rect width="640" height="480" fill="url(#bg)" />
+      <circle cx="320" cy="180" r="84" fill="#9ad27a" opacity="0.45" />
+      <rect x="160" y="290" width="320" height="28" rx="14" fill="#0f8b6d" opacity="0.15" />
+      <text x="320" y="205" text-anchor="middle" font-family="sans-serif" font-size="72">🥬</text>
+      <text x="320" y="365" text-anchor="middle" font-family="sans-serif" font-size="32" font-weight="700" fill="#1f2937">${safeName}</text>
+      <text x="320" y="404" text-anchor="middle" font-family="sans-serif" font-size="22" fill="#4b5563">YAAM FOOD</text>
+    </svg>
+  `;
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+};
 
 const Products = () => {
   const [products, setProducts] = useState([]);
@@ -121,15 +144,15 @@ const Products = () => {
                     <img
                       src={
                         product.image
-                          ? (product.image.startsWith("http")
-                              ? product.image
-                              : `http://127.0.0.1:8000/media/${product.image}`)
-                          : `https://via.placeholder.com/400x300?text=${encodeURIComponent(
-                              product.name ?? "상품"
-                            )}`
+                          ? buildFoodMediaUrl(product.image)
+                          : buildPlaceholderImage(product.name)
                       }
                       alt={product.name}
                       className={styles.productImage}
+                      onError={(event) => {
+                        event.currentTarget.onerror = null;
+                        event.currentTarget.src = buildPlaceholderImage(product.name);
+                      }}
                     />
 
                     <div className={styles.badge}>특가</div>

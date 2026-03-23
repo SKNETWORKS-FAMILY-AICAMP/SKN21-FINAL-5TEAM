@@ -1,29 +1,7 @@
 import React from 'react';
-import OrderListUI from '../../../shared_chatbot/OrderListUI';
+import OrderListUI, { type SharedOrderData, type SharedOrderUiConfig } from './OrderListUI';
 import ProductListUI, { type UiProduct } from './ProductListUI';
 import styles from './chatbot-widget.module.css';
-
-export type SharedOrderData = {
-  order_id: string;
-  date: string;
-  status: string;
-  status_label?: string;
-  product_name: string;
-  amount: number;
-  delivered_at?: string | null;
-  can_cancel?: boolean;
-  can_return?: boolean;
-  can_exchange?: boolean;
-};
-
-export type SharedOrderUiConfig = {
-  enable_refund_button?: boolean;
-  enable_exchange_button?: boolean;
-  enable_cancel_button?: boolean;
-  enable_selection?: boolean;
-  selectable_statuses?: string[];
-  action_label?: string;
-};
 
 export type SharedWidgetHostConfig = {
   authBootstrapPath: string;
@@ -407,6 +385,18 @@ export async function streamSharedChatResponse(
         nextState = (data.state ?? nextState) as Record<string, unknown> | null;
         callbacks.onStateChange?.(nextState);
 
+        const pendingInterrupts = Array.isArray(data.state?.pending_interrupt)
+          ? data.state.pending_interrupt
+          : [];
+        const metadataPendingInterrupt =
+          pendingInterrupts.find(
+            (payload: unknown) =>
+              payload &&
+              typeof payload === 'object' &&
+              String((payload as Record<string, unknown>).ui_action ?? '').trim() ===
+                String(data.ui_action_required ?? '').trim(),
+          ) ?? null;
+
         if (
           !hasUiActionEvent &&
           !metadataUiActionHandled &&
@@ -422,6 +412,17 @@ export async function streamSharedChatResponse(
               products: products as UiProduct[],
             });
           }
+        }
+
+        if (
+          !hasUiActionEvent &&
+          !metadataUiActionHandled &&
+          metadataPendingInterrupt &&
+          data.ui_action_required &&
+          data.ui_action_required !== 'show_product_list'
+        ) {
+          metadataUiActionHandled = true;
+          callbacks.onUnhandledUiAction?.(metadataPendingInterrupt as Record<string, any>);
         }
         continue;
       }

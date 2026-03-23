@@ -21,11 +21,25 @@ from products.models import Product
 from users.models import SessionToken
 
 
+def normalize_image_value(raw_value: str) -> str:
+    image_value = (raw_value or "").strip()
+    if not image_value:
+        return ""
+
+    if image_value.startswith(("http://", "https://")):
+        return image_value
+
+    image_base_url = os.getenv("FOOD_IMAGE_BASE_URL", "").strip().rstrip("/")
+    if image_base_url:
+        return f"{image_base_url}/{image_value.lstrip('/')}"
+
+    return image_value
+
+
 # -------------------------
 # 상품 생성
 # -------------------------
 def seed_products():
-
     csv_path = BASE_DIR / "seed" / "products.csv"
 
     if not csv_path.exists():
@@ -44,7 +58,7 @@ def seed_products():
             defaults = {
                 "price": price,
                 "stock": int(row.get("stock", "50")),
-                "image": row.get("image", ""),
+                "image": normalize_image_value(row.get("image", "")),
             }
 
             Product.objects.update_or_create(

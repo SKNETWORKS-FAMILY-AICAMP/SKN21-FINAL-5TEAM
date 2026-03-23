@@ -9,9 +9,11 @@ import layout from "./styles/layout.module.css";
 import { AuthProvider } from "./context/AuthContext";
 
 function App() {
+  const basePath = process.env.PUBLIC_URL || process.env.REACT_APP_BASENAME || "";
+
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={basePath || undefined}>
         <Header />
         <main className={layout.main}>
           <Routes>
