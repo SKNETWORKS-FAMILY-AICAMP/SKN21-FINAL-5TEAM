@@ -23,6 +23,7 @@ python-jose[cryptography] # JWT 토큰 생성 및 검증
 langchain               # LangChain 핵심
 langchain-core          # LangChain 코어
 langchain-openai        # OpenAI 연동
+langchain_ollama
 langsmith               # LangSmith 트레이싱
 langgraph               # LangGraph 워크플로우
 transformers            # Guardrail/CLIP 등 모델 파이프라인 import에 필요
@@ -38,6 +39,7 @@ flashrank               # 리랭킹 (Reranker)
 
 # 기타 유틸리티
 requests                # HTTP 요청
+locust                  # load testing
 numpy
 pandas
 
