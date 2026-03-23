@@ -16,13 +16,6 @@ import ProductListUI, { type UiProduct } from './ProductListUI';
 import ReviewFormUI from './ReviewFormUI';
 import UsedSaleFormUI from './UsedSaleFormUI';
 
-const ECOMMERCE_SHARED_WIDGET_CAPABILITIES = [
-  'order_list',
-  'product_list',
-  'review_form',
-  'used_sale_form',
-] as unknown as SharedWidgetCapabilities;
-
 const INITIAL_BOT_MESSAGE: TextMessage = { role: 'bot', type: 'text', text: '안녕하세요. MOYEO 챗봇입니다.' };
 
 type TextMessage = { role: 'user' | 'bot'; type: 'text'; text: string; isStreaming?: boolean; showDivider?: boolean };
@@ -630,7 +623,14 @@ function OptionSelectCard({
   );
 }
 
-export default function ChatbotFab({ isLoggedIn }: { isLoggedIn: boolean }) {
+export default function ChatbotFab({
+  isLoggedIn,
+  host,
+}: {
+  isLoggedIn: boolean;
+  host?: SharedWidgetHostConfig;
+}) {
+  const effectiveHost = host ?? SHARED_WIDGET_HOST;
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMsg[]>([INITIAL_BOT_MESSAGE]);
@@ -796,7 +796,7 @@ export default function ChatbotFab({ isLoggedIn }: { isLoggedIn: boolean }) {
         const nextBootstrap = await ensureFloatingLauncherBootstrapOnOpen({
           isOpen: open,
           bootstrap: chatBootstrap,
-          host: SHARED_WIDGET_HOST,
+          host: effectiveHost,
           fetchImpl: sharedFetch,
         });
         if (active && nextBootstrap && nextBootstrap !== chatBootstrap) {
@@ -816,7 +816,7 @@ export default function ChatbotFab({ isLoggedIn }: { isLoggedIn: boolean }) {
   }, [open, chatBootstrap]);
 
   const ensureSharedChatBootstrap = async () => {
-    if (!SHARED_WIDGET_HOST.chatbotApiBase) {
+    if (!effectiveHost.chatbotApiBase) {
       throw new Error('API 주소가 설정되지 않았습니다.');
     }
 
@@ -824,7 +824,7 @@ export default function ChatbotFab({ isLoggedIn }: { isLoggedIn: boolean }) {
       return chatBootstrap;
     }
 
-    const nextBootstrap = await bootstrapSharedChatAuth(SHARED_WIDGET_HOST, sharedFetch);
+    const nextBootstrap = await bootstrapSharedChatAuth(effectiveHost, sharedFetch);
     setChatBootstrap(nextBootstrap);
     return nextBootstrap;
   };
@@ -863,7 +863,7 @@ export default function ChatbotFab({ isLoggedIn }: { isLoggedIn: boolean }) {
       const provider = resolveProviderByModel(selectedModel);
       await streamSharedChatResponse(
         {
-          host: SHARED_WIDGET_HOST,
+          host: effectiveHost,
           message: text,
           previousState: conversationState,
           resumePayload,
@@ -1068,7 +1068,7 @@ export default function ChatbotFab({ isLoggedIn }: { isLoggedIn: boolean }) {
       const payload = new FormData();
       payload.append('file', file);
 
-      const response = await fetch(`${SHARED_WIDGET_HOST.chatbotApiBase}/api/v1/chat/upload-image`, {
+      const response = await fetch(`${effectiveHost.chatbotApiBase}/api/v1/chat/upload-image`, {
         method: 'POST',
         credentials: 'include',
         body: payload,
@@ -1338,7 +1338,7 @@ export default function ChatbotFab({ isLoggedIn }: { isLoggedIn: boolean }) {
     setFeedbackError(null);
 
     try {
-      const response = await fetch(`${SHARED_WIDGET_HOST.chatbotApiBase}/api/v1/chat/feedback`, {
+      const response = await fetch(`${effectiveHost.chatbotApiBase}/api/v1/chat/feedback`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -1405,7 +1405,7 @@ export default function ChatbotFab({ isLoggedIn }: { isLoggedIn: boolean }) {
         <div className={styles.msgList} ref={listRef}>
           <ChatbotWidget
             messages={messages}
-            capabilities={ECOMMERCE_SHARED_WIDGET_CAPABILITIES}
+            capabilities="full"
             renderTextMessage={(message, index) => {
               if (message.role === 'user') {
                 return (
@@ -1442,6 +1442,29 @@ export default function ChatbotFab({ isLoggedIn }: { isLoggedIn: boolean }) {
                       requiresSelection={message.requiresSelection}
                       prior_action={message.prior_action}
                       ui_config={message.ui_config}
+                      classNames={{
+                        orderListContainer: styles.orderListContainer,
+                        orderListMessage: styles.orderListMessage,
+                        orderCards: styles.orderCards,
+                        orderCard: styles.orderCard,
+                        orderCheckbox: styles.orderCheckbox,
+                        orderContent: styles.orderContent,
+                        orderHeader: styles.orderHeader,
+                        orderId: styles.orderId,
+                        orderStatus: styles.orderStatus,
+                        orderProduct: styles.orderProduct,
+                        orderMeta: styles.orderMeta,
+                        orderAmount: styles.orderAmount,
+                        orderDelivered: styles.orderDelivered,
+                        orderActions: styles.orderActions,
+                        actionBadge: styles.actionBadge,
+                        confirmBtn: styles.confirmBtn,
+                        confirmationContainer: styles.confirmationContainer,
+                        confirmationMessage: styles.confirmationMessage,
+                        confirmationActions: styles.confirmationActions,
+                        confirmationApproveBtn: styles.confirmationApproveBtn,
+                        confirmationRejectBtn: styles.confirmationRejectBtn,
+                      }}
                     />
                   </div>
                 </div>

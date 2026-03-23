@@ -57,12 +57,15 @@ def setup_adapters() -> None:
     setup_adapters._initialized = True
 
 # 전역 함수로 바로 호출 가능하도록 초기화 지원
-def get_adapter(site_id: str):
+def resolve_site_adapter(site_id: str):
     setup_adapters()
     return AdapterRegistry.get(site_id)
+
+# Alias for backward compatibility
+get_adapter = resolve_site_adapter
 
 
 def get_order_cs_bridge_operations(site_id: str | None = None) -> tuple[str, ...]:
     if site_id:
-        get_adapter(site_id.strip())
+        resolve_site_adapter(site_id.strip())
     return ORDER_CS_BRIDGE_OPERATIONS
