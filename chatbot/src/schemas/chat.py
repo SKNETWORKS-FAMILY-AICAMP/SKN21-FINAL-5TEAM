@@ -34,10 +34,13 @@ class ChatRequest(BaseModel):
     resume_payload: Dict[str, Any] | None = Field(
         None, description="Structured payload used to resume an interrupted graph step"
     )
-    provider: Literal["openai", "huggingface", "vllm"] | None = Field(
-        None, description="LLM provider (openai|huggingface|vllm)"
+    provider: Literal["openai", "huggingface", "local", "vllm", "ollama"] | None = Field(
+        None, description="LLM provider (openai|huggingface|local|vllm|ollama)"
     )
     model: str | None = Field(None, description="Model name or model id")
+    access_token: str | None = Field(
+        None, description="Bridge token or session token for the shared chat server"
+    )
     # 어느 사이트(어댑터)로부터 호출되었는지 식별 (예: "site-a", "site-b", "site-c")
     site_id: str | None = Field(None, description="Adapter site ID (site-a|site-b|site-c)")
     model_config = ConfigDict(extra="ignore")

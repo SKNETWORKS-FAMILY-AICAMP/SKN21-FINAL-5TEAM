@@ -14,6 +14,7 @@ def generate_run_bundle(
     generated_root: str | Path,
     run_id: str,
     agent_version: str,
+    onboarding_credentials: dict[str, str] | None = None,
 ) -> Path:
     source_path = Path(source_root)
     run_root = Path(generated_root) / site / run_id
@@ -30,7 +31,9 @@ def generate_run_bundle(
         "analysis": analysis,
         "generated_files": [],
         "patch_targets": [],
+        "frontend_artifacts": [],
         "docker": {},
+        "credentials": dict(onboarding_credentials or {}),
         "tests": {},
         "status": "generated",
     }

@@ -32,9 +32,6 @@ _GUARDRAIL_PIPELINE: Pipeline | None = None
 # 허용 레이블: 정상 발화만 허용
 _SAFE_LABEL: str = "safe"
 
-# 분류 신뢰도 임계값 (이 값 미만이면 통과로 처리 — 모호한 입력은 허용)
-_CONFIDENCE_THRESHOLD: float = 0.9
-
 
 # ── 모델 로더 (서버 시작 시 1회 호출) ──────────────────────
 
@@ -59,7 +56,12 @@ def load_guardrail_model() -> None:
             truncation=True,
             max_length=512,
         )
-        logger.info("[Guardrail] 모델 로딩 완료.")
+        label_map = _get_guardrail_label_map(_GUARDRAIL_PIPELINE)
+        logger.info(
+            "[Guardrail] 모델 로딩 완료. 총 %d개 클래스: %s",
+            len(label_map),
+            _format_label_map(label_map),
+        )
     except Exception as e:
         logger.error(f"[Guardrail] 모델 로딩 실패: {e}. Guardrail을 비활성화하고 진행합니다.")
         _GUARDRAIL_PIPELINE = None
@@ -103,13 +105,6 @@ def guardrail_node(state: GlobalAgentState) -> dict:
 
         logger.debug(f"[Guardrail] label={label}, score={score:.3f}, text='{user_text[:50]}'")
 
-        # 임계값 미만이면 판별이 불안정하므로 우선 통과 처리 (모호함보다는 응답 제공 우선)
-        if score < _CONFIDENCE_THRESHOLD:
-            logger.debug(
-                f"[Guardrail] 낮은 신뢰도({score:.3f})로 차단하지 않고 통과합니다."
-            )
-            return {"guardrail_passed": True}
-
         # SAFE(정상 발화) 외 모든 클래스 차단
         if label != _SAFE_LABEL:
             blocked_msg = AIMessage(
@@ -148,6 +143,30 @@ def _get_last_user_message(messages: list) -> str | None:
             content = getattr(msg, "content", "")
             return str(content).strip() if content else None
     return None
+
+
+def _get_guardrail_label_map(guardrail_pipeline: Pipeline) -> dict[int, str]:
+    model = getattr(guardrail_pipeline, "model", None)
+    config = getattr(model, "config", None)
+    raw_id2label = getattr(config, "id2label", None)
+
+    if not isinstance(raw_id2label, dict):
+        return {}
+
+    label_map: dict[int, str] = {}
+    for key, value in raw_id2label.items():
+        try:
+            label_id = int(key)
+        except (TypeError, ValueError):
+            continue
+        label_map[label_id] = str(value)
+    return dict(sorted(label_map.items()))
+
+
+def _format_label_map(label_map: dict[int, str]) -> str:
+    if not label_map:
+        return "label metadata unavailable"
+    return ", ".join(f"{label_id}={label}" for label_id, label in label_map.items())
 
 
 def _is_safe_service_intent(text: str | None) -> bool:

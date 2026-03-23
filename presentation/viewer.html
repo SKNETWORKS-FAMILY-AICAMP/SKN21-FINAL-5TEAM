@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Presentation Viewer - AI Chatbot Project</title>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         :root {
@@ -24,29 +24,21 @@
 
         body {
             font-family: 'Noto Sans KR', 'Montserrat', sans-serif;
-            background-color: var(--primary-bg);
-            color: var(--text-main);
-            height: 100vh;
+            background-color: #000;
+            margin: 0;
+            padding: 0;
             overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            width: 100vw;
+            height: 100vh;
         }
 
         /* Slide Container */
         .presentation-frame {
-            width: 1280px;
-            height: 720px;
-            aspect-ratio: 16 / 9;
-            max-width: 95vw;
-            max-height: calc(95vw * 9 / 16);
-            background: #000;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            width: 100vw;
+            height: 100vh;
             position: relative;
-            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            background: #000;
+            overflow: hidden;
         }
 
         @media (max-height: 800px) {
@@ -57,10 +49,12 @@
         }
 
         iframe {
-            width: 100%;
-            height: 100%;
+            width: 1280px;
+            height: 720px;
             border: none;
             transition: opacity 0.3s ease;
+            transform-origin: top left;
+            position: absolute;
         }
 
         /* Navigation Controls */
@@ -119,122 +113,28 @@
             letter-spacing: 1px;
         }
 
-        /* Progress Bar */
+        /* Progress Bar - Hidden */
         .progress-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 4px;
-            background: rgba(255, 255, 255, 0.05);
-            z-index: 1000;
+            display: none;
         }
 
-        .progress-bar {
-            height: 100%;
-            background: var(--accent-color);
-            width: 0%;
-            transition: width 0.3s ease;
-            box-shadow: 0 0 10px var(--accent-color);
+        /* Controls - Hidden */
+        .controls {
+            display: none;
         }
 
-        /* Slide List Drawer */
+        /* Slide List Drawer - Hidden */
         .slide-list-trigger {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: var(--glass-bg);
-            backdrop-filter: blur(12px);
-            border: 1px solid var(--glass-border);
-            color: var(--text-main);
-            padding: 10px 15px;
-            border-radius: 8px;
-            cursor: pointer;
-            z-index: 100;
-            transition: all 0.2s ease;
-        }
-
-        .slide-list-trigger:hover {
-            background: rgba(255, 255, 255, 0.1);
+            display: none;
         }
 
         .drawer {
-            position: fixed;
-            top: 0;
-            right: -300px;
-            width: 300px;
-            height: 100%;
-            background: rgba(15, 23, 42, 0.95);
-            backdrop-filter: blur(20px);
-            border-left: 1px solid var(--glass-border);
-            z-index: 1000;
-            padding: 40px 20px;
-            transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-            overflow-y: auto;
+            display: none;
         }
 
-        .drawer.active {
-            right: 0;
-        }
-
-        .drawer-header {
-            font-size: 1.2rem;
-            font-weight: 700;
-            margin-bottom: 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .close-drawer {
-            cursor: pointer;
-            opacity: 0.6;
-            transition: opacity 0.2s;
-        }
-
-        .close-drawer:hover {
-            opacity: 1;
-        }
-
-        .slide-item {
-            padding: 12px 15px;
-            margin-bottom: 8px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s;
-            border: 1px solid transparent;
-            color: var(--text-dim);
-        }
-
-        .slide-item:hover {
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-main);
-        }
-
-        .slide-item.active {
-            background: var(--accent-color);
-            color: #fff;
-            font-weight: 600;
-        }
-
-        /* Animations */
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .presentation-frame {
-            animation: fadeIn 0.8s ease-out;
-        }
-
-        /* Keyboard Hint */
+        /* Keyboard Hint - Hidden */
         .keyboard-hint {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            font-size: 0.75rem;
-            color: var(--text-dim);
-            opacity: 0.5;
+            display: none;
         }
     </style>
 </head>
@@ -267,7 +167,7 @@
             <i class="fas fa-chevron-left"></i>
         </button>
         <div class="slide-info">
-            <span id="currentNum">1</span> / <span id="totalNum">20</span>
+            <span id="currentNum">1</span> / <span id="totalNum">16</span>
         </div>
         <button class="nav-btn" id="nextBtn" title="Next (Right Arrow)">
             <i class="fas fa-chevron-right"></i>
@@ -282,56 +182,117 @@
     </div>
 
     <script>
-        const totalSlides = 20;
-        let currentSlide = 1;
-
+        const slideDeck = [
+            { file: '1.html', title: '검증 가능한 고객상담 Action Agent' },
+            { file: '2.html', title: '발표 흐름' },
+            { file: '3.html', title: '왜 고객상담 문제인가' },
+            { file: '4.html', title: '왜 온라인 쇼핑, 왜 Action Agent인가' },
+            { file: '6.html', title: '개발 여정과 범위' },
+            { file: '10.html', title: '챗봇 아키텍처' },
+            { file: '11.html', title: '왜 평가 데이터셋이 필요했나' },
+            { file: '12.html', title: '평가 데이터셋 설계' },
+            { file: '13.html', title: '의도 및 툴 호출 평가 결과' },
+            { file: '15.html', title: 'RAG 평가와 고도화' },
+            { file: '7.html', title: '제품에서 플랫폼으로' },
+            { file: '8.html', title: '다중 웹사이트 검증 환경' },
+            { file: '9.html', title: '에이전틱 연동 워크플로우' },
+            { file: '16.html', title: '시연 흐름' },
+            { file: '19.html', title: '결론' },
+            { file: '20.html', title: 'Q&A' }
+        ];
+        const totalSlides = slideDeck.length;
         const slideFrame = document.getElementById('slideFrame');
-        const prevBtn = document.getElementById('prevBtn');
-        const nextBtn = document.getElementById('nextBtn');
         const currentNum = document.getElementById('currentNum');
         const totalNum = document.getElementById('totalNum');
-        const progressBar = document.getElementById('progressBar');
+        const slideList = document.getElementById('slideList');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
         const fullscreenBtn = document.getElementById('fullscreenBtn');
         const openDrawer = document.getElementById('openDrawer');
         const closeDrawer = document.getElementById('closeDrawer');
         const drawer = document.getElementById('drawer');
-        const slideList = document.getElementById('slideList');
+        let currentSlide = parseInt(window.location.hash.substring(1), 10) || 1;
 
-        // Initialize slide list
-        function initSlideList() {
-            for (let i = 1; i <= totalSlides; i++) {
-                const item = document.createElement('div');
-                item.className = `slide-item ${i === 1 ? 'active' : ''}`;
-                item.dataset.slide = i;
-                item.innerHTML = `Slide ${i}`;
-                item.onclick = () => jumpToSlide(i);
-                slideList.appendChild(item);
-            }
+        totalNum.textContent = totalSlides;
+
+        slideDeck.forEach((slide, index) => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'nav-btn';
+            item.style.width = '100%';
+            item.style.height = 'auto';
+            item.style.padding = '10px 12px';
+            item.style.borderRadius = '14px';
+            item.style.justifyContent = 'flex-start';
+            item.style.gap = '12px';
+            item.innerHTML = `<span style="font-family: Montserrat, sans-serif; min-width: 28px;">${String(index + 1).padStart(2, '0')}</span><span>${slide.title}</span>`;
+            item.onclick = () => jumpToSlide(index + 1);
+            slideList.appendChild(item);
+        });
+
+        function scaleSlide() {
+            const scaleX = window.innerWidth / 1280;
+            const scaleY = window.innerHeight / 720;
+            const scale = Math.min(scaleX, scaleY);
+            
+            slideFrame.style.transform = `scale(${scale})`;
+            
+            // 16:9 비율을 유지하면서 가득 찼을 때의 위치를 정중앙으로 계산
+            const left = (window.innerWidth - 1280 * scale) / 2;
+            const top = (window.innerHeight - 720 * scale) / 2;
+            
+            slideFrame.style.left = `${left}px`;
+            slideFrame.style.top = `${top}px`;
         }
 
-        function updateUI() {
-            // Update frame source
-            slideFrame.style.opacity = '0';
-            setTimeout(() => {
-                slideFrame.src = `slides/${currentSlide}.html`;
-                slideFrame.onload = () => {
-                    slideFrame.style.opacity = '1';
-                };
-            }, 150);
+        // 창 크기가 변할 때, 슬라이드가 로드될 때마다 리스케일링 및 포커스 관리
+        window.addEventListener('resize', scaleSlide);
+        
+        slideFrame.addEventListener('load', () => {
+            scaleSlide();
+            
+            // iframe 내부 클릭 시 키보드 입력이 씹히는 현상 방지:
+            // iframe 내부의 키 입력을 부모 창으로 전달합니다.
+            slideFrame.contentWindow.document.addEventListener('keydown', (e) => {
+                const eventClone = new KeyboardEvent('keydown', {
+                    key: e.key,
+                    code: e.code,
+                    location: e.location,
+                    ctrlKey: e.ctrlKey,
+                    shiftKey: e.shiftKey,
+                    altKey: e.altKey,
+                    metaKey: e.metaKey,
+                    repeat: e.repeat,
+                    bubbles: true
+                });
+                document.dispatchEvent(eventClone);
+                
+                // 스페이스바 방지 등 필요한 경우만
+                if ([' ', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)) {
+                    e.preventDefault();
+                }
+            });
+        });
 
-            // Update text and buttons
+        // URL 해시(번호)가 직접 바뀌었을 때 (뒤로가기 등) 대응
+        window.addEventListener('hashchange', () => {
+            const hashNum = parseInt(window.location.hash.substring(1), 10);
+            if (hashNum && hashNum !== currentSlide) {
+                currentSlide = hashNum;
+                updateUI();
+            }
+        });
+
+        function updateUI() {
+            currentSlide = Math.max(1, Math.min(totalSlides, currentSlide));
+            window.location.hash = currentSlide;
             currentNum.textContent = currentSlide;
+            const targetSrc = `slides/${slideDeck[currentSlide - 1].file}`;
+            if (slideFrame.src.indexOf(targetSrc) === -1) {
+                slideFrame.src = targetSrc;
+            }
             prevBtn.disabled = currentSlide === 1;
             nextBtn.disabled = currentSlide === totalSlides;
-
-            // Update progress bar
-            const progress = (currentSlide / totalSlides) * 100;
-            progressBar.style.width = `${progress}%`;
-
-            // Update drawer items
-            document.querySelectorAll('.slide-item').forEach(item => {
-                item.classList.toggle('active', parseInt(item.dataset.slide) === currentSlide);
-            });
         }
 
         function jumpToSlide(num) {
@@ -404,8 +365,8 @@
         });
 
         // Initialize
-        initSlideList();
         updateUI();
+        scaleSlide();
     </script>
 </body>
 </html>

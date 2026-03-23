@@ -1,0 +1,2103 @@
+[
+  {
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T11:23:09.076668",
+    "elapsed_seconds": 23.96,
+    "difficulty_filter": "easy",
+    "total_samples": 54,
+    "metrics": {
+      "accuracy": 1.0,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 12
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 18
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 18
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 18
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 12
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 18
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 54,
+        "correct": 54,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 54,
+      "correct": 54
+    }
+  },
+  {
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T11:24:53.514339",
+    "elapsed_seconds": 19.39,
+    "difficulty_filter": "hard",
+    "total_samples": 34,
+    "metrics": {
+      "accuracy": 1.0,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 7
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 8
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 13
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 13
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 7
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 8
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 34,
+        "correct": 34,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 34,
+      "correct": 34
+    }
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T11:26:30.631107",
+    "elapsed_seconds": 7.21,
+    "difficulty_filter": "easy",
+    "total_samples": 54,
+    "metrics": {
+      "accuracy": 0.8519,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 12
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8333,
+          "f1": 0.9091,
+          "support": 18
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 0.7778,
+          "f1": 0.875,
+          "support": 18
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 0.8333,
+          "f1": 0.9091,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 0.8,
+          "recall": 0.6889,
+          "f1": 0.7386
+        }
+      },
+      "macro_f1": 0.7386,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 14,
+          "final_generator": 4
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 12
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 5,
+          "final_generator": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 15,
+          "final_generator": 3
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 54,
+        "correct": 46,
+        "accuracy": 0.8519
+      }
+    },
+    "summary": {
+      "total": 54,
+      "correct": 46
+    }
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T11:28:35.194625",
+    "elapsed_seconds": 5.5,
+    "difficulty_filter": "hard",
+    "total_samples": 34,
+    "metrics": {
+      "accuracy": 0.8824,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 7
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.75,
+          "f1": 0.8571,
+          "support": 8
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 0.8462,
+          "f1": 0.9167,
+          "support": 13
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 0.8,
+          "recall": 0.7192,
+          "f1": 0.7548
+        }
+      },
+      "macro_f1": 0.7548,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 11,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 7
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 6,
+          "final_generator": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 34,
+        "correct": 30,
+        "accuracy": 0.8824
+      }
+    },
+    "summary": {
+      "total": 34,
+      "correct": 30
+    }
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T11:40:49.450807",
+    "elapsed_seconds": 578.29,
+    "difficulty_filter": "easy",
+    "total_samples": 54,
+    "metrics": {
+      "accuracy": 0.6852,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.6429,
+          "recall": 0.75,
+          "f1": 0.6923,
+          "support": 12
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.6667,
+          "f1": 0.8,
+          "support": 18
+        },
+        "order_intent_router": {
+          "precision": 0.8125,
+          "recall": 0.7222,
+          "f1": 0.7647,
+          "support": 18
+        },
+        "policy_rag_subagent": {
+          "precision": 0.6,
+          "recall": 0.5,
+          "f1": 0.5455,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 0.6111,
+          "recall": 0.5278,
+          "f1": 0.5605
+        }
+      },
+      "macro_f1": 0.5605,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 13,
+          "policy_rag_subagent": 2,
+          "discovery_subagent": 2,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "final_generator": 2,
+          "discovery_subagent": 9,
+          "order_intent_router": 1
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 3,
+          "discovery_subagent": 1,
+          "order_intent_router": 1,
+          "final_generator": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 12,
+          "discovery_subagent": 2,
+          "order_intent_router": 1,
+          "final_generator": 3
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 54,
+        "correct": 37,
+        "accuracy": 0.6852
+      }
+    },
+    "summary": {
+      "total": 54,
+      "correct": 37
+    }
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T11:54:27.483465",
+    "elapsed_seconds": 313.48,
+    "difficulty_filter": "hard",
+    "total_samples": 34,
+    "metrics": {
+      "accuracy": 0.5294,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.75,
+          "recall": 0.8571,
+          "f1": 0.8,
+          "support": 7
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.375,
+          "f1": 0.5455,
+          "support": 8
+        },
+        "order_intent_router": {
+          "precision": 0.625,
+          "recall": 0.3846,
+          "f1": 0.4762,
+          "support": 13
+        },
+        "policy_rag_subagent": {
+          "precision": 0.5714,
+          "recall": 0.6667,
+          "f1": 0.6154,
+          "support": 6
+        },
+        "macro_avg": {
+          "precision": 0.5893,
+          "recall": 0.4567,
+          "f1": 0.4874
+        }
+      },
+      "macro_f1": 0.4874,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 5,
+          "policy_rag_subagent": 3,
+          "final_generator": 4,
+          "discovery_subagent": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 6,
+          "final_generator": 1
+        },
+        "policy_rag_subagent": {
+          "discovery_subagent": 1,
+          "policy_rag_subagent": 4,
+          "order_intent_router": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 3,
+          "final_generator": 3,
+          "order_intent_router": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 34,
+        "correct": 18,
+        "accuracy": 0.5294
+      }
+    },
+    "summary": {
+      "total": 34,
+      "correct": 18
+    }
+  },
+  {
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T16:06:20.702252",
+    "elapsed_seconds": 25.49,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 1.0,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 10
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 10
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 30
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 70,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 70
+    }
+  },
+  {
+    "model": "openai/gpt-5-mini",
+    "timestamp": "2026-03-18T16:07:13.146840",
+    "elapsed_seconds": 38.19,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.9286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.9,
+          "f1": 0.9474,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8889,
+          "recall": 0.8,
+          "f1": 0.8421,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.7692,
+          "recall": 1.0,
+          "f1": 0.8696,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7316,
+          "recall": 0.74,
+          "f1": 0.7318
+        }
+      },
+      "macro_f1": 0.7318,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "policy_rag_subagent": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 10
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 27,
+          "final_generator": 1,
+          "order_intent_router": 1,
+          "policy_rag_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 65,
+        "accuracy": 0.9286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 65
+    }
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T16:08:41.351085",
+    "elapsed_seconds": 12.88,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8857,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8667,
+          "f1": 0.9286,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 0.8,
+          "f1": 0.8889,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8889,
+          "recall": 0.8,
+          "f1": 0.8421,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7778,
+          "recall": 0.6933,
+          "f1": 0.7319
+        }
+      },
+      "macro_f1": 0.7319,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 8,
+          "final_generator": 2
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 26,
+          "policy_rag_subagent": 1,
+          "final_generator": 3
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 62,
+        "accuracy": 0.8857
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 62
+    }
+  },
+  {
+    "model": "openai/gpt-4o-mini",
+    "timestamp": "2026-03-18T16:09:39.925493",
+    "elapsed_seconds": 11.48,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8714,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.9,
+          "f1": 0.9474,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8571,
+          "recall": 0.6,
+          "f1": 0.7059,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7314,
+          "recall": 0.66,
+          "f1": 0.6907
+        }
+      },
+      "macro_f1": 0.6907,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "final_generator": 1,
+          "policy_rag_subagent": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6,
+          "order_intent_router": 1,
+          "final_generator": 3
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 27,
+          "order_intent_router": 1,
+          "final_generator": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 61,
+        "accuracy": 0.8714
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 61
+    }
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T16:18:41.144911",
+    "elapsed_seconds": 496.72,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.7286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.7917,
+          "recall": 0.95,
+          "f1": 0.8636,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.6333,
+          "f1": 0.7755,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1": 0.6667,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7183,
+          "recall": 0.5767,
+          "f1": 0.6212
+        }
+      },
+      "macro_f1": 0.6212,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "discovery_subagent": 1,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 19,
+          "final_generator": 1
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 5,
+          "final_generator": 5
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 19,
+          "order_intent_router": 2,
+          "discovery_subagent": 4,
+          "final_generator": 5
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 51,
+        "accuracy": 0.7286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 51
+    }
+  },
+  {
+    "model": "vllm/qwen3:0.6b",
+    "timestamp": "2026-03-18T16:40:49.173509",
+    "elapsed_seconds": 1253.61,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.5714,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.7826,
+          "recall": 0.9,
+          "f1": 0.8372,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.4,
+          "f1": 0.5714,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.4286,
+          "recall": 0.6,
+          "f1": 0.5,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.5714,
+          "recall": 0.4,
+          "f1": 0.4706,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.5565,
+          "recall": 0.46,
+          "f1": 0.4758
+        }
+      },
+      "macro_f1": 0.4758,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 6,
+          "policy_rag_subagent": 3,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 18,
+          "final_generator": 2
+        },
+        "policy_rag_subagent": {
+          "order_intent_router": 4,
+          "policy_rag_subagent": 4,
+          "final_generator": 2
+        },
+        "form_action_subagent": {
+          "final_generator": 9,
+          "discovery_subagent": 5,
+          "order_intent_router": 4,
+          "form_action_subagent": 12
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 40,
+        "accuracy": 0.5714
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 40
+    }
+  },
+  {
+    "model": "vllm/gemma2:2b",
+    "timestamp": "2026-03-19T11:40:25.454196",
+    "elapsed_seconds": 307.62,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.7407,
+          "recall": 1.0,
+          "f1": 0.8511,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.9,
+          "f1": 0.9474,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8333,
+          "recall": 0.5,
+          "f1": 0.625,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8571,
+          "recall": 0.6,
+          "f1": 0.7059,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.6862,
+          "recall": 0.6,
+          "f1": 0.6259
+        }
+      },
+      "macro_f1": 0.6259,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 5,
+          "policy_rag_subagent": 1,
+          "discovery_subagent": 3,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6,
+          "discovery_subagent": 2,
+          "final_generator": 1,
+          "order_intent_router": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 27,
+          "discovery_subagent": 2,
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 58,
+        "accuracy": 0.8286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 58
+    }
+  },
+  {
+    "model": "vllm/llama3.2:3b",
+    "timestamp": "2026-03-19T11:45:28.567049",
+    "elapsed_seconds": 257.97,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.6286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 0.55,
+          "f1": 0.7097,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.6667,
+          "f1": 0.8,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.2857,
+          "recall": 1.0,
+          "f1": 0.4444,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.75,
+          "recall": 0.3,
+          "f1": 0.4286,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7589,
+          "recall": 0.6292,
+          "f1": 0.5957
+        }
+      },
+      "macro_f1": 0.5957,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 10
+        },
+        "discovery_subagent": {
+          "order_intent_router": 9,
+          "discovery_subagent": 11
+        },
+        "policy_rag_subagent": {
+          "order_intent_router": 7,
+          "policy_rag_subagent": 3
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 20,
+          "order_intent_router": 9,
+          "policy_rag_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 44,
+        "accuracy": 0.6286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 44
+    }
+  },
+  {
+    "model": "vllm/granite3.1-dense:2b",
+    "timestamp": "2026-03-19T11:50:03.957333",
+    "elapsed_seconds": 245.88,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.7286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.6452,
+          "recall": 1.0,
+          "f1": 0.7843,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.6,
+          "f1": 0.75,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.5714,
+          "recall": 0.8,
+          "f1": 0.6667,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.7143,
+          "recall": 0.5,
+          "f1": 0.5882,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7327,
+          "recall": 0.725,
+          "f1": 0.6973
+        }
+      },
+      "macro_f1": 0.6973,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "discovery_subagent": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "order_intent_router": 4,
+          "discovery_subagent": 1,
+          "policy_rag_subagent": 5
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 18,
+          "discovery_subagent": 8,
+          "order_intent_router": 2,
+          "policy_rag_subagent": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 51,
+        "accuracy": 0.7286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 51
+    }
+  },
+  {
+    "model": "vllm/llama3.1",
+    "timestamp": "2026-03-19T11:56:32.996968",
+    "elapsed_seconds": 343.98,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.9857,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.9667,
+          "f1": 0.9831,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.8,
+          "recall": 0.7933,
+          "f1": 0.7966
+        }
+      },
+      "macro_f1": 0.7966,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 10
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 10
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 29,
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 69,
+        "accuracy": 0.9857
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 69
+    }
+  },
+  {
+    "model": "vllm/phi4-mini",
+    "timestamp": "2026-03-19T12:01:27.555232",
+    "elapsed_seconds": 251.56,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.7571,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.6897,
+          "recall": 1.0,
+          "f1": 0.8163,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.7,
+          "f1": 0.8235,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.5455,
+          "recall": 0.6,
+          "f1": 0.5714,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.6667,
+          "recall": 0.6,
+          "f1": 0.6316,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7255,
+          "recall": 0.725,
+          "f1": 0.7107
+        }
+      },
+      "macro_f1": 0.7107,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 6,
+          "discovery_subagent": 2,
+          "policy_rag_subagent": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 6,
+          "order_intent_router": 3,
+          "discovery_subagent": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 21,
+          "discovery_subagent": 6,
+          "order_intent_router": 2,
+          "policy_rag_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 53,
+        "accuracy": 0.7571
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 53
+    }
+  },
+  {
+    "model": "vllm/mistral-nemo",
+    "timestamp": "2026-03-19T12:13:11.311634",
+    "elapsed_seconds": 541.62,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.9,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.9091,
+          "recall": 1.0,
+          "f1": 0.9524,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8667,
+          "f1": 0.9286,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.7692,
+          "recall": 1.0,
+          "f1": 0.8696,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.7778,
+          "recall": 0.7,
+          "f1": 0.7368,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.864,
+          "recall": 0.8917,
+          "f1": 0.8719
+        }
+      },
+      "macro_f1": 0.8719,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 10
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 7,
+          "order_intent_router": 3
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 26,
+          "discovery_subagent": 2,
+          "policy_rag_subagent": 2
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 63,
+        "accuracy": 0.9
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 63
+    }
+  },
+  {
+    "model": "vllm/LFM2.5-Thinking:1.2B",
+    "timestamp": "2026-03-19T13:40:23.754301",
+    "elapsed_seconds": 5067.63,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.3571,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.5263,
+          "recall": 0.5,
+          "f1": 0.5128,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.2333,
+          "f1": 0.3784,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.3182,
+          "recall": 0.7,
+          "f1": 0.4375,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 0.1,
+          "f1": 0.1818,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.5689,
+          "recall": 0.3067,
+          "f1": 0.3021
+        }
+      },
+      "macro_f1": 0.3021,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 7,
+          "discovery_subagent": 1,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "final_generator": 7,
+          "discovery_subagent": 10,
+          "order_intent_router": 3
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 1,
+          "order_intent_router": 3,
+          "final_generator": 6
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 7,
+          "order_intent_router": 9,
+          "discovery_subagent": 8,
+          "final_generator": 6
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 25,
+        "accuracy": 0.3571
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 25
+    }
+  },
+  {
+    "model": "vllm/Qwen3.5:2b",
+    "timestamp": "2026-03-19T15:27:17.298661",
+    "elapsed_seconds": 5197.51,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.0,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "macro_f1": 0.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "final_generator": 10
+        },
+        "discovery_subagent": {
+          "final_generator": 20
+        },
+        "policy_rag_subagent": {
+          "final_generator": 10
+        },
+        "form_action_subagent": {
+          "final_generator": 30
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 0,
+        "accuracy": 0.0
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 0
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:09:58.095893",
+    "elapsed_seconds": 576.76,
+    "difficulty_filter": "hard",
+    "total_samples": 140,
+    "metrics": {
+      "accuracy": 0.4286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.9643,
+          "recall": 0.675,
+          "f1": 0.7941,
+          "support": 40
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.25,
+          "f1": 0.4,
+          "support": 60
+        },
+        "order_intent_router": {
+          "precision": 0.4,
+          "recall": 0.9,
+          "f1": 0.5538,
+          "support": 20
+        },
+        "policy_rag_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 20
+        },
+        "macro_avg": {
+          "precision": 0.4729,
+          "recall": 0.365,
+          "f1": 0.3496
+        }
+      },
+      "macro_f1": 0.3496,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 18,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "order_intent_router": 10,
+          "discovery_subagent": 27,
+          "final_generator": 3
+        },
+        "policy_rag_subagent": {
+          "order_intent_router": 11,
+          "final_generator": 9
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 15,
+          "order_intent_router": 6,
+          "final_generator": 38,
+          "discovery_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 30,
+        "accuracy": 0.4286
+      },
+      "hard": {
+        "total": 70,
+        "correct": 30,
+        "accuracy": 0.4286
+      }
+    },
+    "summary": {
+      "total": 140,
+      "correct": 60
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:25:38.420648",
+    "elapsed_seconds": 37.86,
+    "difficulty_filter": "hard",
+    "total_samples": 1,
+    "metrics": {
+      "accuracy": 0.0,
+      "per_node_f1": {
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "order_intent_router": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 1
+        },
+        "macro_avg": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "macro_f1": 0.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 1,
+        "correct": 0,
+        "accuracy": 0.0
+      }
+    },
+    "summary": {
+      "total": 1,
+      "correct": 0
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:37:49.151930",
+    "elapsed_seconds": 20.9,
+    "difficulty_filter": "hard",
+    "total_samples": 1,
+    "metrics": {
+      "accuracy": 1.0,
+      "per_node_f1": {
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 1
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 1,
+        "correct": 1,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 1,
+      "correct": 1
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:42:32.424660",
+    "elapsed_seconds": 982.41,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.0,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "macro_f1": 0.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "final_generator": 10
+        },
+        "discovery_subagent": {
+          "final_generator": 20
+        },
+        "policy_rag_subagent": {
+          "final_generator": 10
+        },
+        "form_action_subagent": {
+          "final_generator": 30
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 0,
+        "accuracy": 0.0
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 0
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:49:30.688274",
+    "elapsed_seconds": 8.67,
+    "difficulty_filter": "hard",
+    "total_samples": 1,
+    "metrics": {
+      "accuracy": 1.0,
+      "per_node_f1": {
+        "order_intent_router": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 1
+        },
+        "macro_avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 1,
+        "correct": 1,
+        "accuracy": 1.0
+      }
+    },
+    "summary": {
+      "total": 1,
+      "correct": 1
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T16:59:09.820221",
+    "elapsed_seconds": 121.89,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8286,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.8571,
+          "recall": 0.9,
+          "f1": 0.878,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8333,
+          "f1": 0.9091,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.7778,
+          "recall": 0.7,
+          "f1": 0.7368,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.687,
+          "recall": 0.6467,
+          "f1": 0.6648
+        }
+      },
+      "macro_f1": 0.6648,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "policy_rag_subagent": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 18,
+          "final_generator": 2
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 7,
+          "order_intent_router": 1,
+          "final_generator": 2
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 25,
+          "order_intent_router": 1,
+          "discovery_subagent": 3,
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 58,
+        "accuracy": 0.8286
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 58
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T17:13:40.538655",
+    "elapsed_seconds": 126.17,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8429,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 0.8571,
+          "recall": 0.9,
+          "f1": 0.878,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8333,
+          "f1": 0.9091,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8,
+          "recall": 0.8889,
+          "f1": 0.8421,
+          "support": 9
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8889,
+          "recall": 0.7273,
+          "f1": 0.8,
+          "support": 11
+        },
+        "macro_avg": {
+          "precision": 0.7092,
+          "recall": 0.6699,
+          "f1": 0.6858
+        }
+      },
+      "macro_f1": 0.6858,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "policy_rag_subagent": 1
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 8,
+          "order_intent_router": 1,
+          "final_generator": 2
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 18,
+          "final_generator": 2
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 25,
+          "order_intent_router": 1,
+          "discovery_subagent": 3,
+          "final_generator": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 59,
+        "accuracy": 0.8429
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 59
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T17:19:48.108770",
+    "elapsed_seconds": 84.66,
+    "difficulty_filter": "hard",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.9857,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.9,
+          "recall": 1.0,
+          "f1": 0.9474,
+          "support": 9
+        },
+        "policy_rag_subagent": {
+          "precision": 1.0,
+          "recall": 0.9091,
+          "f1": 0.9524,
+          "support": 11
+        },
+        "macro_avg": {
+          "precision": 0.975,
+          "recall": 0.9773,
+          "f1": 0.9749
+        }
+      },
+      "macro_f1": 0.9749,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 9
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 10,
+          "order_intent_router": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 20
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 30
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "hard": {
+        "total": 70,
+        "correct": 69,
+        "accuracy": 0.9857
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 69
+    }
+  },
+  {
+    "model": "local/Qwen/Qwen3.5-2B",
+    "timestamp": "2026-03-19T17:25:47.218784",
+    "elapsed_seconds": 134.57,
+    "difficulty_filter": "easy",
+    "total_samples": 70,
+    "metrics": {
+      "accuracy": 0.8714,
+      "per_node_f1": {
+        "discovery_subagent": {
+          "precision": 1.0,
+          "recall": 0.95,
+          "f1": 0.9744,
+          "support": 20
+        },
+        "final_generator": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "form_action_subagent": {
+          "precision": 1.0,
+          "recall": 0.8667,
+          "f1": 0.9286,
+          "support": 30
+        },
+        "order_intent_router": {
+          "precision": 0.8889,
+          "recall": 0.8,
+          "f1": 0.8421,
+          "support": 10
+        },
+        "policy_rag_subagent": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8,
+          "support": 10
+        },
+        "macro_avg": {
+          "precision": 0.7378,
+          "recall": 0.6833,
+          "f1": 0.709
+        }
+      },
+      "macro_f1": 0.709,
+      "confusion_matrix": {
+        "order_intent_router": {
+          "order_intent_router": 8,
+          "policy_rag_subagent": 1,
+          "final_generator": 1
+        },
+        "discovery_subagent": {
+          "discovery_subagent": 19,
+          "final_generator": 1
+        },
+        "policy_rag_subagent": {
+          "policy_rag_subagent": 8,
+          "final_generator": 1,
+          "order_intent_router": 1
+        },
+        "form_action_subagent": {
+          "form_action_subagent": 26,
+          "final_generator": 3,
+          "policy_rag_subagent": 1
+        }
+      }
+    },
+    "difficulty_breakdown": {
+      "easy": {
+        "total": 70,
+        "correct": 61,
+        "accuracy": 0.8714
+      }
+    },
+    "summary": {
+      "total": 70,
+      "correct": 61
+    }
+  }
+]

@@ -8,7 +8,7 @@ import types
 from typing import Any, Dict, Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, messages_from_dict, messages_to_dict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -48,15 +48,22 @@ def _bootstrap_legacy_import_alias() -> None:
 _bootstrap_legacy_import_alias()
 
 from chatbot.src.core.config import settings  # noqa: E402
+from chatbot.src.adapters.base import AdapterError  # noqa: E402
+from chatbot.src.adapters import setup as adapter_setup  # noqa: E402
+from chatbot.src.graph.llm_providers import resolve_llm_runtime_policy  # noqa: E402
 from chatbot.src.graph.workflow import graph_app  # noqa: E402
+from chatbot.src.api.v1.endpoints.onboarding_runs import router as onboarding_runs_router  # noqa: E402
+from chatbot.src.onboarding.redis_runtime import build_onboarding_event_store, close_onboarding_event_store  # noqa: E402
 
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     conversation_id: str | None = None
     previous_state: Dict[str, Any] | None = None
-    provider: Literal["openai", "vllm"] | None = None
+    provider: Literal["openai", "vllm", "local", "huggingface", "ollama"] | None = None
     model: str | None = None
+    site_id: str | None = Field(None, description="Adapter site ID (site-a|site-b|site-c)")
+    access_token: str | None = Field(None, description="Bridge token or session token")
     user_id: int = 1
     user_name: str = "테스트 사용자"
     user_email: str | None = None
@@ -146,25 +153,30 @@ def _build_graph_input(req: ChatRequest) -> tuple[dict[str, Any], str]:
     previous_state = req.previous_state or {}
     previous_messages = _deserialize_messages(previous_state.get("messages", []))
 
-    provider = (req.provider or previous_state.get("llm_provider") or settings.LLM_PROVIDER or "openai").lower()
-    if provider not in {"openai", "vllm"}:
-        raise HTTPException(status_code=400, detail="provider는 openai 또는 vllm만 지원합니다.")
-
-    if req.model:
-        model = req.model
-    else:
-        if provider == "openai":
-            model = previous_state.get("llm_model") or settings.OPENAI_MODEL
-        else:
-            model = previous_state.get("llm_model") or settings.VLLM_MODEL
+    runtime_policy = resolve_llm_runtime_policy(
+        provider=req.provider or previous_state.get("llm_provider"),
+        model=req.model or previous_state.get("llm_model"),
+    )
+    provider = runtime_policy.provider
+    model = runtime_policy.model
 
     conversation_id = req.conversation_id or previous_state.get("conversation_id") or str(uuid4())
+    try:
+        resolved_adapter = adapter_setup.resolve_site_adapter(
+            req.site_id or previous_state.get("user_info", {}).get("site_id")
+        )
+    except AdapterError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
 
     user_info: dict[str, Any] = dict(previous_state.get("user_info") or {})
     user_info["id"] = req.user_id
     user_info["name"] = req.user_name
     if req.user_email is not None:
         user_info["email"] = req.user_email
+    user_info["site_id"] = resolved_adapter.site_id
+    access_token = req.access_token or previous_state.get("user_info", {}).get("access_token")
+    if access_token is not None:
+        user_info["access_token"] = access_token
 
     state: dict[str, Any] = {
         "messages": [*previous_messages, HumanMessage(content=req.message)],
@@ -215,6 +227,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(onboarding_runs_router, prefix=settings.API_V1_STR)
+
+
+@app.on_event("startup")
+async def _startup_onboarding_event_store() -> None:
+    app.state.onboarding_event_store = build_onboarding_event_store(
+        redis_url=settings.ONBOARDING_REDIS_URL,
+    )
+
+
+@app.on_event("shutdown")
+async def _shutdown_onboarding_event_store() -> None:
+    close_onboarding_event_store(getattr(app.state, "onboarding_event_store", None))
+
 
 @app.get("/health")
 def healthcheck() -> dict[str, Any]:
@@ -227,8 +253,13 @@ def healthcheck() -> dict[str, Any]:
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(req: ChatRequest) -> ChatResponse:
+def chat(http_request: Request, req: ChatRequest) -> ChatResponse:
     try:
+        if req.access_token is None:
+            req.access_token = (
+                http_request.cookies.get("access_token")
+                or http_request.cookies.get("session_token")
+            )
         state, conversation_id = _build_graph_input(req)
 
         final_state = graph_app.invoke(

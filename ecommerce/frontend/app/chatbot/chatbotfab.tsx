@@ -2,9 +2,18 @@
 
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import ChatbotWidget, {
+  bootstrapSharedChatAuth,
+  streamSharedChatResponse,
+  type SharedChatBootstrap,
+  type SharedWidgetHostConfig,
+} from '@shared-chatbot/ChatbotWidget';
 import styles from './chatbotfab.module.css';
 import OrderListUI from './OrderListUI';
-import ProductListUI, { UiProduct } from './ProductListUI';
+import ProductListUI, {
+  ECOMMERCE_SHARED_WIDGET_CAPABILITIES,
+  type UiProduct,
+} from './ProductListUI';
 import ReviewFormUI from './ReviewFormUI';
 import UsedSaleFormUI from './UsedSaleFormUI';
 import { useAuth } from '../authcontext';
@@ -188,7 +197,11 @@ declare global {
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
-const CHATBOT_SITE_ID = 'site-c';
+const SHARED_WIDGET_HOST: SharedWidgetHostConfig = {
+  authBootstrapPath: `${API_BASE_URL || ''}/api/v1/chat/auth-token`,
+  chatbotApiBase: API_BASE_URL || '',
+  streamPath: '/api/v1/chat/stream',
+};
 const ORDER_LIST_BASE_MESSAGE = '최근 30일간의 주문 목록입니다.';
 
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.2'] as const;
@@ -620,6 +633,7 @@ export default function ChatbotFab() {
   const [pendingImage, setPendingImage] = useState<PendingImageState | null>(null);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [chatBootstrap, setChatBootstrap] = useState<SharedChatBootstrap | null>(null);
 
   const releasePendingImageObjectUrl = (candidate: PendingImageState | null) => {
     if (candidate?.objectUrl) {
@@ -653,6 +667,12 @@ export default function ChatbotFab() {
   useEffect(() => {
     localStorage.setItem('chatbot_llm_model', selectedModel);
   }, [selectedModel]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setChatBootstrap(null);
+    }
+  }, [isLoggedIn]);
 
   useEffect(() => {
     // 메시지 추가될 때 항상 아래로 스크롤
@@ -747,6 +767,22 @@ export default function ChatbotFab() {
     setOpen((v) => !v);
   };
 
+  const sharedFetch = (input: string, init?: Record<string, unknown>) => fetch(input, init as RequestInit);
+
+  const ensureSharedChatBootstrap = async () => {
+    if (!SHARED_WIDGET_HOST.chatbotApiBase) {
+      throw new Error('API 주소가 설정되지 않았습니다.');
+    }
+
+    if (chatBootstrap?.authenticated && chatBootstrap.access_token) {
+      return chatBootstrap;
+    }
+
+    const nextBootstrap = await bootstrapSharedChatAuth(SHARED_WIDGET_HOST, sharedFetch);
+    setChatBootstrap(nextBootstrap);
+    return nextBootstrap;
+  };
+
   const sendMessage = async (
     textOverride?: string,
     hidden: boolean = false,
@@ -754,223 +790,126 @@ export default function ChatbotFab() {
   ) => {
     const text = typeof textOverride === 'string' ? textOverride : input.trim();
     if (!text || isLoading) return;
-
-    // 로그인 체크
-    if (!isLoggedIn) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'bot',
-          type: 'text',
-          text: '챗봇을 사용하려면 로그인이 필요합니다. 로그인 후 다시 시도해주세요.',
-        },
-      ]);
-      return;
-    }
-
-    // 사용자 메시지 추가 (hidden이 아닐 때만)
-    if (!hidden) {
-      setMessages((prev) => [...prev, { role: 'user', type: 'text', text }]);
-    }
-
-    setInput('');
     setIsLoading(true);
     setStatusMessage(null); // 초기화
     setStreamingText('');
     setFeedbackError(null);
 
     try {
-      const provider = resolveProviderByModel(selectedModel);
-      const response = await fetch(`${API_BASE_URL}/api/v1/chat/stream`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: text,
-          previous_state: conversationState,
-          resume_payload: resumePayload,
-          provider,
-          model: selectedModel,
-          site_id: CHATBOT_SITE_ID,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API Response Error:', response.status, errorText);
-        throw new Error(`API Error: ${response.status} - ${errorText}`);
+      const bootstrap = await ensureSharedChatBootstrap();
+      if (!bootstrap.authenticated) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'bot',
+            type: 'text',
+            text: '챗봇을 사용하려면 로그인이 필요합니다. 로그인 후 다시 시도해주세요.',
+          },
+        ]);
+        return;
       }
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let accumulatedText = '';
-      let newState = null;
-      let sseBuffer = '';
-      let metadataUiActionHandled = false;
-      let hasUiActionEvent = false;
+      if (!hidden) {
+        setMessages((prev) => [...prev, { role: 'user', type: 'text', text }]);
+      }
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          sseBuffer += decoder.decode(value, { stream: true });
-          const rawEvents = sseBuffer.split('\n\n');
-          sseBuffer = rawEvents.pop() ?? '';
-
-          for (const rawEvent of rawEvents) {
-            const dataLines = rawEvent
-              .split('\n')
-              .filter((line) => line.startsWith('data: '))
-              .map((line) => line.slice(6));
-
-            if (dataLines.length === 0) continue;
-
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            let data: any;
-            try {
-              data = JSON.parse(dataLines.join('\n'));
-            } catch (parseError) {
-              console.warn('Failed to parse SSE payload:', parseError, dataLines.join('\n'));
-              continue;
-            }
-
-            if (data.type === 'metadata') {
-              // 상태 저장
-              newState = data.state;
-
-              // 백엔드가 metadata로 UI 액션만 전달하는 경우도 처리
-              if (
-                !hasUiActionEvent &&
-                !metadataUiActionHandled &&
-                data.ui_action_required === 'show_product_list'
-              ) {
-                const products = data.state?.search_context?.retrieved_products;
-                if (Array.isArray(products) && products.length > 0) {
-                  metadataUiActionHandled = true;
-                  setIsLoading(false);
-                  setStatusMessage(null);
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      role: 'bot',
-                      type: 'product_list',
-                      message: '비슷한 상품을 찾아드렸습니다.',
-                      ui_data: products,
-                    },
-                  ]);
-                }
-              }
-            } else if (data.type === 'text_chunk') {
+      setInput('');
+      const provider = resolveProviderByModel(selectedModel);
+      await streamSharedChatResponse(
+        {
+          host: SHARED_WIDGET_HOST,
+          message: text,
+          previousState: conversationState,
+          resumePayload,
+          provider,
+          model: selectedModel,
+          bootstrap,
+          fetchImpl: sharedFetch,
+        },
+        {
+          onStatusChange: (status) => {
+            setStatusMessage(status);
+          },
+          onStreamingText: (nextText) => {
+            if (nextText) {
               setIsLoading(false);
-              accumulatedText += data.content;
-              setStreamingText(accumulatedText);
-            } else if (data.type === 'status_update') {
-              // 백엔드에서 전달되는 실시간 노드/모델 상태 메시지 업데이트
-              const composedStatus =
-                typeof data.status === 'string' && data.status.trim().length > 0
-                  ? data.status
-                  : typeof data.node === 'string' && data.node.trim().length > 0
-                    ? `${data.node} 노드를 처리하고 있습니다...`
-                    : typeof data.model === 'string' && data.model.trim().length > 0
-                      ? `모델 응답을 생성하고 있습니다... (${data.model})`
-                      : null;
-
-              if (composedStatus) {
-                setStatusMessage(composedStatus);
+            }
+            setStreamingText(nextText);
+          },
+          onStateChange: (nextState) => {
+            setConversationState(nextState);
+          },
+          onMessage: (message) => {
+            setIsLoading(false);
+            setStatusMessage(null);
+            setMessages((prev) => {
+              if (message.type === 'order_list') {
+                return [
+                  ...prev,
+                  {
+                    role: 'bot',
+                    type: 'order_list',
+                    message: buildOrderListMessage(message.message, message.requiresSelection),
+                    orders: message.orders,
+                    requiresSelection: message.requiresSelection,
+                    prior_action: message.prior_action,
+                    ui_config: message.ui_config,
+                  },
+                ];
               }
-            } else if (data.type === 'ui_action') {
-              hasUiActionEvent = true;
-              accumulatedText = '';
-              setStreamingText('');
 
-              if (data.ui_action === 'show_order_list') {
-                setIsLoading(false);
-                setStatusMessage(null);
-                setMessages((prev) => [
+              if (message.type === 'product_list') {
+                return [
                   ...prev,
                   {
                     role: 'bot',
-                    type: 'order_list',
-                    message: buildOrderListMessage(data.message, data.requires_selection),
-                    orders: data.ui_data || [],
-                    requiresSelection: data.requires_selection,
-                    prior_action: data.prior_action,
+                    type: 'product_list',
+                    message: message.message,
+                    ui_data: message.products,
                   },
-                ]);
-              } else if (data.ui_action === 'order_list') {
-                // 동적 UI 경로: ui_generator_node 에서 생성한 ui_config 사용
-                const cfg = data.ui_config || {};
-                const requiresSel = cfg.enable_selection ?? data.requires_selection ?? false;
-                setIsLoading(false);
-                setStatusMessage(null);
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    role: 'bot',
-                    type: 'order_list',
-                    message: data.message || '',
-                    orders: data.ui_data || [],
-                    requiresSelection: requiresSel,
-                    prior_action: data.prior_action,
-                    ui_config: cfg,
-                  },
-                ]);
-              } else if (data.ui_action === 'show_address_search') {
-                setIsLoading(false);
-                setStatusMessage(null);
-                setMessages((prev) => [
+                ];
+              }
+
+              return [
+                ...prev,
+                {
+                  role: 'bot',
+                  type: 'text',
+                  text: message.text,
+                  isStreaming: message.isStreaming,
+                },
+              ];
+            });
+          },
+          onUnhandledUiAction: (data) => {
+            setIsLoading(false);
+            setStatusMessage(null);
+            setMessages((prev) => {
+              if (data.ui_action === 'show_address_search') {
+                return [
                   ...prev,
                   {
                     role: 'bot',
                     type: 'address_search',
                     message: data.message || '주소 검색 버튼을 눌러주세요.',
                   },
-                ]);
-              } else if (data.ui_action === 'show_product_list') {
-                setIsLoading(false);
-                setStatusMessage(null);
-                const products = Array.isArray(data.ui_data) ? data.ui_data : [];
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    role: 'bot',
-                    type: 'product_list',
-                    message: data.message,
-                    ui_data: products,
-                  },
-                ]);
-              } else if (data.ui_action === 'product_list') {
-                // 동적 UI 경로
-                setIsLoading(false);
-                setStatusMessage(null);
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    role: 'bot',
-                    type: 'product_list',
-                    message: data.message || '',
-                    ui_data: data.ui_data || [],
-                  },
-                ]);
-              } else if (data.ui_action === 'show_review_form') {
-                setIsLoading(false);
-                setStatusMessage(null);
-                setMessages((prev) => [
+                ];
+              }
+
+              if (data.ui_action === 'show_review_form') {
+                return [
                   ...prev,
                   {
                     role: 'bot',
                     type: 'review_form',
                     message: data.message || '리뷰를 작성해주세요.',
-                    ui_data: data.ui_data, // Contains order_id, product_id, product_name
+                    ui_data: data.ui_data,
                   },
-                ]);
-              } else if (data.ui_action === 'show_used_sale_form') {
-                setIsLoading(false);
-                setStatusMessage(null);
-                setMessages((prev) => [
+                ];
+              }
+
+              if (data.ui_action === 'show_used_sale_form') {
+                return [
                   ...prev,
                   {
                     role: 'bot',
@@ -978,11 +917,11 @@ export default function ChatbotFab() {
                     message: data.message || '중고 판매 등록 정보를 입력해주세요.',
                     ui_data: data.ui_data,
                   },
-                ]);
-              } else if (data.ui_action === 'confirm_order_action') {
-                setIsLoading(false);
-                setStatusMessage(null);
-                setMessages((prev) => [
+                ];
+              }
+
+              if (data.ui_action === 'confirm_order_action') {
+                return [
                   ...prev,
                   {
                     role: 'bot',
@@ -991,11 +930,11 @@ export default function ChatbotFab() {
                     action: data.ui_data?.action ?? null,
                     responded: false,
                   },
-                ]);
-              } else if (data.ui_action === 'show_option_list') {
-                setIsLoading(false);
-                setStatusMessage(null);
-                setMessages((prev) => [
+                ];
+              }
+
+              if (data.ui_action === 'show_option_list') {
+                return [
                   ...prev,
                   {
                     role: 'bot',
@@ -1005,28 +944,25 @@ export default function ChatbotFab() {
                     options: Array.isArray(data.ui_data) ? data.ui_data : [],
                     responded: false,
                   },
-                ]);
+                ];
               }
 
-              newState = data.state;
-              if (newState) setConversationState(newState);
-            } else if (data.type === 'done') {
-              if (newState) setConversationState(newState);
-              setStatusMessage(null); // 완료 시 상태 메시지 확실히 제거
-              if (accumulatedText.trim()) {
-                const completedText = accumulatedText;
-                setMessages((prev) => [
+              if (typeof data.message === 'string' && data.message.trim()) {
+                return [
                   ...prev,
-                  { role: 'bot', type: 'text', text: completedText, isStreaming: false },
-                ]);
+                  {
+                    role: 'bot',
+                    type: 'text',
+                    text: data.message,
+                  },
+                ];
               }
-              setStreamingText('');
-            } else if (data.type === 'error') {
-              throw new Error(data.message);
-            }
-          }
-        }
-      }
+
+              return prev;
+            });
+          },
+        },
+      );
     } catch (error) {
       console.error('Chat API error:', error);
       setStatusMessage(null);
@@ -1086,7 +1022,7 @@ export default function ChatbotFab() {
       const payload = new FormData();
       payload.append('file', file);
 
-      const response = await fetch(`${API_BASE_URL}/api/v1/chat/upload-image`, {
+      const response = await fetch(`${SHARED_WIDGET_HOST.chatbotApiBase}/api/v1/chat/upload-image`, {
         method: 'POST',
         credentials: 'include',
         body: payload,
@@ -1356,7 +1292,7 @@ export default function ChatbotFab() {
     setFeedbackError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/chat/feedback`, {
+      const response = await fetch(`${SHARED_WIDGET_HOST.chatbotApiBase}/api/v1/chat/feedback`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -1414,141 +1350,174 @@ export default function ChatbotFab() {
         </header>
 
         <div className={styles.msgList} ref={listRef}>
-          {messages.map((m, i) => {
-            if (m.type === 'order_list') {
+          <ChatbotWidget
+            messages={messages}
+            capabilities={ECOMMERCE_SHARED_WIDGET_CAPABILITIES}
+            renderTextMessage={(message, index) => {
+              if (message.role === 'user') {
+                return (
+                  <div className={`${styles.msgRow} ${styles.userRow}`}>
+                    <div className={styles.bubble}>
+                      <ReactMarkdown>{message.text}</ReactMarkdown>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
-                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
+                <div className={`${styles.msgRow} ${styles.botRow}`}>
                   <div className={styles.botMsg}>
                     <span className={styles.botIcon}>✦</span>
-                    <div className={styles.botText}>
-                      <OrderListUI
-                        message={m.message}
-                        orders={m.orders}
-                        onSelect={(ids) => handleOrderSelect(ids, m.prior_action)}
-                        requiresSelection={m.requiresSelection}
-                        prior_action={m.prior_action}
-                        ui_config={m.ui_config}
-                      />
+                    <div
+                      className={`${styles.botText} ${message.isStreaming ? styles.streaming : ''} ${styles.botTextRich} ${message.showDivider ? styles.persistentDivider : ''}`}
+                    >
+                      <BotTextContent text={message.text} isStreaming={Boolean(message.isStreaming)} />
                     </div>
                   </div>
                 </div>
               );
-            } else if (m.type === 'address_search') {
-              return (
-                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
-                  <div className={styles.botMsg}>
-                    <span className={styles.botIcon}>✦</span>
-                    <div className={styles.botText}>
-                      <AddressSearchCard
-                        message={m.message}
-                        disabled={isLoading}
-                        onSubmit={handleAddressSubmit}
-                      />
-                    </div>
+            }}
+            renderOrderList={(message) => (
+              <div className={`${styles.msgRow} ${styles.botRow}`}>
+                <div className={styles.botMsg}>
+                  <span className={styles.botIcon}>✦</span>
+                  <div className={styles.botText}>
+                    <OrderListUI
+                      message={message.message}
+                      orders={message.orders}
+                      onSelect={(ids) => handleOrderSelect(ids, message.prior_action)}
+                      requiresSelection={message.requiresSelection}
+                      prior_action={message.prior_action}
+                      ui_config={message.ui_config}
+                    />
                   </div>
                 </div>
-              );
-            } else if (m.type === 'product_list') {
-              return (
-                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
-                  <div className={styles.botMsg}>
-                    <span className={styles.botIcon}>✦</span>
-                    <div className={styles.botText}>
-                      <ProductListUI products={m.ui_data} message={m.message} />
-                    </div>
+              </div>
+            )}
+            renderProductList={(message) => (
+              <div className={`${styles.msgRow} ${styles.botRow}`}>
+                <div className={styles.botMsg}>
+                  <span className={styles.botIcon}>✦</span>
+                  <div className={styles.botText}>
+                    <ProductListUI products={message.products} message={message.message} />
                   </div>
                 </div>
-              );
-            } else if (m.type === 'review_form') {
-              return (
-                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
-                  <div className={styles.botMsg}>
-                    <span className={styles.botIcon}>✦</span>
-                    <div className={styles.botText}>
-                      <ReviewFormUI
-                        orderId={m.ui_data?.order_id || ''}
-                        productId={m.ui_data?.product_id || ''}
-                        productName={m.ui_data?.product_name || '상품'}
-                        onSubmit={handleReviewSubmit}
-                      />
+              </div>
+            )}
+            renderFallback={(m, i) => {
+              if (m.type === 'address_search') {
+                return (
+                  <div className={`${styles.msgRow} ${styles.botRow}`}>
+                    <div className={styles.botMsg}>
+                      <span className={styles.botIcon}>✦</span>
+                      <div className={styles.botText}>
+                        <AddressSearchCard
+                          message={m.message}
+                          disabled={isLoading}
+                          onSubmit={handleAddressSubmit}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            } else if (m.type === 'used_sale_form') {
-              return (
-                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
-                  <div className={styles.botMsg}>
-                    <span className={styles.botIcon}>✦</span>
-                    <div className={styles.botText}>
-                      <UsedSaleFormUI
-                        message={m.message}
-                        categoryOptions={m.ui_data?.category_options}
-                        conditionOptions={m.ui_data?.condition_options}
-                        categoryPlaceholder={m.ui_data?.category_placeholder}
-                        itemNamePlaceholder={m.ui_data?.item_name_placeholder}
-                        descriptionPlaceholder={m.ui_data?.description_placeholder}
-                        pricePlaceholder={m.ui_data?.price_placeholder}
-                        onSubmit={handleUsedSaleSubmit}
-                      />
+                );
+              }
+
+              if (m.type === 'review_form') {
+                return (
+                  <div className={`${styles.msgRow} ${styles.botRow}`}>
+                    <div className={styles.botMsg}>
+                      <span className={styles.botIcon}>✦</span>
+                      <div className={styles.botText}>
+                        <ReviewFormUI
+                          orderId={m.ui_data?.order_id || ''}
+                          productId={m.ui_data?.product_id || ''}
+                          productName={m.ui_data?.product_name || '상품'}
+                          onSubmit={handleReviewSubmit}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            } else if (m.type === 'confirmation') {
-              return (
-                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
-                  <div className={styles.botMsg}>
-                    <span className={styles.botIcon}>✦</span>
-                    <div className={styles.botText}>
-                      <div className={styles.confirmationContainer}>
-                        <p className={styles.confirmationMessage}>{m.message}</p>
-                        <div className={styles.confirmationActions}>
-                          <button
-                            type="button"
-                            className={styles.confirmationApproveBtn}
-                            onClick={() => handleConfirmationResponse(i, true, m.action)}
-                            disabled={Boolean(m.responded) || isLoading}
-                          >
-                            네, 진행할게요
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.confirmationRejectBtn}
-                            onClick={() => handleConfirmationResponse(i, false, m.action)}
-                            disabled={Boolean(m.responded) || isLoading}
-                          >
-                            아니요
-                          </button>
+                );
+              }
+
+              if (m.type === 'used_sale_form') {
+                return (
+                  <div className={`${styles.msgRow} ${styles.botRow}`}>
+                    <div className={styles.botMsg}>
+                      <span className={styles.botIcon}>✦</span>
+                      <div className={styles.botText}>
+                        <UsedSaleFormUI
+                          message={m.message}
+                          categoryOptions={m.ui_data?.category_options}
+                          conditionOptions={m.ui_data?.condition_options}
+                          categoryPlaceholder={m.ui_data?.category_placeholder}
+                          itemNamePlaceholder={m.ui_data?.item_name_placeholder}
+                          descriptionPlaceholder={m.ui_data?.description_placeholder}
+                          pricePlaceholder={m.ui_data?.price_placeholder}
+                          onSubmit={handleUsedSaleSubmit}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (m.type === 'confirmation') {
+                return (
+                  <div className={`${styles.msgRow} ${styles.botRow}`}>
+                    <div className={styles.botMsg}>
+                      <span className={styles.botIcon}>✦</span>
+                      <div className={styles.botText}>
+                        <div className={styles.confirmationContainer}>
+                          <p className={styles.confirmationMessage}>{m.message}</p>
+                          <div className={styles.confirmationActions}>
+                            <button
+                              type="button"
+                              className={styles.confirmationApproveBtn}
+                              onClick={() => handleConfirmationResponse(i, true, m.action)}
+                              disabled={Boolean(m.responded) || isLoading}
+                            >
+                              네, 진행할게요
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.confirmationRejectBtn}
+                              onClick={() => handleConfirmationResponse(i, false, m.action)}
+                              disabled={Boolean(m.responded) || isLoading}
+                            >
+                              아니요
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            } else if (m.type === 'option_list') {
-              return (
-                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
-                  <div className={styles.botMsg}>
-                    <span className={styles.botIcon}>✦</span>
-                    <div className={styles.botText}>
-                      <OptionSelectCard
-                        message={m.message}
-                        options={m.options}
-                        disabled={isLoading}
-                        submitted={m.responded}
-                        onSubmit={(optionId) => handleOptionSelect(i, optionId, m.action)}
-                      />
+                );
+              }
+
+              if (m.type === 'option_list') {
+                return (
+                  <div className={`${styles.msgRow} ${styles.botRow}`}>
+                    <div className={styles.botMsg}>
+                      <span className={styles.botIcon}>✦</span>
+                      <div className={styles.botText}>
+                        <OptionSelectCard
+                          message={m.message}
+                          options={m.options}
+                          disabled={isLoading}
+                          submitted={m.responded}
+                          onSubmit={(optionId) => handleOptionSelect(i, optionId, m.action)}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            } else if (m.role === 'user') {
-              const isImage = m.type === 'image';
-              return (
-                <div key={i} className={`${styles.msgRow} ${styles.userRow}`}>
-                  <div className={`${styles.bubble} ${isImage ? styles.imageBubble : ''}`}>
-                    {isImage ? (
+                );
+              }
+
+              if (m.role === 'user' && m.type === 'image') {
+                return (
+                  <div className={`${styles.msgRow} ${styles.userRow}`}>
+                    <div className={`${styles.bubble} ${styles.imageBubble}`}>
                       <div className={styles.imagePreviewCard}>
                         <img
                           src={resolveImageUrl(m.image_url)}
@@ -1557,30 +1526,14 @@ export default function ChatbotFab() {
                         />
                         <div className={styles.imageFilename}>{m.filename}</div>
                       </div>
-                    ) : (
-                      <ReactMarkdown>{m.text}</ReactMarkdown>
-                    )}
-                  </div>
-                </div>
-              );
-            } else {
-              const text = m.type === 'text' ? m.text : '';
-              return (
-                <div key={i} className={`${styles.msgRow} ${styles.botRow}`}>
-                  <div className={styles.botMsg}>
-                    <span className={styles.botIcon}>✦</span>
-                    <div
-                      className={`${styles.botText} ${m.type === 'text' && m.isStreaming ? styles.streaming : ''
-                        } ${m.type === 'text' ? styles.botTextRich : ''
-                        } ${m.type === 'text' && m.showDivider ? styles.persistentDivider : ''}`}
-                    >
-                      {m.type === 'text' ? <BotTextContent text={text} isStreaming={Boolean(m.isStreaming)} /> : text}
                     </div>
                   </div>
-                </div>
-              );
-            }
-          })}
+                );
+              }
+
+              return null;
+            }}
+          />
 
           {/* 생성 중 상태 + 스트리밍 프리뷰 */}
           {(isLoading || statusMessage || streamingText) && (
