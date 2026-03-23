@@ -146,3 +146,35 @@ def test_generate_product_adapter_template_for_ecommerce_uses_new_product_routes
     assert '"keyword": keyword' in content
     assert '"min_price": min_price' in content
     assert '"max_price": max_price' in content
+
+
+def test_generate_product_adapter_template_exposes_list_and_get_contract(tmp_path: Path):
+    run_root = tmp_path / "generated" / "shop" / "shop-run-001"
+    run_root.mkdir(parents=True)
+
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "shop-run-001",
+                "site": "food",
+                "source_root": "/workspace/shop",
+                "created_at": "2026-03-15T12:00:00+09:00",
+                "agent_version": "test-v1",
+                "analysis": {"product_api": ["/api/products/"]},
+                "generated_files": [],
+                "patch_targets": [],
+                "frontend_artifacts": [],
+                "docker": {},
+                "tests": {},
+                "status": "generated",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    content = generate_product_adapter_template(run_root).read_text(encoding="utf-8")
+
+    assert "async def list_products" in content
+    assert "async def get_product" in content
+    assert "headers: dict | None = None" in content

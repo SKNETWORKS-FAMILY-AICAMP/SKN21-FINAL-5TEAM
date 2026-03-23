@@ -29,8 +29,7 @@
     "home",
     "login",
     "orders",
-    "mypage",
-    "chatbot"
+    "mypage"
   ],
 
   "auth": {
@@ -95,13 +94,10 @@
   },
 
   "widget": {
-    "widget_injection_point": "global_layout",
-    "available_locations": [
-      "global_layout",
-      "orders_page"
-    ],
-    "floating_button_supported": true,
-    "page_context_extractable": true
+    "widget_injection_point": "none",
+    "available_locations": [],
+    "floating_button_supported": false,
+    "page_context_extractable": false
   },
 
   "security": {
@@ -125,17 +121,12 @@
   },
 
   "agent_integration": {
-    "adapter_ready": true,
+    "adapter_ready": false,
     "retrieval_ready": false,
-    "tool_api_ready": true,
+    "tool_api_ready": false,
     "login_required_for_chat": false,
     "login_required_tools": [],
-    "public_tools": [
-      "get_order_status",
-      "pay_order",
-      "cancel_order",
-      "refund_order"
-    ]
+    "public_tools": []
   },
 
   "retrieval_indexing": {
@@ -156,6 +147,6 @@
     "React(CRA) + Django REST + SQLite 구조",
     "세션은 커스텀 SessionToken 모델을 HttpOnly 쿠키(session_token)로 관리",
     "카트/상품상세/FAQ/정책 페이지는 현재 구현되어 있지 않음",
-    "챗봇은 프론트 내장 규칙기반 UI이며 주문 API를 직접 호출"
+    "주문 API는 로그인 세션 기준으로 주문조회/취소/환불/교환 액션을 지원"
   ]
 }

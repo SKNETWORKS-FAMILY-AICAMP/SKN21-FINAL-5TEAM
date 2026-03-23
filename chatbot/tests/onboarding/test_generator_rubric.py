@@ -71,3 +71,80 @@ def test_generator_rubric_returns_category_scores():
         "no_extra_artifacts": True,
         "no_forbidden_hits": True,
     }
+
+
+def test_generator_rubric_blocks_orders_auth_target_regression():
+    fixture = GeneratorEvalFixture.model_validate(
+        {
+            "id": "food-regression",
+            "site": "food",
+            "input": {
+                "analysis": {"framework": {"backend": "django", "frontend": "react"}},
+                "recommended_outputs": ["chat_auth", "frontend_patch"],
+            },
+            "expected": {
+                "proposed_files": ["files/backend/chat_auth.py"],
+                "proposed_patches": ["patches/frontend_widget_mount.patch"],
+                "target_paths": [
+                    "backend/users/views.py",
+                    "backend/foodshop/urls.py",
+                    "frontend/src/App.js",
+                ],
+            },
+            "forbidden": ["backend/orders/"],
+        }
+    )
+
+    result = evaluate_generator_proposal(
+        fixture,
+        proposed_files=["files/backend/chat_auth.py"],
+        proposed_patches=["patches/frontend_widget_mount.patch"],
+        target_paths=[
+            "backend/users/views.py",
+            "backend/orders/views.py",
+            "frontend/src/App.js",
+        ],
+    )
+
+    assert result.passed is False
+    assert result.missing_targets == ["backend/foodshop/urls.py"]
+    assert result.extra_targets == ["backend/orders/views.py"]
+    assert result.forbidden_hits == ["backend/orders/views.py"]
+
+
+def test_generator_rubric_accepts_bilyeo_flask_vue_strategy_targets():
+    fixture = GeneratorEvalFixture.model_validate(
+        {
+            "id": "bilyeo-regression",
+            "site": "bilyeo",
+            "input": {
+                "analysis": {"framework": {"backend": "flask", "frontend": "vue"}},
+                "recommended_outputs": ["chat_auth", "frontend_patch"],
+            },
+            "expected": {
+                "proposed_files": ["files/backend/chat_auth.py"],
+                "proposed_patches": ["patches/frontend_widget_mount.patch"],
+                "target_paths": [
+                    "backend/routes/auth.py",
+                    "backend/app.py",
+                    "frontend/src/App.vue",
+                ],
+            },
+            "forbidden": ["backend/orders/"],
+        }
+    )
+
+    result = evaluate_generator_proposal(
+        fixture,
+        proposed_files=["files/backend/chat_auth.py"],
+        proposed_patches=["patches/frontend_widget_mount.patch"],
+        target_paths=[
+            "backend/routes/auth.py",
+            "backend/app.py",
+            "frontend/src/App.vue",
+        ],
+    )
+
+    assert result.passed is True
+    assert result.missing_targets == []
+    assert result.extra_targets == []

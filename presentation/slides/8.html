@@ -3,224 +3,49 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>프론트엔드 프레임워크</title>
-<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
-<link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet"/>
-<style>body {
-    margin: 0;
-    padding: 0;
-    font-family: "Noto Sans KR", sans-serif;
-    background-color: #fff
-    }
-.slide-container {
-    width: 1280px;
-    height: 720px;
-    display: flex;
-    position: relative;
-    background-color: #fff;
-    overflow: hidden
-    }
-.left-content {
-    width: 40%;
-    height: 100%;
-    padding: 60px 50px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: relative;
-    z-index: 10
-    }
-.right-content {
-    width: 60%;
-    height: 100%;
-    padding: 60px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: relative;
-    z-index: 10
-    }
-.heading-medium {
-    font-family: "Montserrat", sans-serif;
-    font-weight: 700;
-    font-size: 22px;
-    color: #999;
-    margin-bottom: 10px;
-    text-transform: uppercase;
-    letter-spacing: 3px
-    }
-.heading-large {
-    font-family: "Montserrat", "Noto Sans KR", sans-serif;
-    font-weight: 900;
-    font-size: 56px;
-    line-height: 1.1;
-    color: #000;
-    margin-bottom: 30px
-    }
-.accent-bar {
-    width: 80px;
-    height: 6px;
-    background-color: #000;
-    margin-bottom: 30px
-    }
-.body-text {
-    font-family: "Noto Sans KR", sans-serif;
-    font-size: 18px;
-    color: #666;
-    line-height: 1.8
-    }
-.framework-item {
-    display: flex;
-    align-items: center;
-    background-color: #f8f8f8;
-    padding: 30px;
-    margin-bottom: 20px;
-    border-radius: 8px;
-    position: relative;
-    transition: all 0.3s ease
-    }
-.framework-item:hover {
-    background-color: #000;
-    transform: translatex(10px)
-    }
-.framework-item:hover .framework-title,
-.framework-item:hover .framework-desc {
-    color: #fff
-    }
-.framework-icon {
-    width: 80px;
-    height: 80px;
-    background-color: #000;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 30px;
-    flex-shrink: 0
-    }
-.framework-icon i {
-    font-size: 36px;
-    color: #fff
-    }
-.framework-content {
-    flex: 1
-    }
-.framework-title {
-    font-family: "Montserrat", sans-serif;
-    font-weight: 700;
-    font-size: 28px;
-    color: #000;
-    margin-bottom: 8px;
-    letter-spacing: 1px
-    }
-.framework-desc {
-    font-family: "Noto Sans KR", sans-serif;
-    font-size: 16px;
-    color: #666;
-    line-height: 1.5
-    }
-.circle-decoration {
-    position: absolute;
-    border-radius: 50%;
-    z-index: 0
-    }
-.circle-1 {
-    width: 250px;
-    height: 250px;
-    border: 25px solid #f5f5f5;
-    bottom: -80px;
-    left: -80px;
-    opacity: 0.5
-    }
-.circle-2 {
-    width: 180px;
-    height: 180px;
-    border: 20px solid #f5f5f5;
-    top: 60px;
-    right: -60px;
-    opacity: 0.3
-    }
-.pattern-dots {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-image: radial-gradient(#000 1px, transparent 1px);
-    background-size: 25px 25px;
-    opacity: 0.02;
-    z-index: 0
-    }</style>
+<title>다중 웹사이트 검증 환경</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&amp;family=Noto+Sans+KR:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="theme.css" rel="stylesheet"/>
 </head>
 <body>
-<div class="slide-container">
-<div class="pattern-dots"></div>
-<div class="circle-decoration circle-1"></div>
-<div class="circle-decoration circle-2"></div>
-
-<!-- Left Content -->
-<div class="left-content">
-<div style="position: relative;
-z-index: 2">
-<p class="heading-medium">FRONTEND</p>
-<h1 class="heading-large">프론트엔드<br/>프레임워크</h1>
+<main class="slide">
+<div class="deco-ring"></div>
+<div class="deco-orb"></div>
+<div class="topbar">
+<p class="eyebrow">Validation Sites</p>
+<span class="page-number">12</span>
+</div>
+<section class="hero">
+<h1>두 개의 목업 사이트,<br/>의도적으로 다른 조건 구성</h1>
 <div class="accent-bar"></div>
-<p class="body-text">
-사용자 인터페이스 구축을 위해 선택한 프론트엔드 기술 스택과 선정 이유를 설명합니다.
-</p>
-</div>
-</div>
-
-<!-- Right Content -->
-<div class="right-content">
-<div style="position: relative;
-z-index: 2">
-<!-- React Framework -->
-<div class="framework-item">
-<div class="framework-icon">
-<i class="fab fa-react"></i>
-</div>
-<div class="framework-content">
-<h3 class="framework-title">React.js</h3>
-<p class="framework-desc">컴포넌트 기반 아키텍처로 재사용성과 유지보수성 확보</p>
-</div>
-</div>
-
-<!-- Next.js Framework -->
-<div class="framework-item">
-<div class="framework-icon">
-<i class="fas fa-bolt"></i>
-</div>
-<div class="framework-content">
-<h3 class="framework-title">Next.js</h3>
-<p class="framework-desc">서버 사이드 렌더링과 SEO 최적화 지원</p>
-</div>
-</div>
-
-<!-- TypeScript Framework -->
-<div class="framework-item">
-<div class="framework-icon">
-<i class="fab fa-js"></i>
-</div>
-<div class="framework-content">
-<h3 class="framework-title">TypeScript</h3>
-<p class="framework-desc">정적 타이핑으로 개발 생산성 향상 및 오류 감소</p>
-</div>
-</div>
-
-<!-- Tailwind CSS -->
-<div class="framework-item">
-<div class="framework-icon">
-<i class="fas fa-wind"></i>
-</div>
-<div class="framework-content">
-<h3 class="framework-title">Tailwind CSS</h3>
-<p class="framework-desc">유틸리티 기반 CSS로 빠른 UI 개발 및 일관성 유지</p>
-</div>
-</div>
-</div>
-</div>
-</div>
+<p class="lead">같은 조건 반복보다, 서로 다른 프레임워크·로그인·데이터 구조에서의 일반화 가능성 확인</p>
+</section>
+<section class="grid-2" style="margin-top:28px;">
+<article class="site-card dark">
+<p class="card-label">Site A · Food</p>
+<h3>주문 중심 커머스 시나리오</h3>
+<ul class="list" style="color:rgba(248,250,252,0.82);">
+<li>음식 주문/상태 확인 중심의 빠른 상담 플로우</li>
+<li>한정된 액션을 빠르게 실행하는 운영형 구조</li>
+<li>즉시성 높은 문의에서 챗봇 개입 효과 확인</li>
+</ul>
+</article>
+<article class="site-card">
+<p class="card-label">Site B · Bilyeo</p>
+<h3>대여/예약 중심 서비스 시나리오</h3>
+<ul class="list">
+<li>상품 탐색과 예약/대여 조건 확인이 함께 필요한 구조</li>
+<li>로그인, 계정, 예약 정보가 결합된 복합 문의</li>
+<li>다른 스키마와 인증 흐름에서도 동일 구조가 통하는지 검증</li>
+</ul>
+</article>
+</section>
+<section class="grid-4" style="margin-top:18px;">
+<article class="card"><p class="card-label">Framework</p><h3 style="font-size:20px;">서로 다른 UI 구조</h3><p>하드코딩 의존을 줄이는 마운트 포인트 탐색</p></article>
+<article class="card"><p class="card-label">Auth</p><h3 style="font-size:20px;">서로 다른 로그인</h3><p>서로 다른 세션·인증 조건에서도 가능한 상담 액션 연결</p></article>
+<article class="card"><p class="card-label">Data</p><h3 style="font-size:20px;">서로 다른 DB</h3><p>주문·상품·예약 데이터 모델 차이를 흡수하는 어댑터 계층</p></article>
+<article class="card"><p class="card-label">Goal</p><h3 style="font-size:20px;">자동 연동 가능성</h3><p>특정 사이트 맞춤형 봇이 아닌 확장 가능한 SaaS 구조</p></article>
+</section>
+</main>
 </body>
 </html>

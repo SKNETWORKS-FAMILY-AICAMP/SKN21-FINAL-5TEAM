@@ -7,6 +7,7 @@ class Order(models.Model):
         PREPARING = "preparing", "상품 준비 중"
         SHIPPING = "shipping", "배송 중"
         DELIVERED = "delivered", "배송 완료"
+        EXCHANGE_REQUESTED = "exchange_requested", "교환 접수"
         CANCELLED = "cancelled", "주문 취소"
         REFUNDED = "refunded", "환불 완료"
 

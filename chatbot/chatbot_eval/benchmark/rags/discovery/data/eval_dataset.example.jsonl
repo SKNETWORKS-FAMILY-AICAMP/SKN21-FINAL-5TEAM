@@ -1,0 +1,1 @@
+{"id":"discovery_001","user_query":"이 가방이랑 비슷한 상품 찾아줘","image_url":"tests/assets/bag-001.jpg","expected_product_ids":["prod_1001","prod_2450"],"expected_keywords":["가방","유사 상품"]}
