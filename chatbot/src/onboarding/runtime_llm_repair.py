@@ -6,11 +6,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import ValidationError
 
 from .debug_logging import append_generation_log, append_llm_usage, write_llm_debug_artifact
 from .framework_strategies import seam_target_rejection_reason
-from .patch_planner import build_llm_patch_factory
-from .runtime_runner import _apply_patch_file, _extract_patch_target_files
+from .patch_planner import EditDraftPayload, EditOperationPayload, build_llm_patch_factory
+from .workspace_editor import SUPPORTED_EDIT_OPERATIONS, apply_direct_edit_operations
 
 
 def _normalize_evidence_value(value: Any) -> Any:
@@ -40,8 +41,7 @@ def attempt_llm_runtime_repair(
     model: str | None = None,
 ) -> dict[str, Any]:
     report_root = run_root / "reports"
-    patch_root = run_root / "patches"
-    patch_root.mkdir(parents=True, exist_ok=True)
+    report_root.mkdir(parents=True, exist_ok=True)
 
     if llm_factory is None:
         return {
@@ -49,9 +49,11 @@ def attempt_llm_runtime_repair(
             "applied": False,
             "source": "hard_fallback",
             "failure_reason": "llm_runtime_repair_unavailable",
+            "edit_path": None,
             "patch_path": None,
             "debug_path": None,
             "target_files": [],
+            "applied_edits": [],
         }
 
     normalized_evidence = _normalize_evidence_value(evidence_payload)
@@ -67,13 +69,15 @@ def attempt_llm_runtime_repair(
         "evidence": normalized_evidence,
     }
 
-    patch_path = patch_root / f"runtime-repair-{attempt_id}.patch"
+    edit_path = report_root / f"runtime-repair-{attempt_id}.json"
     raw_response = ""
-    normalized_patch = ""
+    normalized_response = ""
     debug_path: Path | None = None
     source = "hard_fallback"
     failure_reason = "llm_exception"
     guardrail_rejection_reason: str | None = None
+    applied_edits: list[dict[str, str]] = []
+    parsed_payload: Any = None
 
     try:
         llm = llm_factory()
@@ -91,25 +95,42 @@ def attempt_llm_runtime_repair(
             model=model or getattr(llm, "model_name", None),
             usage={},
         )
-        normalized_patch = _normalize_patch_response(raw_response)
-        if normalized_patch and not normalized_patch.endswith("\n"):
-            normalized_patch += "\n"
-        if not normalized_patch.strip():
+        normalized_response = _normalize_patch_response(raw_response)
+        if not normalized_response.strip():
             failure_reason = "invalid_llm_response"
         else:
-            patch_path.write_text(normalized_patch, encoding="utf-8")
-            target_files = _extract_patch_target_files(patch_path)
-            target_validation_error = _validate_patch_targets(target_files)
-            if target_validation_error is not None:
-                failure_reason = target_validation_error
-                guardrail_rejection_reason = target_validation_error
-            else:
-                apply_failure = _apply_patch_file(patch_path=patch_path, workspace=runtime_workspace)
-                if apply_failure is None:
+            parsed_payload = json.loads(normalized_response)
+            payload = EditDraftPayload.model_validate(parsed_payload)
+            failure_reason, guardrail_rejection_reason = _validate_edit_operations(
+                operations=payload.operations,
+                candidate_files=candidate_files,
+            )
+            if failure_reason is None:
+                edit_path.write_text(
+                    json.dumps(
+                        {
+                            "operations": [item.model_dump(mode="json") for item in payload.operations],
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+                try:
+                    apply_result = apply_direct_edit_operations(
+                        workspace_root=runtime_workspace,
+                        operations=[item.model_dump(mode="json") for item in payload.operations],
+                    )
+                except Exception:
+                    failure_reason = "edit_apply_failed"
+                else:
+                    applied_edits = list(apply_result.get("applied_edits") or [])
                     source = "llm"
                     failure_reason = None
-                else:
-                    failure_reason = str(apply_failure.get("error") or "patch_apply_failed")
+    except json.JSONDecodeError:
+        failure_reason = "invalid_llm_response"
+    except ValidationError:
+        failure_reason = "edit_payload_invalid"
     except Exception:
         failure_reason = "llm_exception"
 
@@ -120,9 +141,12 @@ def attempt_llm_runtime_repair(
         "guardrail_rejection_reason": guardrail_rejection_reason,
         "failure_signature": failure_signature,
         "raw_response": raw_response,
-        "normalized_response": normalized_patch,
+        "normalized_response": normalized_response,
+        "parsed_payload": parsed_payload,
         "candidate_files": candidate_files,
-        "target_files": _extract_patch_target_files(patch_path) if patch_path.exists() else [],
+        "target_files": [item["path"] for item in applied_edits],
+        "applied_edits": applied_edits,
+        "edit_path": str(edit_path) if edit_path.exists() else None,
     }
     debug_path = write_llm_debug_artifact(
         report_root=report_root,
@@ -138,11 +162,12 @@ def attempt_llm_runtime_repair(
         details={
             "failure_signature": failure_signature,
             "source": source,
-            "patch_path": str(patch_path),
+            "edit_path": str(edit_path) if edit_path.exists() else None,
             "debug_path": str(debug_path),
             "failure_reason": failure_reason,
             "guardrail_rejection_reason": guardrail_rejection_reason,
             "target_files": debug_payload["target_files"],
+            "applied_edits": applied_edits,
         },
     )
     return {
@@ -151,9 +176,11 @@ def attempt_llm_runtime_repair(
         "source": source,
         "failure_reason": failure_reason,
         "guardrail_rejection_reason": guardrail_rejection_reason,
-        "patch_path": str(patch_path),
+        "edit_path": str(edit_path) if edit_path.exists() else None,
+        "patch_path": None,
         "debug_path": str(debug_path),
         "target_files": debug_payload["target_files"],
+        "applied_edits": applied_edits,
     }
 
 
@@ -172,12 +199,15 @@ def build_runtime_repair_factory(
 
 
 def _runtime_repair_system_prompt() -> str:
-    return """You are a runtime repair patch generator.
-Return only a unified diff patch. Do not wrap in markdown fences. Do not explain.
-Patch only files inside the provided runtime workspace. Do not reference absolute paths.
-Prefer the smallest safe fix that addresses the observed runtime failure.
-If the evidence indicates a Python import/path mismatch, edit the referenced file directly.
-If no safe patch can be produced, return an empty string."""
+    return (
+        "You are a runtime repair edit generator.\n"
+        "Return only JSON with key `operations`.\n"
+        "Each operation must include `path`, `operation`, and only the fields required for that operation.\n"
+        "Allowed operations: replace_text, insert_after, insert_before, append_text.\n"
+        "Only edit files from the provided candidate_files list.\n"
+        "Do not wrap the response in markdown fences.\n"
+        "If no safe edit can be produced, return an empty string.\n"
+    )
 
 
 def _normalize_patch_response(raw_response: str) -> str:
@@ -271,13 +301,28 @@ def _read_file_samples(*, runtime_workspace: Path, candidate_files: list[str]) -
     return samples
 
 
-def _validate_patch_targets(target_files: list[str]) -> str | None:
-    if not target_files:
-        return "invalid_patch_targets"
-    for target in target_files:
-        if target.startswith("/") or ".." in Path(target).parts:
-            return "invalid_patch_targets"
-        seam_rejection = seam_target_rejection_reason(target)
+def _validate_edit_operations(
+    *,
+    operations: list[EditOperationPayload],
+    candidate_files: list[str],
+) -> tuple[str | None, str | None]:
+    if not operations:
+        return ("edit_payload_invalid", None)
+    candidate_set = set(candidate_files)
+    for operation in operations:
+        if operation.operation not in SUPPORTED_EDIT_OPERATIONS:
+            return ("edit_payload_invalid", None)
+        if operation.path.startswith("/") or ".." in Path(operation.path).parts:
+            return ("edit_target_rejected", None)
+        seam_rejection = seam_target_rejection_reason(operation.path)
         if seam_rejection is not None:
-            return seam_rejection
-    return None
+            return (seam_rejection, seam_rejection)
+        if operation.path not in candidate_set:
+            return ("edit_target_rejected", None)
+        if operation.operation in {"insert_after", "insert_before"} and not operation.anchor:
+            return ("edit_payload_invalid", None)
+        if operation.operation in {"insert_after", "insert_before", "append_text"} and not operation.content:
+            return ("edit_payload_invalid", None)
+        if operation.operation == "replace_text" and (not operation.old or operation.new is None):
+            return ("edit_payload_invalid", None)
+    return (None, None)

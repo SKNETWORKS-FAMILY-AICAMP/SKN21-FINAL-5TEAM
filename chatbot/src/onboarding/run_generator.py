@@ -30,6 +30,7 @@ def generate_run_bundle(
         "agent_version": agent_version,
         "analysis": analysis,
         "generated_files": [],
+        "edit_artifacts": [],
         "patch_targets": [],
         "frontend_artifacts": [],
         "docker": {},

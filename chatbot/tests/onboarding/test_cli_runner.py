@@ -1,9 +1,36 @@
 import json
+import os
+import io
 import subprocess
 import sys
+from types import ModuleType
 from pathlib import Path
+from contextlib import redirect_stderr, redirect_stdout
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+import pytest
+
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+os.environ["PYTHONPATH"] = (
+    str(ROOT)
+    if not os.environ.get("PYTHONPATH")
+    else f"{str(ROOT)}:{os.environ['PYTHONPATH']}"
+)
+
+os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
+os.environ.setdefault("QDRANT_API_KEY", "test-key")
+
+fake_langchain_ollama = ModuleType("langchain_ollama")
+
+
+class _FakeChatOllama:
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+
+fake_langchain_ollama.ChatOllama = _FakeChatOllama
+sys.modules.setdefault("langchain_ollama", fake_langchain_ollama)
 
 from chatbot.src.onboarding.approval_store import ApprovalStore
 from chatbot.scripts.run_onboarding_generation import build_parser
@@ -17,6 +44,100 @@ from chatbot.scripts.run_slack_socket_gateway import (
     run_gateway,
 )
 from chatbot.src.onboarding.slack_bridge import SlackWebBridge
+
+
+@pytest.fixture(autouse=True)
+def _stub_cli_dependencies(monkeypatch):
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.run_smoke_tests",
+        lambda **_: [
+            {
+                "step": "login",
+                "step_id": "login",
+                "required": True,
+                "category": "auth",
+                "timed_out": False,
+                "returncode": 0,
+                "stdout": '{"ok": true}',
+                "stderr": "",
+                "request": {"method": "POST", "url": "http://127.0.0.1:8000/api/users/login/", "headers": {}},
+                "response": {"status": 200, "headers": {"Set-Cookie": "sessionid=abc"}, "body": '{"ok": true}'},
+                "exports": {"login.cookies": "sessionid=abc"},
+            },
+            {
+                "step": "session-me",
+                "step_id": "session-me",
+                "required": True,
+                "category": "auth",
+                "timed_out": False,
+                "returncode": 0,
+                "stdout": '{"user": {"id": 7}}',
+                "stderr": "",
+                "request": {"method": "GET", "url": "http://127.0.0.1:8000/api/users/me/", "headers": {"Cookie": "sessionid=abc"}},
+                "response": {"status": 200, "headers": {}, "body": '{"user": {"id": 7}}'},
+                "exports": {"login.user_id": "7"},
+            },
+            {
+                "step": "product-api",
+                "step_id": "product-api",
+                "required": True,
+                "category": "catalog",
+                "timed_out": False,
+                "returncode": 0,
+                "stdout": '{"items": [{"id": 1}]}',
+                "stderr": "",
+                "request": {"method": "GET", "url": "http://127.0.0.1:8000/api/products/", "headers": {"Cookie": "sessionid=abc"}},
+                "response": {"status": 200, "headers": {}, "body": '{"items": [{"id": 1}]}'},
+                "exports": {"product.first_item": "{'id': 1}"},
+            },
+            {
+                "step": "order-api",
+                "step_id": "order-api",
+                "required": True,
+                "category": "orders",
+                "timed_out": False,
+                "returncode": 0,
+                "stdout": '{"orders": [{"id": 7}]}',
+                "stderr": "",
+                "request": {"method": "GET", "url": "http://127.0.0.1:8000/api/orders/", "headers": {"Cookie": "sessionid=abc"}},
+                "response": {"status": 200, "headers": {}, "body": '{"orders": [{"id": 7}]}'},
+                "exports": {"order.first_order": "{'id': 7}"},
+            },
+        ],
+    )
+    monkeypatch.setattr("chatbot.scripts.run_onboarding_generation.build_onboarding_event_store", lambda redis_url: None)
+    monkeypatch.setattr("chatbot.scripts.run_onboarding_generation.close_onboarding_event_store", lambda store: None)
+
+    original_run = subprocess.run
+
+    def _inline_run(cmd, *args, **kwargs):
+        if (
+            isinstance(cmd, list)
+            and len(cmd) >= 2
+            and cmd[0] == sys.executable
+            and cmd[1] == "chatbot/scripts/run_onboarding_generation.py"
+        ):
+            captured_stdout = io.StringIO()
+            captured_stderr = io.StringIO()
+            old_argv = sys.argv[:]
+            old_cwd = os.getcwd()
+            cwd = kwargs.get("cwd")
+            try:
+                if cwd is not None:
+                    os.chdir(cwd)
+                sys.argv = [cmd[1], *cmd[2:]]
+                with redirect_stdout(captured_stdout), redirect_stderr(captured_stderr):
+                    try:
+                        exit_code = run_onboarding_generation_main()
+                    except SystemExit as exc:
+                        exit_code = int(exc.code or 0) if isinstance(exc.code, int) else 1
+            finally:
+                sys.argv = old_argv
+                os.chdir(old_cwd)
+            return subprocess.CompletedProcess(cmd, exit_code, captured_stdout.getvalue(), captured_stderr.getvalue())
+        return original_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", _inline_run)
 
 
 def test_cli_runner_executes_onboarding_flow(tmp_path: Path):
@@ -73,7 +194,8 @@ def test_cli_runner_executes_onboarding_flow(tmp_path: Path):
     payload = json.loads(result.stdout)
     assert payload["run_root"].endswith("generated/food/food-run-001")
     assert payload["runtime_workspace"].endswith("runtime/food/food-run-001/workspace")
-    assert payload["patch_proposal_path"].endswith("reports/patch-proposal.json")
+    assert payload["edit_plan_path"].endswith("reports/edit-plan.json")
+    assert payload["edit_execution_path"].endswith("reports/edit-execution.json")
 
 
 def test_cli_runner_accepts_explicit_approval_inputs(tmp_path: Path):
@@ -204,6 +326,52 @@ def test_cli_runner_can_emit_report_paths(tmp_path: Path):
     assert payload["smoke_summary_path"].endswith("reports/smoke-summary.json")
     assert payload["diagnostic_report_path"].endswith("reports/diagnostic-report.json")
     assert payload["export_metadata_path"].endswith("reports/export-metadata.json")
+
+
+def test_cli_runner_emits_edit_plan_and_execution_paths(monkeypatch, capsys):
+    monkeypatch.setattr("chatbot.scripts.run_onboarding_generation.load_generation_env", lambda: None)
+    monkeypatch.setattr("chatbot.scripts.run_onboarding_generation.build_onboarding_event_store", lambda redis_url: None)
+    monkeypatch.setattr("chatbot.scripts.run_onboarding_generation.close_onboarding_event_store", lambda store: None)
+    monkeypatch.setattr(
+        "chatbot.scripts.run_onboarding_generation.run_onboarding_generation",
+        lambda **kwargs: {
+            "run_root": "/tmp/generated/food/food-run-edit-paths",
+            "runtime_workspace": "/tmp/runtime/food/food-run-edit-paths/workspace",
+            "current_state": "completed",
+            "edit_plan_path": "/tmp/generated/food/food-run-edit-paths/reports/edit-plan.json",
+            "edit_execution_path": "/tmp/generated/food/food-run-edit-paths/reports/edit-execution.json",
+            "export_metadata_path": "/tmp/generated/food/food-run-edit-paths/reports/export-metadata.json",
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_onboarding_generation.py",
+            "--site",
+            "food",
+            "--source-root",
+            "/tmp/source",
+            "--generated-root",
+            "/tmp/generated",
+            "--runtime-root",
+            "/tmp/runtime",
+            "--run-id",
+            "food-run-edit-paths",
+            "--agent-version",
+            "test-v1",
+        ],
+    )
+
+    exit_code = run_onboarding_generation_main()
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["edit_plan_path"].endswith("reports/edit-plan.json")
+    assert payload["edit_execution_path"].endswith("reports/edit-execution.json")
+    assert payload["export_metadata_path"].endswith("reports/export-metadata.json")
+    assert not payload.get("proposed_patch_path")
+    assert not payload.get("llm_proposed_patch_path")
 
 
 def test_cli_runner_preserves_repaired_run_fields(monkeypatch, capsys):

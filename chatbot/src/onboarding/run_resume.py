@@ -27,7 +27,8 @@ def analyze_run_checkpoint(run_root: str | Path) -> ResumeCheckpoint:
     reports = root / "reports"
 
     has_analysis = (root / "manifest.json").exists() and (reports / "codebase-map.json").exists()
-    has_generation = has_analysis and (reports / "patch-proposal.json").exists() and (root / "patches" / "proposed.patch").exists()
+    has_generation_artifact = (reports / "edit-plan.json").exists() or (root / "patches" / "proposed.patch").exists()
+    has_generation = has_analysis and (reports / "patch-proposal.json").exists() and has_generation_artifact
 
     merge_payload = _read_json(reports / "merge-simulation.json")
     smoke_payload = _read_json(reports / "smoke-summary.json")
@@ -60,7 +61,11 @@ def analyze_run_checkpoint(run_root: str | Path) -> ResumeCheckpoint:
             failed_stage = "validation"
             reason = "merge simulation failed"
 
-    if export_payload:
+    if export_payload and export_payload.get("replay_passed") is False:
+        last_completed_stage = "validation"
+        failed_stage = "export"
+        reason = "export replay validation failed"
+    elif export_payload:
         last_completed_stage = "export"
         failed_stage = None
         reason = "export metadata present"

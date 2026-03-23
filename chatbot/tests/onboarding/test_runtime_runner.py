@@ -8,7 +8,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from chatbot.src.onboarding.manifest import OverlayManifest
 from chatbot.src.onboarding.runtime_runner import (
+    apply_overlay_edit_artifacts,
     prepare_runtime_workspace,
+    simulate_exported_patch_replay,
     simulate_candidate_patch_merge,
     simulate_runtime_merge,
 )
@@ -52,6 +54,154 @@ def test_prepare_runtime_workspace_copies_source_and_overlay_files(tmp_path: Pat
     assert (workspace / "README.md").read_text(encoding="utf-8") == "hello\n"
     assert (workspace / "app" / "config.txt").read_text(encoding="utf-8") == "original\n"
     assert (workspace / "app" / "generated.txt").read_text(encoding="utf-8") == "overlay\n"
+
+
+def test_overlay_manifest_accepts_edit_artifacts(tmp_path: Path):
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+
+    manifest = OverlayManifest.model_validate(
+        {
+            "run_id": "run-001",
+            "site": "food",
+            "source_root": str(source_root),
+            "created_at": "2026-03-23T12:00:00+09:00",
+            "agent_version": "v1",
+            "analysis": {},
+            "generated_files": [],
+            "patch_targets": [],
+            "edit_artifacts": ["reports/edit-plan.json"],
+            "docker": {},
+            "tests": {},
+            "status": "generated",
+        }
+    )
+
+    assert manifest.edit_artifacts == ["reports/edit-plan.json"]
+
+
+def test_apply_overlay_edit_artifacts_updates_workspace_and_writes_report(tmp_path: Path):
+    source_root = tmp_path / "source"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+
+    run_root = generated_root / "food" / "run-001"
+    (run_root / "reports").mkdir(parents=True)
+    (run_root / "reports" / "edit-plan.json").write_text(
+        json.dumps(
+            {
+                "operations": [
+                    {
+                        "path": "backend/users/views.py",
+                        "operation": "insert_after",
+                        "anchor": "def login(request):\n    return None\n",
+                        "content": "\n\ndef onboarding_chat_auth_token(request):\n    return None\n",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = OverlayManifest.model_validate(
+        {
+            "run_id": "run-001",
+            "site": "food",
+            "source_root": str(source_root),
+            "created_at": "2026-03-23T12:00:00+09:00",
+            "agent_version": "v1",
+            "analysis": {},
+            "generated_files": [],
+            "patch_targets": [],
+            "edit_artifacts": ["reports/edit-plan.json"],
+            "docker": {},
+            "tests": {},
+            "status": "generated",
+        }
+    )
+
+    workspace = prepare_runtime_workspace(
+        manifest=manifest,
+        generated_run_root=run_root,
+        runtime_root=runtime_root,
+    )
+    report_path = apply_overlay_edit_artifacts(
+        manifest=manifest,
+        generated_run_root=run_root,
+        workspace_root=workspace,
+        report_root=run_root / "reports",
+    )
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert report_path.name == "edit-execution.json"
+    assert payload["passed"] is True
+    assert payload["applied_edit_artifacts"] == ["reports/edit-plan.json"]
+    assert payload["applied_edits"] == [
+        {"path": "backend/users/views.py", "operation": "insert_after"}
+    ]
+    assert "onboarding_chat_auth_token" in (workspace / "backend" / "users" / "views.py").read_text(encoding="utf-8")
+
+
+def test_apply_overlay_edit_artifacts_allows_empty_operation_plans(tmp_path: Path):
+    source_root = tmp_path / "source"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+
+    run_root = generated_root / "food" / "run-empty"
+    (run_root / "reports").mkdir(parents=True)
+    (run_root / "reports" / "edit-plan.json").write_text(
+        json.dumps({"operations": []}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    manifest = OverlayManifest.model_validate(
+        {
+            "run_id": "run-empty",
+            "site": "food",
+            "source_root": str(source_root),
+            "created_at": "2026-03-23T12:00:00+09:00",
+            "agent_version": "v1",
+            "analysis": {},
+            "generated_files": [],
+            "patch_targets": [],
+            "edit_artifacts": ["reports/edit-plan.json"],
+            "docker": {},
+            "tests": {},
+            "status": "generated",
+        }
+    )
+
+    workspace = prepare_runtime_workspace(
+        manifest=manifest,
+        generated_run_root=run_root,
+        runtime_root=runtime_root,
+    )
+    report_path = apply_overlay_edit_artifacts(
+        manifest=manifest,
+        generated_run_root=run_root,
+        workspace_root=workspace,
+        report_root=run_root / "reports",
+    )
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert payload["passed"] is True
+    assert payload["applied_edit_artifacts"] == ["reports/edit-plan.json"]
+    assert payload["applied_edits"] == []
+    assert payload["failed_edit_artifacts"] == []
 
 
 def test_prepare_runtime_workspace_excludes_dependency_and_build_artifacts(tmp_path: Path):
@@ -222,6 +372,64 @@ def test_simulate_runtime_merge_writes_report(tmp_path: Path):
     assert "patches/config.patch" in payload["applied_patch_artifacts"]
 
 
+def test_simulate_runtime_merge_ignores_unlisted_patch_artifacts(tmp_path: Path):
+    source_root = tmp_path / "source"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend").mkdir(parents=True)
+    (source_root / "backend" / "app.py").write_text(
+        "from flask import Flask\napp = Flask(__name__)\n",
+        encoding="utf-8",
+    )
+
+    run_root = generated_root / "shop" / "run-unlisted"
+    (run_root / "patches").mkdir(parents=True)
+    (run_root / "patches" / "extra.patch").write_text(
+        """--- a/backend/app.py
++++ b/backend/app.py
+@@ -1,2 +1,3 @@
+ from flask import Flask
+ app = Flask(__name__)
++print("patched")
+""",
+        encoding="utf-8",
+    )
+
+    manifest = OverlayManifest.model_validate(
+        {
+            "run_id": "run-unlisted",
+            "site": "shop",
+            "source_root": str(source_root),
+            "created_at": "2026-03-15T12:00:00+09:00",
+            "agent_version": "v1",
+            "analysis": {},
+            "generated_files": [],
+            "patch_targets": [],
+            "docker": {},
+            "tests": {},
+            "status": "generated",
+        }
+    )
+
+    workspace = prepare_runtime_workspace(
+        manifest=manifest,
+        generated_run_root=run_root,
+        runtime_root=runtime_root,
+    )
+    report_path = simulate_runtime_merge(
+        manifest=manifest,
+        generated_run_root=run_root,
+        runtime_workspace=workspace,
+        report_root=run_root / "reports",
+    )
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert "patches/extra.patch" not in payload["applied_patch_artifacts"]
+    assert payload["failed_patch_artifacts"] == []
+    assert (workspace / "backend" / "app.py").read_text(encoding="utf-8") == "from flask import Flask\napp = Flask(__name__)\n"
+
+
 def test_simulate_runtime_merge_ignores_draft_proposed_patch(tmp_path: Path):
     source_root = tmp_path / "source"
     generated_root = tmp_path / "generated"
@@ -288,6 +496,66 @@ export default function App() {
     assert 'import SharedChatbotWidget from "./chatbot/SharedChatbotWidget";' not in content
 
 
+def test_simulate_runtime_merge_ignores_draft_llm_proposed_patch(tmp_path: Path):
+    source_root = tmp_path / "source"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+
+    run_root = generated_root / "food" / "run-llm-ignore"
+    (run_root / "patches").mkdir(parents=True)
+    (run_root / "patches" / "llm-proposed.patch").write_text(
+        """--- a/backend/users/views.py
++++ b/backend/users/views.py
+@@ -1,2 +1,5 @@
+ def login(request):
+     return None
++
++def onboarding_chat_auth_token(request):
++    return None
+""",
+        encoding="utf-8",
+    )
+
+    manifest = OverlayManifest.model_validate(
+        {
+            "run_id": "run-llm-ignore",
+            "site": "food",
+            "source_root": str(source_root),
+            "created_at": "2026-03-23T12:00:00+09:00",
+            "agent_version": "v1",
+            "analysis": {},
+            "generated_files": [],
+            "patch_targets": [],
+            "docker": {},
+            "tests": {},
+            "status": "generated",
+        }
+    )
+
+    workspace = prepare_runtime_workspace(
+        manifest=manifest,
+        generated_run_root=run_root,
+        runtime_root=runtime_root,
+    )
+    report_path = simulate_runtime_merge(
+        manifest=manifest,
+        generated_run_root=run_root,
+        runtime_workspace=workspace,
+        report_root=run_root / "reports",
+    )
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert "patches/llm-proposed.patch" not in payload["applied_patch_artifacts"]
+    assert payload["failed_patch_artifacts"] == []
+    assert "onboarding_chat_auth_token" not in (workspace / "backend" / "users" / "views.py").read_text(encoding="utf-8")
+
+
 def test_simulate_runtime_merge_ignores_invalid_draft_proposed_patch(tmp_path: Path):
     source_root = tmp_path / "source"
     generated_root = tmp_path / "generated"
@@ -343,6 +611,44 @@ def test_simulate_runtime_merge_ignores_invalid_draft_proposed_patch(tmp_path: P
     assert payload["passed"] is True
     assert payload["failed_patch_artifacts"] == []
     assert "patches/proposed.patch" not in payload["applied_patch_artifacts"]
+
+
+def test_simulate_exported_patch_replay_applies_approved_patch_to_clean_workspace(tmp_path: Path):
+    source_root = tmp_path / "source"
+    runtime_root = tmp_path / "runtime"
+    report_root = tmp_path / "generated" / "food" / "run-001" / "reports"
+    patch_path = report_root / "approved.patch"
+
+    (source_root / "app").mkdir(parents=True)
+    (source_root / "app" / "config.txt").write_text("original\n", encoding="utf-8")
+    report_root.mkdir(parents=True)
+    patch_path.write_text(
+        """--- a/app/config.txt
++++ b/app/config.txt
+@@ -1 +1 @@
+-original
++updated
+""",
+        encoding="utf-8",
+    )
+
+    replay_path = simulate_exported_patch_replay(
+        source_root=source_root,
+        runtime_root=runtime_root,
+        report_root=report_root,
+        patch_path=patch_path,
+        site="food",
+        run_id="run-001",
+    )
+    payload = json.loads(replay_path.read_text(encoding="utf-8"))
+    replay_workspace = runtime_root / "food" / "run-001" / "export-replay-workspace"
+
+    assert replay_path.name == "export-replay-validation.json"
+    assert payload["passed"] is True
+    assert payload["patch_path"] == str(patch_path)
+    assert payload["applied_patch_artifacts"] == ["reports/approved.patch"]
+    assert (replay_workspace / "app" / "config.txt").read_text(encoding="utf-8") == "updated\n"
+
 
 def test_simulate_candidate_patch_merge_writes_llm_patch_report(tmp_path: Path):
     source_root = tmp_path / "source"

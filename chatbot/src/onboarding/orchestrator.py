@@ -20,18 +20,17 @@ from .codebase_mapper import (
     write_llm_codebase_interpretation,
 )
 from .debug_logging import append_execution_trace, append_generation_log, append_onboarding_event, append_recovery_event, update_file_activity
-from .exporter import export_patch_artifact, export_runtime_patch
+from .exporter import export_patch_artifact, export_runtime_patch, update_export_metadata
 from .frontend_generator import build_frontend_mount_contract
 from .frontend_evaluator import evaluate_frontend_workspace
 from .overlay_generator import generate_overlay_scaffold
 from .patch_planner import (
     build_llm_patch_proposal_factory,
     build_llm_patch_factory,
-    write_patch_comparison_report,
+    write_edit_plan,
+    write_llm_edit_draft,
     write_llm_first_patch_proposal,
-    write_llm_patch_draft,
     write_patch_proposal,
-    write_unified_diff_draft,
 )
 from .role_runner import ReliableLLMRoleRunner, RoleRunner, build_llm_role_runner
 from .recovery_artifacts import write_recovered_smoke_plan
@@ -40,13 +39,21 @@ from .repair_history import read_failure_count, write_repair_history
 from .recovery_planner import build_recovery_plan
 from .run_generator import generate_run_bundle
 from .run_resume import analyze_run_checkpoint
-from .runtime_completion_runner import run_runtime_completion
+from .runtime_completion_runner import (
+    _build_backend_probe_plan as _build_validation_backend_probe_plan,
+    _build_frontend_probe_plan as _build_validation_frontend_probe_plan,
+    _classify_probe_failure_reason,
+    _collect_process_output,
+    _launch_server_process,
+    _probe_http_ready,
+    _terminate_process,
+    run_runtime_completion,
+)
 from .runtime_llm_repair import attempt_llm_runtime_repair, build_runtime_repair_factory
 from .runtime_repair_toolkit import repair_python_import_from_traceback
 from .slack_bridge import InMemorySlackBridge
 from .smoke_runner import load_smoke_plan, run_smoke_tests, summarize_smoke_results
-from .runtime_runner import prepare_runtime_workspace, simulate_runtime_merge
-from .runtime_runner import simulate_candidate_patch_merge
+from .runtime_runner import apply_overlay_edit_artifacts, prepare_runtime_workspace, simulate_exported_patch_replay, simulate_runtime_merge
 from .manifest import OverlayManifest
 from .template_generator import (
     generate_backend_route_patch,
@@ -110,7 +117,7 @@ def run_onboarding_generation(
                 "evidence": context["evidence"],
                 "confidence": 0.81,
                 "risk": "medium",
-                "next_action": "제안된 파일과 patch를 실제 산출물로 생성합니다",
+                "next_action": "제안된 파일과 edit plan을 실제 산출물로 생성합니다",
                 "blocking_issue": "없음",
                 "metadata": {
                     "proposed_files": context["proposed_files"],
@@ -267,6 +274,16 @@ def run_onboarding_generation(
                 generated_run_root=run_root,
                 runtime_root=runtime_root,
             )
+            edit_execution_path = apply_overlay_edit_artifacts(
+                manifest=manifest,
+                generated_run_root=run_root,
+                workspace_root=runtime_workspace,
+                report_root=run_root / "reports",
+            )
+            edit_execution = json.loads(edit_execution_path.read_text(encoding="utf-8"))
+            if not edit_execution.get("passed", True):
+                agent.state = RunState.HUMAN_REVIEW_REQUIRED
+                return finalize_result(runtime_workspace=runtime_workspace)
             merge_simulation_path = simulate_runtime_merge(
                 manifest=manifest,
                 generated_run_root=run_root,
@@ -297,6 +314,14 @@ def run_onboarding_generation(
                     agent=agent,
                     bridge=bridge,
                     role_runner=active_role_runner,
+                    llm_runtime_repair_factory=build_runtime_repair_factory(
+                        enabled=generate_llm_patch_draft or llm_patch_factory is not None,
+                        llm_factory=llm_patch_factory,
+                        provider=llm_provider,
+                        model=llm_model,
+                    ),
+                    llm_provider=llm_provider,
+                    llm_model=llm_model,
                     event_store=event_store,
                     terminal_logger=terminal_logger,
                     run_role_with_events=_run_role_with_events,
@@ -328,7 +353,7 @@ def run_onboarding_generation(
                     approval_type=export_request["approval_type"],
                     summary="Export bundle is ready",
                     recommended_option="approve",
-                    risk_if_approved="patch export may still need manual review",
+                    risk_if_approved="final export patch may still need manual review",
                     risk_if_rejected="run remains local only",
                     available_actions=["approve", "reject"],
                 )
@@ -728,21 +753,34 @@ def run_onboarding_generation(
         proposed_files=proposed_files,
         proposed_patches=proposed_patches,
     )
-    write_unified_diff_draft(
+    edit_plan_path = run_root / "reports" / "edit-plan.json"
+    write_edit_plan(
         source_root=source_root,
-        generated_run_root=run_root,
-        proposal_path=run_root / "reports" / "patch-proposal.json",
-        output_path=run_root / "patches" / "proposed.patch",
+        patch_proposal=patch_proposal,
+        output_path=edit_plan_path,
+    )
+    _emit_generation_log(
+        run_root=run_root,
+        terminal_logger=terminal_logger,
+        component="orchestrator",
+        event="edit_plan_written",
+        message="edit plan artifact written",
+        details={"path": str(edit_plan_path)},
+    )
+    _emit_terminal_log(
+        terminal_logger,
+        f"[edit_plan] written path={edit_plan_path}",
     )
     if generate_llm_patch_draft:
-        write_llm_patch_draft(
+        llm_edit_plan_path = run_root / "reports" / "llm-edit-plan.json"
+        write_llm_edit_draft(
             source_root=source_root,
             analysis=analysis,
             codebase_map=codebase_map,
             patch_proposal=patch_proposal,
-            output_path=run_root / "patches" / "llm-proposed.patch",
-            llm_factory=llm_patch_factory
-            or build_llm_patch_factory(provider=llm_provider, model=llm_model),
+            output_path=llm_edit_plan_path,
+            execution_output_path=run_root / "reports" / "llm-edit-plan-execution.json",
+            llm_factory=llm_patch_factory or build_llm_patch_factory(provider=llm_provider, model=llm_model),
             provider=llm_provider,
             model=llm_model,
         )
@@ -750,30 +788,37 @@ def run_onboarding_generation(
             run_root=run_root,
             terminal_logger=terminal_logger,
             component="orchestrator",
-            event="llm_patch_draft_finished",
-            message="llm patch draft artifact written",
-            details={"path": str(run_root / "patches" / "llm-proposed.patch")},
+            event="llm_edit_plan_written",
+            message="llm edit plan artifact written",
+            details={"path": str(llm_edit_plan_path)},
         )
         _emit_terminal_log(
             terminal_logger,
-            f"[llm_patch_draft] written path={run_root / 'patches' / 'llm-proposed.patch'}",
+            f"[llm_edit_plan] written path={llm_edit_plan_path}",
         )
         _emit_latest_llm_usage(
             run_root=run_root,
             terminal_logger=terminal_logger,
-            component="llm_patch_draft",
+            component="llm_edit_draft",
         )
-        write_patch_comparison_report(
-            run_root=run_root,
-            output_path=run_root / "reports" / "patch-comparison.json",
-        )
+    _update_manifest_generated_outputs(
+        run_root=run_root,
+        generated_files=[],
+        patch_targets=[],
+        edit_artifacts=["reports/edit-plan.json"],
+    )
+    manifest = OverlayManifest.model_validate_json((run_root / "manifest.json").read_text(encoding="utf-8"))
     _emit_stage_event(
         run_root=run_root,
         run_id=run_id,
         stage="generation",
         event="stage_completed",
         summary="generation stage completed",
-        details={"proposed_files": len(proposed_files), "proposed_patches": len(proposed_patches)},
+        details={
+            "proposed_files": len(proposed_files),
+            "proposed_patches": len(proposed_patches),
+            "edit_artifacts": len(manifest.edit_artifacts),
+        },
     )
 
     has_explicit_apply_decision = _has_explicit_approval_decision(
@@ -803,7 +848,7 @@ def run_onboarding_generation(
                 approval_type=apply_request["approval_type"],
                 summary="Overlay bundle is ready to apply",
                 recommended_option="approve",
-                risk_if_approved="runtime patch may fail",
+                risk_if_approved="generated edits may still fail at runtime",
                 risk_if_rejected="run stops before validation",
                 available_actions=["approve", "reject"],
             )
@@ -840,6 +885,16 @@ def run_onboarding_generation(
         generated_run_root=run_root,
         runtime_root=runtime_root,
     )
+    edit_execution_path = apply_overlay_edit_artifacts(
+        manifest=manifest,
+        generated_run_root=run_root,
+        workspace_root=runtime_workspace,
+        report_root=run_root / "reports",
+    )
+    edit_execution = json.loads(edit_execution_path.read_text(encoding="utf-8"))
+    if not edit_execution.get("passed", True):
+        agent.state = RunState.HUMAN_REVIEW_REQUIRED
+        return finalize_result(runtime_workspace=runtime_workspace)
     _emit_stage_event(
         run_root=run_root,
         run_id=run_id,
@@ -848,32 +903,6 @@ def run_onboarding_generation(
         summary="validation stage started",
         details={"runtime_workspace": str(runtime_workspace)},
     )
-    if generate_llm_patch_draft:
-        _emit_generation_log(
-            run_root=run_root,
-            terminal_logger=terminal_logger,
-            component="orchestrator",
-            event="llm_patch_simulation_started",
-            message="llm patch simulation started",
-            details={"patch_artifact": "patches/llm-proposed.patch"},
-        )
-        simulate_candidate_patch_merge(
-            manifest=manifest,
-            generated_run_root=run_root,
-            runtime_root=runtime_root,
-            report_root=run_root / "reports",
-            patch_artifact="patches/llm-proposed.patch",
-            report_name="llm-patch-simulation.json",
-        )
-        llm_patch_simulation = json.loads((run_root / "reports" / "llm-patch-simulation.json").read_text(encoding="utf-8"))
-        _emit_generation_log(
-            run_root=run_root,
-            terminal_logger=terminal_logger,
-            component="orchestrator",
-            event="llm_patch_simulation_completed",
-            message="llm patch simulation completed",
-            details={"passed": bool(llm_patch_simulation.get("passed")), "report": str(run_root / "reports" / "llm-patch-simulation.json")},
-        )
     _emit_generation_log(
         run_root=run_root,
         terminal_logger=terminal_logger,
@@ -888,30 +917,7 @@ def run_onboarding_generation(
         runtime_workspace=runtime_workspace,
         report_root=run_root / "reports",
     )
-    if generate_llm_patch_draft:
-        write_patch_comparison_report(
-            run_root=run_root,
-            output_path=run_root / "reports" / "patch-comparison.json",
-        )
     merge_simulation = json.loads(merge_simulation_path.read_text(encoding="utf-8"))
-    proposed_patch_simulation = simulate_candidate_patch_merge(
-        manifest=manifest,
-        generated_run_root=run_root,
-        runtime_root=runtime_root,
-        report_root=run_root / "reports",
-        patch_artifact="patches/proposed.patch",
-        report_name="proposed-patch-simulation.json",
-    )
-    proposed_patch_payload = json.loads(proposed_patch_simulation.read_text(encoding="utf-8"))
-    if proposed_patch_payload.get("failed_patch_artifacts"):
-        merge_simulation["failed_patch_artifacts"] = list(merge_simulation.get("failed_patch_artifacts") or []) + list(
-            proposed_patch_payload.get("failed_patch_artifacts") or []
-        )
-        merge_simulation["passed"] = False
-        merge_simulation_path.write_text(
-            json.dumps(merge_simulation, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
     _emit_generation_log(
         run_root=run_root,
         terminal_logger=terminal_logger,
@@ -967,6 +973,14 @@ def run_onboarding_generation(
         agent=agent,
         bridge=bridge,
         role_runner=active_role_runner,
+        llm_runtime_repair_factory=build_runtime_repair_factory(
+            enabled=generate_llm_patch_draft or llm_patch_factory is not None,
+            llm_factory=llm_patch_factory,
+            provider=llm_provider,
+            model=llm_model,
+        ),
+        llm_provider=llm_provider,
+        llm_model=llm_model,
         event_store=event_store,
         terminal_logger=terminal_logger,
         run_role_with_events=_run_role_with_events,
@@ -1050,7 +1064,7 @@ def run_onboarding_generation(
                     approval_type=export_request["approval_type"],
                     summary="Export bundle is ready",
                     recommended_option="approve",
-                    risk_if_approved="patch export may still need manual review",
+                    risk_if_approved="final export patch may still need manual review",
                     risk_if_rejected="run remains local only",
                     available_actions=["approve", "reject"],
                 )
@@ -1099,22 +1113,22 @@ def run_onboarding_generation(
         message="export started",
         details={"export_source": export_source},
     )
-    if export_source == "llm" and selected_patch_path is not None:
-        export_patch_artifact(
-            patch_path=selected_patch_path,
-            report_root=run_root / "reports",
-            export_source="llm",
-            strategy_provenance=strategy_provenance,
-            recovery_provenance=recovery_provenance,
-        )
-    else:
-        export_runtime_patch(
-            source_root=source_root,
-            runtime_workspace=runtime_workspace,
-            report_root=run_root / "reports",
-            strategy_provenance=strategy_provenance,
-            recovery_provenance=recovery_provenance,
-        )
+    export_result = _export_with_replay_validation(
+        run_root=run_root,
+        source_root=Path(source_root),
+        runtime_root=Path(runtime_root),
+        runtime_workspace=runtime_workspace,
+        site=site,
+        run_id=run_id,
+        export_source=export_source,
+        selected_patch_path=selected_patch_path,
+        strategy_provenance=strategy_provenance,
+        recovery_provenance=recovery_provenance,
+        terminal_logger=terminal_logger,
+    )
+    if export_result.get("replay_passed") is False:
+        agent.state = RunState.HUMAN_REVIEW_REQUIRED
+        return finalize_result(runtime_workspace=runtime_workspace)
     agent.mark_export_completed()
     _emit_stage_event(
         run_root=run_root,
@@ -1137,6 +1151,7 @@ def run_onboarding_generation(
             run_root=run_root,
             runtime_workspace=runtime_workspace,
             source_root=Path(source_root),
+            runtime_root=Path(runtime_root),
             site=site,
             run_id=run_id,
             agent=agent,
@@ -1262,6 +1277,234 @@ def _prepare_export_approval_request(
     return export_request, should_publish_export_request
 
 
+def _start_validation_runtime_servers(*, runtime_workspace: Path, run_root: Path) -> dict[str, dict[str, Any]]:
+    backend_plan = _build_validation_backend_probe_plan(runtime_workspace)
+    if _should_skip_validation_runtime_probe(plan=backend_plan, probe_name="backend"):
+        backend = _build_skipped_validation_probe_result(plan=backend_plan)
+    else:
+        backend = _launch_validation_runtime_server(
+            plan=backend_plan,
+            probe_name="backend",
+        )
+    frontend_plan = _build_validation_frontend_probe_plan(runtime_workspace)
+    if _should_skip_validation_runtime_probe(plan=frontend_plan, probe_name="frontend"):
+        frontend = _build_skipped_validation_probe_result(plan=frontend_plan)
+    else:
+        frontend = _launch_validation_runtime_server(
+            plan=frontend_plan,
+            probe_name="frontend",
+        )
+    return {
+        "backend": backend,
+        "frontend": frontend,
+    }
+
+
+def _stop_validation_runtime_servers(server_state: dict[str, dict[str, Any]]) -> None:
+    for probe_state in server_state.values():
+        process = probe_state.get("process")
+        if process is not None:
+            _terminate_process(process)
+
+
+def _launch_validation_runtime_server(*, plan: dict[str, Any], probe_name: str) -> dict[str, Any]:
+    command = plan.get("command")
+    readiness_url = str(plan.get("readiness_url") or "")
+    working_directory = Path(str(plan.get("working_directory") or "."))
+    if not command:
+        return {
+            "plan": plan,
+            "passed": False,
+            "status": "command_missing",
+            "failure_reason": f"{probe_name}_command_missing",
+            "stdout": "",
+            "stderr": "",
+            "pid": None,
+            "readiness": None,
+            "process": None,
+        }
+
+    try:
+        process = _launch_server_process(command=list(command), cwd=working_directory)
+    except OSError as exc:
+        return {
+            "plan": plan,
+            "passed": False,
+            "status": "boot_failed",
+            "failure_reason": f"{probe_name}_server_boot_failed",
+            "stdout": "",
+            "stderr": str(exc),
+            "pid": None,
+            "readiness": None,
+            "process": None,
+        }
+
+    if process.poll() is not None:
+        stdout, stderr = _collect_validation_process_output(process=process, probe_name=probe_name)
+        failure_reason = _classify_probe_failure_reason(
+            probe_name=probe_name,
+            stdout=stdout,
+            stderr=stderr,
+            default_reason=f"{probe_name}_server_boot_failed",
+        )
+        return {
+            "plan": plan,
+            "passed": False,
+            "status": "boot_failed",
+            "failure_reason": failure_reason,
+            "stdout": stdout,
+            "stderr": stderr,
+            "pid": getattr(process, "pid", None),
+            "readiness": None,
+            "process": None,
+        }
+
+    readiness = _probe_http_ready(readiness_url)
+    if not readiness.get("passed"):
+        _terminate_process(process)
+        stdout, stderr = _collect_validation_process_output(process=process, probe_name=probe_name)
+        return {
+            "plan": plan,
+            "passed": False,
+            "status": "readiness_failed",
+            "failure_reason": f"{probe_name}_readiness_failed",
+            "stdout": stdout,
+            "stderr": stderr,
+            "pid": getattr(process, "pid", None),
+            "readiness": readiness,
+            "process": None,
+        }
+    return {
+        "plan": plan,
+        "passed": True,
+        "status": "ready",
+        "failure_reason": None,
+        "stdout": "",
+        "stderr": "",
+        "pid": getattr(process, "pid", None),
+        "readiness": readiness,
+        "process": process,
+    }
+
+
+def _collect_validation_process_output(*, process: Any, probe_name: str) -> tuple[str, str]:
+    if probe_name == "frontend" and hasattr(process, "stdout") and hasattr(process, "stderr"):
+        stdout = _read_validation_stream(process.stdout)
+        stderr = _read_validation_stream(process.stderr)
+        return stdout, stderr
+    return _collect_process_output(process)
+
+
+def _read_validation_stream(stream: Any) -> str:
+    if stream is None or not hasattr(stream, "read"):
+        return ""
+    try:
+        stream.seek(0)
+    except Exception:
+        return ""
+    content = stream.read()
+    return str(content or "")
+
+
+def _should_skip_validation_runtime_probe(*, plan: dict[str, Any], probe_name: str) -> bool:
+    if not plan.get("command"):
+        return True
+    if probe_name != "backend" or plan.get("framework") != "flask":
+        return False
+    command = list(plan.get("command") or [])
+    if len(command) < 2:
+        return False
+    candidate = Path(str(plan.get("working_directory") or ".")) / str(command[1])
+    if not candidate.exists():
+        return False
+    text = candidate.read_text(encoding="utf-8", errors="ignore")
+    return "app.run(" not in text
+
+
+def _build_skipped_validation_probe_result(*, plan: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "plan": plan,
+        "passed": True,
+        "status": "skipped",
+        "failure_reason": None,
+        "stdout": "",
+        "stderr": "",
+        "pid": None,
+        "readiness": None,
+        "process": None,
+    }
+
+
+def _build_validation_runtime_failure_results(server_state: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for probe_name, probe_state in server_state.items():
+        if probe_state.get("passed"):
+            continue
+        failure_reason = str(probe_state.get("failure_reason") or f"{probe_name}_runtime_failed")
+        stderr = str(probe_state.get("stderr") or "").strip()
+        results.append(
+            {
+                "step": f"validation/{probe_name}-runtime",
+                "step_id": f"validation-{probe_name}-runtime",
+                "returncode": 1,
+                "required": True,
+                "category": "runtime",
+                "timed_out": False,
+                "stdout": str(probe_state.get("stdout") or ""),
+                "stderr": "\n".join(part for part in [failure_reason, stderr] if part),
+            }
+        )
+    return results
+
+
+def _run_validation_smoke_cycle(
+    *,
+    run_root: Path,
+    runtime_workspace: Path,
+    plan,
+    recovery_payload: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    server_state = _start_validation_runtime_servers(
+        runtime_workspace=runtime_workspace,
+        run_root=run_root,
+    )
+    if any(not probe_state.get("passed", False) for probe_state in server_state.values()):
+        _stop_validation_runtime_servers(server_state)
+        return _build_validation_runtime_failure_results(server_state)
+
+    try:
+        return _run_smoke_tests_with_optional_recovery(
+            run_root=run_root,
+            runtime_workspace=runtime_workspace,
+            plan=plan,
+            recovery_payload=recovery_payload,
+        )
+    finally:
+        _stop_validation_runtime_servers(server_state)
+
+
+def _attempt_llm_runtime_repair_cycle(
+    *,
+    run_root: Path,
+    runtime_workspace: Path,
+    failure_signature: str,
+    evidence_payload: dict[str, Any],
+    llm_runtime_repair_factory: Callable[[], Any] | None,
+    llm_provider: str | None,
+    llm_model: str | None,
+) -> dict[str, Any]:
+    return attempt_llm_runtime_repair(
+        run_root=run_root,
+        runtime_workspace=runtime_workspace,
+        failure_signature=failure_signature,
+        evidence_payload=evidence_payload,
+        attempt_id="validation-retry",
+        llm_factory=llm_runtime_repair_factory,
+        provider=llm_provider,
+        model=llm_model,
+    )
+
+
 def _run_validation_with_retries(
     *,
     run_id: str,
@@ -1271,13 +1514,17 @@ def _run_validation_with_retries(
     agent: AgentOrchestrator,
     bridge: InMemorySlackBridge | None,
     role_runner: RoleRunner,
+    llm_runtime_repair_factory: Callable[[], Any] | None = None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
     terminal_logger: Callable[[str], None] | None = None,
     event_store: RedisRunJobStore | None = None,
     run_role_with_events: Callable[..., AgentMessage] | None = None,
 ) -> list[dict]:
     recovery_attempts: list[RecoveryAttempt] = []
     seen_retry_signatures: set[str] = set()
-    smoke_results = _run_smoke_tests_with_optional_recovery(
+    llm_repair_attempted_signatures: set[str] = set()
+    smoke_results = _run_validation_smoke_cycle(
         run_root=run_root,
         runtime_workspace=runtime_workspace,
         plan=smoke_plan,
@@ -1286,6 +1533,24 @@ def _run_validation_with_retries(
         failure_policy = _classify_failure_policy(smoke_results)
         failed_steps = failure_policy["failed_steps"]
         failure_signature = failure_policy["failure_signature"]
+        if llm_runtime_repair_factory is not None and failure_signature not in llm_repair_attempted_signatures:
+            llm_repair_attempted_signatures.add(failure_signature)
+            llm_repair_result = _attempt_llm_runtime_repair_cycle(
+                run_root=run_root,
+                runtime_workspace=runtime_workspace,
+                failure_signature=failure_signature,
+                evidence_payload={"smoke_results": smoke_results},
+                llm_runtime_repair_factory=llm_runtime_repair_factory,
+                llm_provider=llm_provider,
+                llm_model=llm_model,
+            )
+            if llm_repair_result.get("applied"):
+                smoke_results = _run_validation_smoke_cycle(
+                    run_root=run_root,
+                    runtime_workspace=runtime_workspace,
+                    plan=smoke_plan,
+                )
+                continue
         if failure_policy["retryable"]:
             agent.mark_failure()
         else:
@@ -1425,7 +1690,7 @@ def _run_validation_with_retries(
             recovery_payload=recovery_payload,
         )
         agent.state = RunState.VALIDATING
-        smoke_results = _run_smoke_tests_with_optional_recovery(
+        smoke_results = _run_validation_smoke_cycle(
             run_root=run_root,
             runtime_workspace=runtime_workspace,
             plan=smoke_plan,
@@ -1605,6 +1870,8 @@ def _build_run_result(
         "llm_codebase_interpretation_path": str(run_root / "reports" / "llm-codebase-interpretation.json"),
         "patch_proposal_path": str(run_root / "reports" / "patch-proposal.json"),
         "llm_patch_proposal_execution_path": str(run_root / "reports" / "llm-patch-proposal-execution.json"),
+        "edit_plan_path": str(run_root / "reports" / "edit-plan.json"),
+        "edit_execution_path": str(run_root / "reports" / "edit-execution.json"),
         "merge_simulation_path": str(run_root / "reports" / "merge-simulation.json"),
         "backend_evaluation_path": str(run_root / "reports" / "backend-evaluation.json"),
         "frontend_evaluation_path": str(run_root / "reports" / "frontend-evaluation.json"),
@@ -1613,11 +1880,12 @@ def _build_run_result(
         "recovery_artifact_path": str(run_root / "reports" / "recovery-plan.json"),
         "recovery_attempts_path": str(run_root / "reports" / "recovery-attempts.json"),
         "recovered_smoke_plan_path": str(run_root / "reports" / "recovered-smoke-plan.json"),
-        "proposed_patch_path": str(run_root / "patches" / "proposed.patch"),
-        "llm_proposed_patch_path": str(run_root / "patches" / "llm-proposed.patch"),
-        "llm_patch_simulation_path": str(run_root / "reports" / "llm-patch-simulation.json"),
-        "patch_comparison_path": str(run_root / "reports" / "patch-comparison.json"),
+        "proposed_patch_path": None,
+        "llm_proposed_patch_path": None,
+        "llm_patch_simulation_path": None,
+        "patch_comparison_path": None,
         "export_metadata_path": str(run_root / "reports" / "export-metadata.json"),
+        "export_replay_validation_path": str(run_root / "reports" / "export-replay-validation.json"),
         "onboarding_event_log_path": str(run_root / "reports" / "execution-trace.jsonl"),
         "execution_trace_path": str(run_root / "reports" / "execution-trace.jsonl"),
         "generation_log_path": str(run_root / "reports" / "generation.log"),
@@ -1847,6 +2115,74 @@ def _read_json_if_exists(path: Path) -> dict[str, Any] | None:
         return None
 
 
+def _export_with_replay_validation(
+    *,
+    run_root: Path,
+    source_root: Path,
+    runtime_root: Path,
+    runtime_workspace: Path,
+    site: str,
+    run_id: str,
+    export_source: str,
+    selected_patch_path: Path | None,
+    strategy_provenance: dict[str, str],
+    recovery_provenance: dict[str, str],
+    terminal_logger: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    manifest_payload = _read_json_if_exists(run_root / "manifest.json") or {}
+    edit_artifacts = list(manifest_payload.get("edit_artifacts") or [])
+    if export_source == "llm" and selected_patch_path is not None:
+        patch_path = export_patch_artifact(
+            patch_path=selected_patch_path,
+            report_root=run_root / "reports",
+            export_source="llm",
+            strategy_provenance=strategy_provenance,
+            recovery_provenance=recovery_provenance,
+            edit_artifacts=edit_artifacts,
+        )
+    else:
+        patch_path = export_runtime_patch(
+            source_root=source_root,
+            runtime_workspace=runtime_workspace,
+            report_root=run_root / "reports",
+            strategy_provenance=strategy_provenance,
+            recovery_provenance=recovery_provenance,
+            edit_artifacts=edit_artifacts,
+        )
+
+    patch_path = Path(patch_path)
+    replay_report_path: Path | None = None
+    replay_passed: bool | None = None
+    if patch_path.exists():
+        replay_report_path = simulate_exported_patch_replay(
+            source_root=source_root,
+            runtime_root=runtime_root,
+            report_root=run_root / "reports",
+            patch_path=patch_path,
+            site=site,
+            run_id=run_id,
+        )
+        replay_payload = _read_json_if_exists(replay_report_path) or {}
+        replay_passed = replay_payload.get("passed")
+        if terminal_logger is not None:
+            _emit_terminal_log(
+                terminal_logger,
+                f"[export_replay] passed={bool(replay_passed)} path={replay_report_path}",
+            )
+
+    update_export_metadata(
+        report_root=run_root / "reports",
+        edit_artifacts=edit_artifacts,
+        replay_report_path=replay_report_path,
+        replay_passed=replay_passed,
+    )
+    return {
+        "patch_path": str(patch_path),
+        "replay_report_path": str(replay_report_path) if replay_report_path is not None else None,
+        "replay_passed": replay_passed,
+    }
+
+
 def _attempt_runtime_validation_repair(
     *,
     run_root: Path,
@@ -1911,6 +2247,7 @@ def _run_runtime_completion_with_retries(
     run_root: Path,
     runtime_workspace: Path,
     source_root: Path,
+    runtime_root: Path,
     site: str,
     run_id: str,
     agent: AgentOrchestrator,
@@ -1953,13 +2290,29 @@ def _run_runtime_completion_with_retries(
                     **recovery_provenance,
                     "final_recovery_source": str(attempts_payload[-1]["classification"]),
                 }
-            export_runtime_patch(
+            export_result = _export_with_replay_validation(
+                run_root=run_root,
                 source_root=source_root,
+                runtime_root=runtime_root,
                 runtime_workspace=runtime_workspace,
-                report_root=run_root / "reports",
+                site=site,
+                run_id=run_id,
+                export_source="runtime",
+                selected_patch_path=None,
                 strategy_provenance=strategy_provenance,
                 recovery_provenance=recovery_provenance,
+                terminal_logger=terminal_logger,
             )
+            attempt_record["export_replay_passed"] = export_result.get("replay_passed")
+            if export_result.get("replay_passed") is False:
+                latest_result = {
+                    **latest_result,
+                    "passed": False,
+                    "failure_reason": "export_replay_validation_failed",
+                    "replay_report_path": export_result.get("replay_report_path"),
+                }
+                _write_runtime_completion_attempts(run_root=run_root, attempts=attempts_payload)
+                return latest_result
             _write_runtime_completion_attempts(run_root=run_root, attempts=attempts_payload)
             return latest_result
 
@@ -1992,7 +2345,7 @@ def _run_runtime_completion_with_retries(
             attempt_record["llm_repair_applied"] = llm_repair_result.get("applied", False)
             attempt_record["llm_repair_failure_reason"] = llm_repair_result.get("failure_reason")
             attempt_record["llm_repair_guardrail_rejection_reason"] = llm_repair_result.get("guardrail_rejection_reason")
-            attempt_record["llm_repair_patch_path"] = llm_repair_result.get("patch_path")
+            attempt_record["llm_repair_applied_edits"] = llm_repair_result.get("applied_edits") or []
             if llm_repair_result.get("applied", False):
                 continue
 
@@ -2247,6 +2600,8 @@ def _existing_summary_artifacts(run_root: Path) -> dict[str, Path]:
         "llm_codebase_interpretation": run_root / "reports" / "llm-codebase-interpretation.json",
         "llm_patch_proposal_execution": run_root / "reports" / "llm-patch-proposal-execution.json",
         "patch_proposal": run_root / "reports" / "patch-proposal.json",
+        "edit_plan": run_root / "reports" / "edit-plan.json",
+        "edit_execution": run_root / "reports" / "edit-execution.json",
         "proposed_patch": run_root / "patches" / "proposed.patch",
         "llm_proposed_patch": run_root / "patches" / "llm-proposed.patch",
         "llm_patch_simulation": run_root / "reports" / "llm-patch-simulation.json",
@@ -2607,19 +2962,25 @@ def _update_manifest_generated_outputs(
     run_root: Path,
     generated_files: list[str],
     patch_targets: list[str],
+    edit_artifacts: list[str] | None = None,
 ) -> None:
     manifest_path = run_root / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     current_generated_files = list(manifest.get("generated_files") or [])
     current_patch_targets = list(manifest.get("patch_targets") or [])
+    current_edit_artifacts = list(manifest.get("edit_artifacts") or [])
     for path in generated_files:
         if path and path not in current_generated_files:
             current_generated_files.append(path)
     for path in patch_targets:
         if path and path not in current_patch_targets:
             current_patch_targets.append(path)
+    for path in edit_artifacts or []:
+        if path and path not in current_edit_artifacts:
+            current_edit_artifacts.append(path)
     manifest["generated_files"] = current_generated_files
     manifest["patch_targets"] = current_patch_targets
+    manifest["edit_artifacts"] = current_edit_artifacts
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2),
         encoding="utf-8",

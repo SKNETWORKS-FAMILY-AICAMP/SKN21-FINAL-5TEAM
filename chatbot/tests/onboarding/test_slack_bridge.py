@@ -76,7 +76,7 @@ def test_slack_bridge_posts_approval_request_payload():
         approval_type=ApprovalType.APPLY,
         summary="Overlay is ready to apply",
         recommended_option="approve",
-        risk_if_approved="runtime patch may fail",
+        risk_if_approved="generated edits may still fail at runtime",
         risk_if_rejected="run will stop before validation",
         available_actions=["approve", "reject"],
     )
@@ -283,7 +283,7 @@ def test_slack_web_bridge_posts_block_kit_approval_message():
         approval_type=ApprovalType.APPLY,
         summary="Overlay is ready to apply",
         recommended_option="approve",
-        risk_if_approved="runtime patch may fail",
+        risk_if_approved="generated edits may still fail at runtime",
         risk_if_rejected="run will stop before validation",
         available_actions=["approve", "reject"],
     )
@@ -293,6 +293,7 @@ def test_slack_web_bridge_posts_block_kit_approval_message():
     assert blocks[-1]["elements"][0]["type"] == "button"
     assert blocks[1]["text"]["text"] == "승인 확인: 적용"
     assert "왜 필요한가" in blocks[2]["text"]["text"]
+    assert "생성된 edit plan과 파일 변경을 적용해도 되는지 확인이 필요합니다." in blocks[2]["text"]["text"]
     assert "다음 단계" in blocks[3]["text"]["text"]
     assert blocks[-1]["elements"][0]["text"]["text"] == "진행"
     assert blocks[-1]["elements"][1]["text"]["text"] == "보류"

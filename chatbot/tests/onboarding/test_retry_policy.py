@@ -1,8 +1,21 @@
 import sys
 import tempfile
+from types import ModuleType
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+fake_langchain_ollama = ModuleType("langchain_ollama")
+
+
+class _FakeChatOllama:
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+
+fake_langchain_ollama.ChatOllama = _FakeChatOllama
+sys.modules.setdefault("langchain_ollama", fake_langchain_ollama)
 
 from chatbot.src.onboarding import orchestrator as orchestrator_module
 from chatbot.src.onboarding.agent_orchestrator import AgentOrchestrator

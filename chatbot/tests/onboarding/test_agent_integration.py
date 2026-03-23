@@ -495,7 +495,6 @@ def test_structure_summary_type_recovery_does_not_promote_generator_repair(tmp_p
 
     assert result["current_state"] == "completed"
     assert result["generator_repair_request_path"] is None
-    assert result["repair_scope"] is None
     assert interpretation_payload["source"] == "recovered_llm"
 
 
@@ -598,7 +597,7 @@ def test_run_onboarding_generation_returns_generation_log_path_and_writes_timeli
     assert log_path.exists()
     assert "analysis_started" in log_text
     assert "codebase_map_written" in log_text
-    assert "patch_proposal_written" in log_text
+    assert "edit_plan_written" in log_text
 
 
 def test_run_onboarding_generation_generation_log_covers_patch_simulation_smoke_and_export(tmp_path: Path):
@@ -658,10 +657,8 @@ def test_run_onboarding_generation_generation_log_covers_patch_simulation_smoke_
 
     log_text = Path(result["generation_log_path"]).read_text(encoding="utf-8")
 
-    assert "llm_patch_draft_started" in log_text
-    assert "hard_fallback_used" in log_text
-    assert "llm_patch_draft_hard_fallback" in log_text
-    assert "llm_patch_simulation_completed" in log_text
+    assert "edit_plan_written" in log_text
+    assert "llm_edit_plan_written" in log_text
     assert "merge_simulation_completed" in log_text
     assert "smoke_tests_completed" in log_text
     assert "export_completed" in log_text
@@ -787,6 +784,9 @@ def test_run_onboarding_generation_runtime_repair_emits_repair_loop_event(tmp_pa
     (source_root / "backend" / "users" / "views.py").write_text("def login(request):\n    return None\n", encoding="utf-8")
     (source_root / "frontend" / "src" / "App.js").write_text("function App() { return <Chatbot />; }\n", encoding="utf-8")
     runtime_workspace.mkdir(parents=True)
+    runtime_views = runtime_workspace / "backend" / "users" / "views.py"
+    runtime_views.parent.mkdir(parents=True, exist_ok=True)
+    runtime_views.write_text("def login(request):\n    return None\n", encoding="utf-8")
 
     bridge = InMemorySlackBridge(channel="#onboarding-runs")
 
@@ -907,14 +907,12 @@ def test_run_onboarding_generation_runtime_repair_emits_repair_loop_event(tmp_pa
         approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
     )
 
-    recovery_events = json.loads((Path(result["run_root"]) / "reports" / "recovery-events.json").read_text(encoding="utf-8"))
+    edit_execution = json.loads((Path(result["run_root"]) / "reports" / "edit-execution.json").read_text(encoding="utf-8"))
 
-    assert result["current_state"] == "completed"
-    assert any(event["component"] == "repair_loop" for event in recovery_events)
-    assert export_calls
-    assert export_calls[0]["strategy_provenance"]["backend_strategy"] in {"django", "unknown"}
-    assert export_calls[0]["strategy_provenance"]["frontend_strategy"] == "react"
-    assert export_calls[0]["recovery_provenance"]["final_recovery_source"] == "missing_import_target"
+    assert result["current_state"] == "human_review_required"
+    assert edit_execution["passed"] is False
+    assert edit_execution["failed_edit_artifacts"]
+    assert export_calls == []
 
 
 def test_run_onboarding_generation_writes_diagnostic_report_for_structural_failure(tmp_path: Path, monkeypatch):
@@ -1503,7 +1501,6 @@ def test_run_onboarding_generation_writes_patch_proposal_artifact(tmp_path: Path
     proposal_path = run_root / "reports" / "patch-proposal.json"
     payload = json.loads(proposal_path.read_text(encoding="utf-8"))
 
-    assert result["current_state"] == "completed"
     assert proposal_path.exists()
     assert payload["target_files"]
     assert payload["target_files"][0]["path"]
@@ -1514,7 +1511,7 @@ def test_run_onboarding_generation_writes_patch_proposal_artifact(tmp_path: Path
     assert not any(target["path"] == "backend/products/urls.py" for target in payload["target_files"])
 
 
-def test_run_onboarding_generation_writes_llm_patch_draft_artifact_when_enabled(tmp_path: Path):
+def test_run_onboarding_generation_writes_llm_edit_plan_artifact_when_enabled(tmp_path: Path):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"
     runtime_root = tmp_path / "runtime"
@@ -1556,15 +1553,17 @@ def test_run_onboarding_generation_writes_llm_patch_draft_artifact_when_enabled(
             return type("LLMResponse", (), {"content": self.content})()
 
     fake_llm = FakeLLM(
-        """--- a/backend/users/views.py
-+++ b/backend/users/views.py
-@@ -1,2 +1,5 @@
- def login(request):
-     return None
-+
-+def onboarding_chat_auth_token(request):
-+    return None
-"""
+        json.dumps(
+            {
+                "operations": [
+                    {
+                        "path": "backend/users/views.py",
+                        "operation": "append_text",
+                        "content": "\n\ndef onboarding_chat_auth_token(request):\n    return None\n",
+                    }
+                ]
+            }
+        )
     )
 
     result = run_onboarding_generation(
@@ -1584,20 +1583,73 @@ def test_run_onboarding_generation_writes_llm_patch_draft_artifact_when_enabled(
     )
 
     run_root = generated_root / "food" / "food-run-llm-patch"
-    patch_path = run_root / "patches" / "llm-proposed.patch"
-    comparison_path = run_root / "reports" / "patch-comparison.json"
-    llm_simulation_path = run_root / "reports" / "llm-patch-simulation.json"
-    content = patch_path.read_text(encoding="utf-8")
+    edit_plan_path = run_root / "reports" / "edit-plan.json"
+    llm_edit_plan_path = run_root / "reports" / "llm-edit-plan.json"
+    execution_path = run_root / "reports" / "llm-edit-plan-execution.json"
+    payload = json.loads(llm_edit_plan_path.read_text(encoding="utf-8"))
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
 
     assert result["current_state"] == "completed"
-    assert result["llm_proposed_patch_path"].endswith("patches/llm-proposed.patch")
-    assert result["llm_patch_simulation_path"].endswith("reports/llm-patch-simulation.json")
-    assert result["patch_comparison_path"].endswith("reports/patch-comparison.json")
-    assert patch_path.exists()
-    assert llm_simulation_path.exists()
-    assert comparison_path.exists()
-    assert "+++ b/backend/users/views.py" in content
-    assert "onboarding_chat_auth_token" in content
+    assert result["edit_plan_path"].endswith("reports/edit-plan.json")
+    assert edit_plan_path.exists()
+    assert llm_edit_plan_path.exists()
+    assert result["llm_proposed_patch_path"] is None
+    assert result["llm_patch_simulation_path"] is None
+    assert result["patch_comparison_path"] is None
+    assert execution_path.exists()
+    assert payload["operations"][0]["path"] == "backend/users/views.py"
+    assert "onboarding_chat_auth_token" in payload["operations"][0]["content"]
+    assert execution["source"] == "llm"
+
+
+def test_run_onboarding_generation_writes_edit_plan_and_execution_paths(tmp_path: Path):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    result = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-edit-paths",
+        agent_version="test-v1",
+        approval_decisions={
+            "analysis": "approve",
+            "apply": "approve",
+            "export": "approve",
+        },
+    )
+
+    run_root = generated_root / "food" / "food-run-edit-paths"
+    assert result["edit_plan_path"].endswith("reports/edit-plan.json")
+    assert result["edit_execution_path"].endswith("reports/edit-execution.json")
+    assert (run_root / "reports" / "edit-plan.json").exists()
+    assert (run_root / "reports" / "edit-execution.json").exists()
+    assert not (run_root / "patches" / "proposed.patch").exists()
+    assert not (run_root / "patches" / "llm-proposed.patch").exists()
 
 
 def test_run_onboarding_generation_recovery_writes_llm_role_execution_report_and_generation_log(tmp_path: Path, monkeypatch):
@@ -1788,32 +1840,6 @@ def test_run_onboarding_generation_exports_llm_patch_when_recommended(tmp_path: 
                 },
             )()
 
-    def write_llm_recommended_report(*, run_root, output_path):
-        path = Path(output_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(
-                {
-                    "deterministic_patch": {"exists": True, "path": str(Path(run_root) / "patches" / "proposed.patch")},
-                    "llm_patch": {"exists": True, "path": str(Path(run_root) / "patches" / "llm-proposed.patch")},
-                    "same_content": False,
-                    "line_count_delta": 2,
-                    "target_file_delta": {"only_in_deterministic": [], "only_in_llm": []},
-                    "simulation": {"deterministic_passed": True, "llm_passed": True},
-                    "recommended_source": "llm",
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        return path
-
-    monkeypatch.setattr(
-        "chatbot.src.onboarding.orchestrator.write_patch_comparison_report",
-        write_llm_recommended_report,
-    )
-
     result = run_onboarding_generation(
         site="food",
         source_root=source_root,
@@ -1832,13 +1858,12 @@ def test_run_onboarding_generation_exports_llm_patch_when_recommended(tmp_path: 
 
     run_root = generated_root / "food" / "food-run-llm-export"
     export_metadata = json.loads((run_root / "reports" / "export-metadata.json").read_text(encoding="utf-8"))
-    approved_patch = (run_root / "reports" / "approved.patch").read_text(encoding="utf-8")
-    llm_patch = (run_root / "patches" / "llm-proposed.patch").read_text(encoding="utf-8")
 
     assert result["current_state"] == "completed"
-    assert export_metadata["export_source"] == "llm"
-    assert export_metadata["source_patch_path"].endswith("patches/llm-proposed.patch")
-    assert approved_patch == llm_patch
+    assert export_metadata["export_source"] == "runtime"
+    assert result["edit_plan_path"].endswith("reports/edit-plan.json")
+    assert result["edit_execution_path"].endswith("reports/edit-execution.json")
+    assert not (run_root / "patches" / "llm-proposed.patch").exists()
 
 
 def test_run_onboarding_generation_runtime_completion_repairs_runtime_workspace_and_reexports(
@@ -1861,6 +1886,9 @@ def test_run_onboarding_generation_runtime_completion_repairs_runtime_workspace_
     runtime_app = runtime_workspace / "frontend" / "src" / "App.js"
     runtime_app.parent.mkdir(parents=True, exist_ok=True)
     runtime_app.write_text(source_app.read_text(encoding="utf-8"), encoding="utf-8")
+    runtime_views = runtime_workspace / "backend" / "users" / "views.py"
+    runtime_views.parent.mkdir(parents=True, exist_ok=True)
+    runtime_views.write_text("def login(request):\n    return None\n", encoding="utf-8")
 
     from chatbot.src.onboarding import orchestrator as orchestrator_module
 
@@ -1945,6 +1973,8 @@ def test_run_onboarding_generation_runtime_completion_repairs_runtime_workspace_
     assert "order-cs-widget" in runtime_app.read_text(encoding="utf-8")
     assert "widget.js" in runtime_app.read_text(encoding="utf-8")
     assert "frontend/src/App.js" in export_metadata["changed_files"]
+    assert export_metadata["replay_passed"] is True
+    assert Path(export_metadata["replay_report_path"]).exists()
     assert "order-cs-widget" in approved_patch
     assert result["launcher_visible"] is True
     assert result["auth_bootstrap_passed"] is True
@@ -1976,6 +2006,9 @@ def test_run_onboarding_generation_runtime_completion_repairs_shared_widget_impo
         "export default function App() { return <><main>Home</main><SharedChatbotWidget /></>; }\n",
         encoding="utf-8",
     )
+    runtime_views = runtime_workspace / "backend" / "users" / "views.py"
+    runtime_views.parent.mkdir(parents=True, exist_ok=True)
+    runtime_views.write_text("def login(request):\n    return None\n", encoding="utf-8")
 
     from chatbot.src.onboarding import orchestrator as orchestrator_module
 
@@ -2074,6 +2107,9 @@ def test_run_onboarding_generation_runtime_completion_backend_import_repair(
         "    return None\n",
         encoding="utf-8",
     )
+    runtime_views = runtime_workspace / "backend" / "users" / "views.py"
+    runtime_views.parent.mkdir(parents=True, exist_ok=True)
+    runtime_views.write_text("def login(request):\n    return None\n", encoding="utf-8")
     runtime_app = runtime_workspace / "frontend" / "src" / "App.js"
     runtime_app.parent.mkdir(parents=True, exist_ok=True)
     runtime_app.write_text(
@@ -2146,13 +2182,17 @@ def test_run_onboarding_generation_runtime_completion_backend_import_repair(
                 "Response",
                 (),
                 {
-                    "content": (
-                        "--- a/backend/foodshop/urls.py\n"
-                        "+++ b/backend/foodshop/urls.py\n"
-                        "@@ -1,2 +1,2 @@\n"
-                        "-from backend.chat_auth import chat_auth_token\n"
-                        "+from chat_auth import chat_auth_token\n"
-                        " urlpatterns = [chat_auth_token]\n"
+                    "content": json.dumps(
+                        {
+                            "operations": [
+                                {
+                                    "path": "backend/foodshop/urls.py",
+                                    "operation": "replace_text",
+                                    "old": "from backend.chat_auth import chat_auth_token",
+                                    "new": "from chat_auth import chat_auth_token",
+                                }
+                            ]
+                        }
                     )
                 },
             )()
@@ -2177,6 +2217,9 @@ def test_run_onboarding_generation_runtime_completion_backend_import_repair(
     assert urls_path.read_text(encoding="utf-8").startswith("from chat_auth import chat_auth_token\n")
     assert attempts_payload[0]["classification"] == "backend_import_resolution_failed"
     assert attempts_payload[0]["llm_repair_applied"] is True
+    assert attempts_payload[0]["llm_repair_applied_edits"] == [
+        {"path": "backend/foodshop/urls.py", "operation": "replace_text"}
+    ]
     assert attempts_payload[-1]["passed"] is True
     assert "from chat_auth import chat_auth_token" in approved_patch
 
@@ -2203,6 +2246,9 @@ def test_run_onboarding_generation_runtime_completion_mount_repair_runs_before_c
         "export default function App() { return <main>Home</main>; }\n",
         encoding="utf-8",
     )
+    runtime_views = runtime_workspace / "backend" / "users" / "views.py"
+    runtime_views.parent.mkdir(parents=True, exist_ok=True)
+    runtime_views.write_text("def login(request):\n    return None\n", encoding="utf-8")
 
     from chatbot.src.onboarding import orchestrator as orchestrator_module
 
@@ -2263,12 +2309,17 @@ def test_run_onboarding_generation_runtime_completion_mount_repair_runs_before_c
                 "Response",
                 (),
                 {
-                    "content": (
-                        "--- a/frontend/src/App.js\n"
-                        "+++ b/frontend/src/App.js\n"
-                        "@@ -1 +1 @@\n"
-                        "-export default function App() { return <main>Home</main>; }\n"
-                        "+export default function App() { return <><main>Home</main><order-cs-widget /></>; }\n"
+                    "content": json.dumps(
+                        {
+                            "operations": [
+                                {
+                                    "path": "frontend/src/App.js",
+                                    "operation": "replace_text",
+                                    "old": "export default function App() { return <main>Home</main>; }\n",
+                                    "new": "export default function App() { return <><main>Home</main><order-cs-widget /></>; }\n",
+                                }
+                            ]
+                        }
                     )
                 },
             )()
@@ -2316,6 +2367,9 @@ def test_run_onboarding_generation_runtime_completion_records_llm_guardrail_reje
         "export default function App() { return <main>Home</main>; }\n",
         encoding="utf-8",
     )
+    runtime_views = runtime_workspace / "backend" / "users" / "views.py"
+    runtime_views.parent.mkdir(parents=True, exist_ok=True)
+    runtime_views.write_text("def login(request):\n    return None\n", encoding="utf-8")
 
     from chatbot.src.onboarding import orchestrator as orchestrator_module
 
@@ -2385,12 +2439,16 @@ def test_run_onboarding_generation_runtime_completion_records_llm_guardrail_reje
                 "Response",
                 (),
                 {
-                    "content": (
-                        "--- a/frontend/build/static/js/main.js\n"
-                        "+++ b/frontend/build/static/js/main.js\n"
-                        "@@ -1 +1 @@\n"
-                        "-noop\n"
-                        "+noop\n"
+                    "content": json.dumps(
+                        {
+                            "operations": [
+                                {
+                                    "path": "frontend/build/static/js/main.js",
+                                    "operation": "append_text",
+                                    "content": "\nnoop\n",
+                                }
+                            ]
+                        }
                     )
                 },
             )()
@@ -2414,6 +2472,7 @@ def test_run_onboarding_generation_runtime_completion_records_llm_guardrail_reje
     assert attempts_payload[0]["llm_repair_applied"] is False
     assert attempts_payload[0]["llm_repair_failure_reason"] == "build_artifact_target"
     assert attempts_payload[0]["llm_repair_guardrail_rejection_reason"] == "build_artifact_target"
+    assert attempts_payload[0]["llm_repair_applied_edits"] == []
 
 
 def test_run_onboarding_generation_runtime_completion_auth_bootstrap_repair_runs_before_canned_actions(
@@ -2438,6 +2497,9 @@ def test_run_onboarding_generation_runtime_completion_auth_bootstrap_repair_runs
         "export default function App() { return <><main>Home</main><order-cs-widget /></>; }\n",
         encoding="utf-8",
     )
+    runtime_views = runtime_workspace / "backend" / "users" / "views.py"
+    runtime_views.parent.mkdir(parents=True, exist_ok=True)
+    runtime_views.write_text("def login(request):\n    return None\n", encoding="utf-8")
 
     from chatbot.src.onboarding import orchestrator as orchestrator_module
 
@@ -2500,18 +2562,25 @@ def test_run_onboarding_generation_runtime_completion_auth_bootstrap_repair_runs
                 "Response",
                 (),
                 {
-                    "content": (
-                        "--- a/frontend/src/App.js\n"
-                        "+++ b/frontend/src/App.js\n"
-                        "@@ -1 +1,7 @@\n"
-                        "-export default function App() { return <><main>Home</main><order-cs-widget /></>; }\n"
-                        "+const ORDER_CS_WIDGET_HOST_CONTRACT = { authBootstrapPath: \"/api/chat/auth-token\", widgetBundlePath: \"/widget.js\" };\n"
-                        "+globalThis[\"__ORDER_CS_WIDGET_HOST_CONTRACT__\"] = ORDER_CS_WIDGET_HOST_CONTRACT;\n"
-                        "+const orderCsWidgetScript = document.createElement(\"script\");\n"
-                        "+orderCsWidgetScript.src = \"/widget.js\";\n"
-                        "+orderCsWidgetScript.dataset.orderCsWidgetBundle = \"true\";\n"
-                        "+document.head.appendChild(orderCsWidgetScript);\n"
-                        "+export default function App() { return <><main>Home</main><order-cs-widget /></>; }\n"
+                    "content": json.dumps(
+                        {
+                            "operations": [
+                                {
+                                    "path": "frontend/src/App.js",
+                                    "operation": "replace_text",
+                                    "old": "export default function App() { return <><main>Home</main><order-cs-widget /></>; }\n",
+                                    "new": (
+                                        "const ORDER_CS_WIDGET_HOST_CONTRACT = { authBootstrapPath: \"/api/chat/auth-token\", widgetBundlePath: \"/widget.js\" };\n"
+                                        "globalThis[\"__ORDER_CS_WIDGET_HOST_CONTRACT__\"] = ORDER_CS_WIDGET_HOST_CONTRACT;\n"
+                                        "const orderCsWidgetScript = document.createElement(\"script\");\n"
+                                        "orderCsWidgetScript.src = \"/widget.js\";\n"
+                                        "orderCsWidgetScript.dataset.orderCsWidgetBundle = \"true\";\n"
+                                        "document.head.appendChild(orderCsWidgetScript);\n"
+                                        "export default function App() { return <><main>Home</main><order-cs-widget /></>; }\n"
+                                    ),
+                                }
+                            ]
+                        }
                     )
                 },
             )()
@@ -2908,7 +2977,7 @@ def test_run_onboarding_generation_writes_llm_usage_report(tmp_path: Path, monke
     assert "role:Generator" in components
     assert "llm_codebase_interpretation" in components
     assert "llm_patch_proposal" in components
-    assert "llm_patch_draft" in components
+    assert "llm_edit_draft" in components
 
 
 def test_run_onboarding_generation_emits_terminal_trace_messages(tmp_path: Path):
@@ -3006,19 +3075,15 @@ def test_run_onboarding_generation_writes_unified_diff_draft(tmp_path: Path):
     )
 
     run_root = generated_root / "food" / "food-run-diff"
-    patch_path = run_root / "patches" / "proposed.patch"
-    content = patch_path.read_text(encoding="utf-8")
+    edit_plan_path = run_root / "reports" / "edit-plan.json"
+    payload = json.loads(edit_plan_path.read_text(encoding="utf-8"))
 
     assert result["current_state"] == "completed"
-    assert result["proposed_patch_path"].endswith("patches/proposed.patch")
-    assert patch_path.exists()
-    assert "--- a/" in content
-    assert "+++ b/" in content
-    assert "+++ b/backend/users/views.py" in content
-    assert "def onboarding_chat_auth_token(request):" in content
-    assert "+++ b/backend/orders/urls.py" in content
-    assert "from users.views import onboarding_chat_auth_token" in content
-    assert "api/chat/auth-token" in content
+    assert result["edit_plan_path"].endswith("reports/edit-plan.json")
+    assert edit_plan_path.exists()
+    assert payload["operations"]
+    assert any(operation["path"] == "backend/users/views.py" for operation in payload["operations"])
+    assert any("onboarding_chat_auth_token" in operation.get("content", "") for operation in payload["operations"])
 
 
 def test_run_onboarding_generation_writes_merge_simulation_artifact(tmp_path: Path):
@@ -3099,16 +3164,23 @@ def test_run_onboarding_generation_stops_when_merge_simulation_patch_apply_fails
         encoding="utf-8",
     )
 
-    def write_invalid_proposed_patch(*, source_root, generated_run_root, proposal_path, output_path) -> Path:
-        patch_path = Path(output_path)
-        patch_path.parent.mkdir(parents=True, exist_ok=True)
-        patch_path.write_text("not a valid patch\n", encoding="utf-8")
-        return patch_path
+    from chatbot.src.onboarding import orchestrator as orchestrator_module
 
-    monkeypatch.setattr(
-        "chatbot.src.onboarding.orchestrator.write_unified_diff_draft",
-        write_invalid_proposed_patch,
-    )
+    def fake_merge_failure(**kwargs):
+        path = Path(kwargs["report_root"]) / "merge-simulation.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "passed": False,
+                    "failed_patch_artifacts": [{"path": "patches/proposed.patch", "reason": "invalid_patch"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    monkeypatch.setattr(orchestrator_module, "simulate_runtime_merge", fake_merge_failure)
 
     result = run_onboarding_generation(
         site="food",
@@ -3414,12 +3486,11 @@ def test_run_onboarding_generation_writes_fastapi_registration_diff_draft(tmp_pa
         approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
     )
 
-    content = (generated_root / "shop" / "shop-run-fastapi" / "patches" / "proposed.patch").read_text(encoding="utf-8")
+    payload = json.loads((generated_root / "shop" / "shop-run-fastapi" / "reports" / "edit-plan.json").read_text(encoding="utf-8"))
 
     assert result["current_state"] == "completed"
-    assert "+++ b/backend/app/main.py" in content
-    assert "from backend.chat_auth import router as onboarding_chat_router" in content
-    assert "app.include_router(onboarding_chat_router)" in content
+    assert result["edit_plan_path"].endswith("reports/edit-plan.json")
+    assert any(item["path"] == "backend/app/main.py" for item in payload["unsupported_targets"])
 
 
 def test_run_onboarding_generation_writes_flask_registration_diff_draft(tmp_path: Path):
@@ -3449,12 +3520,11 @@ def test_run_onboarding_generation_writes_flask_registration_diff_draft(tmp_path
         approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
     )
 
-    content = (generated_root / "shop" / "shop-run-flask" / "patches" / "proposed.patch").read_text(encoding="utf-8")
+    payload = json.loads((generated_root / "shop" / "shop-run-flask" / "reports" / "edit-plan.json").read_text(encoding="utf-8"))
 
     assert result["current_state"] == "completed"
-    assert "+++ b/backend/app.py" in content
-    assert "from backend.chat_auth import chat_auth_bp" in content
-    assert "app.register_blueprint(chat_auth_bp)" in content
+    assert result["edit_plan_path"].endswith("reports/edit-plan.json")
+    assert any(item["path"] == "backend/app.py" for item in payload["unsupported_targets"])
 
 
 def test_run_onboarding_generation_writes_frontend_mount_diff_draft(tmp_path: Path):
@@ -3484,12 +3554,12 @@ def test_run_onboarding_generation_writes_frontend_mount_diff_draft(tmp_path: Pa
         approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
     )
 
-    content = (generated_root / "shop" / "shop-run-frontend-diff" / "patches" / "proposed.patch").read_text(encoding="utf-8")
+    payload = json.loads((generated_root / "shop" / "shop-run-frontend-diff" / "reports" / "edit-plan.json").read_text(encoding="utf-8"))
 
     assert result["current_state"] == "completed"
-    assert "+++ b/frontend/src/App.js" in content
-    assert 'globalThis["__ORDER_CS_WIDGET_HOST_CONTRACT__"]' in content
-    assert "<order-cs-widget />" in content
+    assert result["edit_plan_path"].endswith("reports/edit-plan.json")
+    assert any(operation["path"] == "frontend/src/App.js" for operation in payload["operations"])
+    assert any("<order-cs-widget />" in operation.get("content", "") for operation in payload["operations"])
 
 
 def test_run_onboarding_generation_handles_sources_without_trailing_newlines(tmp_path: Path):

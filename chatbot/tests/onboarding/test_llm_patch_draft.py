@@ -12,7 +12,7 @@ sys.modules.setdefault("langchain_ollama", types.SimpleNamespace(ChatOllama=obje
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from chatbot.src.onboarding.patch_planner import write_llm_patch_draft
+from chatbot.src.onboarding.patch_planner import write_llm_edit_draft, write_llm_patch_draft
 
 
 class FakeLLM:
@@ -34,6 +34,59 @@ class SequentialFakeLLM:
         self.calls.append(messages)
         index = min(len(self.calls) - 1, len(self.contents) - 1)
         return type("LLMResponse", (), {"content": self.contents[index]})()
+
+
+def test_write_llm_edit_draft_recovery_strips_json_fences_and_records_recovered_llm(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "generated" / "reports" / "edit-plan.json"
+    execution_path = tmp_path / "generated" / "reports" / "llm-edit-draft-execution.json"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+
+    fake_llm = FakeLLM(
+        """```json
+{
+  "operations": [
+    {
+      "path": "backend/users/views.py",
+      "operation": "append_text",
+      "content": "\\n\\ndef onboarding_chat_auth_token(request):\\n    return None\\n"
+    }
+  ]
+}
+```"""
+    )
+
+    path = write_llm_edit_draft(
+        source_root=source_root,
+        analysis={"auth": {"auth_style": "session_cookie"}},
+        codebase_map={"candidate_edit_targets": [{"path": "backend/users/views.py", "reason": "auth handler"}]},
+        patch_proposal={
+            "target_files": [{"path": "backend/users/views.py", "intent": "add auth stub"}],
+            "supporting_generated_files": ["files/backend/chat_auth.py"],
+            "recommended_outputs": ["chat_auth"],
+            "analysis_summary": {"auth_style": "session_cookie"},
+        },
+        output_path=output_path,
+        execution_output_path=execution_path,
+        llm_factory=lambda: fake_llm,
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+
+    assert path == output_path
+    assert payload["operations"][0]["path"] == "backend/users/views.py"
+    assert payload["operations"][0]["operation"] == "append_text"
+    assert "onboarding_chat_auth_token" in payload["operations"][0]["content"]
+    assert payload["unsupported_targets"] == []
+    assert "return only json" in str(fake_llm.calls[0][0].content).lower()
+    assert execution["source"] == "recovered_llm"
+    assert execution["recovery_reason"] == "json_fences_removed"
 
 
 def test_write_llm_patch_draft_recovery_strips_fences_and_records_recovered_llm(tmp_path: Path):

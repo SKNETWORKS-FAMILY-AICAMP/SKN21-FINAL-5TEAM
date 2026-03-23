@@ -25,6 +25,7 @@ from .framework_strategies import (
     seam_target_rejection_reason,
     select_strategy_target_candidates,
 )
+from .workspace_editor import SUPPORTED_EDIT_OPERATIONS
 
 _UNIFIED_DIFF_HUNK_HEADER_RE = re.compile(r"^@@ -\d+(,\d+)? \+\d+(,\d+)? @@")
 
@@ -43,6 +44,22 @@ class PatchProposalPayload(BaseModel):
     analysis_summary: dict[str, Any]
 
 
+class EditOperationPayload(BaseModel):
+    path: str
+    operation: str
+    anchor: str | None = None
+    old: str | None = None
+    new: str | None = None
+    content: str | None = None
+
+
+class EditDraftPayload(BaseModel):
+    operations: list[EditOperationPayload]
+    supporting_generated_files: list[str] = []
+    recommended_outputs: list[str] = []
+    analysis_summary: dict[str, Any] = {}
+
+
 def write_patch_proposal(
     *,
     analysis: dict[str, Any],
@@ -59,6 +76,163 @@ def write_patch_proposal(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
+
+
+def write_edit_plan(
+    *,
+    source_root: str | Path | None = None,
+    patch_proposal: dict[str, Any],
+    output_path: str | Path,
+) -> Path:
+    payload = _build_edit_plan_payload(
+        patch_proposal=patch_proposal,
+        source_root=source_root,
+    )
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+def write_llm_edit_draft(
+    *,
+    source_root: str | Path,
+    analysis: dict[str, Any],
+    codebase_map: dict[str, Any],
+    patch_proposal: dict[str, Any],
+    output_path: str | Path,
+    execution_output_path: str | Path,
+    llm_factory: Callable[[], Any],
+    provider: str | None = None,
+    model: str | None = None,
+) -> Path:
+    fallback_payload = _build_edit_plan_payload(
+        patch_proposal=patch_proposal,
+        source_root=source_root,
+    )
+    report_root = Path(output_path).parent
+    report_root.mkdir(parents=True, exist_ok=True)
+    source = "hard_fallback"
+    fallback_reason = "llm_exception"
+    recovery_reason: str | None = None
+    hard_fallback_reason: str | None = "llm_exception"
+    raw_response = ""
+    parsed_payload: Any = None
+
+    append_onboarding_event(
+        report_root=report_root,
+        run_id="unknown",
+        component="patch_planner",
+        stage="generation",
+        event="llm_call_started",
+        severity="info",
+        summary="llm edit draft started",
+        source="llm",
+        details={"provider": provider or "unknown", "model": model or "unknown", "output_path": str(output_path)},
+    )
+
+    payload = fallback_payload
+    try:
+        llm = llm_factory()
+        response = llm.invoke(
+            [
+                SystemMessage(content=_llm_edit_draft_system_prompt()),
+                HumanMessage(
+                    content=json.dumps(
+                        {
+                            "source_root": str(source_root),
+                            "analysis": analysis,
+                            "codebase_map": codebase_map,
+                            "patch_proposal": patch_proposal,
+                            "fallback_edit_plan": fallback_payload,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                ),
+            ]
+        )
+        append_llm_usage(
+            report_root=report_root,
+            component="llm_edit_draft",
+            provider=provider,
+            model=model or getattr(llm, "model_name", None),
+            usage=extract_llm_usage(response),
+        )
+        raw_response = str(response.content)
+        normalized_response, recovery_reason = _normalize_json_response(raw_response)
+        parsed_payload = json.loads(normalized_response)
+        llm_payload = EditDraftPayload.model_validate(parsed_payload)
+        _validate_llm_edit_operations(
+            llm_payload=llm_payload,
+            patch_proposal=patch_proposal,
+            source_root=source_root,
+        )
+        llm_operation_paths = {item.path for item in llm_payload.operations}
+        payload = {
+            "operations": [item.model_dump(mode="json") for item in llm_payload.operations],
+            "unsupported_targets": [
+                item
+                for item in (fallback_payload.get("unsupported_targets") or [])
+                if str(item.get("path") or "") not in llm_operation_paths
+            ],
+            "supporting_generated_files": patch_proposal.get("supporting_generated_files") or [],
+            "recommended_outputs": patch_proposal.get("recommended_outputs") or [],
+            "analysis_summary": patch_proposal.get("analysis_summary") or {},
+        }
+        source = "recovered_llm" if recovery_reason else "llm"
+        fallback_reason = None
+        hard_fallback_reason = None
+    except json.JSONDecodeError:
+        fallback_reason = "invalid_llm_response"
+        hard_fallback_reason = "invalid_llm_response"
+        recovery_reason = None
+    except ValidationError:
+        fallback_reason = "invalid_edit_payload"
+        hard_fallback_reason = "invalid_edit_payload"
+        recovery_reason = None
+    except ValueError as exc:
+        reason = str(exc) or "invalid_target_selection"
+        fallback_reason = reason
+        hard_fallback_reason = reason
+        recovery_reason = None
+    except Exception:
+        fallback_reason = "llm_exception"
+        hard_fallback_reason = "llm_exception"
+        recovery_reason = None
+
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    execution = Path(execution_output_path)
+    execution.parent.mkdir(parents=True, exist_ok=True)
+    execution.write_text(
+        json.dumps(
+            {
+                "source": source,
+                "fallback_reason": fallback_reason,
+                "recovery_reason": recovery_reason,
+                "hard_fallback_reason": hard_fallback_reason,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    write_llm_debug_artifact(
+        report_root=execution.parent,
+        name="edit-draft",
+        payload={
+            "status": source,
+            "raw_response": raw_response,
+            "parsed_payload": parsed_payload,
+            "fallback_reason": fallback_reason,
+            "recovery_reason": recovery_reason,
+            "hard_fallback_reason": hard_fallback_reason,
+        },
+    )
+    return output
 
 
 def write_llm_first_patch_proposal(
@@ -397,6 +571,177 @@ def write_llm_first_patch_proposal(
     return path
 
 
+def _build_edit_plan_payload(
+    *,
+    patch_proposal: dict[str, Any],
+    source_root: str | Path | None = None,
+) -> dict[str, Any]:
+    operations: list[dict[str, Any]] = []
+    unsupported_targets: list[dict[str, str]] = []
+    staged_contents: dict[str, str] = {}
+    source_base = Path(source_root) if source_root is not None else None
+    for target in (patch_proposal.get("target_files") or []):
+        path = str(target.get("path") or "")
+        if not path:
+            continue
+        operation = _build_edit_operation(target)
+        if operation is None:
+            unsupported_targets.append(
+                {
+                    "path": path,
+                    "reason": "unsupported_edit_target",
+                }
+            )
+            continue
+        if source_base is not None:
+            try:
+                operation_payload = EditOperationPayload.model_validate(operation)
+                _validate_edit_operation_fields(operation_payload)
+                staged_contents[path] = _simulate_edit_operation(
+                    current_content=staged_contents.get(path),
+                    source_base=source_base,
+                    operation=operation_payload,
+                )
+            except (ValidationError, ValueError):
+                unsupported_targets.append(
+                    {
+                        "path": path,
+                        "reason": "edit_target_rejected",
+                    }
+                )
+                continue
+        operations.append(operation)
+    return {
+        "operations": operations,
+        "unsupported_targets": unsupported_targets,
+        "supporting_generated_files": patch_proposal.get("supporting_generated_files") or [],
+        "recommended_outputs": patch_proposal.get("recommended_outputs") or [],
+        "analysis_summary": patch_proposal.get("analysis_summary") or {},
+    }
+
+
+def _build_edit_operation(target: dict[str, Any]) -> dict[str, Any] | None:
+    path = str(target.get("path") or "")
+    insertion_hint = target.get("insertion_hint") or {}
+    if path.endswith("views.py"):
+        return {
+            "path": path,
+            "operation": "append_text",
+            "content": "\n\ndef onboarding_chat_auth_token(request):\n    return None\n",
+        }
+    if path.endswith("urls.py"):
+        anchor = str(insertion_hint.get("anchor") or "")
+        if not anchor:
+            return {
+                "path": path,
+                "operation": "insert_after",
+                "anchor": "urlpatterns = [",
+                "content": '\n    path("api/chat/auth-token", onboarding_chat_auth_token),',
+            }
+        return {
+            "path": path,
+            "operation": "insert_after",
+            "anchor": anchor,
+            "content": '\n    path("api/chat/auth-token", onboarding_chat_auth_token),',
+        }
+    if _is_frontend_mount_target(path):
+        return {
+            "path": path,
+            "operation": "append_text",
+            "content": "\n<order-cs-widget />\n",
+        }
+    return None
+
+
+def _normalize_json_response(raw_response: str) -> tuple[str, str | None]:
+    content = raw_response.strip()
+    if content.startswith("```"):
+        content = re.sub(r"^```[a-zA-Z0-9_-]*\n", "", content)
+        content = re.sub(r"\n```$", "", content)
+        return content.strip(), "json_fences_removed"
+    return content, None
+
+
+def _validate_llm_edit_operations(
+    *,
+    llm_payload: EditDraftPayload,
+    patch_proposal: dict[str, Any],
+    source_root: str | Path,
+) -> None:
+    if not llm_payload.operations:
+        raise ValueError("invalid_edit_payload")
+    valid_paths = {
+        str(item.get("path") or "")
+        for item in (patch_proposal.get("target_files") or [])
+        if str(item.get("path") or "")
+    }
+    source_base = Path(source_root)
+    staged_contents: dict[str, str] = {}
+    for operation in llm_payload.operations:
+        if operation.operation not in SUPPORTED_EDIT_OPERATIONS:
+            raise ValueError("invalid_target_selection")
+        if operation.path not in valid_paths:
+            raise ValueError("invalid_target_selection")
+        _validate_edit_operation_fields(operation)
+        staged_contents[operation.path] = _simulate_edit_operation(
+            current_content=staged_contents.get(operation.path),
+            source_base=source_base,
+            operation=operation,
+        )
+
+
+def _validate_edit_operation_fields(operation: EditOperationPayload) -> None:
+    if operation.operation in {"insert_after", "insert_before"} and not operation.anchor:
+        raise ValueError("invalid_edit_payload")
+    if operation.operation in {"insert_after", "insert_before", "append_text"} and not operation.content:
+        raise ValueError("invalid_edit_payload")
+    if operation.operation == "replace_text" and (not operation.old or operation.new is None):
+        raise ValueError("invalid_edit_payload")
+
+
+def _simulate_edit_operation(
+    *,
+    current_content: str | None,
+    source_base: Path,
+    operation: EditOperationPayload,
+) -> str:
+    content = current_content
+    if content is None:
+        target_path = source_base / operation.path
+        if not target_path.exists() or not target_path.is_file():
+            raise ValueError("invalid_edit_payload")
+        try:
+            content = target_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("invalid_edit_payload") from exc
+
+    if operation.operation == "replace_text":
+        if operation.old not in content:
+            raise ValueError("invalid_edit_payload")
+        return content.replace(str(operation.old), str(operation.new), 1)
+    if operation.operation == "insert_after":
+        if operation.anchor not in content:
+            raise ValueError("invalid_edit_payload")
+        return content.replace(str(operation.anchor), str(operation.anchor) + str(operation.content), 1)
+    if operation.operation == "insert_before":
+        if operation.anchor not in content:
+            raise ValueError("invalid_edit_payload")
+        return content.replace(str(operation.anchor), str(operation.content) + str(operation.anchor), 1)
+    if operation.operation == "append_text":
+        return content + str(operation.content)
+    raise ValueError("invalid_edit_payload")
+
+
+def _llm_edit_draft_system_prompt() -> str:
+    return (
+        "Return only JSON.\n"
+        "Emit an object with key `operations`.\n"
+        "Each operation must include `path`, `operation`, and only the fields needed for that operation.\n"
+        "Allowed operations: replace_text, insert_after, insert_before, append_text.\n"
+        "Do not invent file paths outside patch_proposal.target_files.\n"
+    )
+
+
 def write_llm_patch_draft(
     *,
     source_root: str | Path,
@@ -657,14 +1002,14 @@ def write_patch_comparison_report(
     output_path: str | Path,
 ) -> Path:
     root = Path(run_root)
-    deterministic_path = root / "patches" / "proposed.patch"
-    llm_path = root / "patches" / "llm-proposed.patch"
+    deterministic_path = _select_comparison_patch_path(root=root, source="deterministic")
+    llm_path = _select_comparison_patch_path(root=root, source="llm")
     deterministic_summary = _patch_summary(deterministic_path)
     llm_summary = _patch_summary(llm_path)
     deterministic_targets = set(deterministic_summary["target_files"])
     llm_targets = set(llm_summary["target_files"])
-    deterministic_simulation = _read_json_if_exists(root / "reports" / "merge-simulation.json")
-    llm_simulation = _read_json_if_exists(root / "reports" / "llm-patch-simulation.json")
+    deterministic_passed = _read_comparison_validation_passed(root=root, source="deterministic")
+    llm_passed = _read_comparison_validation_passed(root=root, source="llm")
     same_content = _read_optional_text(deterministic_path) == _read_optional_text(llm_path)
 
     payload = {
@@ -677,8 +1022,8 @@ def write_patch_comparison_report(
             "only_in_llm": sorted(llm_targets - deterministic_targets),
         },
         "simulation": {
-            "deterministic_passed": None if deterministic_simulation is None else bool(deterministic_simulation.get("passed")),
-            "llm_passed": None if llm_simulation is None else bool(llm_simulation.get("passed")),
+            "deterministic_passed": deterministic_passed,
+            "llm_passed": llm_passed,
         },
         "recommended_source": _recommend_patch_source(
             deterministic_exists=bool(deterministic_summary["exists"]),
@@ -686,8 +1031,8 @@ def write_patch_comparison_report(
             same_content=same_content,
             deterministic_targets=deterministic_targets,
             llm_targets=llm_targets,
-            deterministic_passed=None if deterministic_simulation is None else bool(deterministic_simulation.get("passed")),
-            llm_passed=None if llm_simulation is None else bool(llm_simulation.get("passed")),
+            deterministic_passed=deterministic_passed,
+            llm_passed=llm_passed,
         ),
     }
     path = Path(output_path)
@@ -703,6 +1048,40 @@ def build_llm_patch_factory(
     llm_builder: Callable[[str, str, float], Any] = make_chat_llm,
 ) -> Callable[[], Any]:
     return lambda: llm_builder(provider, model, 0)
+
+
+def _select_comparison_patch_path(*, root: Path, source: str) -> Path:
+    if source == "llm":
+        candidates = [
+            root / "reports" / "llm-approved.patch",
+            root / "patches" / "llm-proposed.patch",
+        ]
+    else:
+        candidates = [
+            root / "reports" / "approved.patch",
+            root / "patches" / "proposed.patch",
+        ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+def _read_comparison_validation_passed(*, root: Path, source: str) -> bool | None:
+    if source == "llm":
+        metadata = _read_json_if_exists(root / "reports" / "llm-export-metadata.json")
+        if isinstance(metadata, dict) and "replay_passed" in metadata:
+            value = metadata.get("replay_passed")
+            return None if value is None else bool(value)
+        simulation = _read_json_if_exists(root / "reports" / "llm-patch-simulation.json")
+        return None if simulation is None else bool(simulation.get("passed"))
+
+    metadata = _read_json_if_exists(root / "reports" / "export-metadata.json")
+    if isinstance(metadata, dict) and "replay_passed" in metadata:
+        value = metadata.get("replay_passed")
+        return None if value is None else bool(value)
+    simulation = _read_json_if_exists(root / "reports" / "merge-simulation.json")
+    return None if simulation is None else bool(simulation.get("passed"))
 
 
 def build_llm_patch_proposal_factory(

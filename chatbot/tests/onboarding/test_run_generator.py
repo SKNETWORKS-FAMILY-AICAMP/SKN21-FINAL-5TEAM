@@ -53,6 +53,7 @@ def test_generate_run_bundle_creates_manifest_from_analysis(tmp_path: Path):
     assert payload["analysis"]["backend_strategy"] == "django"
     assert payload["analysis"]["frontend_strategy"] == "react"
     assert "frontend/src/App.js" in payload["analysis"]["frontend_mount_targets"]
+    assert payload["edit_artifacts"] == []
     assert payload["status"] == "generated"
 
 

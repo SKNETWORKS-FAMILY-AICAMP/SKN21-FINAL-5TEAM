@@ -1,7 +1,21 @@
+import json
 import sys
+from types import ModuleType
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+fake_langchain_ollama = ModuleType("langchain_ollama")
+
+
+class _FakeChatOllama:
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+
+fake_langchain_ollama.ChatOllama = _FakeChatOllama
+sys.modules.setdefault("langchain_ollama", fake_langchain_ollama)
 
 from chatbot.src.onboarding import runtime_llm_repair as runtime_llm_repair_module
 
@@ -99,3 +113,52 @@ def test_attempt_llm_runtime_repair_normalizes_non_json_evidence(tmp_path: Path)
 
     assert fake_llm.calls
     assert result["failure_reason"] == "invalid_llm_response"
+
+
+def test_attempt_llm_runtime_repair_applies_direct_edit_payload(tmp_path: Path):
+    runtime_workspace = tmp_path / "workspace"
+    run_root = tmp_path / "run"
+    urls_path = runtime_workspace / "backend" / "foodshop" / "urls.py"
+
+    urls_path.parent.mkdir(parents=True, exist_ok=True)
+    urls_path.write_text(
+        "from backend.chat_auth import chat_auth_token\n\nurlpatterns = []\n",
+        encoding="utf-8",
+    )
+
+    class DirectEditLlm:
+        def invoke(self, messages):
+            return _FakeResponse(
+                json.dumps(
+                    {
+                        "operations": [
+                            {
+                                "path": "backend/foodshop/urls.py",
+                                "operation": "replace_text",
+                                "old": "from backend.chat_auth import chat_auth_token",
+                                "new": "from chat_auth import chat_auth_token",
+                            }
+                        ]
+                    }
+                )
+            )
+
+    result = runtime_llm_repair_module.attempt_llm_runtime_repair(
+        run_root=run_root,
+        runtime_workspace=runtime_workspace,
+        failure_signature="backend_readiness_failed",
+        evidence_payload={
+            "backend_probe": {
+                "stderr": f'Traceback:\n  File "{urls_path}", line 1, in <module>\nModuleNotFoundError: No module named \'backend\'\n',
+            }
+        },
+        attempt_id="validation-2",
+        llm_factory=lambda: DirectEditLlm(),
+    )
+
+    assert result["applied"] is True
+    assert result["failure_reason"] is None
+    assert result["applied_edits"] == [
+        {"path": "backend/foodshop/urls.py", "operation": "replace_text"}
+    ]
+    assert urls_path.read_text(encoding="utf-8").startswith("from chat_auth import chat_auth_token\n")

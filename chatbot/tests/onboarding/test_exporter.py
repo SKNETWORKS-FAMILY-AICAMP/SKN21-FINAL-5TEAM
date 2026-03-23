@@ -182,6 +182,35 @@ def test_export_runtime_patch_records_recovery_provenance(tmp_path: Path):
     }
 
 
+def test_export_runtime_patch_records_edit_artifacts_and_replay_metadata(tmp_path: Path):
+    source_root = tmp_path / "source"
+    runtime_workspace = tmp_path / "runtime" / "food" / "run-002" / "workspace"
+    report_root = tmp_path / "generated" / "food" / "run-002" / "reports"
+    replay_report_path = report_root / "export-replay-validation.json"
+
+    (source_root / "app").mkdir(parents=True)
+    (runtime_workspace / "app").mkdir(parents=True)
+    report_root.mkdir(parents=True)
+
+    (source_root / "app" / "config.txt").write_text("line-1\n", encoding="utf-8")
+    (runtime_workspace / "app" / "config.txt").write_text("line-1-updated\n", encoding="utf-8")
+
+    export_runtime_patch(
+        source_root=source_root,
+        runtime_workspace=runtime_workspace,
+        report_root=report_root,
+        edit_artifacts=["reports/edit-plan.json"],
+        replay_report_path=replay_report_path,
+        replay_passed=True,
+    )
+
+    metadata = json.loads((report_root / "export-metadata.json").read_text(encoding="utf-8"))
+
+    assert metadata["edit_artifacts"] == ["reports/edit-plan.json"]
+    assert metadata["replay_report_path"] == str(replay_report_path)
+    assert metadata["replay_passed"] is True
+
+
 def test_export_runtime_patch_overwrites_metadata_after_runtime_completion_reexport(tmp_path: Path):
     source_root = tmp_path / "source"
     runtime_workspace = tmp_path / "runtime" / "food" / "run-003" / "workspace"
