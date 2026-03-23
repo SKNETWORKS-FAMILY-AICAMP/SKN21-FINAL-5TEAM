@@ -7,6 +7,8 @@ from .site_b.adapter import SiteBAdapter
 from .site_c.client import SiteCClient
 from .site_c.adapter import SiteCAdapter
 
+DEFAULT_SITE_ID = "site-c"
+
 
 def resolve_ecommerce_backend_url() -> str:
     explicit_url = (os.environ.get("BACKEND_API_URL") or "").strip()
@@ -52,3 +54,8 @@ def setup_adapters() -> None:
 def get_adapter(site_id: str):
     setup_adapters()
     return AdapterRegistry.get(site_id)
+
+
+def resolve_site_adapter(site_id: str | None):
+    normalized_site_id = (site_id or DEFAULT_SITE_ID).strip() or DEFAULT_SITE_ID
+    return get_adapter(normalized_site_id)
