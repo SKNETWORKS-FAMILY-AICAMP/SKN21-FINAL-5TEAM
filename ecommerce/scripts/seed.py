@@ -59,6 +59,9 @@ logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
+LOCUST_USER_PASSWORD = os.getenv("LOCUST_TEST_PASSWORD", "locust1234")
+LOCUST_SEED_USER_COUNT = int(os.getenv("LOCUST_SEED_USER_COUNT", "100"))
+LOCUST_EMAIL_TEMPLATE = "locust_user_{:03d}@example.com"
 
 def init_db(db: Session):
     """
@@ -70,6 +73,13 @@ def init_db(db: Session):
         if not db.query(User).first():
             logger.info("🛠️ 초기 사용자 데이터 생성 중...")
             create_users(db)
+
+        if LOCUST_SEED_USER_COUNT > 0:
+            ensure_locust_users(
+                db=db,
+                total_count=LOCUST_SEED_USER_COUNT,
+                password=LOCUST_USER_PASSWORD,
+            )
         
         # 2. 카테고리 데이터 확인 및 생성
         if not db.query(Category).first():
@@ -185,6 +195,50 @@ def create_users(db: Session):
     ]
     db.add_all(users)
     db.flush() 
+
+
+def ensure_locust_users(db: Session, total_count: int = 100, password: str = "locust1234"):
+    """Create missing Locust test users up to total_count."""
+    if total_count <= 0:
+        return
+
+    existing_rows = (
+        db.query(User.email)
+        .filter(User.email.like("locust_user_%@example.com"))
+        .all()
+    )
+    existing_emails = {row[0] for row in existing_rows}
+
+    users_to_add = []
+    for user_id in range(1, total_count + 1):
+        email = LOCUST_EMAIL_TEMPLATE.format(user_id)
+        if email in existing_emails:
+            continue
+
+        users_to_add.append(
+            User(
+                email=email,
+                password_hash=hash_password(password),
+                name=f"Locust User {user_id:03d}",
+                phone=f"010-77{user_id:04d}",
+                status=UserStatus.ACTIVE,
+                agree_marketing=False,
+                agree_sms=False,
+                agree_email=False,
+                role=UserRole.USER,
+            )
+        )
+
+    if users_to_add:
+        db.add_all(users_to_add)
+        db.flush()
+
+    logger.info(
+        "Locust users ensured: target=%s existing=%s created=%s",
+        total_count,
+        total_count - len(users_to_add),
+        len(users_to_add),
+    )
 
 # ============================================
 # categoty

@@ -19,6 +19,18 @@ DB_HOST = os.getenv("DB_HOST")
 DB_PORT = os.getenv("DB_PORT", "3306")
 DB_NAME = os.getenv("DB_NAME")
 
+# SQLAlchemy pool tuning for higher concurrent traffic
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "50"))
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "100"))
+DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))
+DB_POOL_USE_LIFO = os.getenv("DB_POOL_USE_LIFO", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
 # Docker 환경에서 .env의 localhost/127.0.0.1 값으로 인해
 # 컨테이너 내부 MySQL 연결이 실패하는 케이스를 방지
 if os.path.exists("/.dockerenv") and (not DB_HOST or DB_HOST in {"127.0.0.1", "localhost"}):
@@ -52,6 +64,11 @@ def create_db_scheme():
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,  # 연결 유지 체크
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
+    pool_timeout=DB_POOL_TIMEOUT,
+    pool_recycle=DB_POOL_RECYCLE,
+    pool_use_lifo=DB_POOL_USE_LIFO,
 )
 
 # 세션 생성

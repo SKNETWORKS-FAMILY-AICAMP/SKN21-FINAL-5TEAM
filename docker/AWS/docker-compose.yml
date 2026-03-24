@@ -12,7 +12,7 @@ services:
       - "127.0.0.1:3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --max_connections=300
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -37,6 +37,13 @@ services:
       DB_USER: ecom_user
       DB_PASSWORD: "ecopchatbot!"
       DB_NAME: ecommerce
+      UVICORN_RELOAD: "false"
+      UVICORN_WORKERS: "4"
+      DB_POOL_SIZE: "25"
+      DB_MAX_OVERFLOW: "5"
+      DB_POOL_TIMEOUT: "30"
+      DB_POOL_RECYCLE: "1800"
+      DB_POOL_USE_LIFO: "true"
     depends_on:
       mysql:
         condition: service_healthy
