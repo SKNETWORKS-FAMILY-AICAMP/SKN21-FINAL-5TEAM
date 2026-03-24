@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from chatbot.src.onboarding_v2.analysis import build_analysis_snapshot
+from chatbot.src.onboarding_v2.analysis import build_analysis_bundle
 from chatbot.src.onboarding_v2.apply import apply_edit_program
 from chatbot.src.onboarding_v2.compile import compile_plan
 from chatbot.src.onboarding_v2.compile.preflight import (
@@ -13,15 +13,17 @@ from chatbot.src.onboarding_v2.compile.preflight import (
 )
 from chatbot.src.onboarding_v2.export import export_and_replay
 from chatbot.src.onboarding_v2.models import (
+    AnalysisBundle,
     AnalysisSnapshot,
     ApplyResult,
     ArtifactRef,
     EditProgram,
     IntegrationPlan,
+    PlanningBundle,
     ReplayResult,
 )
 from chatbot.src.onboarding_v2.models.validation import ValidationBundle
-from chatbot.src.onboarding_v2.planning import build_integration_plan
+from chatbot.src.onboarding_v2.planning import build_planning_bundle
 from chatbot.src.onboarding_v2.repair import (
     collect_file_samples,
     diagnose_failure,
@@ -32,6 +34,7 @@ from chatbot.src.onboarding_v2.storage import (
     ArtifactStore,
     DebugStore,
     EventStore,
+    LlmUsageStore,
     RunStore,
     ViewProjector,
 )
@@ -44,9 +47,13 @@ from chatbot.src.onboarding_v2.validation.signatures import build_failure_signat
 
 @dataclass(slots=True)
 class _RunState:
+    analysis_bundle: AnalysisBundle | None = None
     snapshot: AnalysisSnapshot | None = None
+    analysis_bundle_ref: ArtifactRef | None = None
     analysis_ref: ArtifactRef | None = None
+    planning_bundle: PlanningBundle | None = None
     plan: IntegrationPlan | None = None
+    planning_bundle_ref: ArtifactRef | None = None
     plan_ref: ArtifactRef | None = None
     edit_program: EditProgram | None = None
     compile_ref: ArtifactRef | None = None
@@ -98,6 +105,12 @@ def run_onboarding_generation_v2(
     onboarding_credentials: dict[str, str] | None = None,
     llm_provider: str = "openai",
     llm_model: str = "gpt-5-mini",
+    analysis_llm_provider: str | None = None,
+    analysis_llm_model: str | None = None,
+    planning_llm_provider: str | None = None,
+    planning_llm_model: str | None = None,
+    analysis_llm_builder: Any | None = None,
+    planning_llm_builder: Any | None = None,
     chatbot_server_base_url: str | None = None,
     **_: Any,
 ) -> dict[str, Any]:
@@ -106,6 +119,7 @@ def run_onboarding_generation_v2(
     event_store = EventStore(run_root)
     artifact_store = ArtifactStore(run_root)
     debug_store = DebugStore(run_root)
+    usage_store = LlmUsageStore(run_root)
     run_store = RunStore(run_root)
     view_projector = ViewProjector(run_root)
     run_store.write_run_metadata(
@@ -148,6 +162,14 @@ def run_onboarding_generation_v2(
                 attempt=attempt,
                 analysis_overrides=analysis_overrides,
                 planning_overrides=planning_overrides,
+                debug_store=debug_store,
+                usage_store=usage_store,
+                analysis_llm_provider=str(analysis_llm_provider or llm_provider),
+                analysis_llm_model=str(analysis_llm_model or llm_model),
+                planning_llm_provider=str(planning_llm_provider or llm_provider),
+                planning_llm_model=str(planning_llm_model or llm_model),
+                analysis_llm_builder=analysis_llm_builder,
+                planning_llm_builder=planning_llm_builder,
             )
             final_status = "exported"
             break
@@ -384,7 +406,9 @@ def run_onboarding_generation_v2(
         if state.apply_result is None
         else state.apply_result.chatbot_workspace_path,
         "latest_analysis_artifact": _artifact_abspath(run_root, state.analysis_ref),
+        "latest_analysis_bundle_artifact": _artifact_abspath(run_root, state.analysis_bundle_ref),
         "latest_plan_artifact": _artifact_abspath(run_root, state.plan_ref),
+        "latest_planning_bundle_artifact": _artifact_abspath(run_root, state.planning_bundle_ref),
         "latest_compile_artifact": _artifact_abspath(run_root, state.compile_ref),
         "latest_chatbot_compile_artifact": _artifact_abspath(
             run_root, state.chatbot_compile_ref
@@ -426,6 +450,14 @@ def _run_from_stage(
     attempt: int,
     analysis_overrides: dict[str, Any],
     planning_overrides: dict[str, Any],
+    debug_store: DebugStore,
+    usage_store: LlmUsageStore,
+    analysis_llm_provider: str,
+    analysis_llm_model: str,
+    planning_llm_provider: str,
+    planning_llm_model: str,
+    analysis_llm_builder: Any | None,
+    planning_llm_builder: Any | None,
 ) -> None:
     stage_order = ["analysis", "planning", "compile", "apply", "export", "validation"]
     start_index = stage_order.index(start_stage)
@@ -440,6 +472,11 @@ def _run_from_stage(
                 artifact_store=artifact_store,
                 attempt=attempt,
                 overrides=analysis_overrides,
+                debug_store=debug_store,
+                usage_store=usage_store,
+                llm_provider=analysis_llm_provider,
+                llm_model=analysis_llm_model,
+                llm_builder=analysis_llm_builder,
             )
             analysis_overrides.clear()
         elif stage == "planning":
@@ -451,6 +488,11 @@ def _run_from_stage(
                 artifact_store=artifact_store,
                 attempt=attempt,
                 overrides=planning_overrides,
+                debug_store=debug_store,
+                usage_store=usage_store,
+                llm_provider=planning_llm_provider,
+                llm_model=planning_llm_model,
+                llm_builder=planning_llm_builder,
             )
             planning_overrides.clear()
         elif stage == "compile":
@@ -535,6 +577,11 @@ def run_analysis_stage(
     artifact_store: ArtifactStore,
     attempt: int,
     overrides: dict[str, Any],
+    debug_store: DebugStore,
+    usage_store: LlmUsageStore,
+    llm_provider: str,
+    llm_model: str,
+    llm_builder: Any | None,
 ) -> None:
     started = event_store.write_event(
         run_id=run_id,
@@ -545,8 +592,43 @@ def run_analysis_stage(
         attempt=attempt,
     )
     try:
-        snapshot = build_analysis_snapshot(site=site, source_root=source_root)
+        analysis_bundle = build_analysis_bundle(
+            site=site,
+            source_root=source_root,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_builder=llm_builder,
+            debug_store=debug_store,
+            usage_store=usage_store,
+            attempt=attempt,
+        )
+        snapshot = analysis_bundle.snapshot
         snapshot = _apply_analysis_overrides(snapshot=snapshot, overrides=overrides)
+        analysis_bundle = analysis_bundle.model_copy(update={"snapshot": snapshot})
+        analysis_bundle_ref = artifact_store.write_json_artifact(
+            stage="analysis",
+            artifact_type="analysis-bundle",
+            payload=analysis_bundle.model_dump(mode="json"),
+            producer="analyzer",
+            event_ref=started.event_id,
+            attempt=attempt,
+            provenance={
+                "llm_provider": llm_provider,
+                "llm_model": llm_model,
+                "phase_owners": {
+                    "repo_boundary_scan": "deterministic",
+                    "framework_fingerprint": "deterministic",
+                    "retrieval_plan": "llm_assisted",
+                    "candidate_harvest": "deterministic",
+                    "evidence_reading": "llm_assisted",
+                    "contract_extraction": "llm_assisted",
+                    "contract_verification": "deterministic",
+                    "analysis_graph": "deterministic",
+                },
+                "unresolved_ambiguities": list(analysis_bundle.unresolved_ambiguities),
+                "confidence_notes": list(analysis_bundle.framework_profile.confidence_notes),
+            },
+        )
         analysis_ref = artifact_store.write_json_artifact(
             stage="analysis",
             artifact_type="snapshot",
@@ -554,6 +636,13 @@ def run_analysis_stage(
             producer="analyzer",
             event_ref=started.event_id,
             attempt=attempt,
+            input_artifact_refs=[analysis_bundle_ref],
+            provenance={
+                "derived_from": "analysis-bundle",
+                "llm_provider": llm_provider,
+                "llm_model": llm_model,
+                "unresolved_ambiguities": list(analysis_bundle.unresolved_ambiguities),
+            },
         )
         event_store.write_event(
             run_id=run_id,
@@ -561,9 +650,11 @@ def run_analysis_stage(
             phase="finish",
             event_type="stage_completed",
             summary="analysis completed",
-            artifact_refs=[analysis_ref],
+            artifact_refs=[analysis_bundle_ref, analysis_ref],
             attempt=attempt,
         )
+        state.analysis_bundle = analysis_bundle
+        state.analysis_bundle_ref = analysis_bundle_ref
         state.snapshot = snapshot
         state.analysis_ref = analysis_ref
     except Exception as exc:
@@ -600,8 +691,13 @@ def run_planning_stage(
     artifact_store: ArtifactStore,
     attempt: int,
     overrides: dict[str, Any],
+    debug_store: DebugStore,
+    usage_store: LlmUsageStore,
+    llm_provider: str,
+    llm_model: str,
+    llm_builder: Any | None,
 ) -> None:
-    if state.snapshot is None or state.analysis_ref is None:
+    if state.snapshot is None or state.analysis_ref is None or state.analysis_bundle is None:
         raise ValueError("analysis snapshot is required before planning")
     started = event_store.write_event(
         run_id=run_id,
@@ -613,19 +709,60 @@ def run_planning_stage(
         attempt=attempt,
     )
     try:
-        plan = build_integration_plan(
-            state.snapshot,
+        planning_bundle = build_planning_bundle(
+            snapshot=state.snapshot,
+            analysis_bundle=state.analysis_bundle,
             chatbot_server_base_url=str(chatbot_server_base_url or ""),
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_builder=llm_builder,
+            debug_store=debug_store,
+            usage_store=usage_store,
+            attempt=attempt,
+            artifact_refs=[state.analysis_ref],
         )
+        plan = planning_bundle.integration_plan
         plan = _apply_planning_overrides(plan=plan, overrides=overrides)
+        planning_bundle = planning_bundle.model_copy(update={"integration_plan": plan})
+        planning_bundle_ref = artifact_store.write_json_artifact(
+            stage="planning",
+            artifact_type="planning-bundle",
+            payload=planning_bundle.model_dump(mode="json"),
+            producer="planner",
+            input_artifact_refs=[state.analysis_bundle_ref or state.analysis_ref],
+            event_ref=started.event_id,
+            attempt=attempt,
+            provenance={
+                "llm_provider": llm_provider,
+                "llm_model": llm_model,
+                "phase_owners": {
+                    "goal_materialization": "deterministic",
+                    "coverage_check": "deterministic",
+                    "strategy_synthesis": "llm_assisted",
+                    "feasibility_filter": "deterministic",
+                    "binding_selection": "llm_assisted",
+                    "operation_ir": "deterministic",
+                    "validation_plan": "deterministic",
+                    "risk_register": "llm_assisted",
+                    "repair_hints": "llm_assisted",
+                },
+                "coverage": planning_bundle.coverage_report.model_dump(mode="json"),
+            },
+        )
         plan_ref = artifact_store.write_json_artifact(
             stage="planning",
             artifact_type="integration-plan",
             payload=plan.model_dump(mode="json"),
             producer="planner",
-            input_artifact_refs=[state.analysis_ref],
+            input_artifact_refs=[planning_bundle_ref],
             event_ref=started.event_id,
             attempt=attempt,
+            provenance={
+                "derived_from": "planning-bundle",
+                "llm_provider": llm_provider,
+                "llm_model": llm_model,
+                "coverage": planning_bundle.coverage_report.model_dump(mode="json"),
+            },
         )
         event_store.write_event(
             run_id=run_id,
@@ -633,10 +770,12 @@ def run_planning_stage(
             phase="finish",
             event_type="stage_completed",
             summary="planning completed",
-            artifact_refs=[plan_ref],
+            artifact_refs=[planning_bundle_ref, plan_ref],
             input_refs=[state.analysis_ref],
             attempt=attempt,
         )
+        state.planning_bundle = planning_bundle
+        state.planning_bundle_ref = planning_bundle_ref
         state.plan = plan
         state.plan_ref = plan_ref
     except Exception as exc:
