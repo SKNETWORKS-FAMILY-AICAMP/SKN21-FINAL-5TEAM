@@ -1,5 +1,4 @@
 from functools import lru_cache
-from pathlib import PurePosixPath
 
 import boto3
 from django.conf import settings
@@ -23,32 +22,19 @@ def get_s3_client():
 
 
 @lru_cache(maxsize=1)
-def get_bucket_key_index():
+def get_bucket_key_set():
     bucket = getattr(settings, "AWS_STORAGE_BUCKET_NAME", "")
     s3_client = get_s3_client()
     if not bucket or not s3_client:
-        return {}
+        return set()
 
     paginator = s3_client.get_paginator("list_objects_v2")
-    key_index = {}
+    keys = set()
     for page in paginator.paginate(Bucket=bucket, Prefix="products/"):
         for obj in page.get("Contents", []):
             key = obj["Key"]
-            name = PurePosixPath(key).name
-            key_index.setdefault(name, key)
-            if "_" in name:
-                key_index.setdefault(name.split("_", 1)[1], key)
-    return key_index
-
-
-def resolve_bucket_key(image_path):
-    normalized_path = image_path.lstrip("/")
-    key_index = get_bucket_key_index()
-    if normalized_path in key_index.values():
-        return normalized_path
-
-    file_name = PurePosixPath(normalized_path).name
-    return key_index.get(file_name, normalized_path)
+            keys.add(key)
+    return keys
 
 
 def build_product_image_url(request, image_path):
@@ -64,7 +50,9 @@ def build_product_image_url(request, image_path):
     bucket = getattr(settings, "AWS_STORAGE_BUCKET_NAME", "")
     s3_client = get_s3_client()
     if bucket and s3_client:
-        bucket_key = resolve_bucket_key(image_path)
+        bucket_key = image_path.lstrip("/")
+        if bucket_key not in get_bucket_key_set():
+            return None
         return s3_client.generate_presigned_url(
             "get_object",
             Params={"Bucket": bucket, "Key": bucket_key},

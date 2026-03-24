@@ -40,31 +40,42 @@ def normalize_image_value(raw_value: str) -> str:
 # 상품 생성
 # -------------------------
 def seed_products():
-    csv_path = BASE_DIR / "seed" / "products.csv"
+    csv_override = os.getenv("FOOD_PRODUCTS_CSV", "").strip()
+    csv_path = Path(csv_override) if csv_override else BASE_DIR / "seed" / "products.csv"
 
     if not csv_path.exists():
         print(f"{csv_path} not found")
         return
 
     count = 0
+    print(f"using products csv : {csv_path}")
 
     with csv_path.open(encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
 
         for row in reader:
+            product_id = (row.get("id") or "").strip()
+            product_name = row.get("name", "Unnamed Product")
 
             price = Decimal(row.get("price", "0"))
 
             defaults = {
+                "name": product_name,
                 "price": price,
                 "stock": int(row.get("stock", "50")),
                 "image": normalize_image_value(row.get("image", "")),
             }
 
-            Product.objects.update_or_create(
-                name=row.get("name", "Unnamed Product"),
-                defaults=defaults,
-            )
+            if product_id:
+                Product.objects.update_or_create(
+                    id=int(product_id),
+                    defaults=defaults,
+                )
+            else:
+                Product.objects.update_or_create(
+                    name=product_name,
+                    defaults=defaults,
+                )
 
             count += 1
 
