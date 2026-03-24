@@ -8,6 +8,7 @@ const nextConfig = {
     NEXT_PUBLIC_CHATBOT_API_URL: process.env.NEXT_PUBLIC_CHATBOT_API_URL || "http://localhost:8100",
   },
   transpilePackages: ['@skn/shared-chatbot'],
+  turbopack: {},
 };
 
 module.exports = nextConfig;

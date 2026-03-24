@@ -12,7 +12,7 @@ services:
       - "127.0.0.1:3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --max_connections=300
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -37,24 +37,130 @@ services:
       DB_USER: ecom_user
       DB_PASSWORD: "ecopchatbot!"
       DB_NAME: ecommerce
+      UVICORN_RELOAD: "false"
+      UVICORN_WORKERS: "4"
+      DB_POOL_SIZE: "25"
+      DB_MAX_OVERFLOW: "5"
+      DB_POOL_TIMEOUT: "30"
+      DB_POOL_RECYCLE: "1800"
+      DB_POOL_USE_LIFO: "true"
     depends_on:
       mysql:
         condition: service_healthy
 
   frontend:
+    profiles:
+      - docker-backend
     build:
       context: ../..
       dockerfile: docker/AWS/Dockerfile.frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://3.35.151.92}
+        NEXT_PUBLIC_API_URL: https://moyeo.kro.kr
+        NEXT_PUBLIC_CHATBOT_API_URL: https://moyeo.kro.kr
     container_name: frontend
     restart: always
-    ports:
-      - "127.0.0.1:3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://3.35.151.92}
+      NEXT_PUBLIC_API_URL: https://moyeo.kro.kr
+      NEXT_PUBLIC_CHATBOT_API_URL: https://moyeo.kro.kr
+
+  chatbot-api:
+    profiles:
+      - docker-backend
+    build:
+      context: ../..
+      dockerfile: docker/SaaS/chatbot.api.Dockerfile
+    container_name: chatbot-api
+    restart: always
+    env_file:
+      - ../../.env
+      - .env
+    environment:
+      CHATBOT_SKIP_MODEL_PRELOAD: "1"
+      BACKEND_API_URL: http://backend:8000
+
+  food-backend:
+    profiles:
+      - docker-backend
+    build:
+      context: ../..
+      dockerfile: docker/SaaS/food.backend.Dockerfile
+    container_name: food-backend
+    restart: always
+    env_file:
+      - ../../.env
+      - .env
+    environment:
+      FOOD_IMAGE_BASE_URL: ${FOOD_IMAGE_BASE_URL:-}
+    volumes:
+      - ../../food/backend/db.sqlite3:/app/food/backend/db.sqlite3
+
+  food-frontend:
+    profiles:
+      - docker-backend
+    build:
+      context: ../..
+      dockerfile: docker/SaaS/food.frontend.Dockerfile
+      args:
+        PUBLIC_URL: /food
+        REACT_APP_API_URL: /food
+    container_name: food-frontend
+    restart: always
+    depends_on:
+      - food-backend
+
+  bilyeo-backend:
+    profiles:
+      - docker-backend
+    build:
+      context: ../..
+      dockerfile: docker/SaaS/bilyeo.backend.Dockerfile
+    container_name: bilyeo-backend
+    restart: always
+    env_file:
+      - ../../.env
+      - .env
+    environment:
+      ORACLE_USER: ${ORACLE_USER:-bilyeo}
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD:-0310}
+      ORACLE_HOST: bilyeo-oracle
+      ORACLE_PORT: ${ORACLE_PORT:-1521}
+      ORACLE_SERVICE_NAME: ${ORACLE_SERVICE_NAME:-freepdb1}
+    depends_on:
+      - bilyeo-oracle
+
+  bilyeo-frontend:
+    profiles:
+      - docker-backend
+    build:
+      context: ../..
+      dockerfile: docker/SaaS/bilyeo.frontend.Dockerfile
+      args:
+        VITE_BASE_PATH: /bilyeo/
+        VITE_API_BASE: /bilyeo/api
+    container_name: bilyeo-frontend
+    restart: always
+    depends_on:
+      - bilyeo-backend
+
+  bilyeo-oracle:
+    profiles:
+      - docker-backend
+    image: gvenzl/oracle-free:23-slim-faststart
+    container_name: bilyeo-oracle
+    restart: always
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_ADMIN_PASSWORD:-oraclepass123}
+      APP_USER: ${ORACLE_USER:-bilyeo}
+      APP_USER_PASSWORD: ${ORACLE_PASSWORD:-0310}
+      ORACLE_DATABASE: ${ORACLE_SERVICE_NAME:-freepdb1}
+    ports:
+      - "127.0.0.1:1521:1521"
+    volumes:
+      - bilyeo_oracle_data:/opt/oracle/oradata
 
   nginx:
+    profiles:
+      - docker-backend
     image: nginx:alpine
     container_name: nginx
     restart: always
@@ -62,21 +168,17 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
-      - certbot_www:/var/www/certbot
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
+      - backend
+      - chatbot-api
       - frontend
-
-  certbot:
-    image: certbot/certbot
-    volumes:
-      - certbot_etc:/etc/letsencrypt
-      - certbot_www:/var/www/certbot
+      - food-backend
+      - food-frontend
+      - bilyeo-backend
+      - bilyeo-frontend
 
 volumes:
   mysql_data:
-  certbot_etc:
-  certbot_www:
+  bilyeo_oracle_data:

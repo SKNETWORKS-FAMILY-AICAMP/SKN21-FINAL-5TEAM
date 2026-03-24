@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, messages_from_dict, messages_to_dict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -60,6 +61,11 @@ from chatbot.src.tools.retrieval_tools import ensure_retrieval_models  # noqa: E
 from chatbot.src.data_preprocessing.bge_m3_embedding import preload_model as preload_bge_m3  # noqa: E402
 from chatbot.src.infrastructure.kobart_summarizer import preload_model as preload_kobart  # noqa: E402
 from chatbot.src.tools.image_search_tools import preload_clip_resources  # noqa: E402
+from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR  # noqa: E402
+
+
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
@@ -224,6 +230,12 @@ app = FastAPI(
     description="SaaS Adapter/Tool 연동 테스트를 위한 챗봇 단독 서버",
 )
 
+app.mount(
+    "/chatbot_uploads",
+    StaticFiles(directory=str(CHATBOT_UPLOAD_DIR)),
+    name="chatbot_uploads",
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -241,6 +253,9 @@ async def _startup_onboarding_event_store() -> None:
     app.state.onboarding_event_store = build_onboarding_event_store(
         redis_url=settings.ONBOARDING_REDIS_URL,
     )
+    if _env_flag("CHATBOT_SKIP_MODEL_PRELOAD"):
+        print("Skipping chatbot model preload because CHATBOT_SKIP_MODEL_PRELOAD is enabled.")
+        return
     # 가드레일 모델을 서버 시작 시 1회 로드합니다.
     try:
         load_guardrail_model()

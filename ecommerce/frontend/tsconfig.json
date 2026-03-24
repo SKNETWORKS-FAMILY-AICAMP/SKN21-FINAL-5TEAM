@@ -27,6 +27,9 @@
       "@/*": [
         "./*"
       ],
+      "@skn/shared-chatbot": [
+        "./shared_chatbot/index.ts"
+      ],
       "@skn/shared-chatbot/*": [
         "./shared_chatbot/*"
       ]
