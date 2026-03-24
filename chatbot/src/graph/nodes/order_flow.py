@@ -96,11 +96,18 @@ def order_intent_router_node(state: GlobalAgentState) -> dict:
 
     latest_user_message = _get_latest_user_message(state)
 
-    # 주문번호 추출 (ORD- 패턴, 한글 조사 제외를 위해 ASCII 범위로 제한)
+    # 주문번호 추출 (O R D - 등 띄어쓰기가 포함된 경우를 대비해 전처리 후 추출)
     import re
-    order_id_match = re.search(r"ORD-[A-Za-z0-9_-]+", latest_user_message)
+    clean_message = re.sub(
+        r'(O\s*R\s*D\s*-[\sA-Za-z0-9_-]+)', 
+        lambda m: re.sub(r'\s+', '', m.group(1)), 
+        latest_user_message, 
+        flags=re.IGNORECASE
+    )
+    
+    order_id_match = re.search(r"ORD-[A-Za-z0-9_-]+", clean_message, flags=re.IGNORECASE)
     if order_id_match:
-        order_context["target_order_id"] = order_id_match.group(0).strip()
+        order_context["target_order_id"] = order_id_match.group(0).strip().upper()
 
     resolved_action, source = _classify_order_action(
         state=state,
