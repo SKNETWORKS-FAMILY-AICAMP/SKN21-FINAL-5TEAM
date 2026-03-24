@@ -1,18 +1,19 @@
 'use client';
 
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import ChatbotWidget, {
   bootstrapSharedChatAuth,
   streamSharedChatResponse,
   type FetchLike,
   type SharedChatBootstrap,
-  type SharedWidgetCapabilities,
   type SharedWidgetHostConfig,
 } from '@skn/shared-chatbot/ChatbotWidget';
 import styles from './chatbotfab.module.css';
+import productListStyles from './productlist.module.css';
 import OrderListUI from './OrderListUI';
-import ProductListUI, { type UiProduct } from './ProductListUI';
+import ProductListUI, { type ProductOption, type UiProduct } from './ProductListUI';
 import ReviewFormUI from './ReviewFormUI';
 import UsedSaleFormUI from './UsedSaleFormUI';
 
@@ -177,6 +178,11 @@ type ChatMsg =
   | ImageMessage;
 type LlmProvider = 'openai' | 'huggingface' | 'vllm';
 type ModelOption = { id: string; provider: LlmProvider; label: string };
+type AuthUser = {
+  id: number;
+  email?: string;
+  authenticated?: boolean;
+};
 
 type DaumPostcodeData = {
   roadAddress?: string;
@@ -195,6 +201,7 @@ declare global {
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_CHATBOT_API_URL || 'http://localhost:8100';
+const ECOMMERCE_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const SHARED_WIDGET_HOST: SharedWidgetHostConfig = {
   authBootstrapPath: `${API_BASE_URL || ''}/api/v1/chat/auth-token`,
   chatbotApiBase: API_BASE_URL || '',
@@ -630,6 +637,7 @@ export default function ChatbotFab({
   isLoggedIn: boolean;
   host?: SharedWidgetHostConfig;
 }) {
+  const router = useRouter();
   const effectiveHost = host ?? SHARED_WIDGET_HOST;
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -653,6 +661,12 @@ export default function ChatbotFab({
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [chatBootstrap, setChatBootstrap] = useState<SharedChatBootstrap | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [sizeModalOpenFor, setSizeModalOpenFor] = useState<number | null>(null);
+  const [options, setOptions] = useState<ProductOption[]>([]);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [selectedOptionIdByProduct, setSelectedOptionIdByProduct] = useState<Record<number, number | null>>({});
+  const [selectedSizeLabelByProduct, setSelectedSizeLabelByProduct] = useState<Record<number, string>>({});
 
   const releasePendingImageObjectUrl = (candidate: PendingImageState | null) => {
     if (candidate?.objectUrl) {
@@ -690,7 +704,42 @@ export default function ChatbotFab({
   useEffect(() => {
     if (!isLoggedIn) {
       setChatBootstrap(null);
+      setUser(null);
     }
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!isLoggedIn || !ECOMMERCE_API_BASE_URL) {
+      setUser(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    fetch(`${ECOMMERCE_API_BASE_URL}/users/me`, {
+      credentials: 'include',
+    })
+      .then(async (res) => {
+        if (!active || !res.ok) {
+          if (active) setUser(null);
+          return;
+        }
+        const data = await res.json();
+        if (!active || !data || data.authenticated === false || typeof data.id !== 'number') {
+          if (active) setUser(null);
+          return;
+        }
+        setUser({ id: data.id, email: data.email, authenticated: data.authenticated });
+      })
+      .catch(() => {
+        if (active) setUser(null);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [isLoggedIn]);
 
   useEffect(() => {
@@ -787,6 +836,108 @@ export default function ChatbotFab({
   };
 
   const sharedFetch = (input: string, init?: Record<string, unknown>) => fetch(input, init as RequestInit);
+
+  const requireLogin = (callback: () => void | Promise<void>) => {
+    if (!isLoggedIn) {
+      router.push('/auth/login');
+      return;
+    }
+    void callback();
+  };
+
+  const openSizeModal = (productId: number) => {
+    requireLogin(async () => {
+      if (!ECOMMERCE_API_BASE_URL) {
+        alert('상품 API 주소가 설정되지 않았습니다.');
+        return;
+      }
+
+      setSizeModalOpenFor(productId);
+      setOptions([]);
+      setOptionsLoading(true);
+
+      try {
+        const res = await fetch(`${ECOMMERCE_API_BASE_URL}/products/new/${productId}/options`, {
+          credentials: 'include',
+        });
+
+        if (!res.ok) throw new Error();
+
+        const data: ProductOption[] = await res.json();
+        const filtered = data.filter((option) => option.is_active && option.quantity > 0);
+        setOptions(filtered);
+      } catch {
+        alert('사이즈 정보를 불러오지 못했습니다.');
+        setSizeModalOpenFor(null);
+      } finally {
+        setOptionsLoading(false);
+      }
+    });
+  };
+
+  const closeSizeModal = () => {
+    setSizeModalOpenFor(null);
+    setOptions([]);
+  };
+
+  const selectOption = (productId: number, option: ProductOption) => {
+    setSelectedOptionIdByProduct((prev) => ({
+      ...prev,
+      [productId]: option.id,
+    }));
+    setSelectedSizeLabelByProduct((prev) => ({
+      ...prev,
+      [productId]: option.size_name || '선택됨',
+    }));
+    closeSizeModal();
+  };
+
+  const addToCart = async (productId: number, goPayment: boolean) => {
+    requireLogin(async () => {
+      if (!ECOMMERCE_API_BASE_URL) {
+        alert('상품 API 주소가 설정되지 않았습니다.');
+        return;
+      }
+
+      const optionId = selectedOptionIdByProduct[productId];
+
+      if (!optionId) {
+        openSizeModal(productId);
+        return;
+      }
+
+      if (!user?.id) {
+        alert('로그인 정보를 다시 확인해주세요.');
+        return;
+      }
+
+      try {
+        const res = await fetch(`${ECOMMERCE_API_BASE_URL}/carts/${user.id}/items`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            product_option_type: 'new',
+            product_option_id: optionId,
+            quantity: 1,
+          }),
+        });
+
+        if (!res.ok) {
+          alert('장바구니 추가 실패');
+          return;
+        }
+
+        if (goPayment) {
+          router.push('/payment');
+        } else {
+          alert('장바구니에 담았습니다.');
+        }
+      } catch {
+        alert('요청 실패');
+      }
+    });
+  };
 
   useEffect(() => {
     let active = true;
@@ -1488,7 +1639,38 @@ export default function ChatbotFab({
                 <div className={styles.botMsg}>
                   <span className={styles.botIcon}>✦</span>
                   <div className={styles.botText}>
-                    <ProductListUI products={message.products} message={message.message} />
+                    <ProductListUI
+                      products={message.products}
+                      message={message.message}
+                      purchaseEnabled
+                      sizeModalOpenFor={sizeModalOpenFor}
+                      options={options}
+                      optionsLoading={optionsLoading}
+                      selectedSizeLabelByProduct={selectedSizeLabelByProduct}
+                      onOpenSizeModal={openSizeModal}
+                      onCloseSizeModal={closeSizeModal}
+                      onSelectOption={selectOption}
+                      onAddToCart={addToCart}
+                      classNames={{
+                        container: productListStyles.container,
+                        message: productListStyles.message,
+                        productList: productListStyles.productList,
+                        productCard: productListStyles.productCard,
+                        productImageWrap: productListStyles.productImageWrap,
+                        productInfo: productListStyles.productInfo,
+                        productName: productListStyles.productName,
+                        productMeta: productListStyles.productMeta,
+                        productPrice: productListStyles.productPrice,
+                        actionRow: productListStyles.actionRow,
+                        btn: productListStyles.btn,
+                        primary: productListStyles.primary,
+                        modalOverlay: productListStyles.modalOverlay,
+                        modalTitle: productListStyles.modalTitle,
+                        sizeGrid: productListStyles.sizeGrid,
+                        sizeBtn: productListStyles.sizeBtn,
+                        closeModalBtn: productListStyles.closeModalBtn,
+                      }}
+                    />
                   </div>
                 </div>
               </div>

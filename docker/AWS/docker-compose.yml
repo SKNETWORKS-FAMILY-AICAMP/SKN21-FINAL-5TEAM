@@ -56,10 +56,27 @@ services:
       dockerfile: docker/AWS/Dockerfile.frontend
       args:
         NEXT_PUBLIC_API_URL: https://moyeo.kro.kr
+        NEXT_PUBLIC_CHATBOT_API_URL: https://moyeo.kro.kr
     container_name: frontend
     restart: always
     environment:
       NEXT_PUBLIC_API_URL: https://moyeo.kro.kr
+      NEXT_PUBLIC_CHATBOT_API_URL: https://moyeo.kro.kr
+
+  chatbot-api:
+    profiles:
+      - docker-backend
+    build:
+      context: ../..
+      dockerfile: docker/SaaS/chatbot.api.Dockerfile
+    container_name: chatbot-api
+    restart: always
+    env_file:
+      - ../../.env
+      - .env
+    environment:
+      CHATBOT_SKIP_MODEL_PRELOAD: "1"
+      BACKEND_API_URL: http://backend:8000
 
   food-backend:
     profiles:
@@ -155,6 +172,7 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - backend
+      - chatbot-api
       - frontend
       - food-backend
       - food-frontend
