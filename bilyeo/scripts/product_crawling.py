@@ -20,6 +20,7 @@ import boto3
 from datetime import datetime
 from dotenv import load_dotenv
 from pathlib import Path
+from urllib.parse import urljoin
 
 # bilyeo/.env 파일 로드
 env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -43,6 +44,7 @@ R2_BUCKET = os.getenv("R2_BUCKET")
 R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
 R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
 R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL")
+FAST_SEED = os.getenv("BILYEO_FAST_SEED", "1").lower() not in {"0", "false", "no"}
 
 # ===== R2 무료 한도 (월별) =====
 CLASS_A_LIMIT = 1_000_000   # Class A (쓰기: PutObject, ListObjects 등)
@@ -249,6 +251,15 @@ def make_image_filename(image_url: str) -> str:
     return f"{uuid.uuid4()}{ext}"
 
 
+def normalize_image_url(image_url: str) -> str:
+    """상품 이미지 URL을 절대 URL로 정규화합니다."""
+    if not image_url:
+        return ""
+    if image_url.startswith("//"):
+        return f"https:{image_url}"
+    return urljoin("https://www.oliveyoung.co.kr", image_url)
+
+
 # ===== HTTP 세션 =====
 
 def create_browser_page(playwright_instance):
@@ -320,7 +331,7 @@ class ProductHTMLParser(HTMLParser):
         if tag == "img" and self._in_flag:
             src = attr.get("src", "")
             if src and not self._current.get("image_url"):
-                self._current["image_url"] = src
+                self._current["image_url"] = normalize_image_url(src)
 
     def handle_data(self, data):
         if self._capture:
@@ -770,6 +781,11 @@ def crawl_oliveyoung() -> list[dict]:
                     product["category"] = subcategory
                 all_products.extend(collected)
                 print(f"  최종 수집: {len(collected)}건")
+
+            if FAST_SEED:
+                print("\n[3단계] 빠른 시드 모드: 상세페이지/리뷰/R2 업로드를 건너뜁니다.")
+                print(f"\n올리브영 스킨케어 상품 수집 완료: 총 {len(all_products)}건")
+                return all_products
 
             # 3단계: 각 상품 상세페이지에서 상품정보 제공고시 + 첫 번째 리뷰 수집
             print(f"\n[3단계] 상품 상세페이지 크롤링 시작 (총 {len(all_products)}건)...")

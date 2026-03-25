@@ -1,7 +1,11 @@
 import axios from 'axios'
 
+const APP_BASE = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '') || ''
+const API_BASE = (import.meta.env.VITE_API_BASE || `${APP_BASE}/api` || '/api').replace(/\/+$/, '')
+const LOGIN_PATH = `${APP_BASE}/login` || '/login'
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json'
   },
@@ -15,7 +19,7 @@ api.interceptors.response.use(
     const url = error.config?.url || ''
     if (error.response && error.response.status === 401 && !url.includes('/auth/login')) {
       sessionStorage.removeItem('user')
-      window.location.href = '/login'
+      window.location.href = LOGIN_PATH
     }
     return Promise.reject(error)
   }
