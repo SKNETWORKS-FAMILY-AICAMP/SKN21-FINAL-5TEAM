@@ -14,18 +14,19 @@ Final Generator 노드.
 
 from langchain_core.messages import SystemMessage, AIMessage
 
+from chatbot.src.graph.brand_profiles import resolve_brand_profile
 from chatbot.src.graph.state import GlobalAgentState
 from chatbot.src.graph.llm_providers import make_chat_llm
 from chatbot.src.schemas.planner import TaskIntent
 
 # ── 프롬프트 ──────────────────────────────────────────────
 
-GENERAL_CHAT_SYSTEM_PROMPT = """당신은 MOYEO 쇼핑몰의 AI CS 상담원입니다.
+GENERAL_CHAT_SYSTEM_PROMPT = """당신은 {brand_store_label}의 AI CS 상담원입니다.
 서비스와 무관한 일반적인 질문에도 친절하고 자연스럽게 응답하세요.
 항상 존댓말을 사용하고, 간결하게 답변하세요.
 쇼핑 관련 도움이 필요하면 언제든 말씀해 달라고 안내해 주세요."""
 
-SYNTHESIS_SYSTEM_PROMPT = """당신은 MOYEO 쇼핑몰의 AI CS 상담원입니다.
+SYNTHESIS_SYSTEM_PROMPT = """당신은 {brand_store_label}의 AI CS 상담원입니다.
 아래 [처리 결과]는 각 SubAgent가 처리한 결과를 요약한 것입니다.
 이 내용을 바탕으로 하나의 자연스럽고 매끄러운 응답을 작성하세요.
 
@@ -121,9 +122,14 @@ def final_generator_node(state: GlobalAgentState) -> dict:
 
 def _general_chat_response(state: GlobalAgentState, provider: str, model: str) -> dict:
     """서비스 무관 질문 또는 fallback 시 LLM 자유 응답 생성."""
+    brand_profile = resolve_brand_profile((state.get("user_info") or {}).get("site_id"))
     llm = make_chat_llm(provider=provider, model=model, temperature=0.3)
     response = llm.invoke([
-        SystemMessage(content=GENERAL_CHAT_SYSTEM_PROMPT),
+        SystemMessage(
+            content=GENERAL_CHAT_SYSTEM_PROMPT.format(
+                brand_store_label=brand_profile.store_label,
+            )
+        ),
         *state["messages"],
     ])
     return {"messages": [AIMessage(content=response.content)]}
@@ -193,10 +199,12 @@ def _synthesis_response(
 
     # UI 안내 문구
     ui_instruction = _UI_ACTION_INSTRUCTIONS.get(ui_action or "", "")
+    brand_profile = resolve_brand_profile((state.get("user_info") or {}).get("site_id"))
 
     llm = make_chat_llm(provider=provider, model=model, temperature=0)
     response = llm.invoke([
         SystemMessage(content=SYNTHESIS_SYSTEM_PROMPT.format(
+            brand_store_label=brand_profile.store_label,
             agent_results_text=agent_results_text,
             ui_instruction=ui_instruction,
         )),

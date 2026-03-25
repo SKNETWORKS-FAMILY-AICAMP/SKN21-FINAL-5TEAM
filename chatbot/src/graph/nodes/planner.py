@@ -19,14 +19,15 @@ from pydantic import ValidationError
 from chatbot.src.graph.state import GlobalAgentState
 from chatbot.src.schemas.planner import PlannerOutput, TaskIntent
 from chatbot.src.graph.llm_providers import make_chat_llm, resolve_llm_runtime_policy
+from chatbot.src.graph.brand_profiles import resolve_brand_profile
 
 # ── 프롬프트 ──────────────────────────────────────────────
 
-PLANNER_SYSTEM_PROMPT = """당신은 MOYEO 쇼핑몰 CS 챗봇의 Planner입니다.
+PLANNER_SYSTEM_PROMPT = """당신은 {brand_store_label} CS 챗봇의 Planner입니다.
 사용자의 메시지를 분석하여 처리해야 할 작업 목록을 결정합니다.
 
 [서비스 범위]
-MOYEO는 패션 이커머스 플랫폼입니다. 아래 도메인의 질문만 처리합니다:
+{brand_display_name}는 패션 이커머스 플랫폼입니다. 아래 도메인의 질문만 처리합니다:
 - 주문 취소 / 반품 / 교환
 - 상품 검색 및 스타일 추천 (텍스트 or 이미지)
 - 배송/환불/교환 정책 및 약관 조회
@@ -190,11 +191,15 @@ def _build_planner_messages(
     include_label_text_contract: bool,
 ) -> list:
     conversation_summary: str | None = state.get("conversation_summary")
+    brand_profile = resolve_brand_profile((state.get("user_info") or {}).get("site_id"))
     summary_prefix = (
         f"\n\n[이전 대화 요약]\n{conversation_summary}\n"
         if conversation_summary else ""
     )
-    system_content = PLANNER_SYSTEM_PROMPT + summary_prefix
+    system_content = PLANNER_SYSTEM_PROMPT.format(
+        brand_store_label=brand_profile.store_label,
+        brand_display_name=brand_profile.display_name,
+    ) + summary_prefix
     if include_label_text_contract:
         system_content += f"\n\n{PLANNER_LABEL_TEXT_OUTPUT_CONTRACT}"
 

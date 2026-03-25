@@ -15,6 +15,7 @@ FormAction SubAgent 노드.
 from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.prebuilt import create_react_agent
 
+from chatbot.src.graph.brand_profiles import resolve_brand_profile
 from chatbot.src.graph.state import GlobalAgentState
 from chatbot.src.schemas.planner import TaskIntent
 from chatbot.src.graph.llm_providers import make_chat_llm
@@ -32,7 +33,7 @@ FORM_ACTION_TOOLS = [
 
 # ── 시스템 프롬프트 ───────────────────────────────────────
 
-FORM_ACTION_SYSTEM_PROMPT = """당신은 MOYEO 쇼핑몰의 FormAction SubAgent입니다.
+FORM_ACTION_SYSTEM_PROMPT = """당신은 {brand_store_label}의 FormAction SubAgent입니다.
 중고 상품 등록, 리뷰 작성, 상품권 등록 요청을 처리합니다.
 
 [절대 규칙]
@@ -56,10 +57,12 @@ def form_action_subagent_node(state: GlobalAgentState) -> dict:
     provider = state.get("llm_provider", "openai")
     model = state.get("llm_model", "gpt-4o-mini")
     user_info = state.get("user_info", {})
+    brand_profile = resolve_brand_profile(user_info.get("site_id"))
 
     user_context = (
         f"User ID: {user_info.get('id', 'unknown')}, "
-        f"Name: {user_info.get('name', '고객')}"
+        f"Name: {user_info.get('name', '고객')}, "
+        f"Brand: {brand_profile.display_name}"
     )
 
     task = state.get("current_active_task")
@@ -67,7 +70,10 @@ def form_action_subagent_node(state: GlobalAgentState) -> dict:
     # 작업별 추가 지시 생성
     task_instruction = _build_task_instruction(task, state)
 
-    system_prompt = FORM_ACTION_SYSTEM_PROMPT.format(user_context=user_context)
+    system_prompt = FORM_ACTION_SYSTEM_PROMPT.format(
+        brand_store_label=brand_profile.store_label,
+        user_context=user_context,
+    )
     if task_instruction:
         system_prompt += f"\n\n[현재 작업]\n{task_instruction}"
 

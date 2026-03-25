@@ -27,6 +27,7 @@ Refund SubAgent 노드.
 from langchain_core.messages import SystemMessage
 from langgraph.prebuilt import create_react_agent
 
+from chatbot.src.graph.brand_profiles import resolve_brand_profile
 from chatbot.src.graph.state import GlobalAgentState
 from chatbot.src.graph.llm_providers import make_chat_llm
 
@@ -56,7 +57,7 @@ REFUND_TOOLS = [
 
 # ── 시스템 프롬프트 ───────────────────────────────────────
 
-REFUND_SYSTEM_PROMPT = """당신은 MOYEO 쇼핑몰의 Refund SubAgent입니다.
+REFUND_SYSTEM_PROMPT = """당신은 {brand_store_label}의 Refund SubAgent입니다.
 주문 취소, 반품(환불), 교환 요청을 처리합니다.
 
 [절대 규칙 — DB 기반 분기]
@@ -105,10 +106,12 @@ def order_subagent_node(state: GlobalAgentState) -> dict:
     user_id = user_info.get("id", 1)
     site_id = user_info.get("site_id")
     access_token = user_info.get("access_token")
+    brand_profile = resolve_brand_profile(site_id)
 
     user_context = (
         f"User ID: {user_id}, "
         f"Name: {user_info.get('name', '고객')}, "
+        f"Brand: {brand_profile.display_name}, "
         f"Site ID: {site_id or 'site-a (default)'}\n"
         f"[도구 호출 시 user_id={user_id}, site_id={site_id!r}, access_token={'(있음)' if access_token else '(없음)'} 을 반드시 전달하세요]"
     )
@@ -123,7 +126,10 @@ def order_subagent_node(state: GlobalAgentState) -> dict:
     )
 
     system_prompt = (
-        REFUND_SYSTEM_PROMPT.format(user_context=user_context) + order_hint
+        REFUND_SYSTEM_PROMPT.format(
+            brand_store_label=brand_profile.store_label,
+            user_context=user_context,
+        ) + order_hint
     )
 
     llm = make_chat_llm(provider=provider, model=model, temperature=0)

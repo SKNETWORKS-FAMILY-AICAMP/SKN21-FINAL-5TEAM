@@ -26,6 +26,7 @@ from urllib.request import urlopen
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
 
+from chatbot.src.graph.brand_profiles import resolve_brand_profile
 from chatbot.src.graph.state import GlobalAgentState
 from chatbot.src.schemas.planner import TaskIntent
 from chatbot.src.graph.llm_providers import make_chat_llm
@@ -50,7 +51,7 @@ DISCOVERY_TOOLS = [
 
 # ── 프롬프트 ──────────────────────────────────────────────
 
-DISCOVERY_SYSTEM_PROMPT = """당신은 MOYEO 쇼핑몰의 Discovery SubAgent입니다.
+DISCOVERY_SYSTEM_PROMPT = """당신은 {brand_store_label}의 Discovery SubAgent입니다.
 사용자가 원하는 상품을 찾아주는 역할을 합니다.
 
 [도구 선택 기준]
@@ -230,9 +231,11 @@ def _text_search_pipeline(
         }
 
     user_info = state.get("user_info", {})
+    brand_profile = resolve_brand_profile(user_info.get("site_id"))
     user_context = (
         f"User ID: {user_info.get('id', 'unknown')}, "
-        f"Name: {user_info.get('name', '고객')}"
+        f"Name: {user_info.get('name', '고객')}, "
+        f"Brand: {brand_profile.display_name}"
     )
 
     llm = make_chat_llm(provider=provider, model=model, temperature=0)
@@ -240,7 +243,10 @@ def _text_search_pipeline(
         model=llm,
         tools=DISCOVERY_TOOLS,
         prompt=SystemMessage(
-            content=DISCOVERY_SYSTEM_PROMPT.format(user_context=user_context)
+            content=DISCOVERY_SYSTEM_PROMPT.format(
+                brand_store_label=brand_profile.store_label,
+                user_context=user_context,
+            )
         ),
     )
 
