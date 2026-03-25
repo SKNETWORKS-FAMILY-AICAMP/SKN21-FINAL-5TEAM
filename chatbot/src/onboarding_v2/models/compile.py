@@ -66,11 +66,59 @@ class FrontendApiBundle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class EditProgram(BaseModel):
+class ChatbotBridgeBundle(BaseModel):
+    bundle_id: str
+    strategy: str = "chatbot_generated_adapter"
+    target_paths: list[str] = Field(default_factory=list)
+    operations: list[EditOperation] = Field(default_factory=list)
+    supporting_files: list[SupportingArtifactBundle] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CompilePreflightSpec(BaseModel):
+    artifact_type: str = "compile-preflight"
+    check_name: str = "chatbot_runtime_import"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class HostEditProgram(BaseModel):
     backend_wiring_bundles: list[BackendWiringBundle] = Field(default_factory=list)
     frontend_mount_bundles: list[FrontendMountBundle] = Field(default_factory=list)
     frontend_api_bundles: list[FrontendApiBundle] = Field(default_factory=list)
     supporting_artifact_bundles: list[SupportingArtifactBundle] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ChatbotEditProgram(BaseModel):
+    bridge_bundles: list[ChatbotBridgeBundle] = Field(default_factory=list)
+    supporting_artifact_bundles: list[SupportingArtifactBundle] = Field(default_factory=list)
+    compile_preflight: CompilePreflightSpec | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class EditProgram(BaseModel):
+    host_program: HostEditProgram = Field(default_factory=HostEditProgram)
+    chatbot_program: ChatbotEditProgram = Field(default_factory=ChatbotEditProgram)
     execution_metadata: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
+
+    @property
+    def backend_wiring_bundles(self) -> list[BackendWiringBundle]:
+        return self.host_program.backend_wiring_bundles
+
+    @property
+    def frontend_mount_bundles(self) -> list[FrontendMountBundle]:
+        return self.host_program.frontend_mount_bundles
+
+    @property
+    def frontend_api_bundles(self) -> list[FrontendApiBundle]:
+        return self.host_program.frontend_api_bundles
+
+    @property
+    def supporting_artifact_bundles(self) -> list[SupportingArtifactBundle]:
+        return self.host_program.supporting_artifact_bundles

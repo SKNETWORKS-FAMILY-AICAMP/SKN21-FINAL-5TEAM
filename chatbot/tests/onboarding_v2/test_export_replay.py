@@ -19,19 +19,25 @@ def test_export_replay_applies_exported_patch(tmp_path: Path):
     generated_root = tmp_path / "generated" / "food" / "food-run-v2"
     runtime_root = tmp_path / "runtime"
     snapshot = build_analysis_snapshot(site="food", source_root=ROOT / "food")
-    plan = build_integration_plan(snapshot)
+    plan = build_integration_plan(
+        snapshot,
+        chatbot_server_base_url="http://localhost:8100",
+    )
     program = compile_plan(snapshot=snapshot, plan=plan, source_root=ROOT / "food")
     apply_result = apply_edit_program(
-        source_root=ROOT / "food",
+        host_source_root=ROOT / "food",
+        chatbot_source_root=ROOT / "chatbot",
         runtime_root=runtime_root,
         site="food",
         run_id="food-run-v2",
         edit_program=program,
     )
 
-    patch_ref, replay_result, replay_ref = export_and_replay(
-        source_root=ROOT / "food",
-        runtime_workspace=apply_result.workspace_path,
+    export_bundle_ref, replay_result, replay_ref = export_and_replay(
+        host_source_root=ROOT / "food",
+        chatbot_source_root=ROOT / "chatbot",
+        host_runtime_workspace=apply_result.host_workspace_path,
+        chatbot_runtime_workspace=apply_result.chatbot_workspace_path,
         runtime_root=runtime_root,
         run_root=generated_root,
         site="food",
@@ -39,7 +45,10 @@ def test_export_replay_applies_exported_patch(tmp_path: Path):
         artifact_store=ArtifactStore(generated_root),
     )
 
-    assert patch_ref.version == 1
+    assert export_bundle_ref.version == 1
     assert replay_ref.version == 1
     assert replay_result.passed is True
-    assert Path(replay_result.replay_workspace_path).exists()
+    assert Path(replay_result.host_replay_workspace_path).exists()
+    assert Path(replay_result.chatbot_replay_workspace_path).exists()
+    assert replay_result.host_patch_path.endswith("host-approved.patch/v0001.patch")
+    assert replay_result.chatbot_patch_path.endswith("chatbot-approved.patch/v0001.patch")

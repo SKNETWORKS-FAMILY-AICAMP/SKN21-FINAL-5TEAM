@@ -28,10 +28,6 @@ from chatbot.src.tools.adapter_order_tools import (
     register_exchange_via_adapter,
     register_return_via_adapter as register_return_request,
 )
-from chatbot.src.tools.order_tools import (
-    change_product_option,
-    register_exchange_request,
-)
 import json
 from typing import Callable
 from langchain_openai import ChatOpenAI
@@ -236,9 +232,7 @@ def shipping_subagent_node(state: GlobalAgentState) -> dict:
 
 
 def exchange_subagent_node(state: GlobalAgentState) -> dict:
-    tool = _select_exchange_tool(state)
-    tool_name = "change_option" if tool is change_product_option else "exchange"
-    include_site_context = tool is register_exchange_via_adapter
+    tool, tool_name, include_site_context = _select_exchange_tool(state)
     return _run_order_action(
         state=state,
         action="exchange",
@@ -410,15 +404,18 @@ def _select_exchange_tool(state: GlobalAgentState):
     latest_user_message = _get_latest_user_message(state)
     normalized_text = _normalize_order_text(latest_user_message)
 
+    if site_id and site_id != "site-c":
+        return register_exchange_via_adapter, "exchange", True
+
+    change_product_option = _get_change_product_option_tool()
+    register_exchange_request = _get_register_exchange_request_tool()
+
     # 0) LLM이 명시적으로 change_option으로 분류했다면 해당 도구 강제 선택
     if pending_action == "change_option":
-        return change_product_option
-
-    if site_id and site_id != "site-c":
-        return register_exchange_via_adapter
+        return change_product_option, "change_option", False
 
     if awaiting_resume_for == "new_option":
-        return change_product_option
+        return change_product_option, "change_option", False
 
     # 부정/취소 의도가 명확한 경우 단순 키워드 매칭 무시
     negative_keywords = ("안할게", "안할래", "안한다", "안바꿀", "안해", "싫어", "취소", "됐어", "괜찮아", "그냥입", "그냥쓸")
@@ -438,7 +435,19 @@ def _select_exchange_tool(state: GlobalAgentState):
     )
 
     if any(keyword in normalized_text for keyword in change_option_keywords):
-        return change_product_option
+        return change_product_option, "change_option", False
+
+    return register_exchange_request, "exchange", False
+
+
+def _get_change_product_option_tool():
+    from chatbot.src.tools.order_tools import change_product_option
+
+    return change_product_option
+
+
+def _get_register_exchange_request_tool():
+    from chatbot.src.tools.order_tools import register_exchange_request
 
     return register_exchange_request
 
@@ -659,5 +668,4 @@ def _get_latest_user_message(state: GlobalAgentState) -> str:
         if isinstance(msg, HumanMessage):
             return str(msg.content).strip()
     return ""
-
 

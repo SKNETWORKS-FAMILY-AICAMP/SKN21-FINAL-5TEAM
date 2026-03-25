@@ -15,7 +15,7 @@ from chatbot.src.onboarding_v2.models.validation import BackendRuntimePlan, Back
 def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: Path):
     runtime_plan = BackendRuntimePlan(
         framework="django",
-        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "backend"),
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "host" / "backend"),
         command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
         readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
     )
@@ -43,11 +43,41 @@ def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: P
         lambda state: None,
     )
     monkeypatch.setattr(
-        "chatbot.src.onboarding_v2.validation.runner.run_runtime_smoke",
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
         lambda **kwargs: {
             "passed": True,
-            "results": [],
-            "failure_summary": "smoke passed",
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "host auth bootstrap passed",
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "session-token",
+                "user": {"id": "7"},
+            },
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot adapter auth passed",
+            "validated_user": {"id": "7", "siteId": "food"},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_order_e2e",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget order e2e passed",
             "related_files": [],
         },
     )
@@ -58,6 +88,7 @@ def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: P
         runtime_root=str(tmp_path / "runtime"),
         run_id="food-run-v2",
         onboarding_credentials={"email": "test1@example.com", "password": "password123"},
+        chatbot_server_base_url="http://localhost:8100",
     )
 
     run_root = Path(result["run_root"])
@@ -68,13 +99,18 @@ def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: P
     assert (run_root / "views" / "timeline.txt").exists()
     assert (run_root / "artifacts" / "01-analysis" / "snapshot" / "v0001.json").exists()
     assert (run_root / "artifacts" / "02-planning" / "integration-plan" / "v0001.json").exists()
-    assert (run_root / "artifacts" / "03-compile" / "edit-program" / "v0001.json").exists()
+    assert (run_root / "artifacts" / "03-compile" / "host-edit-program" / "v0001.json").exists()
+    assert (run_root / "artifacts" / "03-compile" / "chatbot-edit-program" / "v0001.json").exists()
     assert (run_root / "artifacts" / "04-apply" / "apply-result" / "v0001.json").exists()
     assert (run_root / "artifacts" / "05-validation" / "backend-runtime-prep" / "v0001.json").exists()
     assert (run_root / "artifacts" / "05-validation" / "backend-runtime-state" / "v0001.json").exists()
-    assert (run_root / "artifacts" / "05-validation" / "smoke-results" / "v0001.json").exists()
+    assert (run_root / "artifacts" / "05-validation" / "chatbot-runtime-boot" / "v0001.json").exists()
+    assert (run_root / "artifacts" / "05-validation" / "host-auth-bootstrap" / "v0001.json").exists()
+    assert (run_root / "artifacts" / "05-validation" / "chatbot-adapter-auth" / "v0001.json").exists()
+    assert (run_root / "artifacts" / "05-validation" / "widget-order-e2e" / "v0001.json").exists()
     assert (run_root / "artifacts" / "05-validation" / "validation-bundle" / "v0001.json").exists()
-    assert (run_root / "artifacts" / "06-export" / "approved-patch" / "v0001.patch").exists()
+    assert (run_root / "artifacts" / "06-export" / "host-approved.patch" / "v0001.patch").exists()
+    assert (run_root / "artifacts" / "06-export" / "chatbot-approved.patch" / "v0001.patch").exists()
     assert (run_root / "artifacts" / "06-export" / "replay-result" / "v0001.json").exists()
     summary = json.loads((run_root / "views" / "run-summary.json").read_text(encoding="utf-8"))
     events = [
@@ -88,6 +124,9 @@ def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: P
     assert "backend_runtime_prep_completed" in event_types
     assert "backend_runtime_boot_started" in event_types
     assert "backend_runtime_boot_completed" in event_types
-    assert "smoke_started" in event_types
-    assert "smoke_completed" in event_types
+    assert "chatbot_bridge_compile_started" in event_types
+    assert "chatbot_bridge_compile_completed" in event_types
+    assert "widget_e2e_started" in event_types
+    assert "widget_e2e_completed" in event_types
+    assert "dual_patch_export_completed" in event_types
     assert not (run_root / "reports" / "smoke-context.json").exists()

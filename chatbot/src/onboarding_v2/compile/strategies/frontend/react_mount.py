@@ -2,22 +2,25 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from chatbot.src.onboarding.frontend_generator import build_frontend_mount_contract
 from chatbot.src.onboarding_v2.models.compile import EditOperation, FrontendMountBundle
-from chatbot.src.onboarding_v2.models.planning import FrontendIntegrationPlan
+from chatbot.src.onboarding_v2.models.planning import HostFrontendPlan
 
 
 def compile_react_mount_bundle(
     *,
     source_root: str | Path,
-    plan: FrontendIntegrationPlan,
+    plan: HostFrontendPlan,
 ) -> FrontendMountBundle:
     root = Path(source_root)
     target = root / plan.mount_target
     if not target.exists():
         raise ValueError(f"frontend mount target not found: {plan.mount_target}")
     original = target.read_text(encoding="utf-8")
-    updated_lines = _build_react_mount_updated_lines(original.splitlines(keepends=True))
+    updated_lines = _build_react_mount_updated_lines(
+        original.splitlines(keepends=True),
+        chatbot_server_base_url_expression=plan.chatbot_server_base_url_expression,
+        auth_bootstrap_path=plan.auth_bootstrap_path,
+    )
     return FrontendMountBundle(
         bundle_id="frontend:mount",
         strategy=plan.mount_strategy,
@@ -33,11 +36,22 @@ def compile_react_mount_bundle(
     )
 
 
-def _build_react_mount_updated_lines(source_lines: list[str]) -> list[str]:
+def _build_react_mount_updated_lines(
+    source_lines: list[str],
+    *,
+    chatbot_server_base_url_expression: str,
+    auth_bootstrap_path: str,
+) -> list[str]:
     updated_lines = list(source_lines)
     current = "".join(updated_lines)
     if "__ORDER_CS_WIDGET_HOST_CONTRACT__" not in current:
-        updated_lines = _insert_lines_after_import_block(updated_lines, _build_shared_widget_bootstrap_lines())
+        updated_lines = _insert_lines_after_import_block(
+            updated_lines,
+            _build_shared_widget_bootstrap_lines(
+                chatbot_server_base_url_expression=chatbot_server_base_url_expression,
+                auth_bootstrap_path=auth_bootstrap_path,
+            ),
+        )
     widget_line = "      <order-cs-widget />\n"
     if widget_line not in updated_lines:
         insert_index = _find_mount_insert_index(updated_lines)
@@ -48,15 +62,18 @@ def _build_react_mount_updated_lines(source_lines: list[str]) -> list[str]:
     return updated_lines
 
 
-def _build_shared_widget_bootstrap_lines() -> list[str]:
-    contract = build_frontend_mount_contract()
+def _build_shared_widget_bootstrap_lines(
+    *,
+    chatbot_server_base_url_expression: str,
+    auth_bootstrap_path: str,
+) -> list[str]:
     return [
         "const ORDER_CS_WIDGET_HOST_CONTRACT = {\n",
-        f'  chatbotServerBaseUrl: "{contract["chatbotServerBaseUrl"]}",\n',
-        f'  authBootstrapPath: "{contract["authBootstrapPath"]}",\n',
-        f'  widgetBundlePath: "{contract["widgetBundlePath"]}",\n',
-        f'  widgetElementTag: "{contract["widgetElementTag"]}",\n',
-        f'  mountMode: "{contract["mountMode"]}",\n',
+        f"  chatbotServerBaseUrl: {chatbot_server_base_url_expression},\n",
+        f'  authBootstrapPath: "{auth_bootstrap_path}",\n',
+        '  widgetBundlePath: "/widget.js",\n',
+        '  widgetElementTag: "order-cs-widget",\n',
+        '  mountMode: "floating_launcher",\n',
         "};\n",
         "\n",
         'if (typeof globalThis === "object") {\n',

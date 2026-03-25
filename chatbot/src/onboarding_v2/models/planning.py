@@ -4,14 +4,37 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+DEFAULT_ORDER_TOOLS = [
+    "list_orders",
+    "get_order_status",
+    "cancel",
+    "refund",
+    "exchange",
+]
 
-class BackendWiringPlan(BaseModel):
+
+def _normalize_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _normalize_optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value).strip()
+
+
+class HostBackendPlan(BaseModel):
     strategy: str
     route_target: str
     import_target: str
+    order_lookup_target: str = "backend/orders/views.py"
+    order_action_target: str = "backend/orders/views.py"
+    exchange_strategy: str = "augment_existing_order_action_endpoint"
+    supported_order_tools: list[str] = Field(default_factory=lambda: list(DEFAULT_ORDER_TOOLS))
     auth_handler_source: str
     generated_handler_path: str | None = None
     chat_auth_contract_path: str = "/api/chat/auth-token"
+    site_id: str
 
     model_config = ConfigDict(extra="forbid")
 
@@ -19,25 +42,29 @@ class BackendWiringPlan(BaseModel):
         "strategy",
         "route_target",
         "import_target",
+        "order_lookup_target",
+        "order_action_target",
+        "exchange_strategy",
         "auth_handler_source",
         "generated_handler_path",
         "chat_auth_contract_path",
+        "site_id",
         mode="before",
     )
     @classmethod
     def _normalize_text(cls, value: Any) -> str | None:
-        if value is None:
-            return None
-        return str(value).strip()
+        return _normalize_optional_text(value)
 
 
-class FrontendIntegrationPlan(BaseModel):
+class HostFrontendPlan(BaseModel):
     mount_strategy: str
     mount_target: str
     router_boundary: str | None = None
     api_strategy: str
     api_client_target: str
     auth_bootstrap_path: str = "/api/chat/auth-token"
+    chatbot_server_base_url: str
+    chatbot_server_base_url_expression: str = ""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -48,33 +75,131 @@ class FrontendIntegrationPlan(BaseModel):
         "api_strategy",
         "api_client_target",
         "auth_bootstrap_path",
+        "chatbot_server_base_url",
+        "chatbot_server_base_url_expression",
         mode="before",
     )
     @classmethod
     def _normalize_text(cls, value: Any) -> str | None:
-        if value is None:
-            return None
-        return str(value).strip()
+        return _normalize_optional_text(value)
 
 
-class DomainAdaptersPlan(BaseModel):
-    product_adapter_target: str | None = None
-    order_adapter_target: str | None = None
-    tool_registry_target: str | None = None
+class ChatbotBridgePlan(BaseModel):
+    site_key: str
+    adapter_package: str
+    setup_target: str
+    host_base_url_env_var: str
+    supported_tools: list[str] = Field(default_factory=lambda: list(DEFAULT_ORDER_TOOLS))
+    runtime_base_url: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
     @field_validator(
-        "product_adapter_target",
-        "order_adapter_target",
-        "tool_registry_target",
+        "site_key",
+        "adapter_package",
+        "setup_target",
+        "host_base_url_env_var",
+        "supported_tools",
+        "runtime_base_url",
         mode="before",
     )
     @classmethod
     def _normalize_text(cls, value: Any) -> str | None:
         if value is None:
             return None
-        return str(value).strip()
+        if isinstance(value, list):
+            return [str(item).strip() for item in value]
+        return _normalize_text(value)
+
+
+class IntegrationStrategy(BaseModel):
+    backend_strategy: str
+    frontend_mount_strategy: str
+    frontend_api_strategy: str
+    chatbot_bridge_strategy: str = "generated_adapter_package"
+    owner: str = "deterministic"
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator(
+        "backend_strategy",
+        "frontend_mount_strategy",
+        "frontend_api_strategy",
+        "chatbot_bridge_strategy",
+        "owner",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_text(cls, value: Any) -> str:
+        return _normalize_text(value)
+
+
+class TargetBinding(BaseModel):
+    capability: str
+    target_path: str
+    selection_reason: str
+    selection_mode: str = "deterministic"
+    evidence_refs: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("capability", "target_path", "selection_reason", "selection_mode", mode="before")
+    @classmethod
+    def _normalize_text(cls, value: Any) -> str:
+        return _normalize_text(value)
+
+
+class PlannedOperation(BaseModel):
+    operation: str
+    stage: str
+    target_path: str
+    strategy: str
+    execution_mode: str = "deterministic"
+    depends_on: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator(
+        "operation",
+        "stage",
+        "target_path",
+        "strategy",
+        "execution_mode",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_text(cls, value: Any) -> str:
+        return _normalize_text(value)
+
+
+class PlannedValidation(BaseModel):
+    name: str
+    kind: str
+    target: str
+    success_signal: str
+    owner: str = "deterministic"
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("name", "kind", "target", "success_signal", "owner", mode="before")
+    @classmethod
+    def _normalize_text(cls, value: Any) -> str:
+        return _normalize_text(value)
+
+
+class PlanningRisk(BaseModel):
+    code: str
+    summary: str
+    severity: str = "medium"
+    owner: str = "llm-ready"
+    mitigations: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("code", "summary", "severity", "owner", mode="before")
+    @classmethod
+    def _normalize_text(cls, value: Any) -> str:
+        return _normalize_text(value)
 
 
 class SupportingArtifactSpec(BaseModel):
@@ -87,7 +212,7 @@ class SupportingArtifactSpec(BaseModel):
     @field_validator("path", "kind", "reason", mode="before")
     @classmethod
     def _normalize_text(cls, value: Any) -> str:
-        return str(value or "").strip()
+        return _normalize_text(value)
 
 
 class PlanningNotes(BaseModel):
@@ -99,10 +224,89 @@ class PlanningNotes(BaseModel):
 
 
 class IntegrationPlan(BaseModel):
-    backend_wiring: BackendWiringPlan
-    frontend_integration: FrontendIntegrationPlan
-    domain_adapters: DomainAdaptersPlan = Field(default_factory=DomainAdaptersPlan)
-    supporting_artifacts: list[SupportingArtifactSpec] = Field(default_factory=list)
+    host_backend: HostBackendPlan
+    host_frontend: HostFrontendPlan
+    chatbot_bridge: ChatbotBridgePlan
     planning_notes: PlanningNotes = Field(default_factory=PlanningNotes)
 
     model_config = ConfigDict(extra="forbid")
+
+    @property
+    def backend_wiring(self) -> HostBackendPlan:
+        return self.host_backend
+
+    @property
+    def frontend_integration(self) -> HostFrontendPlan:
+        return self.host_frontend
+
+
+class GoalMaterialization(BaseModel):
+    capabilities: list[str] = Field(default_factory=list)
+    owner: str = "deterministic"
+    rationale: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class PlanningCoverageReport(BaseModel):
+    covered: bool
+    required_capabilities: list[str] = Field(default_factory=list)
+    covered_capabilities: list[str] = Field(default_factory=list)
+    missing_capabilities: list[str] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class StrategyCandidate(BaseModel):
+    candidate_id: str
+    layer: str
+    strategy: str
+    summary: str
+    tradeoffs: list[str] = Field(default_factory=list)
+    supported: bool = True
+    selected: bool = False
+    confidence: float | None = None
+    owner: str = "llm"
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("candidate_id", "layer", "strategy", "summary", "owner", mode="before")
+    @classmethod
+    def _normalize_text(cls, value: Any) -> str:
+        return _normalize_text(value)
+
+
+class RepairHint(BaseModel):
+    code: str
+    rewind_to: str
+    reason: str
+    trigger_conditions: list[str] = Field(default_factory=list)
+    owner: str = "deterministic"
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("code", "rewind_to", "reason", "owner", mode="before")
+    @classmethod
+    def _normalize_text(cls, value: Any) -> str:
+        return _normalize_text(value)
+
+
+class PlanningBundle(BaseModel):
+    goal_materialization: GoalMaterialization = Field(default_factory=GoalMaterialization)
+    coverage_report: PlanningCoverageReport
+    strategy_candidates: list[StrategyCandidate] = Field(default_factory=list)
+    integration_strategy: IntegrationStrategy
+    target_bindings: list[TargetBinding] = Field(default_factory=list)
+    operation_ir: list[PlannedOperation] = Field(default_factory=list)
+    validation_plan: list[PlannedValidation] = Field(default_factory=list)
+    risk_register: list[PlanningRisk] = Field(default_factory=list)
+    repair_hints: list[RepairHint] = Field(default_factory=list)
+    integration_plan: IntegrationPlan
+
+    model_config = ConfigDict(extra="forbid")
+
+
+# Backward-compatible aliases for transitional code paths.
+BackendWiringPlan = HostBackendPlan
+FrontendIntegrationPlan = HostFrontendPlan

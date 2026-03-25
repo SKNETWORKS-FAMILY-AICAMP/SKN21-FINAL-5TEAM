@@ -3,20 +3,25 @@ from __future__ import annotations
 from pathlib import Path
 
 from chatbot.src.onboarding_v2.models.compile import EditOperation, FrontendApiBundle
-from chatbot.src.onboarding_v2.models.planning import FrontendIntegrationPlan
+from chatbot.src.onboarding_v2.models.planning import HostFrontendPlan
 
 
 def compile_react_api_bundle(
     *,
     source_root: str | Path,
-    plan: FrontendIntegrationPlan,
+    plan: HostFrontendPlan,
 ) -> FrontendApiBundle:
     root = Path(source_root)
     target = root / plan.api_client_target
     if not target.exists():
         raise ValueError(f"frontend api target not found: {plan.api_client_target}")
     original = target.read_text(encoding="utf-8")
-    updated = "".join(_build_frontend_api_client_updated_lines(original.splitlines(keepends=True)))
+    updated = "".join(
+        _build_frontend_api_client_updated_lines(
+            original.splitlines(keepends=True),
+            auth_bootstrap_path=plan.auth_bootstrap_path,
+        )
+    )
     return FrontendApiBundle(
         bundle_id="frontend:api",
         strategy=plan.api_strategy,
@@ -33,14 +38,18 @@ def compile_react_api_bundle(
     )
 
 
-def _build_frontend_api_client_updated_lines(source_lines: list[str]) -> list[str]:
+def _build_frontend_api_client_updated_lines(
+    source_lines: list[str],
+    *,
+    auth_bootstrap_path: str,
+) -> list[str]:
     updated_lines = list(source_lines)
     current_text = "".join(updated_lines)
-    if "/api/chat/auth-token" not in current_text:
+    if auth_bootstrap_path not in current_text:
         updated_lines = _insert_lines_after_import_block(
             updated_lines,
             [
-                'export const ORDER_CS_CHAT_AUTH_BOOTSTRAP_PATH = "/api/chat/auth-token";\n',
+                f'export const ORDER_CS_CHAT_AUTH_BOOTSTRAP_PATH = "{auth_bootstrap_path}";\n',
                 "\n",
                 "export function withOrderCsCredentials(config = {}) {\n",
                 "  return {\n",

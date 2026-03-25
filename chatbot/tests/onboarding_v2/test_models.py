@@ -15,12 +15,16 @@ from chatbot.src.onboarding_v2.models import (
     BackendRuntimePrepResult,
     BackendRuntimeState,
     BackendSeams,
-    BackendWiringPlan,
+    ChatbotBridgeBundle,
+    ChatbotBridgePlan,
+    ChatbotEditProgram,
     DomainIntegration,
     EditProgram,
     FailureBundle,
-    FrontendIntegrationPlan,
     FrontendSeams,
+    HostBackendPlan,
+    HostEditProgram,
+    HostFrontendPlan,
     IntegrationPlan,
     PathCandidate,
     RepairDecision,
@@ -48,18 +52,26 @@ def test_model_contracts_round_trip():
         domain_integration=DomainIntegration(),
     )
     plan = IntegrationPlan(
-        backend_wiring=BackendWiringPlan(
+        host_backend=HostBackendPlan(
             strategy="django_project_urlconf_import_view",
             route_target="backend/foodshop/urls.py",
             import_target="backend/foodshop/urls.py",
             auth_handler_source="backend/users/views.py",
             generated_handler_path="backend/chat_auth.py",
+            site_id="food",
         ),
-        frontend_integration=FrontendIntegrationPlan(
+        host_frontend=HostFrontendPlan(
             mount_strategy="react_app_shell_outside_routes",
             mount_target="frontend/src/App.js",
             api_strategy="react_api_client_augment_existing",
             api_client_target="frontend/src/api/api.js",
+            chatbot_server_base_url="http://localhost:8100",
+        ),
+        chatbot_bridge=ChatbotBridgePlan(
+            site_key="food",
+            adapter_package="src/adapters/generated/food",
+            setup_target="src/adapters/setup.py",
+            host_base_url_env_var="GENERATED_FOOD_API_URL",
         ),
     )
     envelope = ArtifactEnvelope(
@@ -95,8 +107,39 @@ def test_model_contracts_round_trip():
     )
 
     assert envelope.payload["repo_profile"]["site"] == "food"
-    assert plan.backend_wiring.generated_handler_path == "backend/chat_auth.py"
-    assert EditProgram().model_dump()["execution_metadata"] == {}
+    assert plan.host_backend.generated_handler_path == "backend/chat_auth.py"
+    assert plan.host_backend.order_lookup_target == "backend/orders/views.py"
+    assert plan.host_backend.order_action_target == "backend/orders/views.py"
+    assert plan.host_backend.exchange_strategy == "augment_existing_order_action_endpoint"
+    assert plan.host_backend.supported_order_tools == [
+        "list_orders",
+        "get_order_status",
+        "cancel",
+        "refund",
+        "exchange",
+    ]
+    assert plan.chatbot_bridge.site_key == "food"
+    assert plan.chatbot_bridge.supported_tools == [
+        "list_orders",
+        "get_order_status",
+        "cancel",
+        "refund",
+        "exchange",
+    ]
+    assert plan.host_frontend.chatbot_server_base_url_expression == ""
+    program = EditProgram(
+        host_program=HostEditProgram(),
+        chatbot_program=ChatbotEditProgram(
+            bridge_bundles=[
+                ChatbotBridgeBundle(
+                    bundle_id="chatbot:generated-adapter",
+                    target_paths=["src/adapters/setup.py"],
+                )
+            ]
+        ),
+    )
+    assert program.model_dump()["execution_metadata"] == {}
+    assert program.chatbot_program.bridge_bundles[0].target_paths == ["src/adapters/setup.py"]
     assert ValidationBundle(passed=True).passed is True
     assert ArtifactRef(stage="analysis", artifact_type="snapshot", version=1, path="v0001.json", content_hash="x").path == "v0001.json"
     assert summary.status == "pending"

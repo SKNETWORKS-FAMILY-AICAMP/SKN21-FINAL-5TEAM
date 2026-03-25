@@ -5,6 +5,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -67,6 +69,13 @@ def test_shared_widget_host_contract_defaults_align_with_typescript():
     assert "type SharedWidgetMountMode = 'floating_launcher';" in ts_content
 
 
+def test_shared_widget_host_contract_rejects_explicit_empty_chatbot_server_base_url():
+    assets_module = _load_shared_assets_module()
+
+    with pytest.raises(ValueError, match="chatbot_server_base_url"):
+        assets_module.build_shared_widget_host_contract(chatbot_server_base_url="")
+
+
 def test_shared_widget_host_contract_overrides_take_precedence():
     assets_module = _load_shared_assets_module()
 
@@ -110,6 +119,20 @@ def test_shared_widget_host_contract_attribute_overrides_take_precedence():
     assert resolved["widgetBundlePath"] == "/attr/widget.js"
     assert resolved["widgetElementTag"] == "attr-widget"
     assert resolved["mountMode"] == "floating_launcher"
+
+
+def test_shared_widget_host_contract_rejects_explicit_empty_override_values():
+    assets_module = _load_shared_assets_module()
+
+    with pytest.raises(ValueError, match="chatbot_server_base_url"):
+        assets_module.resolve_shared_widget_host_contract(
+            base_contract={"chatbotServerBaseUrl": ""},
+        )
+
+    with pytest.raises(ValueError, match="chatbot_server_base_url"):
+        assets_module.resolve_shared_widget_host_contract(
+            attribute_overrides={"chatbot-server-base-url": ""},
+        )
 
 
 def test_shared_widget_runtime_exposes_site_without_site_id():

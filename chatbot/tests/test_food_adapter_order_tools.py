@@ -1,3 +1,5 @@
+import builtins
+import importlib
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -56,7 +58,49 @@ def _build_adapter_with_order_status(status_value: str):
         )
 
     adapter.get_order_status = fake_get_order_status
+
+    async def fake_search_products(ctx, filter_input):
+        return SimpleNamespace(
+            items=[
+                SimpleNamespace(id="205", title="교환 옵션", inStock=True, shortDescription=None),
+            ]
+        )
+
+    adapter.search_products = fake_search_products
     return adapter
+
+
+def test_adapter_order_tools_imports_without_order_tools_db_dependencies(monkeypatch):
+    original_adapter_module = sys.modules.get("chatbot.src.tools.adapter_order_tools")
+    original_order_tools_module = sys.modules.get("chatbot.src.tools.order_tools")
+    tools_package = sys.modules.get("chatbot.src.tools")
+    if tools_package is not None:
+        tools_package.__dict__.pop("adapter_order_tools", None)
+        tools_package.__dict__.pop("order_tools", None)
+    sys.modules.pop("chatbot.src.tools.adapter_order_tools", None)
+    sys.modules.pop("chatbot.src.tools.order_tools", None)
+
+    real_import = builtins.__import__
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "chatbot.src.tools.order_tools" or name.startswith("ecommerce.backend"):
+            raise AssertionError(f"unexpected DB-bound import: {name}")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+    module = importlib.import_module("chatbot.src.tools.adapter_order_tools")
+
+    assert hasattr(module, "register_exchange_via_adapter")
+
+    if original_adapter_module is not None:
+        sys.modules["chatbot.src.tools.adapter_order_tools"] = original_adapter_module
+        if tools_package is not None:
+            tools_package.adapter_order_tools = original_adapter_module
+    if original_order_tools_module is not None:
+        sys.modules["chatbot.src.tools.order_tools"] = original_order_tools_module
+        if tools_package is not None:
+            tools_package.order_tools = original_order_tools_module
 
 
 def test_get_user_orders_for_site_filters_exchange_candidates(monkeypatch):
@@ -100,8 +144,235 @@ def test_exchange_via_adapter_returns_exchange_requested(monkeypatch):
 
     async def fake_submit_order_action(ctx, input_data):
         assert input_data.actionType.value == "exchange"
+        assert input_data.newOptionId == "205"
         return SimpleNamespace(success=True, message="교환이 접수되었습니다.")
 
+    adapter.submit_order_action = fake_submit_order_action
+
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "_build_site_adapter_context",
+        lambda **kwargs: (adapter, SimpleNamespace(siteId="site-a")),
+    )
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "_resolve_order_with_confirmation_for_site",
+        lambda **kwargs: ("15", True, None),
+    )
+
+    result = adapter_order_tools.register_exchange_via_adapter.invoke(
+        {
+            "user_id": 1,
+            "site_id": "site-a",
+            "access_token": "food-token",
+            "order_id": "15",
+            "confirmed": True,
+            "new_option_id": "205",
+        }
+    )
+
+    assert result["success"] is True
+    assert result["status"] == "exchange_requested"
+    assert result["new_option_id"] == "205"
+
+
+def test_exchange_via_adapter_requests_option_selection_before_confirmation(monkeypatch):
+    adapter = _build_adapter_with_order_status("delivered")
+    prompted: list[dict] = []
+    submitted: list[object] = []
+
+    async def fake_search_products(ctx, filter_input):
+        return SimpleNamespace(
+            items=[
+                SimpleNamespace(id="201", title="새 상품 A", inStock=True, shortDescription=None),
+                SimpleNamespace(id="202", title="새 상품 B", inStock=True, shortDescription=None),
+            ]
+        )
+
+    async def fake_submit_order_action(ctx, input_data):
+        submitted.append(input_data)
+        return SimpleNamespace(success=True, message="교환이 접수되었습니다.")
+
+    adapter.search_products = fake_search_products
+    adapter.submit_order_action = fake_submit_order_action
+
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "_build_site_adapter_context",
+        lambda **kwargs: (adapter, SimpleNamespace(siteId="site-a")),
+    )
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "_resolve_order_with_confirmation_for_site",
+        lambda **kwargs: ("15", None, None),
+    )
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "interrupt",
+        lambda payload: prompted.append(payload) or {"new_option_id": "202"},
+    )
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "_require_human_confirmation",
+        lambda **kwargs: True,
+    )
+
+    result = adapter_order_tools.register_exchange_via_adapter.invoke(
+        {
+            "user_id": 1,
+            "site_id": "site-a",
+            "access_token": "food-token",
+            "order_id": "15",
+        }
+    )
+
+    assert prompted == [
+        {
+            "ui_action": "show_option_list",
+            "action": "select_option",
+            "message": "교환할 옵션을 선택해주세요.",
+            "ui_data": [
+                {"option_id": "201", "label": "새 상품 A", "in_stock": True},
+                {"option_id": "202", "label": "새 상품 B", "in_stock": True},
+            ],
+            "prior_action": "exchange",
+        }
+    ]
+    assert submitted and submitted[0].newOptionId == "202"
+    assert result["success"] is True
+    assert result["status"] == "exchange_requested"
+
+
+def test_extract_new_option_id_from_resume_preserves_opaque_strings_and_numeric_ids():
+    assert adapter_order_tools._extract_new_option_id_from_resume(
+        {"new_option_id": "opt-blue-large"}
+    ) == "opt-blue-large"
+    assert adapter_order_tools._extract_new_option_id_from_resume(
+        {"new_option_id": "205"}
+    ) == 205
+    assert adapter_order_tools._extract_new_option_id_from_resume(
+        {"new_option_id": 205}
+    ) == 205
+
+
+def test_exchange_via_adapter_preserves_opaque_option_id_from_selection(monkeypatch):
+    adapter = _build_adapter_with_order_status("delivered")
+    submitted: list[object] = []
+
+    async def fake_search_products(ctx, filter_input):
+        return SimpleNamespace(
+            items=[
+                SimpleNamespace(id="opt-blue-large", title="새 상품 A", inStock=True, shortDescription=None),
+                SimpleNamespace(id="opt-red-small", title="새 상품 B", inStock=True, shortDescription=None),
+            ]
+        )
+
+    async def fake_submit_order_action(ctx, input_data):
+        submitted.append(input_data)
+        return SimpleNamespace(success=True, message="교환이 접수되었습니다.")
+
+    adapter.search_products = fake_search_products
+    adapter.submit_order_action = fake_submit_order_action
+
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "_build_site_adapter_context",
+        lambda **kwargs: (adapter, SimpleNamespace(siteId="site-a")),
+    )
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "_resolve_order_with_confirmation_for_site",
+        lambda **kwargs: ("15", None, None),
+    )
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "interrupt",
+        lambda payload: {"new_option_id": "opt-blue-large"},
+    )
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "_require_human_confirmation",
+        lambda **kwargs: True,
+    )
+
+    result = adapter_order_tools.register_exchange_via_adapter.invoke(
+        {
+            "user_id": 1,
+            "site_id": "site-a",
+            "access_token": "food-token",
+            "order_id": "15",
+        }
+    )
+
+    assert submitted and submitted[0].newOptionId == "opt-blue-large"
+    assert result["success"] is True
+    assert result["new_option_id"] == "opt-blue-large"
+
+
+def test_exchange_via_adapter_rejects_invalid_option_id(monkeypatch):
+    adapter = _build_adapter_with_order_status("delivered")
+    submitted: list[object] = []
+
+    async def fake_search_products(ctx, filter_input):
+        return SimpleNamespace(
+            items=[
+                SimpleNamespace(id="201", title="새 상품 A", inStock=True, shortDescription=None),
+                SimpleNamespace(id="202", title="새 상품 B", inStock=True, shortDescription=None),
+            ]
+        )
+
+    async def fake_submit_order_action(ctx, input_data):
+        submitted.append(input_data)
+        return SimpleNamespace(success=True, message="교환이 접수되었습니다.")
+
+    adapter.search_products = fake_search_products
+    adapter.submit_order_action = fake_submit_order_action
+
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "_build_site_adapter_context",
+        lambda **kwargs: (adapter, SimpleNamespace(siteId="site-a")),
+    )
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "_resolve_order_with_confirmation_for_site",
+        lambda **kwargs: ("15", True, None),
+    )
+
+    result = adapter_order_tools.register_exchange_via_adapter.invoke(
+        {
+            "user_id": 1,
+            "site_id": "site-a",
+            "access_token": "food-token",
+            "order_id": "15",
+            "confirmed": True,
+            "new_option_id": "999",
+        }
+    )
+
+    assert submitted == []
+    assert result["ui_action"] == "show_option_list"
+    assert result["prior_action"] == "exchange"
+    assert result["ui_data"] == [
+        {"option_id": "201", "label": "새 상품 A", "in_stock": True},
+        {"option_id": "202", "label": "새 상품 B", "in_stock": True},
+    ]
+    assert "show_address_search" not in result
+    assert "error" not in result
+
+
+def test_exchange_via_adapter_returns_selection_payload_when_no_options_available(monkeypatch):
+    adapter = _build_adapter_with_order_status("delivered")
+    submitted: list[object] = []
+
+    async def fake_search_products(ctx, filter_input):
+        return SimpleNamespace(items=[])
+
+    async def fake_submit_order_action(ctx, input_data):
+        submitted.append(input_data)
+        return SimpleNamespace(success=True, message="교환이 접수되었습니다.")
+
+    adapter.search_products = fake_search_products
     adapter.submit_order_action = fake_submit_order_action
 
     monkeypatch.setattr(
@@ -125,8 +396,11 @@ def test_exchange_via_adapter_returns_exchange_requested(monkeypatch):
         }
     )
 
-    assert result["success"] is True
-    assert result["status"] == "exchange_requested"
+    assert submitted == []
+    assert result["ui_action"] == "show_option_list"
+    assert result["ui_data"] == []
+    assert "show_address_search" not in result
+    assert "error" not in result
 
 
 def test_cancel_via_adapter_returns_cancelled(monkeypatch):
@@ -243,6 +517,6 @@ def test_order_tool_registry_uses_food_adapter_list_contract(monkeypatch):
         requires_selection=True,
     )
 
-    assert payload["ui_action"] == "show_order_list"
-    assert payload["ui_data"][0]["order_id"] == "food-1"
+    assert payload["operation"] == "list_orders"
+    assert payload["orders"][0]["order_id"] == "food-1"
     assert payload["prior_action"] == "exchange"
