@@ -2,5 +2,6 @@ Django>=4.2,<5
 djangorestframework>=3.14
 django-cors-headers>=4.0
 python-dotenv>=1.0
-django-environ>=1.0
+django-environ>=0.13.0
 sqlparse>=0.4
+boto3>=1.34

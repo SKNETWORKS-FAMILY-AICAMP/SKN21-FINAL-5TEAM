@@ -1,10 +1,26 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+from types import ModuleType
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
+os.environ.setdefault("QDRANT_API_KEY", "test-key")
+
+fake_langchain_ollama = ModuleType("langchain_ollama")
+
+
+class _FakeChatOllama:
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+
+fake_langchain_ollama.ChatOllama = _FakeChatOllama
+sys.modules.setdefault("langchain_ollama", fake_langchain_ollama)
 
 from chatbot.src.onboarding.codebase_mapper import build_codebase_map, write_llm_codebase_interpretation
 from chatbot.src.onboarding.patch_planner import build_patch_proposal
@@ -119,6 +135,7 @@ def test_build_codebase_map_emits_strategy_and_integration_targets(tmp_path: Pat
         "from django.urls import path\n\n"
         "urlpatterns = [\n"
         '    path("api/login", login),\n'
+        '    path("api/orders/", me),\n'
         "]\n",
         encoding="utf-8",
     )
@@ -136,6 +153,37 @@ def test_build_codebase_map_emits_strategy_and_integration_targets(tmp_path: Pat
     assert any(item["path"] == "backend/shop/urls.py" for item in payload["backend_route_targets"])
     assert any(item["path"] == "frontend/src/App.js" for item in payload["frontend_mount_targets"])
     assert any(item["path"] == "backend/shop/views.py" for item in payload["tool_registry_targets"])
+    assert any(item["path"] == "backend/shop/urls.py" for item in payload["order_bridge_targets"])
+
+
+def test_build_codebase_map_emits_order_bridge_targets(tmp_path: Path):
+    source_root = tmp_path / "source-order-bridge"
+
+    (source_root / "backend" / "shop").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "shop" / "views.py").write_text(
+        "def list_orders(request):\n"
+        "    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "shop" / "urls.py").write_text(
+        "from django.urls import path\n\n"
+        "urlpatterns = [\n"
+        '    path("api/orders/", list_orders),\n'
+        "]\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() {\n"
+        "  return <main>Storefront Chatbot Shell</main>;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    payload = build_codebase_map(source_root=source_root)
+
+    assert any(item["path"] == "backend/shop/urls.py" for item in payload["order_bridge_targets"])
 
 
 def test_codebase_mapper_extracts_bilyeo_route_and_mount_contract(tmp_path: Path):
@@ -213,6 +261,38 @@ def test_build_codebase_map_respects_onboardingignore_patterns(tmp_path: Path):
     target_paths = {item["path"] for item in payload["candidate_edit_targets"]}
     assert "backend/users/views.py" in target_paths
     assert "backend/secret/views.py" not in target_paths
+
+
+def test_build_codebase_map_includes_frontend_api_clients_in_candidate_edit_targets(tmp_path: Path):
+    source_root = tmp_path / "source"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src" / "api").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True, exist_ok=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() {\n"
+        "  return <main>Food storefront</main>;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "api" / "api.js").write_text(
+        "export async function fetchProducts() {\n"
+        "  const response = await fetch('/api/products/');\n"
+        "  return response.json();\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    payload = build_codebase_map(source_root=source_root)
+
+    target_paths = {item["path"] for item in payload["candidate_edit_targets"]}
+    assert "frontend/src/api/api.js" in target_paths
+    assert any(item["path"] == "frontend/src/api/api.js" for item in payload["api_client_candidates"])
 
 
 def test_write_llm_codebase_interpretation_prefers_llm_ranked_candidates(tmp_path: Path):
@@ -337,6 +417,78 @@ def test_write_llm_codebase_interpretation_recovery_normalizes_string_framework_
     ]
 
 
+def test_write_llm_codebase_interpretation_recovery_normalizes_object_structure_summary(tmp_path: Path):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "llm-codebase-interpretation.json"
+
+    (source_root / "backend" / "account").mkdir(parents=True)
+    (source_root / "backend" / "account" / "handlers.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+
+    codebase_map = {
+        "candidate_edit_targets": [
+            {"path": "backend/account/handlers.py", "reason": "auth handler"},
+        ]
+    }
+
+    class ObjectStructureSummaryLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "structure_summary": {
+                                "backend": {"framework": "django"},
+                                "frontend": {"framework": "react"},
+                            },
+                            "framework_assessment": {
+                                "backend": "django",
+                                "frontend": "react",
+                            },
+                            "ranked_candidates": [
+                                {
+                                    "path": "backend/account/handlers.py",
+                                    "reason": "primary auth entrypoint",
+                                }
+                            ],
+                        }
+                    )
+                },
+            )()
+
+    path = write_llm_codebase_interpretation(
+        source_root=source_root,
+        analysis={"framework": {"backend": "django", "frontend": "react"}},
+        codebase_map=codebase_map,
+        output_path=output_path,
+        llm_factory=lambda: ObjectStructureSummaryLLM(),
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    debug_payload = json.loads((tmp_path / "reports" / "llm-debug" / "codebase-interpretation.json").read_text(encoding="utf-8"))
+    recovery_events = json.loads((tmp_path / "reports" / "recovery-events.json").read_text(encoding="utf-8"))
+
+    assert payload["source"] == "recovered_llm"
+    assert payload["recovery_applied"] is True
+    assert payload["recovery_reason"] == "structure_summary_object_to_string"
+    assert payload["hard_fallback_reason"] is None
+    assert '"backend"' in payload["structure_summary"]
+    assert debug_payload["status"] == "recovered_llm"
+    assert debug_payload["recovery_reason"] == "structure_summary_object_to_string"
+    assert recovery_events == [
+        {
+            "component": "llm_codebase_interpretation",
+            "source": "recovered_llm",
+            "recovery_reason": "structure_summary_object_to_string",
+            "hard_fallback_reason": None,
+        }
+    ]
+
+
 def test_write_llm_codebase_interpretation_recovery_uses_hard_fallback_on_invalid_candidate(tmp_path: Path):
     source_root = tmp_path / "source"
     output_path = tmp_path / "reports" / "llm-codebase-interpretation.json"
@@ -392,6 +544,154 @@ def test_write_llm_codebase_interpretation_recovery_uses_hard_fallback_on_invali
             "source": "hard_fallback",
             "recovery_reason": None,
             "hard_fallback_reason": "invalid_ranked_candidates",
+        }
+    ]
+
+
+def test_write_llm_codebase_interpretation_recovery_falls_back_when_recovered_payload_keeps_invalid_candidate(
+    tmp_path: Path,
+):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "llm-codebase-interpretation.json"
+    codebase_map = {
+        "candidate_edit_targets": [
+            {"path": "backend/account/handlers.py", "reason": "auth handler"},
+        ]
+    }
+
+    class RecoverableButInvalidCandidateLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "structure_summary": {
+                                "backend": {"framework": "django"},
+                                "frontend": {"framework": "react"},
+                            },
+                            "framework_assessment": {
+                                "backend": "django",
+                                "frontend": "react",
+                            },
+                            "ranked_candidates": [
+                                {
+                                    "path": "frontend/src/context/AuthContext.jsx",
+                                    "reason": "invalid candidate",
+                                }
+                            ],
+                        }
+                    )
+                },
+            )()
+
+    path = write_llm_codebase_interpretation(
+        source_root=source_root,
+        analysis={"framework": {"backend": "django", "frontend": "react"}},
+        codebase_map=codebase_map,
+        output_path=output_path,
+        llm_factory=lambda: RecoverableButInvalidCandidateLLM(),
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    debug_payload = json.loads((tmp_path / "reports" / "llm-debug" / "codebase-interpretation.json").read_text(encoding="utf-8"))
+    recovery_events = json.loads((tmp_path / "reports" / "recovery-events.json").read_text(encoding="utf-8"))
+
+    assert payload["source"] == "hard_fallback"
+    assert payload["recovery_applied"] is False
+    assert payload["recovery_reason"] is None
+    assert payload["hard_fallback_reason"] == "invalid_ranked_candidates"
+    assert payload["ranked_candidates"][0]["path"] == "backend/account/handlers.py"
+    assert debug_payload["status"] == "hard_fallback"
+    assert debug_payload["hard_fallback_reason"] == "invalid_ranked_candidates"
+    assert debug_payload["error_message"] == "invalid ranked candidate: frontend/src/context/AuthContext.jsx"
+    assert recovery_events == [
+        {
+            "component": "llm_codebase_interpretation",
+            "source": "hard_fallback",
+            "recovery_reason": None,
+            "hard_fallback_reason": "invalid_ranked_candidates",
+        }
+    ]
+
+
+def test_write_llm_codebase_interpretation_filters_invalid_ranked_candidates_when_valid_ones_remain(
+    tmp_path: Path,
+):
+    source_root = tmp_path / "source"
+    output_path = tmp_path / "reports" / "llm-codebase-interpretation.json"
+    codebase_map = {
+        "candidate_edit_targets": [
+            {"path": "backend/users/views.py", "reason": "auth handler"},
+            {"path": "frontend/src/api/api.js", "reason": "api client"},
+        ]
+    }
+
+    class MixedCandidateLLM:
+        def invoke(self, messages):
+            return type(
+                "LLMResponse",
+                (),
+                {
+                    "content": json.dumps(
+                        {
+                            "structure_summary": "django session auth",
+                            "framework_assessment": {"backend": "django", "frontend": "react"},
+                            "ranked_candidates": [
+                                {
+                                    "path": "backend/users/views.py",
+                                    "reason": "primary auth entrypoint",
+                                },
+                                {
+                                    "path": "frontend/src/context/AuthContext.jsx",
+                                    "reason": "frontend auth state",
+                                },
+                                {
+                                    "path": "frontend/src/api/api.js",
+                                    "reason": "api client",
+                                },
+                            ],
+                        }
+                    )
+                },
+            )()
+
+    path = write_llm_codebase_interpretation(
+        source_root=source_root,
+        analysis={"framework": {"backend": "django", "frontend": "react"}},
+        codebase_map=codebase_map,
+        output_path=output_path,
+        llm_factory=lambda: MixedCandidateLLM(),
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    debug_payload = json.loads((tmp_path / "reports" / "llm-debug" / "codebase-interpretation.json").read_text(encoding="utf-8"))
+    recovery_events = json.loads((tmp_path / "reports" / "recovery-events.json").read_text(encoding="utf-8"))
+
+    assert payload["source"] == "recovered_llm"
+    assert payload["recovery_applied"] is True
+    assert payload["recovery_reason"] == "invalid_ranked_candidates_filtered"
+    assert [item["path"] for item in payload["ranked_candidates"]] == [
+        "backend/users/views.py",
+        "frontend/src/api/api.js",
+    ]
+    assert payload["dropped_ranked_candidates"] == [
+        {
+            "path": "frontend/src/context/AuthContext.jsx",
+            "reason": "frontend auth state",
+            "drop_reason": "invalid_ranked_candidate",
+        }
+    ]
+    assert debug_payload["status"] == "recovered_llm"
+    assert debug_payload["recovery_reason"] == "invalid_ranked_candidates_filtered"
+    assert debug_payload["dropped_ranked_candidates"] == payload["dropped_ranked_candidates"]
+    assert recovery_events == [
+        {
+            "component": "llm_codebase_interpretation",
+            "source": "recovered_llm",
+            "recovery_reason": "invalid_ranked_candidates_filtered",
+            "hard_fallback_reason": None,
         }
     ]
 

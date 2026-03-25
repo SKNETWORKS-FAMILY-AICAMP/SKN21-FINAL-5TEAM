@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, messages_from_dict, messages_to_dict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -52,9 +53,19 @@ from chatbot.src.adapters.base import AdapterError  # noqa: E402
 from chatbot.src.adapters import setup as adapter_setup  # noqa: E402
 from chatbot.src.graph.llm_providers import resolve_llm_runtime_policy  # noqa: E402
 from chatbot.src.graph.workflow import graph_app  # noqa: E402
+from chatbot.src.api.v1.endpoints.chat import build_widget_bundle_response, router as chat_router  # noqa: E402
 from chatbot.src.api.v1.endpoints.onboarding_runs import router as onboarding_runs_router  # noqa: E402
 from chatbot.src.onboarding.redis_runtime import build_onboarding_event_store, close_onboarding_event_store  # noqa: E402
+from chatbot.src.graph.nodes.guardrail import load_guardrail_model  # noqa: E402
+from chatbot.src.tools.retrieval_tools import ensure_retrieval_models  # noqa: E402
+from chatbot.src.data_preprocessing.bge_m3_embedding import preload_model as preload_bge_m3  # noqa: E402
+from chatbot.src.infrastructure.kobart_summarizer import preload_model as preload_kobart  # noqa: E402
+from chatbot.src.tools.image_search_tools import preload_clip_resources  # noqa: E402
+from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR  # noqa: E402
 
+
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
@@ -219,14 +230,21 @@ app = FastAPI(
     description="SaaS Adapter/Tool 연동 테스트를 위한 챗봇 단독 서버",
 )
 
+app.mount(
+    "/chatbot_uploads",
+    StaticFiles(directory=str(CHATBOT_UPLOAD_DIR)),
+    name="chatbot_uploads",
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.include_router(chat_router, prefix=f"{settings.API_V1_STR}/chat")
 app.include_router(onboarding_runs_router, prefix=settings.API_V1_STR)
 
 
@@ -235,6 +253,39 @@ async def _startup_onboarding_event_store() -> None:
     app.state.onboarding_event_store = build_onboarding_event_store(
         redis_url=settings.ONBOARDING_REDIS_URL,
     )
+    if _env_flag("CHATBOT_SKIP_MODEL_PRELOAD"):
+        print("Skipping chatbot model preload because CHATBOT_SKIP_MODEL_PRELOAD is enabled.")
+        return
+    # 가드레일 모델을 서버 시작 시 1회 로드합니다.
+    try:
+        load_guardrail_model()
+        print("✅ Guardrail 모델 로딩 완료")
+    except Exception as e:
+        print(f"❌ Guardrail 모델 로딩 실패: {e}")
+
+    try:
+        ensure_retrieval_models()
+        print("✅ 챗봇 리트리버 모델 로딩 완료")
+    except Exception as e:
+        print(f"❌ 챗봇 리트리버 모델 로딩 실패: {e}")
+
+    try:
+        preload_bge_m3()
+        print("✅ BGE-M3 임베딩 모델 로딩 완료")
+    except Exception as e:
+        print(f"❌ BGE-M3 임베딩 모델 로딩 실패: {e}")
+
+    try:
+        preload_kobart()
+        print("✅ KoBART 모델 로딩 완료")
+    except Exception as e:
+        print(f"❌ KoBART 모델 로딩 실패: {e}")
+
+    try:
+        preload_clip_resources()
+        print("✅ CLIP 검색 모델 로딩 완료")
+    except Exception as e:
+        print(f"❌ CLIP 검색 모델 로딩 실패: {e}")
 
 
 @app.on_event("shutdown")
@@ -250,6 +301,11 @@ def healthcheck() -> dict[str, Any]:
         "openai_model_default": settings.OPENAI_MODEL,
         "vllm_model_default": settings.VLLM_MODEL,
     }
+
+
+@app.get("/widget.js")
+def shared_widget_bundle():
+    return build_widget_bundle_response()
 
 
 @app.post("/api/chat", response_model=ChatResponse)

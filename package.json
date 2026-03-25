@@ -1,0 +1,8 @@
+{
+  "name": "skn-workspace",
+  "private": true,
+  "workspaces": [
+    "ecommerce/frontend",
+    "chatbot/frontend/shared_widget"
+  ]
+}

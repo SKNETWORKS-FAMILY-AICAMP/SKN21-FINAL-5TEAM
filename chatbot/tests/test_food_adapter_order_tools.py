@@ -5,6 +5,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from chatbot.src.tools import adapter_order_tools
+from chatbot.src.adapters import setup as adapter_setup
 
 
 class FakeFoodClient:
@@ -217,3 +218,31 @@ def test_get_order_status_via_adapter_returns_order_payload(monkeypatch):
     assert result["order_id"] == "41"
     assert result["status"] == "delivered"
     assert result["items"][0]["product_name"] == "짜장면"
+
+
+def test_order_tool_registry_uses_food_adapter_list_contract(monkeypatch):
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "get_user_orders_for_site",
+        lambda **kwargs: {
+            "ui_action": "show_order_list",
+            "message": "최근 주문입니다.",
+            "total_orders": 1,
+            "ui_data": [{"order_id": "food-1"}],
+            "requires_selection": True,
+            "prior_action": "exchange",
+        },
+    )
+
+    registry = adapter_setup.resolve_order_tool_registry("site-a")
+    payload = registry["list_orders"](
+        user_id=1,
+        site_id="site-a",
+        access_token="food-token",
+        action_context="exchange",
+        requires_selection=True,
+    )
+
+    assert payload["ui_action"] == "show_order_list"
+    assert payload["ui_data"][0]["order_id"] == "food-1"
+    assert payload["prior_action"] == "exchange"

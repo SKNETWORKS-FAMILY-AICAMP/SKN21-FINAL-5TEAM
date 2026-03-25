@@ -15,7 +15,7 @@ def build_recovered_smoke_plan(
     normalized_payload = (
         recovery_payload
         if isinstance(recovery_payload, SmokeRecoveryPayload)
-        else SmokeRecoveryPayload.model_validate(recovery_payload)
+        else SmokeRecoveryPayload.model_validate(_filter_smoke_recovery_payload(recovery_payload))
     )
     plan = SmokeTestPlan.model_validate({"steps": smoke_steps})
     recovered_steps = [
@@ -75,3 +75,14 @@ def _apply_recovery_to_step(
             step_payload["exports"] = merged_exports
 
     return SmokeTestStep.model_validate(step_payload)
+
+
+def _filter_smoke_recovery_payload(payload: SmokeRecoveryPayload | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(payload, SmokeRecoveryPayload):
+        return payload.model_dump(mode="json")
+    allowed_keys = set(SmokeRecoveryPayload.model_fields)
+    return {
+        key: value
+        for key, value in dict(payload or {}).items()
+        if key in allowed_keys
+    }

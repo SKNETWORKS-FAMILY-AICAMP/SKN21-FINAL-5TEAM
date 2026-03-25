@@ -7,6 +7,8 @@ from decimal import Decimal
 from pathlib import Path
 
 import django
+from django.core.management import call_command
+from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -16,41 +18,73 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "foodshop.settings")
 django.setup()
 
 from django.contrib.auth.models import User
+from crawling.kurly_faq_crawler import crawl_all_faqs
+from faqs.models import KurlyFaq
 from orders.models import Order
 from products.models import Product
 from users.models import SessionToken
+
+
+<<<<<<< Updated upstream
+def normalize_image_value(raw_value: str) -> str:
+    image_value = (raw_value or "").strip()
+    if not image_value:
+        return ""
+
+    if image_value.startswith(("http://", "https://")):
+        return image_value
+
+    image_base_url = os.getenv("FOOD_IMAGE_BASE_URL", "").strip().rstrip("/")
+    if image_base_url:
+        return f"{image_base_url}/{image_value.lstrip('/')}"
+
+    return image_value
+=======
+def ensure_schema():
+    call_command("migrate", interactive=False, verbosity=0)
+>>>>>>> Stashed changes
 
 
 # -------------------------
 # 상품 생성
 # -------------------------
 def seed_products():
-
-    csv_path = BASE_DIR / "seed" / "products.csv"
+    csv_override = os.getenv("FOOD_PRODUCTS_CSV", "").strip()
+    csv_path = Path(csv_override) if csv_override else BASE_DIR / "seed" / "products.csv"
 
     if not csv_path.exists():
         print(f"{csv_path} not found")
         return
 
     count = 0
+    print(f"using products csv : {csv_path}")
 
     with csv_path.open(encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
 
         for row in reader:
+            product_id = (row.get("id") or "").strip()
+            product_name = row.get("name", "Unnamed Product")
 
             price = Decimal(row.get("price", "0"))
 
             defaults = {
+                "name": product_name,
                 "price": price,
                 "stock": int(row.get("stock", "50")),
-                "image": row.get("image", ""),
+                "image": normalize_image_value(row.get("image", "")),
             }
 
-            Product.objects.update_or_create(
-                name=row.get("name", "Unnamed Product"),
-                defaults=defaults,
-            )
+            if product_id:
+                Product.objects.update_or_create(
+                    id=int(product_id),
+                    defaults=defaults,
+                )
+            else:
+                Product.objects.update_or_create(
+                    name=product_name,
+                    defaults=defaults,
+                )
 
             count += 1
 
@@ -135,13 +169,41 @@ def seed_orders():
 
 
 # -------------------------
+# 컬리 FAQ 크롤링 + 저장
+# -------------------------
+def seed_kurly_faqs():
+
+    faqs = crawl_all_faqs()
+    count = 0
+
+    for faq in faqs:
+        KurlyFaq.objects.update_or_create(
+            faq_no=faq.no,
+            defaults={
+                "category": faq.category,
+                "question": faq.question,
+                "answer": faq.answer,
+                "question_html": faq.question_html,
+                "answer_html": faq.answer_html,
+                "source_url": faq.source_url,
+                "crawled_at": parse_datetime(faq.crawled_at) or timezone.now(),
+            },
+        )
+        count += 1
+
+    print(f"kurly faqs saved : {count}")
+
+
+# -------------------------
 # 실행
 # -------------------------
 def main():
 
+    ensure_schema()
     seed_products()
     seed_users()
     seed_orders()
+    seed_kurly_faqs()
 
 
 if __name__ == "__main__":

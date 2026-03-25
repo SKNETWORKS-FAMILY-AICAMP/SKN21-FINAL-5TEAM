@@ -36,8 +36,14 @@ CHAT_MESSAGES = [
 WAVE_USERS = int(os.getenv("LOCUST_WAVE_USERS", "100"))
 WAVE_SPAWN_RATE = float(os.getenv("LOCUST_WAVE_SPAWN_RATE", "20"))
 WAVE_HOLD_SECONDS = int(os.getenv("LOCUST_WAVE_HOLD_SECONDS", "180"))
-WAVE_IDLE_SECONDS = int(os.getenv("LOCUST_WAVE_IDLE_SECONDS", "30"))
-RELOGIN_INTERVAL_SECONDS = int(os.getenv("LOCUST_RELOGIN_INTERVAL_SECONDS", "60"))
+WAVE_IDLE_SECONDS = int(os.getenv("LOCUST_WAVE_IDLE_SECONDS", "0"))
+RELOGIN_INTERVAL_SECONDS = int(os.getenv("LOCUST_RELOGIN_INTERVAL_SECONDS", "0"))
+ENABLE_CHATBOT = os.getenv("LOCUST_ENABLE_CHATBOT", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 
 class BaseScenarioUser(HttpUser):
@@ -101,7 +107,7 @@ class BaseScenarioUser(HttpUser):
 
 
 class PurchaseFlowUser(BaseScenarioUser):
-    weight = 25
+    weight = 34
 
     @task
     def purchase_smoke(self) -> None:
@@ -124,7 +130,7 @@ class PurchaseFlowUser(BaseScenarioUser):
 
 
 class ProductSearchUser(BaseScenarioUser):
-    weight = 25
+    weight = 33
 
     @task
     def search_products(self) -> None:
@@ -142,7 +148,7 @@ class ProductSearchUser(BaseScenarioUser):
 
 
 class ShippingAddressUser(BaseScenarioUser):
-    weight = 25
+    weight = 33
 
     @task
     def shipping_smoke(self) -> None:
@@ -158,10 +164,13 @@ class ShippingAddressUser(BaseScenarioUser):
 
 
 class ChatbotUser(BaseScenarioUser):
-    weight = 25
+    weight = 0 if not ENABLE_CHATBOT else 10
 
     @task
     def use_chatbot(self) -> None:
+        if not ENABLE_CHATBOT:
+            return
+
         if not self._ensure_login():
             return
 

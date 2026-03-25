@@ -38,12 +38,19 @@ from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR
 from starlette.middleware.sessions import SessionMiddleware  # 미드웨워 추가
 
 
+def _get_env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _should_preload_heavy_models_once_per_reload_session() -> bool:
     """
     모델 프리로드는 워커 프로세스 시작 시마다 수행합니다.
     프로세스 메모리에 적재되는 모델 특성상 reload 후 새 워커에서는 재로드가 필요합니다.
     """
-    return True
+    return _get_env_bool("PRELOAD_HEAVY_MODELS", True)
 
 
 # ============================================
@@ -287,9 +294,20 @@ app.include_router(chatbot_router, prefix="/api/v1/chat", tags=["Chatbot"])
 if __name__ == "__main__":
     import uvicorn
 
+    host = os.getenv("UVICORN_HOST", "0.0.0.0")
+    port = int(os.getenv("UVICORN_PORT", "8000"))
+    reload_enabled = _get_env_bool("UVICORN_RELOAD", False)
+    workers = int(os.getenv("UVICORN_WORKERS", "4"))
+
+    # Uvicorn requires single worker when reload is enabled.
+    if reload_enabled and workers != 1:
+        logging.warning("UVICORN_RELOAD=true enforces single worker; overriding UVICORN_WORKERS to 1")
+        workers = 1
+
     uvicorn.run(
         "ecommerce.backend.app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
+        host=host,
+        port=port,
+        reload=reload_enabled,
+        workers=workers,
     )

@@ -1,5 +1,15 @@
-const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000";
-const BASE_URL = `${API_BASE}/api`;
+export const FOOD_API_BASE = (process.env.REACT_APP_API_URL || "").replace(/\/$/, "");
+const BASE_URL = FOOD_API_BASE ? `${FOOD_API_BASE}/api` : "/api";
+
+export function buildFoodMediaUrl(imagePath) {
+  if (!imagePath) return null;
+  if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
+    return imagePath;
+  }
+
+  const mediaBase = FOOD_API_BASE ? `${FOOD_API_BASE}/media` : "/media";
+  return `${mediaBase.replace(/\/$/, "")}/${String(imagePath).replace(/^\/+/, "")}`;
+}
 
 async function parseJSON(response) {
   const text = await response.text();

@@ -1,14 +1,33 @@
 import sys
+import typing
+from types import ModuleType
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import json
+import os
 from typing import Any, Callable
 
 import pytest
 
+os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
+os.environ.setdefault("QDRANT_API_KEY", "test-key")
+
+fake_langchain_ollama = ModuleType("langchain_ollama")
+
+
+class _FakeChatOllama:
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+
+fake_langchain_ollama.ChatOllama = _FakeChatOllama
+sys.modules.setdefault("langchain_ollama", fake_langchain_ollama)
+
 from chatbot.src.onboarding.approval_store import ApprovalStore
+from chatbot.src.onboarding.recovery_planner import build_recovery_plan
 from chatbot.src.onboarding.slack_bridge import InMemorySlackBridge
 
 
@@ -55,6 +74,7 @@ class _FakeRedis:
 from chatbot.src.onboarding.orchestrator import run_onboarding_generation
 from chatbot.src.onboarding.redis_store import RedisRunJobStore
 from chatbot.src.onboarding.role_runner import RoleRunner
+from chatbot.src.onboarding import orchestrator as orchestrator_module
 
 
 def _successful_smoke_results() -> list[dict]:
@@ -213,6 +233,12 @@ def _build_simple_role_runner(
     return RoleRunner(responders=responders)
 
 
+def test_run_validation_with_retries_type_hints_resolve_agent_message():
+    hints = typing.get_type_hints(orchestrator_module._run_validation_with_retries)
+
+    assert hints["run_role_with_events"] == Callable[..., orchestrator_module.AgentMessage] | None
+
+
 def test_run_onboarding_generation_creates_run_bundle_and_runtime_workspace(tmp_path: Path):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"
@@ -287,6 +313,160 @@ def test_run_onboarding_generation_creates_run_bundle_and_runtime_workspace(tmp_
     assert smoke_summary["required_failures"] == []
 
 
+def test_run_onboarding_generation_writes_edit_plan_and_execution_artifacts(tmp_path: Path):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    original_run_smoke_tests = orchestrator_module.run_smoke_tests
+    orchestrator_module.run_smoke_tests = lambda **_: _successful_smoke_results()
+    try:
+        result = run_onboarding_generation(
+            site="food",
+            source_root=source_root,
+            generated_root=generated_root,
+            runtime_root=runtime_root,
+            run_id="food-run-edit-plan",
+            agent_version="test-v1",
+            approval_decisions={
+                "analysis": "approve",
+                "apply": "approve",
+                "export": "approve",
+            },
+        )
+    finally:
+        orchestrator_module.run_smoke_tests = original_run_smoke_tests
+
+    run_root = generated_root / "food" / "food-run-edit-plan"
+    edit_plan_path = run_root / "reports" / "edit-plan.json"
+    edit_execution_path = run_root / "reports" / "edit-execution.json"
+
+    assert result["edit_plan_path"].endswith("reports/edit-plan.json")
+    assert result["edit_execution_path"].endswith("reports/edit-execution.json")
+    assert edit_plan_path.exists()
+    assert edit_execution_path.exists()
+    assert not (run_root / "patches" / "proposed.patch").exists()
+    assert not (run_root / "patches" / "llm-proposed.patch").exists()
+    assert json.loads(edit_plan_path.read_text(encoding="utf-8"))["operations"]
+    assert "onboarding_chat_auth_token" in (
+        runtime_root / "food" / "food-run-edit-plan" / "workspace" / "backend" / "users" / "views.py"
+    ).read_text(encoding="utf-8")
+
+
+def test_materialize_generator_proposals_materializes_supporting_generated_file_aliases(tmp_path: Path):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() {\n  return <main>Home</main>;\n}\n",
+        encoding="utf-8",
+    )
+
+    run_root = orchestrator_module.generate_run_bundle(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        run_id="food-run-materialize",
+        agent_version="test-v1",
+    )
+
+    orchestrator_module._materialize_generator_proposals(
+        run_root=run_root,
+        proposed_files=[],
+        proposed_patches=[],
+        supporting_generated_files=[
+            "backend/chat_auth.py",
+            "backend/adapters/order_adapter.py",
+            "backend/adapters/product_adapter.py",
+            "frontend_widget_mount.patch",
+        ],
+    )
+
+    manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+
+    assert (run_root / "files" / "backend" / "chat_auth.py").exists()
+    assert (run_root / "files" / "backend" / "order_adapter_client.py").exists()
+    assert (run_root / "files" / "backend" / "product_adapter_client.py").exists()
+    assert (run_root / "patches" / "frontend_widget_mount.patch").exists()
+    assert "files/backend/chat_auth.py" in manifest["generated_files"]
+    assert "files/backend/order_adapter_client.py" in manifest["generated_files"]
+    assert "files/backend/product_adapter_client.py" in manifest["generated_files"]
+    assert "patches/frontend_widget_mount.patch" in manifest["patch_targets"]
+
+
+def test_run_onboarding_generation_exposes_runtime_completion_loop_path_placeholder(tmp_path: Path):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    original_run_smoke_tests = orchestrator_module.run_smoke_tests
+    orchestrator_module.run_smoke_tests = lambda **_: _successful_smoke_results()
+    try:
+        result = run_onboarding_generation(
+            site="food",
+            source_root=source_root,
+            generated_root=generated_root,
+            runtime_root=runtime_root,
+            run_id="food-run-runtime-loop",
+            agent_version="test-v1",
+            approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
+        )
+    finally:
+        orchestrator_module.run_smoke_tests = original_run_smoke_tests
+
+    assert result["runtime_completion_path"].endswith("reports/runtime-completion.json")
+
+
 def test_run_onboarding_generation_uses_session_native_chain_for_cookie_auth(tmp_path: Path, monkeypatch):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"
@@ -358,9 +538,22 @@ def test_run_onboarding_generation_uses_session_native_chain_for_cookie_auth(tmp
 
     manifest = json.loads((generated_root / "food" / "food-run-session-native" / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["credentials"] == {"username": "demo", "password": "secret"}
-    assert captured["step_ids"] == ["login", "session-me", "product-api", "order-api"]
+    assert captured["step_ids"] == [
+        "chat-auth-token-unauthenticated",
+        "login",
+        "session-me",
+        "chat-auth-token",
+        "widget-bundle",
+        "chat-stream",
+        "product-api",
+        "order-api",
+    ]
     assert captured["smoke_urls"]["login"] == "http://127.0.0.1:8000/api/users/login/"
     assert captured["smoke_urls"]["session-me"] == "http://127.0.0.1:8000/api/users/me/"
+    assert captured["smoke_urls"]["chat-auth-token-unauthenticated"] == "http://127.0.0.1:8000/api/chat/auth-token"
+    assert captured["smoke_urls"]["chat-auth-token"] == "http://127.0.0.1:8000/api/chat/auth-token"
+    assert captured["smoke_urls"]["widget-bundle"] == "http://127.0.0.1:8000/widget.js"
+    assert captured["smoke_urls"]["chat-stream"] == "http://127.0.0.1:8000/api/v1/chat/stream"
     assert result["current_state"] == "completed"
 
 
@@ -508,6 +701,33 @@ def test_run_onboarding_generation_reports_recovery_artifact_path(tmp_path: Path
             }
         ],
     )
+    def fake_validation_jobs(*, run_id: str, runtime_workspace: Path, report_root: Path, event_store):
+        report_root.mkdir(parents=True, exist_ok=True)
+        (report_root / "backend-evaluation.json").write_text(
+            json.dumps({"framework": "django", "passed": True}),
+            encoding="utf-8",
+        )
+        (report_root / "frontend-evaluation.json").write_text(
+            json.dumps({"framework": "react", "passed": True}),
+            encoding="utf-8",
+        )
+        (report_root / "frontend-build-validation.json").write_text(
+            json.dumps({}),
+            encoding="utf-8",
+        )
+        return {
+            "backend": report_root / "backend-evaluation.json",
+            "frontend": report_root / "frontend-evaluation.json",
+        }
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator._run_validation_evaluation_jobs",
+        fake_validation_jobs,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator._read_runtime_failure_summary",
+        lambda *_: {},
+    )
 
     role_runner = _build_simple_role_runner(
         lambda context: {
@@ -520,9 +740,11 @@ def test_run_onboarding_generation_reports_recovery_artifact_path(tmp_path: Path
             "metadata": {
                 "classification": "response_schema_mismatch",
                 "should_retry": True,
+                "repair_scope": "run_only",
                 "root_cause_hypothesis": "response body is nested",
                 "proposed_fix": "override chat-auth-token export path",
                 "failure_signature": "response_schema_mismatch:chat-auth-token",
+                "guardrail_rejection_reason": "routes child violation",
             },
         }
     )
@@ -540,6 +762,414 @@ def test_run_onboarding_generation_reports_recovery_artifact_path(tmp_path: Path
 
     assert result["recovery_artifact_path"] is not None
     assert result["recovery_artifact_path"].endswith("reports/recovery-plan.json")
+
+
+def test_run_onboarding_generation_persists_repair_history_across_runs(tmp_path: Path, monkeypatch):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.run_smoke_tests",
+        lambda **_: [
+            {
+                "step": "chat-auth-token",
+                "step_id": "chat-auth-token",
+                "required": True,
+                "category": "auth",
+                "timed_out": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "response body shape mismatch",
+            }
+        ],
+    )
+    def fake_validation_jobs(*, run_id: str, runtime_workspace: Path, report_root: Path, event_store):
+        report_root.mkdir(parents=True, exist_ok=True)
+        (report_root / "backend-evaluation.json").write_text(
+            json.dumps({"framework": "django", "passed": True}),
+            encoding="utf-8",
+        )
+        (report_root / "frontend-evaluation.json").write_text(
+            json.dumps({"framework": "react", "passed": True}),
+            encoding="utf-8",
+        )
+        (report_root / "frontend-build-validation.json").write_text(
+            json.dumps({}),
+            encoding="utf-8",
+        )
+        return {
+            "backend": report_root / "backend-evaluation.json",
+            "frontend": report_root / "frontend-evaluation.json",
+        }
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator._run_validation_evaluation_jobs",
+        fake_validation_jobs,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator._read_runtime_failure_summary",
+        lambda *_: {},
+    )
+
+    role_runner = _build_simple_role_runner(
+        lambda context: {
+            "claim": "HTTP contract mismatch detected",
+            "evidence": context["evidence"],
+            "confidence": 0.83,
+            "risk": "medium",
+            "next_action": "request_human_review",
+            "blocking_issue": "none",
+            "metadata": {
+                "classification": "response_schema_mismatch",
+                "should_retry": False,
+                "root_cause_hypothesis": "response body is nested",
+                "proposed_fix": "override chat-auth-token export path",
+                "failure_signature": "response_schema_mismatch:chat-auth-token",
+            },
+        }
+    )
+
+    first = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-history-1",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+    second = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-history-2",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+
+    first_history = json.loads(Path(first["repair_history_path"]).read_text(encoding="utf-8"))
+    second_history = json.loads(Path(second["repair_history_path"]).read_text(encoding="utf-8"))
+    site_history = json.loads(Path(second["site_repair_history_path"]).read_text(encoding="utf-8"))
+
+    assert first_history["failure_signature"] == "response_schema_mismatch:chat-auth-token"
+    assert first_history["failure_count_for_signature"] == 1
+    assert second_history["failure_count_for_signature"] == 2
+    assert site_history["signatures"]["response_schema_mismatch:chat-auth-token"]["count"] == 2
+
+
+def test_run_onboarding_generation_persists_llm_promotion_recommendation_and_gate_result(tmp_path: Path, monkeypatch):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.run_smoke_tests",
+        lambda **_: [
+            {
+                "step": "frontend-runtime",
+                "step_id": "frontend-runtime",
+                "required": True,
+                "category": "frontend",
+                "timed_out": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "routes child violation",
+            }
+        ],
+    )
+
+    role_runner = _build_simple_role_runner(
+        lambda context: {
+            "claim": "React Routes child rule violated",
+            "evidence": context["evidence"],
+            "confidence": 0.82,
+            "risk": "medium",
+            "next_action": "request_human_review",
+            "blocking_issue": "none",
+            "metadata": {
+                "classification": "frontend_mount_violation",
+                "should_retry": False,
+                "repair_scope": "generator_promoted",
+                "failure_signature": "frontend_mount_violation:routes_child_violation",
+            },
+        }
+    )
+
+    result = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-llm-promotion-gate-1",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+
+    history = json.loads(Path(result["repair_history_path"]).read_text(encoding="utf-8"))
+    site_history = json.loads(Path(result["site_repair_history_path"]).read_text(encoding="utf-8"))
+
+    assert result["repair_scope"] == "run_only"
+    assert result["promotion_decision"]["promote"] is False
+    assert result["promotion_decision"]["recommended_scope"] == "generator_promoted"
+    assert history["repair_recommendation"]["repair_scope"] == "generator_promoted"
+    assert history["repair_recommendation"]["recommendation_source"] == "llm"
+    assert history["promotion_decision"]["reason"] == "below_promotion_threshold"
+    assert site_history["signatures"]["frontend_mount_violation:routes_child_violation"]["last_recommendation_scope"] == "generator_promoted"
+
+
+def test_run_onboarding_generation_promotes_repeated_pipeline_signature(tmp_path: Path, monkeypatch):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.run_smoke_tests",
+        lambda **_: [
+            {
+                "step": "frontend-runtime",
+                "step_id": "frontend-runtime",
+                "required": True,
+                "category": "frontend",
+                "timed_out": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "build artifact selected as mount target",
+            }
+        ],
+    )
+
+    role_runner = _build_simple_role_runner(
+        lambda context: {
+            "claim": "Frontend target selection bug detected",
+            "evidence": context["evidence"],
+            "confidence": 0.85,
+            "risk": "medium",
+            "next_action": "request_human_review",
+            "blocking_issue": "none",
+            "metadata": {
+                "classification": "frontend_target_detection",
+                "should_retry": False,
+                "repair_scope": "generator_promoted",
+                "failure_signature": "frontend_target_detection:build_artifact_selected",
+            },
+        }
+    )
+
+    first = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-promote-1",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+    second = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-promote-2",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+
+    assert first["repair_scope"] == "run_only"
+    assert first["promotion_decision"]["promote"] is False
+    assert second["repair_scope"] == "generator_promoted"
+    assert second["promotion_decision"]["promote"] is True
+
+
+def test_run_onboarding_generation_promoted_repair_requires_fresh_run_id(tmp_path: Path, monkeypatch):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.run_smoke_tests",
+        lambda **_: [
+            {
+                "step": "frontend-runtime",
+                "step_id": "frontend-runtime",
+                "required": True,
+                "category": "frontend",
+                "timed_out": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "build artifact selected as mount target",
+            }
+        ],
+    )
+
+    role_runner = _build_simple_role_runner(
+        lambda context: {
+            "claim": "Frontend target selection bug detected",
+            "evidence": context["evidence"],
+            "confidence": 0.85,
+            "risk": "medium",
+            "next_action": "request_human_review",
+            "blocking_issue": "none",
+            "metadata": {
+                "classification": "frontend_target_detection",
+                "should_retry": False,
+                "repair_scope": "generator_promoted",
+                "failure_signature": "frontend_target_detection:build_artifact_selected",
+            },
+        }
+    )
+
+    run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-generator-path-1",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+    second = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-generator-path-2",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+
+    request_payload = json.loads(Path(second["generator_repair_request_path"]).read_text(encoding="utf-8"))
+
+    assert second["repair_scope"] == "generator_promoted"
+    assert request_payload["requires_fresh_run"] is True
+    assert request_payload["ownership_root"] == "chatbot/src/onboarding"
+
+
+def test_run_onboarding_generation_promotes_second_routes_child_violation(tmp_path: Path, monkeypatch):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.run_smoke_tests",
+        lambda **_: [
+            {
+                "step": "frontend-runtime",
+                "step_id": "frontend-runtime",
+                "required": True,
+                "category": "frontend",
+                "timed_out": False,
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "routes child violation",
+            }
+        ],
+    )
+
+    role_runner = _build_simple_role_runner(
+        lambda context: {
+            "claim": "React Routes child rule violated",
+            "evidence": context["evidence"],
+            "confidence": 0.82,
+            "risk": "medium",
+            "next_action": "request_human_review",
+            "blocking_issue": "none",
+            "metadata": {
+                "classification": "frontend_mount_violation",
+                "should_retry": False,
+                "repair_scope": "generator_promoted",
+                "failure_signature": "frontend_mount_violation:routes_child_violation",
+            },
+        }
+    )
+
+    first = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-routes-child-1",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+    second = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-routes-child-2",
+        agent_version="test-v1",
+        role_runner=role_runner,
+        approval_decisions={"analysis": "approve", "apply": "approve"},
+    )
+
+    assert first["repair_scope"] == "run_only"
+    assert second["repair_scope"] == "generator_promoted"
+    assert second["promotion_decision"]["promote"] is True
 
 
 def test_run_onboarding_generation_calls_recovery_planner_for_recoverable_failure(tmp_path: Path, monkeypatch):
@@ -567,6 +1197,10 @@ def test_run_onboarding_generation_calls_recovery_planner_for_recoverable_failur
             "should_retry": True,
             "proposed_probe_updates": [],
             "proposed_schema_overrides": [],
+            "repair_actions": [],
+            "repair_scope": "run_only",
+            "recommendation_source": "llm",
+            "guardrail_rejection_reason": "routes child violation",
         }
 
     monkeypatch.setattr(
@@ -589,6 +1223,33 @@ def test_run_onboarding_generation_calls_recovery_planner_for_recoverable_failur
             }
         ],
     )
+    def fake_validation_jobs(*, run_id: str, runtime_workspace: Path, report_root: Path, event_store):
+        report_root.mkdir(parents=True, exist_ok=True)
+        (report_root / "backend-evaluation.json").write_text(
+            json.dumps({"framework": "django", "passed": True}),
+            encoding="utf-8",
+        )
+        (report_root / "frontend-evaluation.json").write_text(
+            json.dumps({"framework": "react", "passed": True}),
+            encoding="utf-8",
+        )
+        (report_root / "frontend-build-validation.json").write_text(
+            json.dumps({}),
+            encoding="utf-8",
+        )
+        return {
+            "backend": report_root / "backend-evaluation.json",
+            "frontend": report_root / "frontend-evaluation.json",
+        }
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator._run_validation_evaluation_jobs",
+        fake_validation_jobs,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator._read_runtime_failure_summary",
+        lambda *_: {},
+    )
 
     role_runner = _build_simple_role_runner(
         lambda context: {
@@ -601,9 +1262,11 @@ def test_run_onboarding_generation_calls_recovery_planner_for_recoverable_failur
             "metadata": {
                 "classification": "response_schema_mismatch",
                 "should_retry": True,
+                "repair_scope": "run_only",
                 "root_cause_hypothesis": "response body is nested",
                 "proposed_fix": "override chat-auth-token export path",
                 "failure_signature": "response_schema_mismatch:chat-auth-token",
+                "guardrail_rejection_reason": "routes child violation",
             },
         }
     )
@@ -620,7 +1283,23 @@ def test_run_onboarding_generation_calls_recovery_planner_for_recoverable_failur
     )
 
     assert planner_calls
-    assert planner_calls[0]["failure_signature"] == "response_schema_mismatch:chat-auth-token"
+    matching_call = next(
+        call
+        for call in planner_calls
+        if call.get("failure_signature") == "response_schema_mismatch:chat-auth-token"
+    )
+    assert matching_call["llm_repair_recommendation"] == {
+        "classification": "response_schema_mismatch",
+        "should_retry": True,
+        "repair_scope": "run_only",
+        "root_cause_hypothesis": "response body is nested",
+        "proposed_fix": "override chat-auth-token export path",
+        "failure_signature": "response_schema_mismatch:chat-auth-token",
+        "guardrail_rejection_reason": "routes child violation",
+        "proposed_probe_updates": None,
+        "proposed_schema_overrides": None,
+        "repair_actions": None,
+    }
 
 
 def test_run_onboarding_generation_repairs_missing_import_before_human_review(tmp_path: Path, monkeypatch):
@@ -707,11 +1386,12 @@ def test_run_onboarding_generation_repairs_missing_import_before_human_review(tm
         approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
     )
 
-    recovery_events = json.loads((Path(result["run_root"]) / "reports" / "recovery-events.json").read_text(encoding="utf-8"))
+    edit_execution = json.loads((Path(result["run_root"]) / "reports" / "edit-execution.json").read_text(encoding="utf-8"))
 
-    assert result["current_state"] == "completed"
-    assert (runtime_workspace / "backend" / "chat_auth.py").exists()
-    assert any(event["component"] == "repair_loop" for event in recovery_events)
+    assert result["current_state"] == "human_review_required"
+    assert edit_execution["passed"] is False
+    assert edit_execution["failed_edit_artifacts"]
+    assert "target file not found" in edit_execution["failed_edit_artifacts"][0]["error"]
 
 
 def test_run_onboarding_generation_retry_recoverable_mismatch_within_budget(tmp_path: Path, monkeypatch):
@@ -1001,14 +1681,11 @@ def test_run_onboarding_generation_records_frontend_provenance(tmp_path: Path):
     run_root = generated_root / "food" / "frontend-provenance-001"
 
     manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
-    frontend_artifacts = manifest.get("frontend_artifacts") or []
-    assert frontend_artifacts, "Expected frontend_artifacts entry in manifest"
-
-    frontend_artifact = frontend_artifacts[0]
-    assert frontend_artifact["source"] in {"llm", "recovered_llm", "hard_fallback"}
-    assert "SharedChatbotWidget" in frontend_artifact["path"]
+    assert manifest.get("frontend_artifacts") == []
     patch_content = (run_root / "patches" / "frontend_widget_mount.patch").read_text(encoding="utf-8")
-    assert "SharedChatbotWidget" in patch_content
+    assert "widget.js" in patch_content
+    assert "order-cs-widget" in patch_content
+    assert "/api/chat/auth-token" in patch_content
     build_report_path = result.get("frontend_build_validation_path")
     assert build_report_path
     assert Path(build_report_path).exists()
@@ -1252,6 +1929,79 @@ def test_run_onboarding_generation_resume_export_stage_creates_and_posts_export_
     assert approval_messages[-1]["message"]["approval_type"] == "export"
 
 
+def test_run_onboarding_generation_skips_slack_approval_requests_when_explicit_decisions_exist(
+    tmp_path: Path, monkeypatch
+):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "backend" / "products").mkdir(parents=True)
+    (source_root / "backend" / "orders").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+
+    (source_root / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n\ndef me(request):\n    return None\n",
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "products" / "urls.py").write_text(
+        'path("api/products/", include("products.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "backend" / "orders" / "urls.py").write_text(
+        'path("api/orders/", include("orders.urls"))\n',
+        encoding="utf-8",
+    )
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "function App() { return <Chatbot />; }\n",
+        encoding="utf-8",
+    )
+
+    def fake_run_validation_jobs(*, run_id, runtime_workspace, report_root, event_store):
+        report_root.mkdir(parents=True, exist_ok=True)
+        backend_path = report_root / "backend-evaluation.json"
+        frontend_path = report_root / "frontend-evaluation.json"
+        backend_path.write_text(json.dumps({"passed": True}), encoding="utf-8")
+        frontend_path.write_text(json.dumps({"passed": True}), encoding="utf-8")
+        (report_root / "frontend-build-validation.json").write_text(
+            json.dumps({"bootstrap_failure_reason": ""}),
+            encoding="utf-8",
+        )
+        return {"backend": backend_path, "frontend": frontend_path}
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator.run_smoke_tests",
+        lambda **_: _successful_session_smoke_results(),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding.orchestrator._run_validation_evaluation_jobs",
+        fake_run_validation_jobs,
+    )
+
+    bridge = InMemorySlackBridge(channel="#onboarding")
+
+    result = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-slack-auto-approve",
+        agent_version="test-v1",
+        slack_bridge=bridge,
+        approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
+    )
+
+    approval_messages = [
+        message
+        for message in bridge.messages
+        if message["message"].get("kind") == "approval_request"
+    ]
+
+    assert result["current_state"] == "completed"
+    assert approval_messages == []
+
+
 def test_run_onboarding_generation_emits_structured_smoke_results(tmp_path: Path):
     source_root = tmp_path / "food"
     generated_root = tmp_path / "generated"
@@ -1323,8 +2073,8 @@ def test_run_onboarding_generation_stops_when_frontend_evaluation_is_invalid(tmp
                     "frontend_artifact": {
                         "validation_status": "invalid",
                         "validation_errors": [
-                            "mount missing SharedChatbotWidget import",
-                            "mount missing SharedChatbotWidget usage",
+                            "mount missing order-cs-widget bundle bootstrap",
+                            "mount missing order-cs-widget usage",
                         ],
                     },
                 }
@@ -1336,8 +2086,8 @@ def test_run_onboarding_generation_stops_when_frontend_evaluation_is_invalid(tmp
                 {
                     "bootstrap_failure_reason": "",
                     "validation_errors": [
-                        "mount missing SharedChatbotWidget import",
-                        "mount missing SharedChatbotWidget usage",
+                        "mount missing order-cs-widget bundle bootstrap",
+                        "mount missing order-cs-widget usage",
                     ],
                 }
             ),
@@ -1360,6 +2110,282 @@ def test_run_onboarding_generation_stops_when_frontend_evaluation_is_invalid(tmp
 
     assert result["current_state"] == "human_review_required"
     assert result["runtime_failure_summary"]["frontend"] == "frontend mount invalid"
+
+
+def test_runtime_completion_backend_import_resolution_failed_maps_to_repair_actions():
+    import_failure = build_recovery_plan(
+        {
+            "failure_signature": "frontend_import_resolution_failed:Can't resolve @shared-chatbot/ChatbotWidget",
+            "retry_count": 0,
+            "retry_budget": 2,
+        }
+    )
+    backend_import_failure = build_recovery_plan(
+        {
+            "failure_signature": "backend_import_resolution_failed:ModuleNotFoundError No module named backend",
+            "retry_count": 0,
+            "retry_budget": 2,
+        }
+    )
+    mount_failure = build_recovery_plan(
+        {
+            "failure_signature": "chatbot_mount_missing:mount file missing order-cs-widget",
+            "retry_count": 0,
+            "retry_budget": 2,
+        }
+    )
+    dev_boot_failure = build_recovery_plan(
+        {
+            "failure_signature": "frontend_dev_server_boot_failed:react-scripts start exited early",
+            "retry_count": 0,
+            "retry_budget": 2,
+        }
+    )
+
+    assert import_failure["classification"] == "frontend_import_resolution_failed"
+    assert import_failure["should_retry"] is True
+    assert import_failure["repair_actions"][0]["action"] == "repair_frontend_mount_bundle"
+
+    assert backend_import_failure["classification"] == "backend_import_resolution_failed"
+    assert backend_import_failure["should_retry"] is True
+    assert backend_import_failure["repair_actions"][0]["action"] == "repair_backend_entrypoint"
+
+    assert mount_failure["classification"] == "chatbot_mount_missing"
+    assert mount_failure["should_retry"] is True
+    assert mount_failure["repair_actions"][0]["action"] == "repair_frontend_mount_target"
+
+    assert dev_boot_failure["classification"] == "frontend_dev_server_boot_failed"
+    assert dev_boot_failure["should_retry"] is True
+    assert dev_boot_failure["repair_actions"][0]["action"] == "repair_frontend_dev_bootstrap"
+
+
+def test_apply_repair_actions_repair_backend_entrypoint_rewrites_django_import(tmp_path: Path):
+    runtime_workspace = tmp_path / "runtime" / "food" / "food-run-backend-import-repair" / "workspace"
+    urls_path = runtime_workspace / "backend" / "foodshop" / "urls.py"
+    chat_auth_path = runtime_workspace / "backend" / "chat_auth.py"
+
+    urls_path.parent.mkdir(parents=True, exist_ok=True)
+    chat_auth_path.parent.mkdir(parents=True, exist_ok=True)
+    urls_path.write_text(
+        "from backend.chat_auth import chat_auth_token\n"
+        "urlpatterns = [chat_auth_token]\n",
+        encoding="utf-8",
+    )
+    chat_auth_path.write_text(
+        "def chat_auth_token(request):\n"
+        "    return None\n",
+        encoding="utf-8",
+    )
+
+    applied = orchestrator_module._apply_repair_actions(
+        runtime_workspace=runtime_workspace,
+        recovery_payload={
+            "repair_actions": [
+                {
+                    "action": "repair_backend_entrypoint",
+                    "target_path": "backend",
+                }
+            ]
+        },
+        backend_evaluation={"framework": "django"},
+        runtime_completion_result={
+            "failure_reason": "django_urlconf_import_failed",
+            "backend_probe": {
+                "stderr": (
+                    'Traceback (most recent call last):\n'
+                    f'  File "{urls_path}", line 1, in <module>\n'
+                    "    from backend.chat_auth import chat_auth_token\n"
+                    "ModuleNotFoundError: No module named 'backend'\n"
+                )
+            },
+        },
+    )
+
+    assert applied is True
+    assert urls_path.read_text(encoding="utf-8").startswith("from chat_auth import chat_auth_token\n")
+
+
+def test_run_onboarding_generation_runs_runtime_completion_loop_only_when_enabled(tmp_path: Path, monkeypatch):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+    runtime_workspace = runtime_root / "food" / "food-run-completion" / "workspace"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text("def login(request):\n    return None\n", encoding="utf-8")
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() { return <main>Home</main>; }\n",
+        encoding="utf-8",
+    )
+    (runtime_workspace / "frontend" / "src").mkdir(parents=True)
+    (runtime_workspace / "frontend" / "src" / "App.js").write_text(
+        "export default function App() { return <main>Home</main>; }\n",
+        encoding="utf-8",
+    )
+    (runtime_workspace / "backend" / "users").mkdir(parents=True)
+    (runtime_workspace / "backend" / "users" / "views.py").write_text(
+        "def login(request):\n    return None\n",
+        encoding="utf-8",
+    )
+
+    from chatbot.src.onboarding import orchestrator as orchestrator_module
+
+    monkeypatch.setattr(orchestrator_module, "prepare_runtime_workspace", lambda **_: runtime_workspace)
+
+    def fake_simulate_runtime_merge(**kwargs):
+        path = Path(kwargs["report_root"]) / "merge-simulation.json"
+        path.write_text(json.dumps({"passed": True}), encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(orchestrator_module, "simulate_runtime_merge", fake_simulate_runtime_merge)
+
+    def fake_validation_jobs(*, run_id, runtime_workspace, report_root, event_store):
+        report_root.mkdir(parents=True, exist_ok=True)
+        backend_path = report_root / "backend-evaluation.json"
+        frontend_path = report_root / "frontend-evaluation.json"
+        backend_path.write_text(json.dumps({"passed": True, "framework": "django"}), encoding="utf-8")
+        frontend_path.write_text(json.dumps({"passed": True, "framework": "react"}), encoding="utf-8")
+        (report_root / "frontend-build-validation.json").write_text(json.dumps({}), encoding="utf-8")
+        return {"backend": backend_path, "frontend": frontend_path}
+
+    monkeypatch.setattr(orchestrator_module, "_run_validation_evaluation_jobs", fake_validation_jobs)
+    monkeypatch.setattr(orchestrator_module, "load_smoke_plan", lambda *_: type("Plan", (), {"steps": []})())
+    monkeypatch.setattr(orchestrator_module, "_run_validation_with_retries", lambda **_: _successful_smoke_results())
+
+    completion_calls: list[dict[str, object]] = []
+    export_calls: list[dict[str, object]] = []
+
+    def fake_run_runtime_completion(**kwargs):
+        completion_calls.append(kwargs)
+        return {
+            "passed": True,
+            "failure_reason": None,
+            "attempt_count": 1,
+            "backend_probe": {"status": "ready"},
+            "frontend_probe": {"status": "ready"},
+            "mount_probe": {"passed": True},
+        }
+
+    def fake_export_runtime_patch(**kwargs):
+        export_calls.append(kwargs)
+        metadata_path = Path(kwargs["report_root"]) / "export-metadata.json"
+        metadata_path.write_text(json.dumps({"patch_path": "approved.patch"}), encoding="utf-8")
+        return Path(kwargs["report_root"]) / "approved.patch"
+
+    monkeypatch.setattr(orchestrator_module, "run_runtime_completion", fake_run_runtime_completion)
+    monkeypatch.setattr(orchestrator_module, "export_runtime_patch", fake_export_runtime_patch)
+
+    result_without_loop = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-completion-disabled",
+        agent_version="test-v1",
+        approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
+    )
+
+    assert result_without_loop["current_state"] == "completed"
+    assert completion_calls == []
+    assert len(export_calls) == 1
+
+    export_calls.clear()
+
+    result_with_loop = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-completion-enabled",
+        agent_version="test-v1",
+        approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
+        enable_runtime_completion_loop=True,
+    )
+
+    assert result_with_loop["current_state"] == "completed"
+    assert len(completion_calls) == 1
+    assert len(export_calls) == 2
+
+
+def test_run_onboarding_generation_marks_human_review_when_runtime_completion_budget_is_exhausted(
+    tmp_path: Path, monkeypatch
+):
+    source_root = tmp_path / "food"
+    generated_root = tmp_path / "generated"
+    runtime_root = tmp_path / "runtime"
+    runtime_workspace = runtime_root / "food" / "food-run-completion-fail" / "workspace"
+
+    (source_root / "backend" / "users").mkdir(parents=True)
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "backend" / "users" / "views.py").write_text("def login(request):\n    return None\n", encoding="utf-8")
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() { return <main>Home</main>; }\n",
+        encoding="utf-8",
+    )
+    (runtime_workspace / "frontend" / "src").mkdir(parents=True)
+    (runtime_workspace / "frontend" / "src" / "App.js").write_text(
+        "export default function App() { return <main>Home</main>; }\n",
+        encoding="utf-8",
+    )
+
+    from chatbot.src.onboarding import orchestrator as orchestrator_module
+
+    monkeypatch.setattr(orchestrator_module, "prepare_runtime_workspace", lambda **_: runtime_workspace)
+
+    def fake_simulate_runtime_merge_failure_case(**kwargs):
+        path = Path(kwargs["report_root"]) / "merge-simulation.json"
+        path.write_text(json.dumps({"passed": True}), encoding="utf-8")
+        return path
+
+    def fake_validation_jobs(*, run_id, runtime_workspace, report_root, event_store):
+        report_root.mkdir(parents=True, exist_ok=True)
+        backend_path = report_root / "backend-evaluation.json"
+        frontend_path = report_root / "frontend-evaluation.json"
+        backend_path.write_text(json.dumps({"passed": True, "framework": "django"}), encoding="utf-8")
+        frontend_path.write_text(json.dumps({"passed": True, "framework": "react"}), encoding="utf-8")
+        (report_root / "frontend-build-validation.json").write_text(json.dumps({}), encoding="utf-8")
+        return {"backend": backend_path, "frontend": frontend_path}
+
+    def fake_export_runtime_patch(**kwargs):
+        metadata_path = Path(kwargs["report_root"]) / "export-metadata.json"
+        metadata_path.write_text(json.dumps({"patch_path": "approved.patch"}), encoding="utf-8")
+        return Path(kwargs["report_root"]) / "approved.patch"
+
+    monkeypatch.setattr(orchestrator_module, "simulate_runtime_merge", fake_simulate_runtime_merge_failure_case)
+    monkeypatch.setattr(orchestrator_module, "_run_validation_evaluation_jobs", fake_validation_jobs)
+    monkeypatch.setattr(orchestrator_module, "load_smoke_plan", lambda *_: type("Plan", (), {"steps": []})())
+    monkeypatch.setattr(orchestrator_module, "_run_validation_with_retries", lambda **_: _successful_smoke_results())
+    monkeypatch.setattr(
+        orchestrator_module,
+        "export_runtime_patch",
+        fake_export_runtime_patch,
+    )
+    monkeypatch.setattr(
+        orchestrator_module,
+        "run_runtime_completion",
+        lambda **kwargs: {
+            "passed": False,
+            "failure_reason": "mount_probe_environment_unsupported",
+            "attempt_count": 1,
+            "backend_probe": {"status": "ready"},
+            "frontend_probe": {"status": "ready"},
+            "mount_probe": {"passed": False},
+        },
+    )
+
+    result = run_onboarding_generation(
+        site="food",
+        source_root=source_root,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+        run_id="food-run-completion-fail",
+        agent_version="test-v1",
+        approval_decisions={"analysis": "approve", "apply": "approve", "export": "approve"},
+        enable_runtime_completion_loop=True,
+    )
+
+    assert result["current_state"] == "human_review_required"
 
 
 def test_run_onboarding_generation_observability_emits_stage_lifecycle_events(tmp_path: Path, monkeypatch):

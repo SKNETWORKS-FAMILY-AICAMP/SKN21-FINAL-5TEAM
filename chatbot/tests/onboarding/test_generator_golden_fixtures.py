@@ -27,6 +27,23 @@ def test_generator_golden_fixtures_validate_against_contract():
     assert "spring-thymeleaf-basic" in fixture_ids
 
 
+def test_generator_golden_fixtures_keep_frontend_scope_to_mount_contract():
+    fixture_dir = Path(__file__).resolve().parent / "goldens" / "generator"
+    fixture_paths = sorted(fixture_dir.glob("*.json"))
+
+    for fixture_path in fixture_paths:
+        fixture = load_generator_eval_fixture(fixture_path)
+        proposed_files = fixture.expected.proposed_files or []
+        proposed_patches = fixture.expected.proposed_patches or []
+
+        if "frontend_patch" not in (fixture.input.recommended_outputs or []):
+            continue
+
+        assert "patches/frontend_widget_mount.patch" in proposed_patches
+        assert not any(path.startswith("files/frontend/app/") for path in proposed_files)
+        assert not any(path.startswith("files/frontend/pages/") for path in proposed_files)
+
+
 def test_food_and_bilyeo_contract_regression_fixtures_capture_strategy_shape():
     fixture_root = Path(__file__).resolve().parent / "fixtures"
     food_contract = json.loads((fixture_root / "food_chat_auth_contract.json").read_text(encoding="utf-8"))

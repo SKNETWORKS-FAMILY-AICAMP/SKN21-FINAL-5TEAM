@@ -10,6 +10,8 @@ from chatbot.src.onboarding.template_generator import (
     generate_backend_tool_registry,
     generate_backend_route_patch,
     generate_chat_auth_template,
+    generate_frontend_mount_patch,
+    generate_order_adapter_template,
     generate_frontend_widget_artifact,
 )
 
@@ -100,6 +102,91 @@ def test_generate_chat_auth_template_for_food_uses_repo_local_primitives(tmp_pat
     assert "def issue_chat_token" in content or "def issue_bridge_token" in content
 
 
+def test_generate_chat_auth_template_returns_site_scoped_bootstrap_contract(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-bootstrap"
+    run_root.mkdir(parents=True)
+
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "food-run-bootstrap",
+                "site": "food",
+                "source_root": "/workspace/food",
+                "created_at": "2026-03-21T12:00:00+09:00",
+                "agent_version": "test-v1",
+                "analysis": {
+                    "backend_strategy": "django",
+                    "integration_contract": {
+                        "backend": {
+                            "framework": "django",
+                            "auth_style": "session_cookie",
+                            "auth_source_paths": ["backend/users/views.py"],
+                            "route_registration_points": ["backend/users/urls.py"],
+                        }
+                    },
+                },
+                "generated_files": [],
+                "patch_targets": [],
+                "docker": {},
+                "tests": {},
+                "status": "generated",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    content = generate_chat_auth_template(run_root).read_text(encoding="utf-8")
+
+    assert '"authenticated": True' in content
+    assert '"site_id": "site-a"' in content
+    assert '"access_token": token' in content
+    assert '"user": {' in content
+    assert '"id": str(user.id)' in content
+    assert '"email": user.email' in content
+    assert '"name": user.get_full_name() or user.username' in content
+
+
+def test_generate_chat_auth_template_requires_bridge_secret_env(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-secret"
+    run_root.mkdir(parents=True)
+
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "food-run-secret",
+                "site": "food",
+                "source_root": "/workspace/food",
+                "created_at": "2026-03-22T12:00:00+09:00",
+                "agent_version": "test-v1",
+                "analysis": {
+                    "backend_strategy": "django",
+                    "integration_contract": {
+                        "backend": {
+                            "framework": "django",
+                            "auth_style": "session_cookie",
+                            "auth_source_paths": ["backend/users/views.py"],
+                            "route_registration_points": ["backend/users/urls.py"],
+                        }
+                    },
+                },
+                "generated_files": [],
+                "patch_targets": [],
+                "docker": {},
+                "tests": {},
+                "status": "generated",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    content = generate_chat_auth_template(run_root).read_text(encoding="utf-8")
+
+    assert "CHATBOT_BRIDGE_SECRET" in content
+    assert "CHANGE_ME" not in content
+
+
 def test_generate_chat_auth_template_for_bilyeo_site_uses_site_b(tmp_path: Path):
     run_root = tmp_path / "generated" / "bilyeo" / "bilyeo-run-001"
     run_root.mkdir(parents=True)
@@ -131,6 +218,7 @@ def test_generate_chat_auth_template_for_bilyeo_site_uses_site_b(tmp_path: Path)
     assert 'session.get("user_id")' in content
     assert 'session.get("email")' in content
     assert "issue_chat_token" in content
+    assert '"user": {' in content
 
 
 def test_generate_chat_auth_template_for_ecommerce_site_uses_access_token_cookie(tmp_path: Path):
@@ -169,6 +257,7 @@ def test_generate_chat_auth_template_for_ecommerce_site_uses_access_token_cookie
     assert 'request.cookies.get("access_token")' in content
     assert "crud.get_user_by_email" not in content
     assert "get_current_user" not in content
+    assert '"user": {' in content
 
 
 def test_generate_frontend_widget_artifact_writes_widget_file(tmp_path: Path):
@@ -185,9 +274,7 @@ def test_generate_frontend_widget_artifact_writes_widget_file(tmp_path: Path):
                 "agent_version": "test-v1",
                 "analysis": {
                     "frontend_widget_proposal": {
-                        "widget_path": "frontend/src/chatbot/SharedChatbotWidget.jsx",
-                        "imports": ["import React from 'react';"],
-                        "component": "export default function SharedChatbotWidget() { return <div>Chat</div>; }",
+                        "widget_path": "frontend/src/chatbot/orderCsWidgetHost.js",
                     }
                 },
                 "generated_files": [],
@@ -204,16 +291,19 @@ def test_generate_frontend_widget_artifact_writes_widget_file(tmp_path: Path):
     artifact = generate_frontend_widget_artifact(
         run_root,
         proposal={
-            "widget_path": "frontend/src/chatbot/SharedChatbotWidget.jsx",
-            "content": "import React from 'react';\n\nexport default function SharedChatbotWidget() { return <div>Chat</div>; }\n",
+            "widget_path": "frontend/src/chatbot/orderCsWidgetHost.js",
         },
     )
 
-    widget_file = run_root / "files" / "frontend" / "src" / "chatbot" / "SharedChatbotWidget.jsx"
+    widget_file = run_root / "files" / "frontend" / "src" / "chatbot" / "orderCsWidgetHost.js"
     assert artifact["type"] == "widget"
     assert artifact["path"] == str(widget_file)
     assert widget_file.exists()
-    assert "SharedChatbotWidget" in widget_file.read_text(encoding="utf-8")
+    content = widget_file.read_text(encoding="utf-8")
+    assert "__ORDER_CS_WIDGET_HOST_CONTRACT__" in content
+    assert "widgetBundlePath" in content
+    assert "order-cs-widget" in content
+    assert "SharedChatbotWidget" not in content
 
 
 def test_generate_frontend_widget_artifact_default_content_includes_auth_bootstrap_contract(tmp_path: Path):
@@ -230,7 +320,7 @@ def test_generate_frontend_widget_artifact_default_content_includes_auth_bootstr
                 "agent_version": "test-v1",
                 "analysis": {
                     "frontend_strategy": "react",
-                    "frontend_widget_path": "frontend/src/chatbot/SharedChatbotWidget.jsx",
+                    "frontend_widget_path": "frontend/src/chatbot/orderCsWidgetHost.js",
                 },
                 "generated_files": [],
                 "patch_targets": [],
@@ -247,10 +337,53 @@ def test_generate_frontend_widget_artifact_default_content_includes_auth_bootstr
     artifact = generate_frontend_widget_artifact(run_root)
     content = Path(artifact["path"]).read_text(encoding="utf-8")
 
-    assert "fetch('/api/chat/auth-token'" in content or 'fetch("/api/chat/auth-token"' in content
-    assert "access_token" in content
-    assert "authenticated" in content
-    assert "SharedChatbotWidget" in content
+    assert "__ORDER_CS_WIDGET_HOST_CONTRACT__" in content
+    assert "widgetBundlePath" in content
+    assert "/api/chat/auth-token" in content
+    assert "order-cs-widget" in content
+    assert "SharedChatbotWidget" not in content
+
+
+def test_generated_mount_patch_embeds_shared_widget_bundle(tmp_path: Path):
+    source_root = tmp_path / "food"
+    run_root = tmp_path / "generated" / "food" / "food-run-mount-001"
+    run_root.mkdir(parents=True)
+
+    (source_root / "frontend" / "src").mkdir(parents=True)
+    (source_root / "frontend" / "src" / "App.js").write_text(
+        "export default function App() {\n  return <main>Home</main>;\n}\n",
+        encoding="utf-8",
+    )
+
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "food-run-mount-001",
+                "site": "food",
+                "source_root": str(source_root),
+                "created_at": "2026-03-21T12:00:00+09:00",
+                "agent_version": "test-v1",
+                "analysis": {
+                    "frontend_mount_points": ["frontend/src/App.js"],
+                },
+                "generated_files": [],
+                "patch_targets": [],
+                "frontend_artifacts": [],
+                "docker": {},
+                "tests": {},
+                "status": "generated",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    patch = generate_frontend_mount_patch(run_root)
+    content = patch.read_text(encoding="utf-8")
+
+    assert "widget.js" in content
+    assert "order-cs-widget" in content
+    assert "/api/chat/auth-token" in content
 
 
 
@@ -377,7 +510,46 @@ def test_generate_backend_tool_registry_includes_enabled_tools_and_targets(tmp_p
     assert "GeneratedProductAdapterClient" in content
     assert "GeneratedOrderAdapterClient" in content
     assert '"product_list"' in content
-    assert '"orders_list"' in content
+    assert '"list_orders"' in content
+    assert '"get_order_status"' in content
+    assert '"exchange"' in content
+
+
+def test_generate_order_bridge_compatibility_template_exposes_normalized_operations(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-order-bridge"
+    run_root.mkdir(parents=True)
+
+    (run_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "food-run-order-bridge",
+                "site": "food",
+                "source_root": "/workspace/food",
+                "created_at": "2026-03-21T12:00:00+09:00",
+                "agent_version": "test-v1",
+                "analysis": {
+                    "order_api": ["/api/orders/"],
+                },
+                "generated_files": [],
+                "patch_targets": [],
+                "frontend_artifacts": [],
+                "docker": {},
+                "tests": {},
+                "status": "generated",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    content = generate_order_adapter_template(run_root).read_text(encoding="utf-8")
+
+    assert "ORDER_BRIDGE_OPERATIONS" in content
+    assert "async def list_orders" in content
+    assert "async def get_order_status" in content
+    assert "async def cancel" in content
+    assert "async def refund" in content
+    assert "async def exchange" in content
 
 
 def test_template_generator_import_does_not_require_qdrant_env(tmp_path: Path):

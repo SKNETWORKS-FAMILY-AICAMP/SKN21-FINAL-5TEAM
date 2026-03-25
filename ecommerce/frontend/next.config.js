@@ -1,4 +1,1 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {};
-
-module.exports = nextConfig;
+module.exports = require("./next.config.shared.js");

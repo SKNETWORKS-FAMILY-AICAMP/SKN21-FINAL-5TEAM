@@ -4,8 +4,8 @@
 import time
 from fastapi import Request
 
-from ecommerce.backend.app.router.chatbot_logs.middleware import log_chat_interaction
-from ecommerce.backend.app.router.chatbot_logs.models import ConversationStatus
+from chatbot.src.chatbot_logs.middleware import log_chat_interaction
+from chatbot.src.chatbot_logs.models import ConversationStatus
 
 
 # ============================================
@@ -81,7 +81,7 @@ async def chat_endpoint(
 # ============================================
 
 """
-from ecommerce.backend.app.router.chatbot_logs.middleware import chatbot_logger
+from chatbot.src.chatbot_logs.middleware import chatbot_logger
 
 @router.post("/chat-v2")
 async def chat_endpoint_v2(
@@ -151,7 +151,7 @@ async def chat_endpoint_v2(
 
 """
 from ecommerce.backend.app.database import SessionLocal
-from ecommerce.backend.app.router.chatbot_logs.service import LogService
+from chatbot.src.chatbot_logs.service import LogService
 
 def tool_node(state: AgentState) -> dict:
     '''도구 실행 노드'''

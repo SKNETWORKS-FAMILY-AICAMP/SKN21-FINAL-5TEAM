@@ -17,6 +17,7 @@ class OverlayManifest(BaseModel):
     agent_version: str
     analysis: dict[str, Any]
     generated_files: list[str]
+    edit_artifacts: list[str] = []
     patch_targets: list[str]
     frontend_artifacts: list[dict[str, Any]] = []
     docker: dict[str, Any]

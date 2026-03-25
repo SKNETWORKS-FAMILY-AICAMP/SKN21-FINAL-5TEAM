@@ -171,19 +171,22 @@ def _run_http_probe(
     response_body = ""
     response_headers = {}
     json_payload = None
+    expects = step.expects
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             status = response.getcode()
-            response_body = response.read().decode("utf-8", errors="ignore")
             response_headers = dict(response.getheaders())
-            try:
-                json_payload = json.loads(response_body)
-            except json.JSONDecodeError:
-                json_payload = None
+            response_body = _read_http_response_body(
+                response=response,
+                expects=expects,
+                response_headers=response_headers,
+            )
+            json_payload = _parse_json_payload(response_body)
     except urllib.error.HTTPError as exc:
         status = exc.code
         response_body = exc.read().decode("utf-8", errors="ignore")
         response_headers = dict(exc.headers)
+        json_payload = _parse_json_payload(response_body)
     except urllib.error.URLError as exc:
         return {
             "step": step.id,
@@ -217,7 +220,6 @@ def _run_http_probe(
             "exports": {},
         }
 
-    expects = step.expects
     status_expected = expects.status
     json_keys = expects.json_keys
     status_ok = status == status_expected or (isinstance(status_expected, list) and status in status_expected)
@@ -230,6 +232,24 @@ def _run_http_probe(
         for path, expected in expects.json_path_equals.items():
             actual = _read_export_path(json_payload, f"json.{path}")
             if actual != expected:
+                json_ok = False
+                break
+    if json_ok and expects.json_path_not_empty:
+        for path in expects.json_path_not_empty:
+            actual = _read_export_path(json_payload, f"json.{path}")
+            if actual in (None, "", [], {}):
+                json_ok = False
+                break
+    if json_ok and expects.header_contains:
+        normalized_headers = {str(key).lower(): str(value) for key, value in response_headers.items()}
+        for key, expected_substring in expects.header_contains.items():
+            actual = normalized_headers.get(str(key).lower(), "")
+            if str(expected_substring) not in actual:
+                json_ok = False
+                break
+    if json_ok and expects.body_contains:
+        for expected_substring in expects.body_contains:
+            if str(expected_substring) not in response_body:
                 json_ok = False
                 break
     if json_ok and expects.json_type == "list" and not isinstance(json_payload, list):
@@ -268,6 +288,36 @@ def _run_http_probe(
     return result
 
 
+def _read_http_response_body(
+    *,
+    response: Any,
+    expects: ProbeExpectation,
+    response_headers: dict[str, Any],
+) -> str:
+    if _expects_streaming_body(expects=expects, response_headers=response_headers):
+        chunk = response.read(4096)
+        return chunk.decode("utf-8", errors="ignore")
+    return response.read().decode("utf-8", errors="ignore")
+
+
+def _expects_streaming_body(*, expects: ProbeExpectation, response_headers: dict[str, Any]) -> bool:
+    expected_content_type = str((expects.header_contains or {}).get("content-type") or "").lower()
+    actual_content_type = str(response_headers.get("content-type") or response_headers.get("Content-Type") or "").lower()
+    body_markers = [str(item).lower() for item in (expects.body_contains or [])]
+    return (
+        "text/event-stream" in expected_content_type
+        or "text/event-stream" in actual_content_type
+        or "data:" in body_markers
+    )
+
+
+def _parse_json_payload(response_body: str) -> Any:
+    try:
+        return json.loads(response_body)
+    except json.JSONDecodeError:
+        return None
+
+
 def _resolve_expected_array(json_payload: Any, array_key: str | None) -> Any:
     if array_key:
         if not isinstance(json_payload, dict):
@@ -291,6 +341,8 @@ def run_smoke_tests(
     runtime_workspace: str | Path,
     plan: SmokeTestPlan,
     recovery_payload: SmokeRecoveryPayload | dict[str, Any] | None = None,
+    initial_context: dict[str, object] | None = None,
+    persist_context: bool = True,
 ) -> list[dict]:
     root = Path(run_root)
     workspace = Path(runtime_workspace)
@@ -298,6 +350,13 @@ def run_smoke_tests(
     normalized_recovery = _normalize_recovery_payload(recovery_payload)
 
     context: dict[str, object] = _load_probe_context(root)
+    context.update(
+        {
+            key: value
+            for key, value in (initial_context or {}).items()
+            if value is not None and value != ""
+        }
+    )
     for step in plan.steps:
         effective_step, recovery_metadata = _apply_recovery_to_step(
             step=step,
@@ -318,7 +377,8 @@ def run_smoke_tests(
         exports = result.get("exports") or {}
         for key, value in exports.items():
             context[key] = value
-    _persist_probe_context(root=root, context=context)
+    if persist_context:
+        _persist_probe_context(root=root, context=context)
     return results
 
 
@@ -379,7 +439,13 @@ def _normalize_recovery_payload(
         return None
     if isinstance(recovery_payload, SmokeRecoveryPayload):
         return recovery_payload
-    return SmokeRecoveryPayload.model_validate(recovery_payload)
+    allowed_keys = set(SmokeRecoveryPayload.model_fields)
+    normalized_payload = {
+        key: value
+        for key, value in recovery_payload.items()
+        if key in allowed_keys
+    }
+    return SmokeRecoveryPayload.model_validate(normalized_payload)
 
 
 def _apply_recovery_to_step(
@@ -499,6 +565,11 @@ def _run_script_step(*, step: SmokeTestStep, workspace: Path, root: Path) -> dic
 
 def summarize_smoke_results(results: list[dict]) -> dict:
     failures = [result for result in results if result.get("returncode") != 0]
+    auth_bootstrap_passed = any(
+        (result.get("step_id") or result.get("step")) == "chat-auth-token"
+        and result.get("returncode") == 0
+        for result in results
+    )
     required_failures = [
         result.get("step_id") or result.get("step")
         for result in failures
@@ -528,4 +599,5 @@ def summarize_smoke_results(results: list[dict]) -> dict:
         "optional_failures": optional_failures,
         "timed_out_steps": timed_out_steps,
         "missing_scripts": missing_scripts,
+        "auth_bootstrap_passed": auth_bootstrap_passed,
     }

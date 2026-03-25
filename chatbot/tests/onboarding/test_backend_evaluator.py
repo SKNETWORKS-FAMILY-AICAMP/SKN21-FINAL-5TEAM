@@ -109,7 +109,7 @@ def test_evaluate_backend_workspace_detects_route_wiring_and_tool_registry(tmp_p
     )
     (workspace / "backend" / "tool_registry.py").write_text(
         "def build_tool_registry(base_url: str) -> dict[str, object]:\n"
-        "    return {\"product_list\": object(), \"orders_list\": object()}\n",
+        "    return {\"product_list\": object(), \"list_orders\": object(), \"get_order_status\": object()}\n",
         encoding="utf-8",
     )
 
@@ -122,7 +122,7 @@ def test_evaluate_backend_workspace_detects_route_wiring_and_tool_registry(tmp_p
 
     assert payload["route_wiring"]["chat_auth_route_detected"] is True
     assert payload["tool_registry"]["exists"] is True
-    assert payload["tool_registry"]["enabled_tools"] == ["orders_list", "product_list"]
+    assert payload["tool_registry"]["enabled_tools"] == ["get_order_status", "list_orders", "product_list"]
 
 
 def test_evaluate_backend_workspace_ignores_venv_and_site_packages(tmp_path: Path):

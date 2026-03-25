@@ -1,13 +1,29 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
+from types import ModuleType
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
+os.environ.setdefault("QDRANT_API_KEY", "test-key")
+
+fake_langchain_ollama = ModuleType("langchain_ollama")
+
+
+class _FakeChatOllama:
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+
+fake_langchain_ollama.ChatOllama = _FakeChatOllama
+sys.modules.setdefault("langchain_ollama", fake_langchain_ollama)
 
 from chatbot.server_fastapi import app
 
@@ -187,4 +203,66 @@ def test_onboarding_run_stream_can_start_empty_and_emit_later_event():
     assert response.status_code == 200
     assert payloads == [
         {"run_id": run_id, "event": "run.created", "payload": {"site": "food"}}
+    ]
+
+
+def test_onboarding_run_stream_replays_runtime_completion_event_payload():
+    run_id = "food-run-runtime-completion-stream"
+    store = _FakeRedis()
+    _seed_events(
+        store,
+        run_id,
+        {
+            "run_id": run_id,
+            "event": "job.completed",
+            "payload": {
+                "role": "Validator",
+                "job_id": f"{run_id}:Validator:1",
+                "launcher_visible": True,
+                "auth_bootstrap_passed": True,
+                "chat_stream_passed": True,
+            },
+        },
+    )
+
+    app.state.onboarding_event_store = store
+    app.state.onboarding_stream_poll_interval = 0.001
+    app.state.onboarding_stream_keepalive_interval = 100
+    app.state.onboarding_stream_max_idle_polls = 5
+    app.state.onboarding_stream_max_events = 1
+
+    from chatbot.src.core.config import settings
+
+    original_token = settings.ONBOARDING_INTERNAL_API_TOKEN
+    settings.ONBOARDING_INTERNAL_API_TOKEN = "runtime-token"
+
+    client = TestClient(app)
+    try:
+        with client.stream(
+            "GET",
+            f"/api/v1/onboarding/runs/{run_id}/events",
+            headers={"Authorization": "Bearer runtime-token"},
+        ) as response:
+            payloads = _iter_sse_events(response, limit=1)
+    finally:
+        settings.ONBOARDING_INTERNAL_API_TOKEN = original_token
+        del app.state.onboarding_event_store
+        del app.state.onboarding_stream_poll_interval
+        del app.state.onboarding_stream_keepalive_interval
+        del app.state.onboarding_stream_max_idle_polls
+        del app.state.onboarding_stream_max_events
+
+    assert response.status_code == 200
+    assert payloads == [
+        {
+            "run_id": run_id,
+            "event": "job.completed",
+            "payload": {
+                "role": "Validator",
+                "job_id": f"{run_id}:Validator:1",
+                "launcher_visible": True,
+                "auth_bootstrap_passed": True,
+                "chat_stream_passed": True,
+            },
+        }
     ]

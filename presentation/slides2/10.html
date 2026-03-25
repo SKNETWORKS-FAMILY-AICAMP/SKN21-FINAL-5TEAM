@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>기술 선택 이유</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<main class="slide">
+    <div class="topbar">
+        <p class="eyebrow">Tech Selection</p>
+        <span class="page-badge">10</span>
+    </div>
+    <section class="hero compact">
+        <h1>프로젝트 요구사항에 맞춰 기술을 선택</h1>
+        <div class="accent-line"></div>
+        <p class="lead">유명한 기술을 나열하는 것이 아니라, 쇼핑몰 UI·스트리밍·검색·인증·운영 자동화 요구에 맞는 조합을 선택했습니다.</p>
+    </section>
+    <section class="tech-pair-grid">
+        <article class="card span-2">
+            <p class="kicker">Frontend</p>
+            <h3>Next.js</h3>
+            <ul class="list">
+                <li>쇼핑몰 UI와 페이지 구조 관리에 적합</li>
+                <li>SSR / CSR 혼합과 글로벌 위젯 삽입이 자연스러움</li>
+            </ul>
+        </article>
+        <article class="card span-2">
+            <p class="kicker">Backend</p>
+            <h3>FastAPI</h3>
+            <ul class="list">
+                <li>REST API와 챗봇 API 분리가 쉬움</li>
+                <li>SSE 스트리밍과 서비스 모듈화에 적합</li>
+            </ul>
+        </article>
+        <article class="card span-2">
+            <p class="kicker">Retrieval</p>
+            <h3>Qdrant</h3>
+            <ul class="list">
+                <li>Dense + Sparse 하이브리드 검색 지원</li>
+                <li>텍스트와 이미지 검색을 함께 구성하기 용이</li>
+            </ul>
+        </article>
+        <article class="card soft span-3">
+            <p class="kicker">Auth & Data</p>
+            <h3>JWT + HttpOnly Cookie / MySQL</h3>
+            <ul class="list">
+                <li>인증 기반 기능 제어와 브라우저 보안에 적합</li>
+                <li>상품·주문·결제 같은 정형 데이터 관리에 안정적</li>
+            </ul>
+        </article>
+        <article class="card accent span-3">
+            <p class="kicker">LLM Selection</p>
+            <h3>모델명보다 선정 기준이 중요</h3>
+            <div class="chip-cloud">
+                <span class="chip">한국어 응답 품질</span>
+                <span class="chip">짧고 정확한 응답</span>
+                <span class="chip">Streaming</span>
+                <span class="chip">Tool calling</span>
+                <span class="chip">비용 / 지연시간 균형</span>
+            </div>
+        </article>
+    </section>
+</main>
+</body>
+</html>

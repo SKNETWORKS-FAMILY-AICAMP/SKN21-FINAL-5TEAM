@@ -15,6 +15,11 @@ class ResumeCheckpoint:
     failed_stage: str | None
     resume_from_stage: str | None
     reason: str
+    latest_failure_signature: str | None = None
+    failure_count_for_signature: int | None = None
+    repair_history_path: str | None = None
+    generator_repair_request_path: str | None = None
+    requires_fresh_run: bool = False
 
 
 def analyze_run_checkpoint(run_root: str | Path) -> ResumeCheckpoint:
@@ -22,7 +27,8 @@ def analyze_run_checkpoint(run_root: str | Path) -> ResumeCheckpoint:
     reports = root / "reports"
 
     has_analysis = (root / "manifest.json").exists() and (reports / "codebase-map.json").exists()
-    has_generation = has_analysis and (reports / "patch-proposal.json").exists() and (root / "patches" / "proposed.patch").exists()
+    has_generation_artifact = (reports / "edit-plan.json").exists() or (root / "patches" / "proposed.patch").exists()
+    has_generation = has_analysis and (reports / "patch-proposal.json").exists() and has_generation_artifact
 
     merge_payload = _read_json(reports / "merge-simulation.json")
     smoke_payload = _read_json(reports / "smoke-summary.json")
@@ -55,7 +61,11 @@ def analyze_run_checkpoint(run_root: str | Path) -> ResumeCheckpoint:
             failed_stage = "validation"
             reason = "merge simulation failed"
 
-    if export_payload:
+    if export_payload and export_payload.get("replay_passed") is False:
+        last_completed_stage = "validation"
+        failed_stage = "export"
+        reason = "export replay validation failed"
+    elif export_payload:
         last_completed_stage = "export"
         failed_stage = None
         reason = "export metadata present"
@@ -64,12 +74,29 @@ def analyze_run_checkpoint(run_root: str | Path) -> ResumeCheckpoint:
     if last_completed_stage == "export":
         resume_from_stage = None
 
+    repair_history = _read_json(reports / "repair-history.json")
+    generator_repair_request = _read_json(reports / "generator-repair-request.json")
+    requires_fresh_run = bool(generator_repair_request.get("requires_fresh_run"))
+    if requires_fresh_run:
+        failed_stage = None
+        resume_from_stage = None
+        reason = "fresh run required after generator promotion"
+
     return ResumeCheckpoint(
         run_root=str(root),
         last_completed_stage=last_completed_stage,
         failed_stage=failed_stage,
         resume_from_stage=resume_from_stage,
         reason=reason,
+        latest_failure_signature=str(repair_history.get("failure_signature") or "") or None,
+        failure_count_for_signature=_coerce_int(repair_history.get("failure_count_for_signature")),
+        repair_history_path=str(reports / "repair-history.json") if repair_history else None,
+        generator_repair_request_path=(
+            str(reports / "generator-repair-request.json")
+            if generator_repair_request
+            else None
+        ),
+        requires_fresh_run=requires_fresh_run,
     )
 
 
@@ -101,3 +128,12 @@ def _read_json(path: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
+
+
+def _coerce_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

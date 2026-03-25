@@ -18,6 +18,49 @@ except ImportError:
 from .frontend_recovery import attempt_frontend_recovery
 
 TEXT_SUFFIXES = {".js", ".jsx", ".ts", ".tsx", ".vue"}
+HOST_CONTRACT_MARKER = '__ORDER_CS_WIDGET_HOST_CONTRACT__'
+WIDGET_USAGE_MARKER = "<order-cs-widget"
+AUTH_BOOTSTRAP_MARKER = "/api/chat/auth-token"
+HELPER_PATH_SEGMENTS = frozenset(
+    {
+        "chatbot",
+        "components",
+        "component",
+        "widgets",
+        "widget",
+        "examples",
+        "example",
+        "stories",
+        "__tests__",
+        "test",
+        "tests",
+    }
+)
+LIKELY_MOUNT_SUFFIXES = (
+    "frontend/src/App.js",
+    "frontend/src/App.jsx",
+    "frontend/src/App.ts",
+    "frontend/src/App.tsx",
+    "frontend/src/App.vue",
+    "frontend/src/main.js",
+    "frontend/src/main.ts",
+    "frontend/src/main.jsx",
+    "frontend/src/main.tsx",
+    "frontend/pages/_app.js",
+    "frontend/pages/_app.jsx",
+    "frontend/pages/_app.tsx",
+    "frontend/app/layout.js",
+    "frontend/app/layout.jsx",
+    "frontend/app/layout.tsx",
+    "frontend/app/page.js",
+    "frontend/app/page.jsx",
+    "frontend/app/page.tsx",
+    "src/App.js",
+    "src/App.jsx",
+    "src/App.ts",
+    "src/App.tsx",
+    "src/App.vue",
+)
 
 
 def evaluate_frontend_workspace(
@@ -44,13 +87,10 @@ def evaluate_frontend_workspace(
 
     framework = _detect_frontend_framework(workspace)
     mount_candidates = _find_mount_candidates(workspace)
-    widget_file = _find_widget_file(workspace)
-    widget_path: Path | None = widget_file
     mount_path = _resolve_mount_path(workspace, mount_candidates)
     frontend_root = _resolve_frontend_root(workspace)
     validation_errors = _collect_validation_errors(
         workspace=workspace,
-        widget=widget_file,
         mount=mount_path,
         framework=framework,
     )
@@ -62,16 +102,11 @@ def evaluate_frontend_workspace(
         recovery = attempt_frontend_recovery(
             workspace=workspace,
             mount_candidate=mount_path,
-            widget_path=widget_file,
+            widget_path=None,
             errors=validation_errors,
         )
         if recovery.get("status") == "recovered":
             source = "recovered_llm"
-            widget_path = (
-                Path(recovery["widget_path"])
-                if recovery.get("widget_path")
-                else widget_path
-            )
             mount_path = (
                 Path(recovery["mount_path"])
                 if recovery.get("mount_path")
@@ -109,7 +144,6 @@ def evaluate_frontend_workspace(
     build_validation = _build_frontend_build_validation(
         frontend_root=frontend_root,
         mount_path=mount_path,
-        widget_path=widget_path,
         framework=framework,
     )
     if build_validation["bootstrap_failure_stage"] and source == "llm":
@@ -137,7 +171,7 @@ def evaluate_frontend_workspace(
         )
 
     artifact = {
-        "widget_path": str(widget_path) if widget_path else None,
+        "widget_path": None,
         "mount_path": str(mount_path) if mount_path else None,
         "validation_status": validation_status,
         "validation_errors": validation_errors,
@@ -221,11 +255,31 @@ def _detect_frontend_framework(root: Path) -> str:
 
 def _find_mount_candidates(root: Path) -> list[str]:
     mounts: list[str] = []
+    seen: set[str] = set()
     for path, text in _iter_text_files(root):
-        if "SharedChatbotWidget" in path.name:
+        if _is_widget_host_artifact(path, text):
             continue
-        if "Chatbot" in text or "ChatBot" in text:
-            mounts.append(path.relative_to(root).as_posix())
+        relative = path.relative_to(root).as_posix()
+        if _is_likely_mount_path(relative):
+            if relative not in seen:
+                mounts.append(relative)
+                seen.add(relative)
+            continue
+        if _is_helper_candidate_path(relative):
+            continue
+        if any(
+            marker in text
+            for marker in (
+                HOST_CONTRACT_MARKER,
+                WIDGET_USAGE_MARKER,
+                "widgetBundlePath",
+                "/widget.js",
+                "orderCsWidgetScript",
+            )
+        ):
+            if relative not in seen:
+                mounts.append(relative)
+                seen.add(relative)
     return mounts
 
 
@@ -245,13 +299,6 @@ def _iter_text_files(root: Path):
         yield path, text
 
 
-def _find_widget_file(root: Path) -> Path | None:
-    for path in root.rglob("*SharedChatbotWidget*"):
-        if path.is_file():
-            return path
-    return None
-
-
 def _resolve_frontend_root(root: Path) -> Path:
     frontend_root = root / "frontend"
     if frontend_root.exists():
@@ -267,41 +314,54 @@ def _resolve_mount_path(root: Path, candidates: list[str]) -> Path | None:
     return None
 
 
+def _is_likely_mount_path(relative_path: str) -> bool:
+    normalized = relative_path.replace("\\", "/")
+    return normalized.endswith(LIKELY_MOUNT_SUFFIXES)
+
+
+def _is_helper_candidate_path(relative_path: str) -> bool:
+    normalized = relative_path.replace("\\", "/")
+    segments = [segment for segment in normalized.split("/") if segment]
+    return any(segment in HELPER_PATH_SEGMENTS for segment in segments[:-1])
+
+
 def _collect_validation_errors(
     *,
     workspace: Path,
-    widget: Path | None,
     mount: Path | None,
     framework: str,
 ) -> list[str]:
     errors: list[str] = []
-    if widget is None:
-        errors.append("widget file not found")
-    elif not _is_widget_path_allowed(workspace=workspace, widget=widget):
-        errors.append("widget path outside frontend/src")
     if mount is None:
         errors.append("mount candidate unavailable")
     else:
-        if mount.suffix.lower() != ".vue" and not _has_import(mount):
-            errors.append("mount missing SharedChatbotWidget import")
-        import_target = _resolve_widget_import_target(mount)
-        if _has_import(mount) and (import_target is None or not import_target.exists()):
-            errors.append("missing import target")
+        if not _has_bundle_bootstrap(mount):
+            errors.append("mount missing order-cs-widget bundle bootstrap")
+        if not _has_auth_bootstrap_contract(mount):
+            errors.append("mount missing auth bootstrap contract")
         if not _has_widget_usage(mount):
-            errors.append("mount missing SharedChatbotWidget usage")
+            errors.append("mount missing order-cs-widget usage")
         if framework == "react" and _has_routes_child_violation(mount):
             errors.append("routes child violation")
     return errors
 
 
-def _has_import(path: Path) -> bool:
+def _has_bundle_bootstrap(path: Path) -> bool:
     content = path.read_text(encoding="utf-8", errors="ignore")
-    return "import SharedChatbotWidget" in content
+    return (
+        HOST_CONTRACT_MARKER in content
+        and "widgetBundlePath" in content
+        and (
+            "/widget.js" in content
+            or "orderCsWidgetScript.src" in content
+            or "data-order-cs-widget-bundle" in content
+        )
+    )
 
 
 def _has_widget_usage(path: Path) -> bool:
     content = path.read_text(encoding="utf-8", errors="ignore")
-    return "<SharedChatbotWidget" in content or "SharedChatbotWidget />" in content
+    return WIDGET_USAGE_MARKER in content
 
 
 def _is_widget_path_allowed(*, workspace: Path, widget: Path) -> bool:
@@ -313,35 +373,21 @@ def _is_widget_path_allowed(*, workspace: Path, widget: Path) -> bool:
         return False
 
 
-def _resolve_widget_import_target(mount: Path) -> Path | None:
-    content = mount.read_text(encoding="utf-8", errors="ignore")
-    match = re.search(
-        r'import\s+SharedChatbotWidget\s+from\s+[\'"]([^\'"]+)[\'"]',
-        content,
-    )
-    if match is None:
-        return None
-    raw_target = match.group(1).strip()
-    candidate = (mount.parent / raw_target).resolve()
-    if candidate.suffix:
-        return candidate
-    for suffix in (".js", ".jsx", ".ts", ".tsx", ".vue"):
-        if candidate.with_suffix(suffix).exists():
-            return candidate.with_suffix(suffix)
-    return candidate
+def _has_auth_bootstrap_contract(path: Path) -> bool:
+    content = path.read_text(encoding="utf-8", errors="ignore")
+    return "authBootstrapPath" in content and AUTH_BOOTSTRAP_MARKER in content
 
 
 def _has_routes_child_violation(path: Path) -> bool:
     content = path.read_text(encoding="utf-8", errors="ignore")
     routes_blocks = re.findall(r"<Routes>(.*?)</Routes>", content, flags=re.DOTALL)
-    return any("<SharedChatbotWidget" in block for block in routes_blocks)
+    return any(WIDGET_USAGE_MARKER in block for block in routes_blocks)
 
 
 def _build_frontend_build_validation(
     *,
     frontend_root: Path,
     mount_path: Path | None,
-    widget_path: Path | None,
     framework: str,
 ) -> dict[str, Any]:
     action_result: dict[str, Any] = {}
@@ -378,7 +424,6 @@ def _build_frontend_build_validation(
     runtime_checks = _evaluate_runtime_checks(
         frontend_root=frontend_root,
         mount_path=mount_path,
-        widget_path=widget_path,
         framework=framework,
     )
     if (
@@ -423,15 +468,25 @@ def _evaluate_runtime_checks(
     *,
     frontend_root: Path,
     mount_path: Path | None,
-    widget_path: Path | None,
     framework: str,
 ) -> dict[str, bool]:
+    bundle_bootstrap_present = bool(mount_path and _has_bundle_bootstrap(mount_path))
+    widget_usage_present = bool(mount_path and _has_widget_usage(mount_path))
+    auth_bootstrap_contract_present = bool(mount_path and _has_auth_bootstrap_contract(mount_path))
     return {
         "mount_exists": bool(mount_path and mount_path.exists()),
-        "widget_exists": bool(widget_path and widget_path.exists()),
-        "import_present": bool(mount_path and (mount_path.suffix.lower() == ".vue" or _has_import(mount_path))),
-        "widget_usage_present": bool(mount_path and _has_widget_usage(mount_path)),
-        "bootstrap_auth_fetch_present": bool(widget_path and _has_bootstrap_auth_fetch(widget_path)),
+        "widget_exists": bool(
+            mount_path
+            and mount_path.exists()
+            and bundle_bootstrap_present
+            and widget_usage_present
+            and auth_bootstrap_contract_present
+        ),
+        "import_present": bundle_bootstrap_present,
+        "bundle_bootstrap_present": bundle_bootstrap_present,
+        "widget_usage_present": widget_usage_present,
+        "bootstrap_auth_fetch_present": auth_bootstrap_contract_present,
+        "auth_bootstrap_contract_present": auth_bootstrap_contract_present,
         "build_artifact_exists": _build_artifact_exists(frontend_root=frontend_root, framework=framework),
     }
 
@@ -445,6 +500,9 @@ def _build_artifact_exists(*, frontend_root: Path, framework: str) -> bool:
     return any(path.exists() for path in candidates)
 
 
-def _has_bootstrap_auth_fetch(path: Path) -> bool:
-    content = path.read_text(encoding="utf-8", errors="ignore")
-    return "/api/chat/auth-token" in content and "fetch(" in content
+def _is_widget_host_artifact(path: Path, text: str) -> bool:
+    return (
+        "ORDER_CS_WIDGET_HOST_CONTRACT" in text
+        and "ensureOrderCsWidgetHost" in text
+        and path.as_posix().endswith("orderCsWidgetHost.js")
+    )

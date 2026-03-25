@@ -588,14 +588,16 @@ def _localize_agent_summary(message: AgentMessage) -> str:
 def _localize_approval_summary(summary: str) -> str:
     mapping = {
         "Analysis is ready for review": "분석 결과 검토가 필요합니다.",
-        "Overlay bundle is ready to apply": "생성된 변경안을 적용해도 되는지 확인이 필요합니다.",
-        "Export bundle is ready": "최종 산출물을 내보내도 되는지 확인이 필요합니다.",
+        "Overlay is ready to apply": "생성된 edit plan과 파일 변경을 적용해도 되는지 확인이 필요합니다.",
+        "Overlay bundle is ready to apply": "생성된 edit plan과 파일 변경을 적용해도 되는지 확인이 필요합니다.",
+        "Export bundle is ready": "최종 export patch를 내보내도 되는지 확인이 필요합니다.",
     }
     return mapping.get(summary, summary)
 
 
 def _localize_decision_text(*, approval_value: str, decision: str) -> str:
-    decision_label = "승인" if decision == "approve" else "거절"
+    normalized = decision.strip().lower()
+    decision_label = "승인" if normalized in {"approve", "approved"} else "거절"
     return f"`{_display_approval_type(approval_value)}` 단계에 대해 `{decision_label}` 결정이 기록되었습니다."
 
 

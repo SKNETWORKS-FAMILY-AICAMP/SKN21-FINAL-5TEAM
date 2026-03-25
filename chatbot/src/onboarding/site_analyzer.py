@@ -13,6 +13,13 @@ from .integration_contracts import (
 
 TEXT_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx", ".vue"}
 SKIP_PATH_PARTS = {".venv", "venv", "site-packages", "node_modules", "__pycache__"}
+ORDER_BRIDGE_TOOL_NAMES = [
+    "list_orders",
+    "get_order_status",
+    "cancel",
+    "refund",
+    "exchange",
+]
 
 
 def _relative_posix(path: Path, root: Path) -> str:
@@ -152,10 +159,37 @@ def _build_integration_contract(
         },
         order_adapter={
             "enabled": bool(order_api),
+            "tool_names": ORDER_BRIDGE_TOOL_NAMES if order_api else [],
             "api_base_paths": order_api,
         },
     )
     return contract.model_dump(mode="json")
+
+
+def _build_order_bridge_targets(root: Path, order_api: list[str]) -> list[str]:
+    targets: list[str] = []
+    for api_base in order_api:
+        normalized = str(api_base).strip()
+        if not normalized:
+            continue
+        aliases = {
+            normalized,
+            normalized.lstrip("/"),
+            normalized.rstrip("/"),
+            normalized.strip("/"),
+            f'url_prefix="{normalized.rstrip("/")}"',
+            f"url_prefix='{normalized.rstrip('/')}'",
+        }
+        targets.extend(_find_route_literal_files(root, normalized, *sorted(aliases)))
+
+    if targets:
+        return sorted(dict.fromkeys(targets))
+
+    for file_path, _text in _iter_text_files(root):
+        rel = _relative_posix(file_path, root)
+        if rel.startswith("backend/") and "order" in rel.lower():
+            targets.append(rel)
+    return sorted(dict.fromkeys(targets))
 
 
 def _detect_backend_framework(root: Path) -> str:
@@ -516,6 +550,7 @@ def analyze_site(site_root: str | Path) -> dict:
     )
     frontend_mount_targets = _find_frontend_mount_points(root)
     tool_registry_targets = _find_tool_registry_targets(root)
+    order_bridge_targets = _build_order_bridge_targets(root, order_api)
     integration_contract = _build_integration_contract(
         root=root,
         backend_framework=backend_framework,
@@ -552,6 +587,7 @@ def analyze_site(site_root: str | Path) -> dict:
         "product_api_shape": _infer_api_response_shape(root, product_api[0]) if product_api else None,
         "order_api": order_api,
         "order_api_shape": _infer_api_response_shape(root, order_api[0]) if order_api else None,
+        "order_bridge_targets": order_bridge_targets,
         "frontend_mount_points": frontend_mount_targets,
         "frontend_mount_targets": frontend_mount_targets,
         "tool_registry_targets": tool_registry_targets,

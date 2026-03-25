@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>부록 A</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<main class="slide">
+    <div class="topbar">
+        <p class="eyebrow">Appendix A</p>
+        <span class="page-badge">12</span>
+    </div>
+    <section class="hero compact">
+        <h1>부록 A · Moyeo Shop 상세 구조</h1>
+        <div class="accent-line"></div>
+        <p class="lead">질문 대응용 슬라이드로, 주요 라우트와 API, 위젯 삽입 위치를 더 구체적으로 정리한 페이지입니다.</p>
+    </section>
+    <section class="appendix-chip-grid">
+        <article class="card">
+            <p class="kicker">Routes</p>
+            <h3>주요 페이지</h3>
+            <div class="chip-cloud">
+                <span class="chip">/products</span>
+                <span class="chip">/cart</span>
+                <span class="chip">/payment</span>
+                <span class="chip">/order</span>
+                <span class="chip">/shipping</span>
+                <span class="chip">/mypage</span>
+            </div>
+        </article>
+        <article class="card soft">
+            <p class="kicker">API Split</p>
+            <h3>공개 / 보호 API</h3>
+            <div class="chip-cloud">
+                <span class="chip">Public · 상품 탐색</span>
+                <span class="chip">Public · 정책 안내</span>
+                <span class="chip">Protected · 주문 처리</span>
+                <span class="chip">Chat · /api/v1/chat/stream</span>
+            </div>
+        </article>
+        <article class="card tint">
+            <p class="kicker">Widget Injection</p>
+            <h3>삽입 위치</h3>
+            <div class="chip-cloud">
+                <span class="chip">global layout FAB</span>
+                <span class="chip">product list</span>
+                <span class="chip">order / shipping</span>
+                <span class="chip">mypage</span>
+            </div>
+        </article>
+        <article class="card accent">
+            <p class="kicker">Context Extraction</p>
+            <h3>페이지 문맥 추출</h3>
+            <div class="chip-cloud">
+                <span class="chip">현재 상품 정보</span>
+                <span class="chip">목록 / 상세 / 주문 상태</span>
+                <span class="chip">인증 여부</span>
+                <span class="chip">도구 호출 가능 범위</span>
+            </div>
+        </article>
+    </section>
+</main>
+</body>
+</html>

@@ -16,6 +16,7 @@ from langchain_core.messages import SystemMessage, AIMessage
 
 from chatbot.src.graph.state import GlobalAgentState
 from chatbot.src.graph.llm_providers import make_chat_llm
+from chatbot.src.schemas.planner import TaskIntent
 
 # ── 프롬프트 ──────────────────────────────────────────────
 
@@ -47,6 +48,35 @@ _UI_ACTION_INSTRUCTIONS: dict[str, str] = {
     "show_used_sale_form":  "아래 폼에서 중고 상품 정보를 입력해 주세요.",
 }
 
+_TASK_HEADERS: dict[str, str] = {
+    TaskIntent.POLICY_RAG.value: "문의하신 정책 안내입니다.",
+    TaskIntent.SEARCH_SIMILAR_TEXT.value: "요청하신 상품 탐색 결과입니다.",
+    TaskIntent.SEARCH_SIMILAR_IMAGE.value: "요청하신 상품 탐색 결과입니다.",
+    TaskIntent.REGISTER_USED_ITEM.value: "중고 상품 등록 안내입니다.",
+    TaskIntent.WRITE_REVIEW.value: "리뷰 작성 안내입니다.",
+    TaskIntent.REGISTER_GIFT_CARD.value: "상품권 등록 결과입니다.",
+}
+
+_ORDER_ACTION_LABELS: dict[str, str] = {
+    "cancel": "주문 취소",
+    "refund": "환불",
+    "exchange": "교환",
+    "shipping": "배송 조회",
+    "list_orders": "주문 조회",
+    "change_option": "옵션 변경",
+}
+
+_ORDER_STATUS_LABELS: dict[str, str] = {
+    "cancelled": "취소 완료",
+    "exchange_requested": "교환 신청 접수",
+    "updated": "옵션 변경 완료",
+    "refunded (return requested)": "반품 환불 접수",
+    "refund_requested": "환불 접수",
+    "no_change": "변경 사항 없음",
+    "failed": "처리 실패",
+    "completed": "처리 완료",
+}
+
 # ── 노드 함수 ─────────────────────────────────────────────
 
 def final_generator_node(state: GlobalAgentState) -> dict:
@@ -69,21 +99,16 @@ def final_generator_node(state: GlobalAgentState) -> dict:
     if not completed_tasks:
         order_result = str(agent_results.get("ORDER_CS", "")).strip()
         if order_result:
-            return {"messages": [AIMessage(content=order_result)]}
+            return {"messages": [AIMessage(content=_format_single_task_result(state, TaskIntent.ORDER_CS, order_result))]}
         return _general_chat_response(state, provider, model)
 
-    # ── Case 2. 단일 작업 → agent_results 결과 그대로 반환 ─
+    # ── Case 2. 단일 작업 → formatter를 거쳐 반환 ────────
     if len(completed_tasks) == 1:
         task = completed_tasks[0]
         result_text = agent_results.get(task, "").strip()
 
-        # ui_action 안내 문구 추가
-        ui_instruction = _UI_ACTION_INSTRUCTIONS.get(ui_action or "", "")
-        if ui_instruction:
-            result_text = f"{result_text}\n\n{ui_instruction}" if result_text else ui_instruction
-
         if result_text:
-            return {"messages": [AIMessage(content=result_text)]}
+            return {"messages": [AIMessage(content=_format_single_task_result(state, task, result_text))]}
 
         # agent_results 가 비어있는 경우 GENERAL_CHAT으로 fallback
         return _general_chat_response(state, provider, model)
@@ -102,6 +127,49 @@ def _general_chat_response(state: GlobalAgentState, provider: str, model: str) -
         *state["messages"],
     ])
     return {"messages": [AIMessage(content=response.content)]}
+
+
+def _format_single_task_result(state: GlobalAgentState, task: str, result_text: str) -> str:
+    normalized_text = str(result_text or "").strip()
+    if not normalized_text:
+        return ""
+
+    task_key = task.value if isinstance(task, TaskIntent) else str(task)
+
+    if task_key == TaskIntent.ORDER_CS.value:
+        return _format_order_cs_result(state, normalized_text)
+
+    header = _TASK_HEADERS.get(task_key, "")
+    if header:
+        return f"{header}\n\n{normalized_text}"
+    return normalized_text
+
+
+def _format_order_cs_result(state: GlobalAgentState, result_text: str) -> str:
+    order_context = state.get("order_context", {})
+    action = str(order_context.get("pending_action") or "").strip().lower()
+    action_label = _ORDER_ACTION_LABELS.get(action, "주문")
+    order_id = str(order_context.get("target_order_id") or "").strip()
+    status = _format_order_status(order_context)
+
+    lines = [f"요청하신 {action_label} 처리 결과입니다."]
+    if order_id:
+        lines.append(f"주문번호: {order_id}")
+    if status:
+        lines.append(f"처리 상태: {status}")
+    lines.append(result_text)
+    return "\n".join(lines)
+
+
+def _format_order_status(order_context: dict) -> str:
+    raw_status = str(
+        order_context.get("last_action_status")
+        or order_context.get("action_status")
+        or ""
+    ).strip().lower()
+    if not raw_status:
+        return ""
+    return _ORDER_STATUS_LABELS.get(raw_status, raw_status)
 
 
 def _synthesis_response(

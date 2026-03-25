@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
@@ -7,16 +6,8 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from .models import Order
+from products.image_utils import build_product_image_url
 from users.models import SessionToken
-
-
-def build_product_image_url(request, image_path):
-    if not image_path:
-        return None
-    if image_path.startswith("http://") or image_path.startswith("https://"):
-        return image_path
-    base = request.build_absolute_uri(settings.MEDIA_URL)
-    return base.rstrip("/") + "/" + image_path.lstrip("/")
 
 
 def add_cors_headers(response):

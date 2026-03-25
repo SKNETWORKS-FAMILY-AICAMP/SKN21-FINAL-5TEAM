@@ -272,6 +272,8 @@ def _require_order_id(
     user_id: int,
     order_id: str | None,
     action_context: str,
+    site_id: str | None = None,
+    access_token: str | None = None,
     limit: int = 5,
     days: int = 30,
 ) -> str | None:
@@ -279,13 +281,27 @@ def _require_order_id(
     if provided:
         return provided
 
-    order_list_payload = get_user_orders(
-        user_id=user_id,
-        limit=limit,
-        days=days,
-        requires_selection=True,
-        action_context=action_context,
-    )
+    if site_id:
+        from chatbot.src.adapters.setup import resolve_order_tool_registry
+
+        registry = resolve_order_tool_registry(site_id)
+        order_list_payload = registry["list_orders"](
+            user_id=user_id,
+            site_id=site_id,
+            access_token=access_token,
+            limit=limit,
+            days=days,
+            requires_selection=True,
+            action_context=action_context,
+        )
+    else:
+        order_list_payload = get_user_orders(
+            user_id=user_id,
+            limit=limit,
+            days=days,
+            requires_selection=True,
+            action_context=action_context,
+        )
 
     if order_list_payload.get("total_orders", 0) == 0:
         return None

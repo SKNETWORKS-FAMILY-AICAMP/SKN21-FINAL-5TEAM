@@ -14,7 +14,7 @@ def _build_recommended_outputs(manifest: dict) -> list[str]:
     if auth.get("login_entrypoints") and auth.get("me_entrypoints"):
         outputs.append("chat_auth_endpoint")
 
-    if analysis.get("frontend_mount_points"):
+    if analysis.get("frontend_mount_points") or analysis.get("frontend_mount_targets"):
         outputs.append("frontend_widget_mount_patch")
 
     if analysis.get("product_api"):
@@ -63,6 +63,18 @@ def _build_session_probe_plan(manifest: dict) -> list[dict]:
     steps: list[dict] = []
     steps.append(
         {
+            "id": "chat-auth-token-unauthenticated",
+            "category": "auth",
+            "kind": "http",
+            "strategy": backend_strategy,
+            "method": "POST",
+            "url": f"{base_url}/api/chat/auth-token",
+            "expects": {"status": 401, "json_path_equals": {"authenticated": False}},
+            "timeout_seconds": 8,
+        }
+    )
+    steps.append(
+        {
             "id": "login",
             "category": "auth",
             "kind": "http",
@@ -92,6 +104,67 @@ def _build_session_probe_plan(manifest: dict) -> list[dict]:
                 "uses": ["login.cookies"],
             }
         )
+    steps.append(
+        {
+            "id": "chat-auth-token",
+            "category": "auth",
+            "kind": "http",
+            "strategy": backend_strategy,
+            "method": "POST",
+            "url": f"{base_url}/api/chat/auth-token",
+            "headers": {"Cookie": "{{login.cookies}}"},
+            "expects": {
+                "status": 200,
+                "json_keys": ["access_token", "site_id", "user"],
+                "json_path_equals": {"authenticated": True},
+                "json_path_not_empty": ["access_token"],
+            },
+            "timeout_seconds": 8,
+            "exports": {
+                "chat_auth.access_token": "json.access_token",
+                "chat_auth.site_id": "json.site_id",
+            },
+            "uses": ["login.cookies"],
+        }
+    )
+    steps.append(
+        {
+            "id": "widget-bundle",
+            "category": "frontend",
+            "kind": "http",
+            "strategy": backend_strategy,
+            "method": "GET",
+            "url": f"{base_url}/widget.js",
+            "expects": {
+                "status": 200,
+                "header_contains": {"content-type": "javascript"},
+                "body_contains": ["order-cs-widget"],
+            },
+            "timeout_seconds": 8,
+        }
+    )
+    steps.append(
+        {
+            "id": "chat-stream",
+            "category": "chat",
+            "kind": "http",
+            "strategy": backend_strategy,
+            "method": "POST",
+            "url": f"{base_url}/api/v1/chat/stream",
+            "body": {
+                "message": "주문 상태를 확인해줘",
+                "access_token": "{{chat_auth.access_token}}",
+                "site_id": "{{chat_auth.site_id}}",
+            },
+            "expects": {
+                "status": 200,
+                "header_contains": {"content-type": "text/event-stream"},
+                "body_contains": ["data:"],
+            },
+            "timeout_seconds": 15,
+            "uses": ["chat_auth.access_token", "chat_auth.site_id"],
+        }
+    )
     steps.append(
         {
             "id": "product-api",
@@ -174,6 +247,16 @@ def _build_token_probe_plan(manifest: dict) -> list[dict]:
 
     return [
         {
+            "id": "chat-auth-token-unauthenticated",
+            "category": "auth",
+            "kind": "http",
+            "strategy": backend_strategy,
+            "method": "POST",
+            "url": f"{base_url}/api/chat/auth-token",
+            "expects": {"status": 401, "json_path_equals": {"authenticated": False}},
+            "timeout_seconds": 8,
+        },
+        {
             "id": "login",
             "category": "auth",
             "kind": "http",
@@ -194,10 +277,52 @@ def _build_token_probe_plan(manifest: dict) -> list[dict]:
             "method": "POST",
             "url": f"{base_url}/api/chat/auth-token",
             "headers": {"Cookie": "{{login.cookies}}"},
-            "expects": {"status": 200, "json_keys": ["access_token"]},
+            "expects": {
+                "status": 200,
+                "json_keys": ["access_token", "site_id", "user"],
+                "json_path_equals": {"authenticated": True},
+                "json_path_not_empty": ["access_token"],
+            },
             "timeout_seconds": 8,
-            "exports": {"chat_auth.access_token": "json.access_token"},
+            "exports": {
+                "chat_auth.access_token": "json.access_token",
+                "chat_auth.site_id": "json.site_id",
+            },
             "uses": ["login.cookies"],
+        },
+        {
+            "id": "widget-bundle",
+            "category": "frontend",
+            "kind": "http",
+            "strategy": backend_strategy,
+            "method": "GET",
+            "url": f"{base_url}/widget.js",
+            "expects": {
+                "status": 200,
+                "header_contains": {"content-type": "javascript"},
+                "body_contains": ["order-cs-widget"],
+            },
+            "timeout_seconds": 8,
+        },
+        {
+            "id": "chat-stream",
+            "category": "chat",
+            "kind": "http",
+            "strategy": backend_strategy,
+            "method": "POST",
+            "url": f"{base_url}/api/v1/chat/stream",
+            "body": {
+                "message": "주문 상태를 확인해줘",
+                "access_token": "{{chat_auth.access_token}}",
+                "site_id": "{{chat_auth.site_id}}",
+            },
+            "expects": {
+                "status": 200,
+                "header_contains": {"content-type": "text/event-stream"},
+                "body_contains": ["data:"],
+            },
+            "timeout_seconds": 15,
+            "uses": ["chat_auth.access_token", "chat_auth.site_id"],
         },
         {
             "id": "product-api",
