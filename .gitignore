@@ -34,7 +34,9 @@ yarn-error.log*
 
 # Project specific
 backend.log
+logs/
 results/
+<<<<<<< Updated upstream
 ecommerce/backend/data/raw/
 ecommerce/backend/data/raw/fashion-dataset
 ecommerce/backend/data/processed
@@ -43,6 +45,18 @@ chatbot/src/vector_store/image_index.faiss
 chatbot/benchmark/datasets/operational_eval_dataset_50.jsonl
 ecommerce/backend/app/static/chatbot_uploads/
 ecommerce/frontend/public/products
+=======
+chatbot/data/raw/
+chatbot/data/raw/fashion-dataset
+chatbot/data/processed
+chatbot/chatbot_eval/benchmark/FunctionChat-Bench/output/
+chatbot/chatbot_eval/benchmark/KOLD/result.md
+chatbot/src/vector_store/image_index.faiss
+chatbot/benchmark/datasets/operational_eval_dataset_50.jsonl
+ecommerce/chatbot/chatbot_eval/benchmark/FunctionChat-Bench/output/
+platform/backend/app/static/chatbot_uploads/
+platform/frontend/public/products
+>>>>>>> Stashed changes
 **/public/products/
 *.jpg
 *.jpeg
@@ -58,6 +72,7 @@ food/frontend/.env*
 
 # Docker
 .dockerignore
+<<<<<<< Updated upstream
 
 # Local worktrees
 .worktrees/
@@ -73,3 +88,5 @@ logs/chat_sessions/
 nextjs.log
 tmp/
 uvicorn.log
+=======
+>>>>>>> Stashed changes
