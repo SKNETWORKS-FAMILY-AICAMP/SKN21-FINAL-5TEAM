@@ -3,13 +3,23 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
 os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
 from chatbot.src.onboarding_v2.engine import run_onboarding_generation_v2
+from chatbot.src.onboarding_v2.compile.preflight import CompilePreflightResult
 from chatbot.src.onboarding_v2.models.validation import BackendRuntimePlan, BackendRuntimePrepResult, BackendRuntimeState
+
+
+@pytest.fixture(autouse=True)
+def _disable_onboarding_v2_llm(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ONBOARDING_V2_ENABLE_LLM", "0")
 
 
 def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: Path):
@@ -65,6 +75,15 @@ def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: P
         },
     )
     monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget bundle fetch passed",
+            "target_url": "http://localhost:8100/widget.js",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
         lambda **kwargs: {
             "passed": True,
@@ -80,6 +99,17 @@ def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: P
             "failure_summary": "widget order e2e passed",
             "related_files": [],
         },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
+        lambda workspace: CompilePreflightResult(
+            passed=True,
+            failure_code=None,
+            failure_summary=None,
+            related_files=[],
+            details={"import_smoke": "passed"},
+        ),
+        raising=False,
     )
     result = run_onboarding_generation_v2(
         site="food",
@@ -105,6 +135,7 @@ def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: P
     assert (run_root / "artifacts" / "05-validation" / "backend-runtime-prep" / "v0001.json").exists()
     assert (run_root / "artifacts" / "05-validation" / "backend-runtime-state" / "v0001.json").exists()
     assert (run_root / "artifacts" / "05-validation" / "chatbot-runtime-boot" / "v0001.json").exists()
+    assert (run_root / "artifacts" / "05-validation" / "widget-bundle-fetch" / "v0001.json").exists()
     assert (run_root / "artifacts" / "05-validation" / "host-auth-bootstrap" / "v0001.json").exists()
     assert (run_root / "artifacts" / "05-validation" / "chatbot-adapter-auth" / "v0001.json").exists()
     assert (run_root / "artifacts" / "05-validation" / "widget-order-e2e" / "v0001.json").exists()

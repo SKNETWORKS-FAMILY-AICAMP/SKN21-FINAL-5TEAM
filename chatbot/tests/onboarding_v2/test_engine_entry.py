@@ -80,6 +80,15 @@ def test_engine_entry_returns_v2_payload(monkeypatch, tmp_path: Path):
         },
     )
     monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget bundle fetch passed",
+            "target_url": "http://localhost:8100/widget.js",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
         lambda **kwargs: {
             "passed": True,
@@ -184,6 +193,15 @@ def test_engine_entry_passes_snapshot_roots_and_allowlists_to_export(monkeypatch
                 "access_token": "session-token",
                 "user": {"id": "7"},
             },
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget bundle fetch passed",
+            "target_url": "http://localhost:8100/widget.js",
             "related_files": [],
         },
     )

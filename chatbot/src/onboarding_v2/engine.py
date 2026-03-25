@@ -73,6 +73,7 @@ class _RunState:
     prep_ref: ArtifactRef | None = None
     state_ref: ArtifactRef | None = None
     chatbot_runtime_boot_ref: ArtifactRef | None = None
+    widget_bundle_fetch_ref: ArtifactRef | None = None
     host_auth_ref: ArtifactRef | None = None
     chatbot_adapter_auth_ref: ArtifactRef | None = None
     widget_order_ref: ArtifactRef | None = None
@@ -1519,12 +1520,22 @@ def run_validation_stage(
         status="completed" if validation_run.chatbot_runtime_boot["passed"] else "failed",
         attempt=attempt,
     )
+    widget_bundle_fetch_ref = artifact_store.write_json_artifact(
+        stage="validation",
+        artifact_type="widget-bundle-fetch",
+        payload=validation_run.widget_bundle_fetch,
+        producer="validator",
+        input_artifact_refs=[state_ref, chatbot_runtime_boot_ref],
+        event_ref=validation_started.event_id,
+        status="completed" if validation_run.widget_bundle_fetch["passed"] else "failed",
+        attempt=attempt,
+    )
     host_auth_ref = artifact_store.write_json_artifact(
         stage="validation",
         artifact_type="host-auth-bootstrap",
         payload=validation_run.host_auth_bootstrap,
         producer="validator",
-        input_artifact_refs=[state_ref, chatbot_runtime_boot_ref],
+        input_artifact_refs=[state_ref, chatbot_runtime_boot_ref, widget_bundle_fetch_ref],
         event_ref=validation_started.event_id,
         status="completed" if validation_run.host_auth_bootstrap["passed"] else "failed",
         attempt=attempt,
@@ -1591,6 +1602,7 @@ def run_validation_stage(
             prep_ref,
             state_ref,
             chatbot_runtime_boot_ref,
+            widget_bundle_fetch_ref,
             host_auth_ref,
             chatbot_adapter_auth_ref,
             widget_order_ref,
@@ -1622,6 +1634,7 @@ def run_validation_stage(
         state.prep_ref = prep_ref
         state.state_ref = state_ref
         state.chatbot_runtime_boot_ref = chatbot_runtime_boot_ref
+        state.widget_bundle_fetch_ref = widget_bundle_fetch_ref
         state.host_auth_ref = host_auth_ref
         state.chatbot_adapter_auth_ref = chatbot_adapter_auth_ref
         state.widget_order_ref = widget_order_ref
@@ -1644,6 +1657,7 @@ def run_validation_stage(
                 state.replay_ref,
                 prep_ref,
                 state_ref,
+                widget_bundle_fetch_ref,
                 host_auth_ref,
                 chatbot_adapter_auth_ref,
                 widget_order_ref,
@@ -1675,6 +1689,7 @@ def run_validation_stage(
     state.prep_ref = prep_ref
     state.state_ref = state_ref
     state.chatbot_runtime_boot_ref = chatbot_runtime_boot_ref
+    state.widget_bundle_fetch_ref = widget_bundle_fetch_ref
     state.host_auth_ref = host_auth_ref
     state.chatbot_adapter_auth_ref = chatbot_adapter_auth_ref
     state.widget_order_ref = widget_order_ref
@@ -1799,6 +1814,7 @@ def _clear_from_stage(state: _RunState, stage: str) -> None:
         state.prep_ref = None
         state.state_ref = None
         state.chatbot_runtime_boot_ref = None
+        state.widget_bundle_fetch_ref = None
         state.host_auth_ref = None
         state.chatbot_adapter_auth_ref = None
         state.widget_order_ref = None
@@ -1843,6 +1859,7 @@ def _clear_from_stage_exact(state: _RunState, stage: str) -> None:
         state.prep_ref = None
         state.state_ref = None
         state.chatbot_runtime_boot_ref = None
+        state.widget_bundle_fetch_ref = None
         state.host_auth_ref = None
         state.chatbot_adapter_auth_ref = None
         state.widget_order_ref = None

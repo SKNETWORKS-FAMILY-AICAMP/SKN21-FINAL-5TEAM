@@ -204,7 +204,7 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
         "replay_apply",
         "replay_validation",
     ]
-    assert bundle.checks[5].details["covered_flows"] == [
+    assert bundle.checks[6].details["covered_flows"] == [
         "list_orders",
         "get_order_status",
         "cancel",
@@ -503,6 +503,15 @@ def test_validation_runner_uses_explicit_credentials_without_manifest(monkeypatc
         _bootstrap,
     )
     monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget bundle fetch passed",
+            "target_url": "http://localhost:8100/widget.js",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
         lambda **kwargs: {
             "passed": True,
@@ -587,6 +596,15 @@ def test_validation_runner_requires_site_id_in_host_bootstrap(monkeypatch, tmp_p
         },
     )
     monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget bundle fetch passed",
+            "target_url": "http://localhost:8100/widget.js",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
         lambda **kwargs: {"passed": True, "failure_summary": "chatbot adapter auth passed", "related_files": []},
     )
@@ -607,5 +625,5 @@ def test_validation_runner_requires_site_id_in_host_bootstrap(monkeypatch, tmp_p
     )
 
     assert bundle.passed is False
-    assert bundle.checks[3].name == "host_auth_bootstrap"
+    assert bundle.checks[4].name == "host_auth_bootstrap"
     assert bundle.failure_signature == "host_auth_bootstrap_host_auth_bootstrap_missing_site_id"
