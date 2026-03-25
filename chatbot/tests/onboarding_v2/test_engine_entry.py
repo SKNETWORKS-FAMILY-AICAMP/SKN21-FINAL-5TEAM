@@ -789,10 +789,11 @@ def test_engine_entry_stops_after_repeated_failure_signature(monkeypatch, tmp_pa
         llm_provider="openai",
         llm_model="gpt-5-mini",
         chatbot_server_base_url="http://localhost:8100",
+        max_repair_attempts=2,
     )
 
     assert result["status"] == "failed_human_review"
-    assert result["repair_attempt_count"] == 4
+    assert result["repair_attempt_count"] == 2
 
 
 def test_engine_rewind_preserves_only_requested_stages():

@@ -136,6 +136,7 @@ def main() -> int:
             generate_llm_patch_draft=args.generate_llm_patch_draft,
             enable_runtime_completion_loop=args.enable_runtime_completion_loop,
             chatbot_server_base_url=args.chatbot_server_base_url,
+            max_repair_attempts=2,
         )
     else:
         slack_bridge = (

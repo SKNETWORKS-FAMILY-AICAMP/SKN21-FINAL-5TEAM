@@ -117,8 +117,10 @@ def run_onboarding_generation_v2(
     analysis_llm_builder: Any | None = None,
     planning_llm_builder: Any | None = None,
     chatbot_server_base_url: str | None = None,
+    max_repair_attempts: int = 4,
     **_: Any,
 ) -> dict[str, Any]:
+    max_repair_attempts = max(1, int(max_repair_attempts))
     run_root = Path(generated_root) / site / run_id
     run_root.mkdir(parents=True, exist_ok=True)
     event_store = EventStore(run_root)
@@ -326,7 +328,7 @@ def run_onboarding_generation_v2(
                         debug_store=debug_store,
                     )
 
-            if repeat_count >= 4:
+            if repeat_count >= max_repair_attempts:
                 decision = decision.model_copy(
                     update={"stop": True, "stop_reason": "repeated_failure_signature"}
                 )
