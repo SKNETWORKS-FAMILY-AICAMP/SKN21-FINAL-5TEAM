@@ -9,6 +9,7 @@ os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
 from chatbot.src.onboarding_v2.models import (
     AnalysisSnapshot,
+    ApplyResult,
     ArtifactEnvelope,
     ArtifactRef,
     BackendRuntimePlan,
@@ -27,6 +28,7 @@ from chatbot.src.onboarding_v2.models import (
     HostFrontendPlan,
     IntegrationPlan,
     PathCandidate,
+    ReplayResult,
     RepairDecision,
     RepoProfile,
     RunSummaryView,
@@ -72,6 +74,12 @@ def test_model_contracts_round_trip():
             adapter_package="src/adapters/generated/food",
             setup_target="src/adapters/setup.py",
             host_base_url_env_var="GENERATED_FOOD_API_URL",
+            auth_validation_endpoint="/api/users/me/",
+            current_user_endpoint="/api/users/me/",
+            product_search_endpoint="/api/products/",
+            order_list_endpoint="/api/orders/",
+            order_detail_endpoint="/api/orders/{order_id}/",
+            order_action_endpoint="/api/orders/{order_id}/actions/",
         ),
     )
     envelope = ArtifactEnvelope(
@@ -105,12 +113,39 @@ def test_model_contracts_round_trip():
         command=runtime_plan.command,
         readiness_url=runtime_plan.readiness_url,
     )
+    apply_result = ApplyResult(
+        workspace_path="/tmp/runtime/food/workspace",
+        host_workspace_path="/tmp/runtime/food/workspace/host",
+        chatbot_workspace_path="/tmp/runtime/food/workspace/chatbot",
+        host_source_snapshot_path="/tmp/runtime/food/source-snapshot/host",
+        chatbot_source_snapshot_path="/tmp/runtime/food/source-snapshot/chatbot",
+        passed=True,
+        host_applied_files=["frontend/src/App.js"],
+        chatbot_applied_files=["src/adapters/setup.py"],
+    )
+    replay_result = ReplayResult(
+        replay_workspace_path="/tmp/runtime/food/export-replay-workspace",
+        host_replay_workspace_path="/tmp/runtime/food/export-replay-workspace/host",
+        chatbot_replay_workspace_path="/tmp/runtime/food/export-replay-workspace/chatbot",
+        host_patch_path="/tmp/generated/food/host-approved.patch",
+        chatbot_patch_path="/tmp/generated/food/chatbot-approved.patch",
+        host_baseline_root="/tmp/runtime/food/source-snapshot/host",
+        chatbot_baseline_root="/tmp/runtime/food/source-snapshot/chatbot",
+        passed=True,
+        host_allowed_targets=["frontend/src/App.js"],
+        chatbot_allowed_targets=["src/adapters/setup.py"],
+    )
 
     assert envelope.payload["repo_profile"]["site"] == "food"
     assert plan.host_backend.generated_handler_path == "backend/chat_auth.py"
     assert plan.host_backend.order_lookup_target == "backend/orders/views.py"
     assert plan.host_backend.order_action_target == "backend/orders/views.py"
     assert plan.host_backend.exchange_strategy == "augment_existing_order_action_endpoint"
+    assert plan.host_backend.order_action_request_field == "action"
+    assert plan.host_backend.order_action_reason_field == "reason"
+    assert plan.host_backend.order_action_new_option_field == "new_option_id"
+    assert plan.host_backend.order_action_response_serializer == "serialize_order"
+    assert plan.host_backend.exchange_status_transition == "EXCHANGE_REQUESTED"
     assert plan.host_backend.supported_order_tools == [
         "list_orders",
         "get_order_status",
@@ -126,6 +161,9 @@ def test_model_contracts_round_trip():
         "refund",
         "exchange",
     ]
+    assert plan.chatbot_bridge.auth_transport == "session_token_cookie"
+    assert plan.chatbot_bridge.response_mapping_profile == "site_a"
+    assert plan.chatbot_bridge.request_field_mappings["new_option_id"] == "new_option_id"
     assert plan.host_frontend.chatbot_server_base_url_expression == ""
     program = EditProgram(
         host_program=HostEditProgram(),
@@ -146,6 +184,8 @@ def test_model_contracts_round_trip():
     assert prep.framework == "django"
     assert runtime_plan.readiness_url.endswith("/api/chat/auth-token")
     assert runtime_state.passed is True
+    assert apply_result.host_source_snapshot_path.endswith("source-snapshot/host")
+    assert replay_result.host_allowed_targets == ["frontend/src/App.js"]
     assert summary.latest_rewind_to == "validation"
     assert summary.repair_attempt_count == 2
 

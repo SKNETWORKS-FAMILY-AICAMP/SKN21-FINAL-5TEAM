@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from chatbot.src.onboarding.onboarding_ignore import DEFAULT_IGNORED_PARTS
+from chatbot.src.onboarding.onboarding_ignore import runtime_copy_ignored_names
 from chatbot.src.onboarding.workspace_editor import apply_direct_edit_operations
 from chatbot.src.onboarding_v2.models.compile import (
     ChatbotBridgeBundle,
@@ -25,14 +25,22 @@ def apply_edit_program(
     host_source_root = Path(host_source_root)
     chatbot_source_root = Path(chatbot_source_root)
     runtime_base = Path(runtime_root)
-    workspace_root = runtime_base / site / run_id / "workspace"
+    run_root = runtime_base / site / run_id
+    snapshot_root = run_root / "source-snapshot"
+    workspace_root = run_root / "workspace"
+    host_snapshot = snapshot_root / "host"
+    chatbot_snapshot = snapshot_root / "chatbot"
     host_workspace = workspace_root / "host"
     chatbot_workspace = workspace_root / "chatbot"
+    if snapshot_root.exists():
+        shutil.rmtree(snapshot_root)
     if workspace_root.exists():
         shutil.rmtree(workspace_root)
-    workspace_root.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(host_source_root, host_workspace, ignore=_ignore_runtime_copy_directory)
-    shutil.copytree(chatbot_source_root, chatbot_workspace, ignore=_ignore_runtime_copy_directory)
+    run_root.mkdir(parents=True, exist_ok=True)
+    _copy_runtime_tree(source_root=host_source_root, target_root=host_snapshot)
+    _copy_runtime_tree(source_root=chatbot_source_root, target_root=chatbot_snapshot)
+    _copy_runtime_tree(source_root=host_source_root, target_root=host_workspace)
+    _copy_runtime_tree(source_root=chatbot_source_root, target_root=chatbot_workspace)
 
     host_applied_files: set[str] = set()
     chatbot_applied_files: set[str] = set()
@@ -82,6 +90,8 @@ def apply_edit_program(
         workspace_path=str(workspace_root),
         host_workspace_path=str(host_workspace),
         chatbot_workspace_path=str(chatbot_workspace),
+        host_source_snapshot_path=str(host_snapshot),
+        chatbot_source_snapshot_path=str(chatbot_snapshot),
         passed=not failed_bundles,
         applied_files=sorted(
             [f"host:{path}" for path in host_applied_files]
@@ -161,5 +171,9 @@ def _write_supporting_file(*, workspace: Path, bundle: SupportingArtifactBundle)
     path.write_text(bundle.content, encoding="utf-8")
 
 
+def _copy_runtime_tree(*, source_root: Path, target_root: Path) -> None:
+    shutil.copytree(source_root, target_root, ignore=_ignore_runtime_copy_directory)
+
+
 def _ignore_runtime_copy_directory(_: str, names: list[str]) -> set[str]:
-    return {name for name in names if name in DEFAULT_IGNORED_PARTS}
+    return runtime_copy_ignored_names(_, names)

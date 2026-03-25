@@ -24,7 +24,7 @@ def prepare_backend_runtime(
     workspace = Path(workspace).resolve()
     backend_root = _resolve_backend_root(workspace)
     framework = snapshot.repo_profile.backend_framework
-    runtime_root = backend_root / ".onboarding_v2_runtime"
+    runtime_root = _resolve_validation_support_root(workspace)
     venv_path = runtime_root / "venv"
     python_executable = _venv_python(venv_path)
     runtime_root.mkdir(parents=True, exist_ok=True)
@@ -205,6 +205,16 @@ def stop_backend_runtime(state: BackendRuntimeState) -> None:
 def _resolve_backend_root(workspace: Path) -> Path:
     backend_root = workspace / "backend"
     return backend_root if backend_root.exists() else workspace
+
+
+def _resolve_validation_support_root(workspace: Path) -> Path:
+    workspace = workspace.resolve()
+    host_root = workspace.parent if workspace.name == "backend" else workspace
+    if host_root.name in {"host", "chatbot"} and host_root.parent.name == "workspace":
+        return host_root.parent.parent / "validation-support" / "host-backend"
+    if host_root.name == "workspace":
+        return host_root.parent / "validation-support" / "host-backend"
+    return host_root / "validation-support" / "host-backend"
 
 
 def _venv_python(venv_path: Path) -> Path:

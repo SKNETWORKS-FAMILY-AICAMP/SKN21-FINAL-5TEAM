@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 from chatbot.src.onboarding.exporter import IGNORED_EXPORT_PARTS
+from chatbot.src.onboarding.onboarding_ignore import runtime_copy_ignored_names
 from chatbot.src.onboarding.runtime_runner import _apply_patch_file
 from chatbot.src.onboarding_v2.models.common import ArtifactRef
 from chatbot.src.onboarding_v2.models.validation import ReplayResult
@@ -15,8 +16,12 @@ def export_and_replay(
     *,
     host_source_root: str | Path,
     chatbot_source_root: str | Path,
+    host_baseline_root: str | Path,
+    chatbot_baseline_root: str | Path,
     host_runtime_workspace: str | Path,
     chatbot_runtime_workspace: str | Path,
+    host_allowed_targets: set[str] | list[str] | None,
+    chatbot_allowed_targets: set[str] | list[str] | None,
     runtime_root: str | Path,
     run_root: str | Path,
     site: str,
@@ -25,18 +30,24 @@ def export_and_replay(
 ) -> tuple[ArtifactRef, ReplayResult, ArtifactRef]:
     host_source_root = Path(host_source_root)
     chatbot_source_root = Path(chatbot_source_root)
+    host_baseline_root = Path(host_baseline_root)
+    chatbot_baseline_root = Path(chatbot_baseline_root)
     host_runtime_workspace = Path(host_runtime_workspace)
     chatbot_runtime_workspace = Path(chatbot_runtime_workspace)
     runtime_root = Path(runtime_root)
     run_root = Path(run_root)
+    host_allowed_targets = _normalize_allowed_targets(host_allowed_targets)
+    chatbot_allowed_targets = _normalize_allowed_targets(chatbot_allowed_targets)
 
     host_patch_content = _generate_patch_content(
-        source_root=host_source_root,
+        baseline_root=host_baseline_root,
         runtime_workspace=host_runtime_workspace,
+        allowed_targets=host_allowed_targets,
     )
     chatbot_patch_content = _generate_patch_content(
-        source_root=chatbot_source_root,
+        baseline_root=chatbot_baseline_root,
         runtime_workspace=chatbot_runtime_workspace,
+        allowed_targets=chatbot_allowed_targets,
     )
     host_patch_ref = artifact_store.write_text_artifact(
         stage="export",
@@ -87,7 +98,11 @@ def export_and_replay(
         chatbot_replay_workspace_path=str(chatbot_replay_workspace),
         host_patch_path=str(host_patch_path),
         chatbot_patch_path=str(chatbot_patch_path),
+        host_baseline_root=str(host_baseline_root),
+        chatbot_baseline_root=str(chatbot_baseline_root),
         passed=not failed_patch_artifacts,
+        host_allowed_targets=sorted(host_allowed_targets),
+        chatbot_allowed_targets=sorted(chatbot_allowed_targets),
         applied_patch_artifacts=applied_patch_artifacts,
         failed_patch_artifacts=failed_patch_artifacts,
     )
@@ -131,18 +146,28 @@ def _apply_patch_if_needed(
         failed_patch_artifacts.append({"path": str(patch_path), **failure})
 
 
-def _generate_patch_content(*, source_root: Path, runtime_workspace: Path) -> str:
+def _generate_patch_content(
+    *,
+    baseline_root: Path,
+    runtime_workspace: Path,
+    allowed_targets: set[str] | None = None,
+) -> str:
     patch_chunks: list[str] = []
-    for runtime_file in sorted(path for path in runtime_workspace.rglob("*") if path.is_file()):
-        relative = runtime_file.relative_to(runtime_workspace)
+    relative_paths = _collect_relative_paths(
+        baseline_root=baseline_root,
+        runtime_workspace=runtime_workspace,
+        allowed_targets=allowed_targets,
+    )
+    for relative_path in relative_paths:
+        relative = Path(relative_path)
         if any(part in IGNORED_EXPORT_PARTS for part in relative.parts):
             continue
-        source_file = source_root / relative
+        source_file = baseline_root / relative
+        runtime_file = runtime_workspace / relative
         source_lines = _read_text_lines(source_file)
         runtime_lines = _read_text_lines(runtime_file)
         if source_lines == runtime_lines:
             continue
-        relative_path = relative.as_posix()
         diff = difflib.unified_diff(
             source_lines,
             runtime_lines,
@@ -162,5 +187,36 @@ def _read_text_lines(path: Path) -> list[str]:
         return []
 
 
+def _collect_relative_paths(
+    *,
+    baseline_root: Path,
+    runtime_workspace: Path,
+    allowed_targets: set[str] | None,
+) -> list[str]:
+    if allowed_targets is not None:
+        return sorted(allowed_targets)
+    runtime_paths = {
+        path.relative_to(runtime_workspace).as_posix()
+        for path in runtime_workspace.rglob("*")
+        if path.is_file()
+    }
+    baseline_paths = {
+        path.relative_to(baseline_root).as_posix()
+        for path in baseline_root.rglob("*")
+        if path.is_file()
+    }
+    return sorted(runtime_paths | baseline_paths)
+
+
+def _normalize_allowed_targets(targets: set[str] | list[str] | None) -> set[str]:
+    if not targets:
+        return set()
+    return {
+        str(target).strip()
+        for target in targets
+        if str(target).strip()
+    }
+
+
 def _ignore_runtime_copy_directory(_: str, names: list[str]) -> set[str]:
-    return {name for name in names if name in IGNORED_EXPORT_PARTS}
+    return runtime_copy_ignored_names(_, names)

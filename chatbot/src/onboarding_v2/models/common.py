@@ -49,6 +49,8 @@ class EventRecord(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
     failure_signature: str | None = None
     rewind_to: str | None = None
+    requested_rewind_to: str | None = None
+    effective_rewind_to: str | None = None
     source: str = "deterministic"
 
     model_config = ConfigDict(extra="forbid")
@@ -86,6 +88,8 @@ class DebugRecord(BaseModel):
     token_usage: dict[str, Any] = Field(default_factory=dict)
     artifact_refs: list[ArtifactRef] = Field(default_factory=list)
     event_ref: str | None = None
+    requested_rewind_to: str | None = None
+    effective_rewind_to: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 

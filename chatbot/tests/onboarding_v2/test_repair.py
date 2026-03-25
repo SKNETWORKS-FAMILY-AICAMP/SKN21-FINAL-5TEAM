@@ -9,6 +9,8 @@ os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
 os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
 from chatbot.src.onboarding_v2.models import ArtifactRef, FailureBundle
+from chatbot.src.onboarding_v2.models.repair import RepairDecision
+from chatbot.src.onboarding_v2.engine import _derive_effective_rewind_to
 from chatbot.src.onboarding_v2.repair import diagnose_failure, synthesize_failure
 from chatbot.src.onboarding_v2.repair.synthesis import collect_file_samples
 from chatbot.src.onboarding_v2.storage import DebugStore
@@ -259,3 +261,47 @@ def test_diagnose_failure_parses_v2_repair_decision(tmp_path: Path):
 
     assert decision.stop is False
     assert decision.rewind_to == "validation"
+
+
+def test_derive_effective_rewind_to_promotes_compile_override():
+    decision = RepairDecision(
+        failure_signature="host_auth_bootstrap_missing_site_id",
+        diagnosis="compile override required",
+        rewind_to="validation",
+        preserve_artifacts=["analysis", "planning", "compile", "apply", "export"],
+        required_rechecks=["compile_preflight"],
+        additional_discovery=[],
+        artifact_overrides={"compile": {"supporting_files": [{"path": "backend/chat_auth.py"}]}},
+        stop=False,
+        stop_reason=None,
+    )
+
+    assert _derive_effective_rewind_to(decision) == "compile"
+
+
+def test_derive_effective_rewind_to_promotes_planning_and_analysis_overrides():
+    planning_decision = RepairDecision(
+        failure_signature="binding_drift",
+        diagnosis="planning override required",
+        rewind_to="validation",
+        preserve_artifacts=["analysis"],
+        required_rechecks=[],
+        additional_discovery=[],
+        artifact_overrides={"planning": {"target_bindings": [{"capability": "route_registration"}]}},
+        stop=False,
+        stop_reason=None,
+    )
+    analysis_decision = RepairDecision(
+        failure_signature="missing_fact",
+        diagnosis="analysis override required",
+        rewind_to="compile",
+        preserve_artifacts=[],
+        required_rechecks=[],
+        additional_discovery=[],
+        artifact_overrides={"analysis": {"verified_contracts": {"api_endpoints": []}}},
+        stop=False,
+        stop_reason=None,
+    )
+
+    assert _derive_effective_rewind_to(planning_decision) == "planning"
+    assert _derive_effective_rewind_to(analysis_decision) == "analysis"

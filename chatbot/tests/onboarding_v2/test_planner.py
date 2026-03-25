@@ -29,6 +29,13 @@ from chatbot.src.onboarding_v2.models.analysis import (
 from chatbot.src.onboarding_v2.planning import build_integration_plan, build_planning_bundle
 
 
+@pytest.fixture(autouse=True)
+def _disable_onboarding_v2_llm(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ONBOARDING_V2_ENABLE_LLM", "0")
+
+
 def _analysis_bundle_from_snapshot(snapshot: AnalysisSnapshot) -> AnalysisBundle:
     valid_candidates = [
         candidate.path
@@ -88,7 +95,20 @@ def _analysis_bundle_from_snapshot(snapshot: AnalysisSnapshot) -> AnalysisBundle
         ),
         analysis_graph=AnalysisGraph(),
         unresolved_ambiguities=list(snapshot.ambiguity.open_questions),
-        snapshot=snapshot,
+        snapshot=snapshot.model_copy(
+            update={
+                "domain_integration": snapshot.domain_integration.model_copy(
+                    update={
+                        "auth_validation_endpoint": snapshot.domain_integration.auth_validation_endpoint or "/api/users/me/",
+                        "current_user_endpoint": snapshot.domain_integration.current_user_endpoint or "/api/users/me/",
+                        "product_search_endpoint": snapshot.domain_integration.product_search_endpoint or "/api/products/",
+                        "order_list_endpoint": snapshot.domain_integration.order_list_endpoint or "/api/orders/",
+                        "order_detail_endpoint": snapshot.domain_integration.order_detail_endpoint or "/api/orders/{order_id}/",
+                        "order_action_endpoint": snapshot.domain_integration.order_action_endpoint or "/api/orders/{order_id}/actions/",
+                    }
+                )
+            }
+        ),
     )
 
 
@@ -125,6 +145,19 @@ def test_planner_selects_food_strategies():
     )
     assert plan.chatbot_bridge.site_key == "food"
     assert plan.chatbot_bridge.adapter_package == "src/adapters/generated/food"
+    assert plan.chatbot_bridge.auth_validation_endpoint == "/api/users/me/"
+    assert plan.chatbot_bridge.current_user_endpoint == "/api/users/me/"
+    assert plan.chatbot_bridge.product_search_endpoint == "/api/products/"
+    assert plan.chatbot_bridge.order_list_endpoint == "/api/orders/"
+    assert plan.chatbot_bridge.order_detail_endpoint == "/api/orders/{order_id}/"
+    assert plan.chatbot_bridge.order_action_endpoint == "/api/orders/{order_id}/actions/"
+    assert plan.chatbot_bridge.auth_transport == "session_token_cookie"
+    assert plan.chatbot_bridge.response_mapping_profile == "site_a"
+    assert plan.chatbot_bridge.request_field_mappings == {
+        "action": "action",
+        "reason": "reason",
+        "new_option_id": "new_option_id",
+    }
     assert plan.chatbot_bridge.supported_tools == [
         "list_orders",
         "get_order_status",
@@ -134,6 +167,10 @@ def test_planner_selects_food_strategies():
     ]
     assert planning_bundle.target_bindings
     assert planning_bundle.repair_hints
+    assert plan.host_backend.order_action_request_field == "action"
+    assert plan.host_backend.order_action_new_option_field == "new_option_id"
+    assert plan.host_backend.order_action_response_serializer == "serialize_order"
+    assert plan.host_backend.exchange_status_transition == "EXCHANGE_REQUESTED"
 
 
 def test_planner_ignores_invalid_order_bridge_candidates_and_falls_back():
@@ -244,3 +281,21 @@ def test_build_integration_plan_requires_analysis_bundle():
             snapshot,
             chatbot_server_base_url="http://localhost:8100",
         )
+
+
+def test_planner_accepts_bilyeo_strict_coverage_with_verified_flask_endpoints():
+    analysis_bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
+
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+        strict_coverage=True,
+    )
+    plan = planning_bundle.integration_plan
+
+    assert plan.host_backend.strategy == "flask_app_register_blueprint"
+    assert plan.host_backend.route_target == "backend/app.py"
+    assert plan.host_backend.order_lookup_target == "backend/routes/order.py"
+    assert plan.host_backend.order_action_target == "backend/routes/order.py"
+    assert plan.host_backend.auth_handler_source == "backend/routes/auth.py"

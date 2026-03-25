@@ -63,8 +63,10 @@ food/frontend/.env*
 .worktrees/
 
 generated/
+generated-v2/
 
 runtime/
+runtime-v2/
 
 # Local runtime artifacts
 .approval-store/

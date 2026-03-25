@@ -13,6 +13,7 @@ from chatbot.src.onboarding_v2.models.analysis import (
     AnalysisSnapshot,
     CandidateSet,
     ContractRecord,
+    DomainIntegration,
     FrameworkProfile,
     RetrievalPlan,
     VerifiedContracts,
@@ -830,6 +831,10 @@ def _derive_integration_plan(
     api_client_target = binding_map["api_client"].target_path
     order_lookup_target = binding_map["order_lookup"].target_path
     order_action_target = binding_map["order_action"].target_path
+    bridge_contract = _derive_chatbot_bridge_contract(
+        domain_integration=analysis_bundle.snapshot.domain_integration,
+        site_id=site_id,
+    )
     assumptions = [
         "planner consumed verified analysis graph and deterministic compiler capabilities",
         "host auth bootstrap returns access_token payload for chatbot adapter validation",
@@ -846,7 +851,16 @@ def _derive_integration_plan(
             import_target=route_target,
             order_lookup_target=order_lookup_target,
             order_action_target=order_action_target,
-            exchange_strategy=_choose_exchange_strategy(site_id=site_id, order_action_target=order_action_target),
+            exchange_strategy=_choose_exchange_strategy(
+                site_id=site_id,
+                order_action_target=order_action_target,
+                domain_integration=analysis_bundle.snapshot.domain_integration,
+            ),
+            order_action_request_field=bridge_contract["request_field_mappings"]["action"],
+            order_action_reason_field=bridge_contract["request_field_mappings"]["reason"],
+            order_action_new_option_field=bridge_contract["request_field_mappings"]["new_option_id"],
+            order_action_response_serializer="serialize_order",
+            exchange_status_transition="EXCHANGE_REQUESTED",
             supported_order_tools=list(SUPPORTED_ORDER_TOOLS),
             auth_handler_source=auth_source,
             generated_handler_path=_choose_generated_handler_path(analysis_bundle.framework_profile.backend_framework),
@@ -874,6 +888,16 @@ def _derive_integration_plan(
             adapter_package=f"src/adapters/generated/{_normalize_site_key(site_id)}",
             setup_target=binding_map["chatbot_setup"].target_path,
             host_base_url_env_var=_build_chatbot_bridge_env_var(site_id),
+            auth_validation_endpoint=bridge_contract["auth_validation_endpoint"],
+            current_user_endpoint=bridge_contract["current_user_endpoint"],
+            product_search_endpoint=bridge_contract["product_search_endpoint"],
+            order_list_endpoint=bridge_contract["order_list_endpoint"],
+            order_detail_endpoint=bridge_contract["order_detail_endpoint"],
+            order_action_endpoint=bridge_contract["order_action_endpoint"],
+            order_action_endpoints=bridge_contract["order_action_endpoints"],
+            auth_transport=bridge_contract["auth_transport"],
+            response_mapping_profile=bridge_contract["response_mapping_profile"],
+            request_field_mappings=bridge_contract["request_field_mappings"],
             supported_tools=list(SUPPORTED_ORDER_TOOLS),
         ),
         planning_notes=PlanningNotes(
@@ -977,15 +1001,22 @@ def _dedupe_repair_hints(items: list[RepairHint]) -> list[RepairHint]:
     return deduped
 
 
-def _choose_exchange_strategy(*, site_id: str, order_action_target: str) -> str:
+def _choose_exchange_strategy(
+    *,
+    site_id: str,
+    order_action_target: str,
+    domain_integration: DomainIntegration,
+) -> str:
     del site_id, order_action_target
+    if domain_integration.order_action_endpoints:
+        return "reuse_existing_order_action_endpoint"
     return "augment_existing_order_action_endpoint"
 
 
 def _choose_generated_handler_path(backend_framework: str) -> str | None:
-    if backend_framework == "django":
+    if backend_framework in {"django", "flask"}:
         return "backend/chat_auth.py"
-    if backend_framework in {"flask", "fastapi"}:
+    if backend_framework == "fastapi":
         return "chat_auth.py"
     return None
 
@@ -1046,3 +1077,61 @@ def _normalize_runtime_fallback(runtime_base_url: str) -> str:
     if normalized in {"http://localhost:8100", "http://127.0.0.1:8100"}:
         return "http://127.0.0.1:8100"
     return normalized
+
+
+def _derive_chatbot_bridge_contract(
+    *,
+    domain_integration: DomainIntegration,
+    site_id: str,
+) -> dict[str, Any]:
+    auth_validation_endpoint = str(
+        domain_integration.auth_validation_endpoint or domain_integration.current_user_endpoint or ""
+    ).strip()
+    current_user_endpoint = str(
+        domain_integration.current_user_endpoint or auth_validation_endpoint
+    ).strip()
+    product_search_endpoint = str(domain_integration.product_search_endpoint or "").strip()
+    order_list_endpoint = str(domain_integration.order_list_endpoint or "").strip()
+    order_detail_endpoint = str(domain_integration.order_detail_endpoint or "").strip()
+    order_action_endpoint = str(domain_integration.order_action_endpoint or "").strip()
+    order_action_endpoints = {
+        str(action).strip(): str(path).strip()
+        for action, path in (domain_integration.order_action_endpoints or {}).items()
+        if str(action).strip() and str(path).strip()
+    }
+
+    missing = [
+        name
+        for name, value in {
+            "auth_validation_endpoint": auth_validation_endpoint,
+            "current_user_endpoint": current_user_endpoint,
+            "product_search_endpoint": product_search_endpoint,
+            "order_list_endpoint": order_list_endpoint,
+            "order_detail_endpoint": order_detail_endpoint,
+        }.items()
+        if not value
+    ]
+    if not order_action_endpoint and not order_action_endpoints:
+        missing.append("order_action_endpoint")
+    if missing:
+        raise ValueError(
+            "missing verified chatbot bridge seams for planning: " + ", ".join(sorted(missing))
+        )
+
+    return {
+        "auth_validation_endpoint": auth_validation_endpoint,
+        "current_user_endpoint": current_user_endpoint,
+        "product_search_endpoint": product_search_endpoint,
+        "order_list_endpoint": order_list_endpoint,
+        "order_detail_endpoint": order_detail_endpoint,
+        "order_action_endpoint": order_action_endpoint
+        or next(iter(order_action_endpoints.values())),
+        "order_action_endpoints": order_action_endpoints,
+        "auth_transport": "session_token_cookie",
+        "response_mapping_profile": "site_a" if _normalize_site_key(site_id) == "food" else "generic",
+        "request_field_mappings": {
+            "action": "action",
+            "reason": "reason",
+            "new_option_id": "new_option_id",
+        },
+    }

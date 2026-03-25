@@ -92,6 +92,18 @@ class _EvidenceEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class _EndpointCatalogRecord(BaseModel):
+    identifier: str
+    path: str
+    http_method: str | None = None
+    source_path: str
+    source_kind: str
+    blueprint_symbol: str | None = None
+    local_path: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 def build_analysis_bundle(
     *,
     site: str,
@@ -659,6 +671,10 @@ def _verify_contracts(
         candidate_set=candidate_set,
     )
     api_client_catalog = _build_api_client_catalog(root=root, candidate_set=candidate_set)
+    route_by_path = {record.path: record for record in route_catalog}
+    client_by_path = {record.path: record for record in api_client_catalog}
+    route_aliases = _build_endpoint_alias_map(route_catalog)
+    client_aliases = _build_endpoint_alias_map(api_client_catalog)
 
     verified = VerifiedContracts()
     rejected: list[RejectedClaim] = []
@@ -681,10 +697,15 @@ def _verify_contracts(
             )
 
     for record in contracts.api_endpoints:
-        normalized = _normalize_endpoint_template(record.identifier)
-        if normalized in route_catalog or normalized in api_client_catalog:
-            verified.api_endpoints.append(record)
-        else:
+        resolution = _resolve_endpoint_record(
+            record=record,
+            route_by_path=route_by_path,
+            client_by_path=client_by_path,
+            route_aliases=route_aliases,
+            client_aliases=client_aliases,
+            route_catalog=route_catalog,
+        )
+        if resolution is None:
             rejected.append(
                 RejectedClaim(
                     identifier=record.identifier,
@@ -693,6 +714,44 @@ def _verify_contracts(
                     evidence_refs=list(record.evidence_refs),
                 )
             )
+            continue
+
+        status, endpoint_record, mismatch_record = resolution
+        if status == "server_route":
+            verified.api_endpoints.append(
+                _canonicalize_endpoint_contract(
+                    record=record,
+                    endpoint_record=endpoint_record,
+                )
+            )
+            continue
+
+        if status == "client_server_mismatch" and mismatch_record is not None:
+            rejected.append(
+                RejectedClaim(
+                    identifier=endpoint_record.path,
+                    kind=record.kind,
+                    reason=(
+                        f"client endpoint path {endpoint_record.path} does not match verified server route "
+                        f"{mismatch_record.path}"
+                    ),
+                    evidence_refs=list(
+                        dict.fromkeys(
+                            [*record.evidence_refs, endpoint_record.source_path, mismatch_record.source_path]
+                        )
+                    ),
+                )
+            )
+            continue
+
+        rejected.append(
+            RejectedClaim(
+                identifier=endpoint_record.path,
+                kind=record.kind,
+                reason="api endpoint appears only in frontend client catalog and could not be verified from server routes",
+                evidence_refs=list(dict.fromkeys([*record.evidence_refs, endpoint_record.source_path])),
+            )
+        )
 
     for record in contracts.auth_components:
         content = _safe_read_text(root / record.location)
@@ -870,6 +929,50 @@ def _build_snapshot_from_bundle(
         )
         for record in verified_contracts.tool_targets
     ]
+    endpoint_index = {
+        str(record.identifier or "").strip(): str(record.details.get("path") or record.identifier or "").strip()
+        for record in verified_contracts.api_endpoints
+        if str(record.identifier or "").strip()
+    }
+    auth_validation_endpoint = _resolve_endpoint_path(
+        endpoint_index,
+        preferred=["/api/users/me/", "/api/auth/me", "/api/session/me"],
+        fallbacks=["/api/auth/login", "/api/users/login/"],
+    )
+    current_user_endpoint = _resolve_endpoint_path(
+        endpoint_index,
+        preferred=["/api/users/me/", "/api/auth/me", "/api/session/me"],
+        fallbacks=[auth_validation_endpoint],
+    )
+    product_search_endpoint = _resolve_endpoint_path(
+        endpoint_index,
+        preferred=["/api/products/", "/api/products"],
+        fallbacks=["/api/products/{product_id}", "/api/products/categories"],
+    )
+    order_list_endpoint = _resolve_endpoint_path(
+        endpoint_index,
+        preferred=["/api/orders/", "/api/orders/all", "/api/orders"],
+        fallbacks=[],
+    )
+    order_detail_endpoint = _resolve_endpoint_path(
+        endpoint_index,
+        preferred=["/api/orders/{order_id}/", "/api/orders/{order_id}"],
+        fallbacks=[],
+    )
+    order_action_endpoint = _resolve_endpoint_path(
+        endpoint_index,
+        preferred=["/api/orders/{order_id}/actions/"],
+        fallbacks=["/api/orders/{order_id}/exchange", "/api/orders/{order_id}/refund", "/api/orders/{order_id}/cancel"],
+    )
+    order_action_endpoints = {
+        action: path
+        for action, path in {
+            "cancel": endpoint_index.get("/api/orders/{order_id}/cancel", ""),
+            "refund": endpoint_index.get("/api/orders/{order_id}/refund", ""),
+            "exchange": endpoint_index.get("/api/orders/{order_id}/exchange", ""),
+        }.items()
+        if path
+    }
     return AnalysisSnapshot(
         repo_profile=RepoProfile(
             site=site,
@@ -901,6 +1004,14 @@ def _build_snapshot_from_bundle(
             product_api_base_paths=product_api_paths,
             order_api_base_paths=order_api_paths,
             order_bridge_targets=order_targets or candidate_set.order_targets,
+            auth_validation_endpoint=auth_validation_endpoint,
+            current_user_endpoint=current_user_endpoint,
+            product_search_endpoint=product_search_endpoint,
+            order_list_endpoint=order_list_endpoint,
+            order_detail_endpoint=order_detail_endpoint,
+            order_action_endpoint=order_action_endpoint,
+            order_action_endpoints=order_action_endpoints,
+            site_id_source=str(root / "site-manifest.json"),
         ),
         ambiguity=AmbiguitySnapshot(
             open_questions=list(unresolved_ambiguities),
@@ -925,6 +1036,23 @@ def _build_snapshot_from_bundle(
             ])),
         ),
     )
+
+
+def _resolve_endpoint_path(
+    endpoint_index: dict[str, str],
+    *,
+    preferred: list[str],
+    fallbacks: list[str],
+) -> str | None:
+    for key in preferred:
+        value = str(endpoint_index.get(key) or "").strip()
+        if value:
+            return value
+    for key in fallbacks:
+        value = str(key or "").strip()
+        if value:
+            return value
+    return None
 
 
 def _build_analysis_graph(verified_contracts: VerifiedContracts) -> AnalysisGraph:
@@ -1140,32 +1268,41 @@ def _extract_api_endpoints(
 ) -> list[ContractRecord]:
     route_catalog = _build_route_catalog(root=root, framework_profile=framework_profile, candidate_set=candidate_set)
     api_client_catalog = _build_api_client_catalog(root=root, candidate_set=candidate_set)
-    identifiers = list(dict.fromkeys([*route_catalog, *api_client_catalog]))
     records: list[ContractRecord] = []
-    for identifier in identifiers:
-        domain = "order" if "order" in identifier.lower() else "product" if "product" in identifier.lower() else "auth_bootstrap" if "chat/auth-token" in identifier else "auth" if "login" in identifier.lower() or "users/me" in identifier.lower() else "generic"
-        location = _find_endpoint_location(identifier=identifier, candidate_set=candidate_set, root=root)
+    for endpoint in _dedupe_endpoint_records([*route_catalog, *api_client_catalog]):
+        domain = _infer_endpoint_domain(endpoint.path)
         records.append(
             ContractRecord(
-                identifier=identifier,
+                identifier=endpoint.path,
                 kind="api_endpoint",
-                location=location,
+                location=endpoint.source_path,
                 owner="deterministic",
-                details={"domain": domain},
-                evidence_refs=[location] if location else [],
+                details={
+                    "domain": domain,
+                    "path": endpoint.path,
+                    "http_method": endpoint.http_method,
+                    "source_kind": endpoint.source_kind,
+                },
+                evidence_refs=[endpoint.source_path] if endpoint.source_path else [],
             )
         )
     bootstrap_source = _choose_backend_auth_source(candidate_set)
-    records.append(
-        ContractRecord(
-            identifier="/api/chat/auth-token",
-            kind="api_endpoint",
-            location=bootstrap_source,
-            owner="deterministic",
-            details={"domain": "auth_bootstrap"},
-            evidence_refs=[bootstrap_source] if bootstrap_source else [],
+    if bootstrap_source:
+        records.append(
+            ContractRecord(
+                identifier="/api/chat/auth-token",
+                kind="api_endpoint",
+                location=bootstrap_source,
+                owner="deterministic",
+                details={
+                    "domain": "auth_bootstrap",
+                    "path": "/api/chat/auth-token",
+                    "http_method": "POST",
+                    "source_kind": "server_route",
+                },
+                evidence_refs=[bootstrap_source],
+            )
         )
-    )
     return _dedupe_contracts(records)
 
 
@@ -1258,7 +1395,7 @@ def _build_route_catalog(
     root: Path,
     framework_profile: FrameworkProfile,
     candidate_set: CandidateSet,
-) -> list[str]:
+) -> list[_EndpointCatalogRecord]:
     if framework_profile.backend_framework == "django":
         return _build_django_route_catalog(root=root, route_candidates=candidate_set.route_definitions)
     if framework_profile.backend_framework == "flask":
@@ -1268,7 +1405,7 @@ def _build_route_catalog(
     return []
 
 
-def _build_django_route_catalog(*, root: Path, route_candidates: list[PathCandidate]) -> list[str]:
+def _build_django_route_catalog(*, root: Path, route_candidates: list[PathCandidate]) -> list[_EndpointCatalogRecord]:
     path_pattern = re.compile(r'path\(\s*[\'"]([^\'"]*)[\'"]')
     include_pattern = re.compile(r'path\(\s*[\'"]([^\'"]*)[\'"].*include\(\s*[\'"]([^\'"]+)[\'"]\)')
     module_prefixes: dict[str, str] = {}
@@ -1280,27 +1417,49 @@ def _build_django_route_catalog(*, root: Path, route_candidates: list[PathCandid
         for match in include_pattern.finditer(text):
             module_prefixes[match.group(2)] = _normalize_endpoint_template(match.group(1))
 
-    endpoints: list[str] = []
+    endpoints: list[_EndpointCatalogRecord] = []
     for candidate in route_candidates:
         module_name = _django_module_name(candidate.path)
         prefix = module_prefixes.get(module_name)
         for pattern in file_patterns.get(candidate.path, []):
             if pattern == "" and prefix:
-                endpoints.append(prefix)
+                endpoints.append(
+                    _EndpointCatalogRecord(
+                        identifier=prefix,
+                        path=prefix,
+                        http_method=None,
+                        source_path=candidate.path,
+                        source_kind="server_route",
+                    )
+                )
                 continue
             normalized = _normalize_endpoint_template(pattern)
             if prefix and candidate.path.endswith("/urls.py") and prefix != normalized:
-                endpoints.append(_join_url_parts(prefix, normalized))
+                path = _join_url_parts(prefix, normalized)
             else:
-                endpoints.append(normalized)
-    return list(dict.fromkeys(endpoint for endpoint in endpoints if endpoint))
+                path = normalized
+            if path:
+                endpoints.append(
+                    _EndpointCatalogRecord(
+                        identifier=path,
+                        path=path,
+                        http_method=None,
+                        source_path=candidate.path,
+                        source_kind="server_route",
+                    )
+                )
+    return _dedupe_endpoint_records(endpoints)
 
 
-def _build_flask_route_catalog(*, root: Path, route_candidates: list[PathCandidate]) -> list[str]:
+def _build_flask_route_catalog(*, root: Path, route_candidates: list[PathCandidate]) -> list[_EndpointCatalogRecord]:
     register_pattern = re.compile(r"register_blueprint\(\s*([a-zA-Z0-9_]+),\s*url_prefix=['\"]([^'\"]+)['\"]")
-    route_pattern = re.compile(r"@([a-zA-Z0-9_]+)\.route\(\s*['\"]([^'\"]+)['\"]")
+    route_pattern = re.compile(
+        r"@([a-zA-Z0-9_]+)\.route\(\s*['\"]([^'\"]+)['\"](?P<tail>.*?)\)",
+        re.DOTALL,
+    )
+    methods_pattern = re.compile(r"methods\s*=\s*\[([^\]]+)\]")
     prefixes: dict[str, str] = {}
-    endpoints: list[str] = []
+    endpoints: list[_EndpointCatalogRecord] = []
     for candidate in route_candidates:
         text = _safe_read_text(root / candidate.path)
         for match in register_pattern.finditer(text):
@@ -1308,19 +1467,35 @@ def _build_flask_route_catalog(*, root: Path, route_candidates: list[PathCandida
     for candidate in route_candidates:
         text = _safe_read_text(root / candidate.path)
         for match in route_pattern.finditer(text):
-            blueprint = match.group(1)
-            prefix = prefixes.get(blueprint, "")
-            endpoints.append(_join_url_parts(prefix, match.group(2)))
-    return list(dict.fromkeys(endpoint for endpoint in endpoints if endpoint))
+            owner = match.group(1)
+            local_path = _normalize_endpoint_template(match.group(2))
+            prefix = prefixes.get(owner, "")
+            external_path = local_path if owner == "app" else _join_url_parts(prefix, local_path)
+            methods_match = methods_pattern.search(match.group("tail") or "")
+            methods = _parse_http_methods(methods_match.group(1) if methods_match else "")
+            for method in methods or [None]:
+                if external_path:
+                    endpoints.append(
+                        _EndpointCatalogRecord(
+                            identifier=external_path,
+                            path=external_path,
+                            http_method=method or "GET",
+                            source_path=candidate.path,
+                            source_kind="server_route",
+                            blueprint_symbol=None if owner == "app" else owner,
+                            local_path=local_path,
+                        )
+                    )
+    return _dedupe_endpoint_records(endpoints)
 
 
-def _build_fastapi_route_catalog(*, root: Path, route_candidates: list[PathCandidate]) -> list[str]:
+def _build_fastapi_route_catalog(*, root: Path, route_candidates: list[PathCandidate]) -> list[_EndpointCatalogRecord]:
     import_pattern = re.compile(r"from\s+([a-zA-Z0-9_\.]+)\s+import\s+router\s+as\s+([a-zA-Z0-9_]+)")
     include_pattern = re.compile(r"include_router\(\s*([a-zA-Z0-9_]+),\s*prefix=['\"]([^'\"]+)['\"]")
-    decorator_pattern = re.compile(r"@([a-zA-Z0-9_]+)\.(?:get|post|patch|put|delete)\(\s*['\"]([^'\"]+)['\"]")
+    decorator_pattern = re.compile(r"@([a-zA-Z0-9_]+)\.(get|post|patch|put|delete)\(\s*['\"]([^'\"]+)['\"]")
     prefixes: dict[str, str] = {}
     alias_modules: dict[str, str] = {}
-    endpoints: list[str] = []
+    endpoints: list[_EndpointCatalogRecord] = []
     for candidate in route_candidates:
         text = _safe_read_text(root / candidate.path)
         for match in import_pattern.finditer(text):
@@ -1340,9 +1515,20 @@ def _build_fastapi_route_catalog(*, root: Path, route_candidates: list[PathCandi
                 inferred_prefix = prefixes.get(alias, inferred_prefix)
         for match in decorator_pattern.finditer(text):
             router_name = match.group(1)
+            method = (match.group(2) or "").upper()
             prefix = prefixes.get(router_name, inferred_prefix)
-            endpoints.append(_join_url_parts(prefix, match.group(2)))
-    return list(dict.fromkeys(endpoint for endpoint in endpoints if endpoint))
+            path = _join_url_parts(prefix, match.group(3))
+            if path:
+                endpoints.append(
+                    _EndpointCatalogRecord(
+                        identifier=path,
+                        path=path,
+                        http_method=method,
+                        source_path=candidate.path,
+                        source_kind="server_route",
+                    )
+                )
+    return _dedupe_endpoint_records(endpoints)
 
 
 def _build_table_catalog(
@@ -1361,14 +1547,44 @@ def _build_table_catalog(
     ]
 
 
-def _build_api_client_catalog(*, root: Path, candidate_set: CandidateSet) -> list[str]:
-    endpoint_pattern = re.compile(r"['\"](/api/[^'\"]+|/orders[^'\"]+|/users/[^'\"]+|/products[^'\"]+)['\"]")
-    catalog: list[str] = []
+def _build_api_client_catalog(*, root: Path, candidate_set: CandidateSet) -> list[_EndpointCatalogRecord]:
+    base_url_pattern = re.compile(r"baseURL\s*:\s*['\"]([^'\"]+)['\"]")
+    client_call_pattern = re.compile(r"\.((?:get|post|patch|put|delete))\(\s*['\"]([^'\"]+)['\"]")
+    fetch_call_pattern = re.compile(r"fetch\(\s*['\"]([^'\"]+)['\"](?P<tail>.*?)\)", re.DOTALL)
+    method_pattern = re.compile(r"method\s*:\s*['\"](GET|POST|PATCH|PUT|DELETE)['\"]", re.IGNORECASE)
+    catalog: list[_EndpointCatalogRecord] = []
     for candidate in candidate_set.api_clients:
         text = _safe_read_text(root / candidate.path)
-        for match in endpoint_pattern.finditer(text):
-            catalog.append(_normalize_endpoint_template(match.group(1)))
-    return list(dict.fromkeys(catalog))
+        base_url_match = base_url_pattern.search(text)
+        base_url = _normalize_endpoint_template(base_url_match.group(1) if base_url_match else "")
+        for match in client_call_pattern.finditer(text):
+            path = _normalize_client_endpoint_path(base_url=base_url, path=match.group(2))
+            if not path:
+                continue
+            catalog.append(
+                _EndpointCatalogRecord(
+                    identifier=path,
+                    path=path,
+                    http_method=(match.group(1) or "").upper(),
+                    source_path=candidate.path,
+                    source_kind="frontend_client",
+                )
+            )
+        for match in fetch_call_pattern.finditer(text):
+            path = _normalize_client_endpoint_path(base_url=base_url, path=match.group(1))
+            if not path:
+                continue
+            method_match = method_pattern.search(match.group("tail") or "")
+            catalog.append(
+                _EndpointCatalogRecord(
+                    identifier=path,
+                    path=path,
+                    http_method=(method_match.group(1).upper() if method_match else "GET"),
+                    source_path=candidate.path,
+                    source_kind="frontend_client",
+                )
+            )
+    return _dedupe_endpoint_records(catalog)
 
 
 def _find_endpoint_location(*, identifier: str, candidate_set: CandidateSet, root: Path) -> str:
@@ -1479,15 +1695,210 @@ def _normalize_frontend_framework(value: Any, *, root: Path) -> str:
 
 def _normalize_auth_style(value: Any, *, root: Path) -> str:
     normalized = str(value or "").strip().lower()
+    backend_session = False
+    frontend_credentials = False
+    bearer_markers = False
+    for path, text in _iter_text_files(root):
+        lowered = text.lower()
+        relative = path.relative_to(root).as_posix().lower()
+        if path.suffix == ".py" and (
+            "from flask import session" in lowered
+            or "session[" in lowered
+            or "session.get(" in lowered
+            or "session.clear(" in lowered
+        ):
+            backend_session = True
+        if relative.startswith("frontend/") and (
+            "withcredentials: true" in lowered
+            or "credentials: \"include\"" in lowered
+            or "credentials: 'include'" in lowered
+        ):
+            frontend_credentials = True
+        if "authorization" in lowered and "bearer" in lowered:
+            bearer_markers = True
+    if backend_session and frontend_credentials:
+        return "session_cookie"
+    if bearer_markers:
+        return "jwt_bearer"
     if normalized:
         return normalized
-    for _path, text in _iter_text_files(root):
-        lowered = text.lower()
-        if "authorization" in lowered and "bearer" in lowered:
-            return "jwt_bearer"
-        if "session_token" in lowered or "cookie" in lowered:
-            return "session_cookie"
     return "unknown"
+
+
+def _dedupe_endpoint_records(records: list[_EndpointCatalogRecord]) -> list[_EndpointCatalogRecord]:
+    deduped: list[_EndpointCatalogRecord] = []
+    seen: set[tuple[str, str | None, str, str]] = set()
+    for record in records:
+        key = (record.path, record.http_method, record.source_kind, record.source_path)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(record)
+    return deduped
+
+
+def _parse_http_methods(raw: str) -> list[str]:
+    methods = [
+        item.strip().strip("'\"").upper()
+        for item in str(raw or "").split(",")
+        if item.strip().strip("'\"")
+    ]
+    return [method for method in methods if method in {"GET", "POST", "PATCH", "PUT", "DELETE"}]
+
+
+def _normalize_client_endpoint_path(*, base_url: str, path: str) -> str:
+    normalized = _normalize_endpoint_template(path)
+    if not normalized:
+        return ""
+    if base_url and not normalized.startswith(base_url.rstrip("/") + "/") and normalized != base_url:
+        return _join_url_parts(base_url, normalized)
+    return normalized
+
+
+def _infer_endpoint_domain(path: str) -> str:
+    lowered = str(path or "").lower()
+    if "chat/auth-token" in lowered:
+        return "auth_bootstrap"
+    if "/orders" in lowered or "/order" in lowered:
+        return "order"
+    if "/products" in lowered or "/product" in lowered:
+        return "product"
+    if "/auth/" in lowered or lowered.endswith("/login") or lowered.endswith("/logout") or lowered.endswith("/me"):
+        return "auth"
+    return "generic"
+
+
+def _build_endpoint_alias_map(records: list[_EndpointCatalogRecord]) -> dict[str, _EndpointCatalogRecord]:
+    aliases: dict[str, _EndpointCatalogRecord] = {}
+    for record in records:
+        for alias in _endpoint_aliases(record):
+            aliases.setdefault(alias, record)
+    return aliases
+
+
+def _endpoint_aliases(record: _EndpointCatalogRecord) -> set[str]:
+    aliases = {
+        str(record.identifier or "").strip().lower(),
+        str(record.path or "").strip().lower(),
+    }
+    path = str(record.path or "").lower()
+    method = str(record.http_method or "").upper()
+    if _infer_endpoint_domain(path) == "order" and method == "GET":
+        if path.endswith("/all"):
+            aliases.update({"orders_all", "order_lookup"})
+        elif "{order_id}" in path or "{id}" in path:
+            aliases.update({"order_detail", "get_order"})
+    if path.endswith("/login"):
+        aliases.add("auth_login")
+    if path.endswith("/logout"):
+        aliases.add("auth_logout")
+    if path.endswith("/me"):
+        aliases.add("auth_me")
+    if "chat/auth-token" in path:
+        aliases.add("chat_auth_bootstrap")
+    return {alias for alias in aliases if alias}
+
+
+def _resolve_endpoint_record(
+    *,
+    record: ContractRecord,
+    route_by_path: dict[str, _EndpointCatalogRecord],
+    client_by_path: dict[str, _EndpointCatalogRecord],
+    route_aliases: dict[str, _EndpointCatalogRecord],
+    client_aliases: dict[str, _EndpointCatalogRecord],
+    route_catalog: list[_EndpointCatalogRecord],
+) -> tuple[str, _EndpointCatalogRecord, _EndpointCatalogRecord | None] | None:
+    details_path = _normalize_endpoint_template(str((record.details or {}).get("path") or ""))
+    identifier = str(record.identifier or "").strip()
+    for candidate in [details_path, _normalize_endpoint_template(identifier)]:
+        if not candidate:
+            continue
+        route_match = route_by_path.get(candidate)
+        if route_match is not None:
+            return ("server_route", route_match, None)
+        client_match = client_by_path.get(candidate)
+        if client_match is not None:
+            mismatch = _find_nearest_server_route(client_match=client_match, route_catalog=route_catalog)
+            if mismatch is not None and mismatch.path != client_match.path:
+                return ("client_server_mismatch", client_match, mismatch)
+            return ("frontend_client", client_match, mismatch)
+
+    if _is_path_like_endpoint(identifier):
+        return None
+
+    semantic = identifier.lower()
+    route_match = route_aliases.get(semantic)
+    if route_match is not None:
+        return ("server_route", route_match, None)
+    client_match = client_aliases.get(semantic)
+    if client_match is not None:
+        mismatch = _find_nearest_server_route(client_match=client_match, route_catalog=route_catalog)
+        if mismatch is not None and mismatch.path != client_match.path:
+            return ("client_server_mismatch", client_match, mismatch)
+        return ("frontend_client", client_match, mismatch)
+    return None
+
+
+def _find_nearest_server_route(
+    *,
+    client_match: _EndpointCatalogRecord,
+    route_catalog: list[_EndpointCatalogRecord],
+) -> _EndpointCatalogRecord | None:
+    domain = _infer_endpoint_domain(client_match.path)
+    method = str(client_match.http_method or "").upper()
+    candidates = [
+        record
+        for record in route_catalog
+        if _infer_endpoint_domain(record.path) == domain
+        and (not method or str(record.http_method or "").upper() == method)
+    ]
+    if not candidates:
+        return None
+    return sorted(
+        candidates,
+        key=lambda record: (
+            0 if record.path == client_match.path else 1,
+            abs(len(record.path) - len(client_match.path)),
+            record.path,
+        ),
+    )[0]
+
+
+def _canonicalize_endpoint_contract(
+    *,
+    record: ContractRecord,
+    endpoint_record: _EndpointCatalogRecord,
+) -> ContractRecord:
+    details = dict(record.details)
+    details.update(
+        {
+            "path": endpoint_record.path,
+            "http_method": endpoint_record.http_method,
+            "source_kind": endpoint_record.source_kind,
+        }
+    )
+    if endpoint_record.blueprint_symbol:
+        details["blueprint_symbol"] = endpoint_record.blueprint_symbol
+    if endpoint_record.local_path:
+        details["local_path"] = endpoint_record.local_path
+    if record.identifier != endpoint_record.path:
+        details["semantic_identifier"] = record.identifier
+    evidence_refs = list(
+        dict.fromkeys([endpoint_record.source_path, *record.evidence_refs])
+    )
+    return record.model_copy(
+        update={
+            "identifier": endpoint_record.path,
+            "location": endpoint_record.source_path,
+            "details": details,
+            "evidence_refs": evidence_refs,
+        }
+    )
+
+
+def _is_path_like_endpoint(value: str) -> bool:
+    text = str(value or "").strip()
+    return text.startswith("/") or "/" in text
 
 
 def _is_route_definition(*, path: Path, text: str) -> bool:

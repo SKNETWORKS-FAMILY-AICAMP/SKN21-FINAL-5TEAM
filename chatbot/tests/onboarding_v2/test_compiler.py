@@ -10,8 +10,10 @@ os.environ.setdefault("QDRANT_API_KEY", "test-key")
 from chatbot.src.onboarding_v2.analysis import build_analysis_bundle
 from chatbot.src.onboarding_v2.compile import compile_plan
 from chatbot.src.onboarding_v2.compile.strategies.backend.django import compile_django_backend_bundle
+from chatbot.src.onboarding_v2.compile.strategies.backend.flask import compile_flask_backend_bundle
 from chatbot.src.onboarding_v2.models.planning import HostBackendPlan
 from chatbot.src.onboarding_v2.planning import build_planning_bundle
+from chatbot.src.onboarding_v2.planning.planner import _choose_generated_handler_path
 
 
 def test_compiler_builds_complete_food_program():
@@ -61,6 +63,14 @@ def test_compiler_builds_complete_food_program():
         "src/adapters/generated/food/mappers.py",
         "src/adapters/generated/food/adapter.py",
     }
+    generated_client = next(
+        bundle.content
+        for bundle in program.chatbot_program.supporting_artifact_bundles
+        if bundle.path == "src/adapters/generated/food/client.py"
+    )
+    assert "SiteAClient" not in generated_client
+    assert '"/api/orders/{order_id}/actions/"' in generated_client
+    assert '"/api/users/me/"' in generated_client
     assert program.chatbot_program.compile_preflight is not None
     assert program.chatbot_program.compile_preflight.artifact_type == "compile-preflight"
     assert program.chatbot_program.compile_preflight.check_name == "chatbot_runtime_import"
@@ -134,3 +144,108 @@ def test_compiler_tolerates_multiline_models_import_and_next_def_boundary(tmp_pa
     assert "def _handle_tracking(order, request):\n" in order_action_operation.new
     assert "if selected_product is not None:" in order_action_operation.new
     assert '"new_option_id 값을 보내주세요."' not in order_action_operation.new
+
+
+def test_planner_uses_backend_chat_auth_path_for_flask():
+    assert _choose_generated_handler_path("flask") == "backend/chat_auth.py"
+
+
+def test_compile_flask_backend_bundle_inserts_factory_blueprint_registration(tmp_path: Path):
+    app_path = tmp_path / "backend" / "app.py"
+    app_path.parent.mkdir(parents=True, exist_ok=True)
+    app_path.write_text(
+        "from flask import Flask\n"
+        "from existing import existing_blueprint\n\n"
+        "def create_app():\n"
+        "    app = Flask(__name__)\n"
+        '    app.config["TESTING"] = True\n'
+        '    app.register_blueprint(existing_blueprint, url_prefix="/existing")\n'
+        "    return app\n",
+        encoding="utf-8",
+    )
+
+    bundle = compile_flask_backend_bundle(
+        source_root=tmp_path,
+        plan=HostBackendPlan(
+            strategy="flask_app_register_blueprint",
+            route_target="backend/app.py",
+            import_target="backend/app.py",
+            auth_handler_source="backend/users.py",
+            generated_handler_path="backend/chat_auth.py",
+            chat_auth_contract_path="/api/chat/auth-token",
+            site_id="demo",
+        ),
+    )
+
+    assert bundle.supporting_files[0].path == "backend/chat_auth.py"
+    assert '@chat_auth_blueprint.route("/auth-token", methods=["GET", "POST"])' in bundle.supporting_files[0].content
+    assert "/api/chat/auth-token" not in bundle.supporting_files[0].content
+    updated = bundle.operations[0].new
+    assert "from chat_auth import chat_auth_blueprint\n" in updated
+    assert 'app.register_blueprint(chat_auth_blueprint, url_prefix="/api/chat")\n' in updated
+    assert updated.index('app.register_blueprint(existing_blueprint, url_prefix="/existing")') < updated.index(
+        'app.register_blueprint(chat_auth_blueprint, url_prefix="/api/chat")'
+    )
+    assert updated.index('app.register_blueprint(chat_auth_blueprint, url_prefix="/api/chat")') < updated.index(
+        "    return app"
+    )
+
+
+def test_compile_flask_backend_bundle_computes_import_from_runtime_boundary(tmp_path: Path):
+    app_path = tmp_path / "backend" / "api" / "app.py"
+    app_path.parent.mkdir(parents=True, exist_ok=True)
+    app_path.write_text(
+        "from flask import Flask\n\n"
+        "app = Flask(__name__)\n"
+        'app.config["TESTING"] = True\n',
+        encoding="utf-8",
+    )
+
+    bundle = compile_flask_backend_bundle(
+        source_root=tmp_path,
+        plan=HostBackendPlan(
+            strategy="flask_app_register_blueprint",
+            route_target="backend/api/app.py",
+            import_target="backend/api/app.py",
+            auth_handler_source="backend/users.py",
+            generated_handler_path="backend/generated/chat_auth.py",
+            chat_auth_contract_path="/api/chat/auth-token",
+            site_id="demo",
+        ),
+    )
+
+    updated = bundle.operations[0].new
+    assert "from generated.chat_auth import chat_auth_blueprint\n" in updated
+    assert updated.index("app = Flask(__name__)") < updated.index(
+        'app.register_blueprint(chat_auth_blueprint, url_prefix="/api/chat")'
+    )
+
+
+def test_compile_flask_backend_bundle_rejects_unsupported_wiring(tmp_path: Path):
+    app_path = tmp_path / "backend" / "app.py"
+    app_path.parent.mkdir(parents=True, exist_ok=True)
+    app_path.write_text(
+        "from flask import Flask\n\n"
+        "def build_app():\n"
+        "    app = Flask(__name__)\n"
+        "    return app\n",
+        encoding="utf-8",
+    )
+
+    try:
+        compile_flask_backend_bundle(
+            source_root=tmp_path,
+            plan=HostBackendPlan(
+                strategy="flask_app_register_blueprint",
+                route_target="backend/app.py",
+                import_target="backend/app.py",
+                auth_handler_source="backend/users.py",
+                generated_handler_path="backend/chat_auth.py",
+                chat_auth_contract_path="/api/chat/auth-token",
+                site_id="demo",
+            ),
+        )
+    except ValueError as exc:
+        assert "flask_unsupported_wiring_pattern" in str(exc)
+    else:
+        raise AssertionError("unsupported Flask wiring should fail compilation")

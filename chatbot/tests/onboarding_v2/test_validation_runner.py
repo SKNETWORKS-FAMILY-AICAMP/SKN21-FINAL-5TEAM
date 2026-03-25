@@ -153,6 +153,15 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
         },
     )
     monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget bundle fetch passed",
+            "target_url": "http://localhost:8100/widget.js",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
         lambda **kwargs: {
             "passed": True,
@@ -188,6 +197,7 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
         "backend_runtime_prep",
         "backend_runtime_boot",
         "chatbot_runtime_boot",
+        "widget_bundle_fetch",
         "host_auth_bootstrap",
         "chatbot_adapter_auth",
         "widget_order_e2e",
@@ -294,6 +304,15 @@ def test_validation_runner_fails_when_chatbot_runtime_boot_fails(monkeypatch, tm
             "related_files": [],
         },
     )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget bundle fetch passed",
+            "target_url": "http://localhost:8100/widget.js",
+            "related_files": [],
+        },
+    )
     runtime_context = _build_food_runtime_artifacts(tmp_path)
 
     bundle = run_validation(
@@ -314,6 +333,76 @@ def test_validation_runner_fails_when_chatbot_runtime_boot_fails(monkeypatch, tm
     ]
     assert bundle.checks[2].passed is False
     assert bundle.failure_signature == "chatbot_runtime_boot_chatbot_runtime_boot_failed_no_module_named_ecommerce_backend"
+
+
+def test_validation_runner_fails_when_widget_bundle_fetch_uses_host_origin(monkeypatch, tmp_path: Path):
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
+        readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
+    )
+    runtime_state = BackendRuntimeState(
+        framework="django",
+        passed=True,
+        pid=1234,
+        command=runtime_plan.command,
+        readiness_url=runtime_plan.readiness_url,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.prepare_backend_runtime",
+        lambda **kwargs: BackendRuntimePrepResult(framework="django", passed=True),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.build_backend_runtime_plan",
+        lambda **kwargs: runtime_plan,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
+        lambda plan: runtime_state,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
+        lambda state: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": False,
+            "failure_summary": "widget bundle fetch failed: resolved to host origin",
+            "target_url": "http://127.0.0.1:8000/widget.js",
+            "related_files": ["frontend/src/App.js"],
+        },
+    )
+    runtime_context = _build_food_runtime_artifacts(tmp_path)
+
+    bundle = run_validation(
+        run_root=runtime_context["generated_root"],
+        host_runtime_workspace=runtime_context["apply_result"].host_workspace_path,
+        chatbot_runtime_workspace=runtime_context["apply_result"].chatbot_workspace_path,
+        snapshot=runtime_context["snapshot"],
+        plan=runtime_context["plan"],
+        replay_result=runtime_context["replay_result"],
+        artifact_refs=runtime_context["artifact_refs"],
+    )
+
+    assert bundle.passed is False
+    assert [check.name for check in bundle.checks][:4] == [
+        "backend_runtime_prep",
+        "backend_runtime_boot",
+        "chatbot_runtime_boot",
+        "widget_bundle_fetch",
+    ]
+    assert bundle.checks[3].passed is False
+    assert bundle.failure_signature == "widget_bundle_fetch_widget_bundle_fetch_failed_resolved_to_host_origin"
 
 
 def test_failure_signature_distinguishes_runtime_validation_phases():

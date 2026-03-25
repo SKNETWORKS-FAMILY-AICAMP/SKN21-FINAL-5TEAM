@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from unittest.mock import patch
 
 import httpx
@@ -49,6 +50,7 @@ class ValidationRunResult:
     backend_runtime_prep: BackendRuntimePrepResult
     backend_runtime_state: BackendRuntimeState
     chatbot_runtime_boot: dict[str, Any]
+    widget_bundle_fetch: dict[str, Any]
     host_auth_bootstrap: dict[str, Any]
     chatbot_adapter_auth: dict[str, Any]
     widget_order_e2e: WidgetOrderE2EResult
@@ -100,6 +102,7 @@ def run_validation_cycle(
     )
     runtime_state: BackendRuntimeState
     chatbot_runtime_boot: dict[str, Any]
+    widget_bundle_fetch: dict[str, Any]
     host_auth_bootstrap: dict[str, Any]
     chatbot_adapter_auth: dict[str, Any]
     widget_order_e2e: WidgetOrderE2EResult
@@ -135,6 +138,28 @@ def run_validation_cycle(
         and runtime_plan is not None
         and chatbot_runtime_boot.get("passed")
     ):
+        widget_bundle_fetch = validate_widget_bundle_fetch(
+            runtime_plan=runtime_plan,
+            plan=plan,
+        )
+    else:
+        widget_bundle_fetch = _skipped_result(
+            "widget bundle fetch skipped because chatbot runtime boot failed"
+            if prep_result.passed and runtime_state.passed
+            else (
+                "widget bundle fetch skipped because backend runtime boot failed"
+                if prep_result.passed
+                else "widget bundle fetch skipped because backend runtime prep failed"
+            )
+        )
+
+    if (
+        prep_result.passed
+        and runtime_state.passed
+        and runtime_plan is not None
+        and chatbot_runtime_boot.get("passed")
+        and widget_bundle_fetch.get("passed")
+    ):
         try:
             host_auth_bootstrap = validate_host_auth_bootstrap(
                 run_root=run_root,
@@ -167,6 +192,13 @@ def run_validation_cycle(
         )
         if prep_result.passed and runtime_state.passed and not chatbot_runtime_boot.get("passed"):
             reason = "chatbot runtime boot failed"
+        elif (
+            prep_result.passed
+            and runtime_state.passed
+            and chatbot_runtime_boot.get("passed")
+            and not widget_bundle_fetch.get("passed")
+        ):
+            reason = "widget bundle fetch failed"
         host_auth_bootstrap = _skipped_result(
             "host auth bootstrap skipped because " + reason
         )
@@ -203,6 +235,12 @@ def run_validation_cycle(
             passed=bool(chatbot_runtime_boot["passed"]),
             summary=chatbot_runtime_boot["failure_summary"],
             details=chatbot_runtime_boot,
+        ),
+        ValidationCheck(
+            name="widget_bundle_fetch",
+            passed=bool(widget_bundle_fetch["passed"]),
+            summary=widget_bundle_fetch["failure_summary"],
+            details=widget_bundle_fetch,
         ),
         ValidationCheck(
             name="host_auth_bootstrap",
@@ -256,6 +294,7 @@ def run_validation_cycle(
             *prep_result.related_files,
             *runtime_state.related_files,
             *chatbot_runtime_boot.get("related_files", []),
+            *widget_bundle_fetch.get("related_files", []),
             *host_auth_bootstrap.get("related_files", []),
             *chatbot_adapter_auth.get("related_files", []),
             *widget_order_e2e.related_files,
@@ -282,6 +321,7 @@ def run_validation_cycle(
         backend_runtime_prep=prep_result,
         backend_runtime_state=runtime_state,
         chatbot_runtime_boot=chatbot_runtime_boot,
+        widget_bundle_fetch=widget_bundle_fetch,
         host_auth_bootstrap=host_auth_bootstrap,
         chatbot_adapter_auth=chatbot_adapter_auth,
         widget_order_e2e=widget_order_e2e,
@@ -465,6 +505,64 @@ def validate_chatbot_runtime_boot(
             "server_fastapi.py",
             "src/tools/adapter_order_tools.py",
             "src/tools/order_tools.py",
+        ],
+    }
+
+
+def validate_widget_bundle_fetch(
+    *,
+    runtime_plan: BackendRuntimePlan,
+    plan: IntegrationPlan,
+) -> dict[str, Any]:
+    chatbot_base_url = str(plan.host_frontend.chatbot_server_base_url or "").strip().rstrip("/")
+    widget_path = "/widget.js"
+    host_base_url = runtime_plan.readiness_url.removesuffix(
+        plan.host_backend.chat_auth_contract_path
+    ).rstrip("/")
+
+    if not chatbot_base_url:
+        return {
+            "passed": False,
+            "failure_summary": "widget bundle fetch failed: chatbotServerBaseUrl is empty",
+            "target_url": widget_path,
+            "related_files": [plan.host_frontend.mount_target],
+        }
+
+    target_url = f"{chatbot_base_url}{widget_path}"
+    chatbot_origin = urlparse(chatbot_base_url)
+    host_origin = urlparse(host_base_url)
+    if (
+        chatbot_origin.scheme == host_origin.scheme
+        and chatbot_origin.netloc == host_origin.netloc
+    ):
+        return {
+            "passed": False,
+            "failure_summary": "widget bundle fetch failed: resolved to host origin",
+            "target_url": target_url,
+            "related_files": [plan.host_frontend.mount_target],
+        }
+
+    client = TestClient(server_fastapi.app, base_url=chatbot_base_url)
+    response = client.get(widget_path)
+    passed = (
+        response.status_code == 200
+        and "javascript" in response.headers.get("content-type", "").lower()
+        and "order-cs-widget" in response.text
+    )
+    return {
+        "passed": passed,
+        "failure_summary": (
+            "widget bundle fetch passed"
+            if passed
+            else f"widget bundle fetch failed with status {response.status_code}"
+        ),
+        "target_url": target_url,
+        "status_code": response.status_code,
+        "content_type": response.headers.get("content-type", ""),
+        "related_files": [
+            plan.host_frontend.mount_target,
+            "chatbot/src/api/v1/endpoints/chat.py",
+            "chatbot/frontend/shared_widget/web-component.tsx",
         ],
     }
 

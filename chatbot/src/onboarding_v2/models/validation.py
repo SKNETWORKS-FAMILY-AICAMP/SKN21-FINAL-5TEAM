@@ -19,6 +19,8 @@ class ApplyResult(BaseModel):
     workspace_path: str
     host_workspace_path: str
     chatbot_workspace_path: str
+    host_source_snapshot_path: str | None = None
+    chatbot_source_snapshot_path: str | None = None
     passed: bool
     applied_files: list[str] = Field(default_factory=list)
     host_applied_files: list[str] = Field(default_factory=list)
@@ -35,7 +37,11 @@ class ReplayResult(BaseModel):
     chatbot_replay_workspace_path: str
     host_patch_path: str
     chatbot_patch_path: str
+    host_baseline_root: str | None = None
+    chatbot_baseline_root: str | None = None
     passed: bool
+    host_allowed_targets: list[str] = Field(default_factory=list)
+    chatbot_allowed_targets: list[str] = Field(default_factory=list)
     applied_patch_artifacts: list[str] = Field(default_factory=list)
     failed_patch_artifacts: list[dict[str, Any]] = Field(default_factory=list)
 

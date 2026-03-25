@@ -22,6 +22,8 @@ from chatbot.src.onboarding_v2.models import (
     PlanningBundle,
     ReplayResult,
 )
+from chatbot.src.onboarding_v2.models.common import DebugRecord
+from chatbot.src.onboarding_v2.models.repair import RepairDecision
 from chatbot.src.onboarding_v2.models.validation import ValidationBundle
 from chatbot.src.onboarding_v2.planning import build_planning_bundle
 from chatbot.src.onboarding_v2.repair import (
@@ -328,6 +330,12 @@ def run_onboarding_generation_v2(
                     update={"stop": True, "stop_reason": "repeated_failure_signature"}
                 )
 
+            requested_rewind_to = decision.rewind_to
+            effective_rewind_to = _derive_effective_rewind_to(decision)
+            decision_payload = decision.model_dump(mode="json")
+            decision_payload["requested_rewind_to"] = requested_rewind_to
+            decision_payload["effective_rewind_to"] = effective_rewind_to
+
             decision_event = event_store.write_event(
                 run_id=run_id,
                 stage="repair",
@@ -336,7 +344,9 @@ def run_onboarding_generation_v2(
                 summary="repair decision emitted",
                 input_refs=[failure_ref],
                 failure_signature=decision.failure_signature,
-                rewind_to=decision.rewind_to,
+                rewind_to=effective_rewind_to,
+                requested_rewind_to=requested_rewind_to,
+                effective_rewind_to=effective_rewind_to,
                 attempt=attempt,
                 actor="repair_agent",
                 source="llm",
@@ -344,15 +354,33 @@ def run_onboarding_generation_v2(
             decision_ref = artifact_store.write_json_artifact(
                 stage="repair",
                 artifact_type="repair-decision",
-                payload=decision.model_dump(mode="json"),
+                payload=decision_payload,
                 producer="repair",
                 input_artifact_refs=[failure_ref],
                 event_ref=decision_event.event_id,
                 status="completed" if not decision.stop else "failed",
                 attempt=attempt,
             )
+            debug_store.write_record(
+                stage="repair",
+                label="effective-rewind",
+                record=DebugRecord(
+                    stage="repair",
+                    attempt=attempt,
+                    prompt={
+                        "failure_signature": decision.failure_signature,
+                        "artifact_overrides": decision.artifact_overrides,
+                    },
+                    normalized_response=decision_payload,
+                    parse_result={"status": "derived"},
+                    artifact_refs=[failure_ref],
+                    event_ref=decision_event.event_id,
+                    requested_rewind_to=requested_rewind_to,
+                    effective_rewind_to=effective_rewind_to,
+                ),
+            )
             state.latest_repair_ref = decision_ref
-            state.latest_rewind_to = decision.rewind_to
+            state.latest_rewind_to = effective_rewind_to
             state.repair_attempt_count = attempt
 
             if decision.stop:
@@ -364,7 +392,9 @@ def run_onboarding_generation_v2(
                     summary="repair stopped",
                     input_refs=[failure_ref, decision_ref],
                     failure_signature=decision.failure_signature,
-                    rewind_to=decision.rewind_to,
+                    rewind_to=effective_rewind_to,
+                    requested_rewind_to=requested_rewind_to,
+                    effective_rewind_to=effective_rewind_to,
                     details={"stop_reason": decision.stop_reason},
                     attempt=attempt,
                     actor="repair_agent",
@@ -378,10 +408,12 @@ def run_onboarding_generation_v2(
                 stage="repair",
                 phase="rewind",
                 event_type="rewind_requested",
-                summary=f"rewind requested to {decision.rewind_to}",
+                summary=f"rewind requested to {requested_rewind_to} (effective {effective_rewind_to})",
                 input_refs=[failure_ref, decision_ref],
                 failure_signature=decision.failure_signature,
-                rewind_to=decision.rewind_to,
+                rewind_to=effective_rewind_to,
+                requested_rewind_to=requested_rewind_to,
+                effective_rewind_to=effective_rewind_to,
                 attempt=attempt,
                 actor="repair_agent",
                 source="llm",
@@ -389,14 +421,14 @@ def run_onboarding_generation_v2(
             _clear_state_for_failure(
                 state=state,
                 failed_stage=failure.stage,
-                rewind_to=decision.rewind_to,
+                rewind_to=effective_rewind_to,
                 preserve_artifacts=decision.preserve_artifacts,
             )
             state.pending_required_rechecks = list(dict.fromkeys(decision.required_rechecks))
             state.pending_preserve_artifacts = list(dict.fromkeys(decision.preserve_artifacts))
             analysis_overrides = dict(decision.artifact_overrides.get("analysis") or {})
             planning_overrides = dict(decision.artifact_overrides.get("planning") or {})
-            next_stage = decision.rewind_to
+            next_stage = effective_rewind_to
             event_store.write_event(
                 run_id=run_id,
                 stage=next_stage,
@@ -404,7 +436,9 @@ def run_onboarding_generation_v2(
                 event_type="stage_rerun_started",
                 summary=f"{next_stage} rerun started",
                 failure_signature=decision.failure_signature,
-                rewind_to=decision.rewind_to,
+                rewind_to=effective_rewind_to,
+                requested_rewind_to=requested_rewind_to,
+                effective_rewind_to=effective_rewind_to,
                 attempt=attempt + 1,
                 actor="repair_agent",
                 source="deterministic",
@@ -1696,6 +1730,17 @@ def _resolve_workspace_root(*, source_root: str, state: _RunState) -> str:
     if state.apply_result is not None:
         return state.apply_result.workspace_path
     return source_root
+
+
+def _derive_effective_rewind_to(decision: RepairDecision) -> str:
+    artifact_overrides = dict(decision.artifact_overrides or {})
+    if dict(artifact_overrides.get("analysis") or {}):
+        return "analysis"
+    if dict(artifact_overrides.get("planning") or {}):
+        return "planning"
+    if dict(artifact_overrides.get("compile") or {}):
+        return "compile"
+    return decision.rewind_to
 
 
 def _clear_state_for_failure(

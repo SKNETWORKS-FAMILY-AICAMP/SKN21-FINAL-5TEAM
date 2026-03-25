@@ -6,6 +6,7 @@ from pathlib import Path
 DEFAULT_IGNORED_PARTS = {
     ".git",
     ".venv",
+    ".onboarding_v2_runtime",
     "venv",
     "__pycache__",
     "site-packages",
@@ -16,6 +17,10 @@ DEFAULT_IGNORED_PARTS = {
     ".nuxt",
     "coverage",
 }
+
+
+def runtime_copy_ignored_names(_: str, names: list[str]) -> set[str]:
+    return {name for name in names if name in DEFAULT_IGNORED_PARTS}
 
 
 class OnboardingIgnoreMatcher:
