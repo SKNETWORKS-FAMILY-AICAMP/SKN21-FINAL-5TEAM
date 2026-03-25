@@ -79,6 +79,7 @@ class ChatbotBridgeBundle(BaseModel):
 class CompilePreflightSpec(BaseModel):
     artifact_type: str = "compile-preflight"
     check_name: str = "chatbot_runtime_import"
+    scan_paths: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 

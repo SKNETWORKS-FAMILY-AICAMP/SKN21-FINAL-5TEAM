@@ -53,6 +53,10 @@ def compile_plan(
         chatbot_source_root=chatbot_source_root,
         plan=plan.chatbot_bridge,
     )
+    preflight_scan_paths = list(dict.fromkeys([
+        *chatbot_bridge_bundle.target_paths,
+        *(bundle.path for bundle in chatbot_bridge_bundle.supporting_files),
+    ]))
 
     return EditProgram(
         host_program=HostEditProgram(
@@ -64,7 +68,7 @@ def compile_plan(
         chatbot_program=ChatbotEditProgram(
             bridge_bundles=[chatbot_bridge_bundle],
             supporting_artifact_bundles=list(chatbot_bridge_bundle.supporting_files),
-            compile_preflight=CompilePreflightSpec(),
+            compile_preflight=CompilePreflightSpec(scan_paths=preflight_scan_paths),
         ),
         execution_metadata={
             "host_backend_strategy": plan.host_backend.strategy,

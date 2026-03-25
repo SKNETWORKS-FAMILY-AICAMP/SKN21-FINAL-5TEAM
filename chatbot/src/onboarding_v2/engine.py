@@ -1264,12 +1264,14 @@ def run_compile_preflight_stage(
             attempt=attempt,
         )
         preflight_result = run_chatbot_compile_preflight(
-            Path(state.apply_result.chatbot_workspace_path)
+            Path(state.apply_result.chatbot_workspace_path),
+            scan_paths=preflight_spec.scan_paths,
         )
         preflight_payload = {
             "artifact_type": preflight_spec.artifact_type,
             "check_name": preflight_spec.check_name,
             "chatbot_workspace_path": state.apply_result.chatbot_workspace_path,
+            "scan_paths": list(preflight_spec.scan_paths),
             **preflight_result.model_dump(mode="json"),
         }
         preflight_ref = artifact_store.write_json_artifact(

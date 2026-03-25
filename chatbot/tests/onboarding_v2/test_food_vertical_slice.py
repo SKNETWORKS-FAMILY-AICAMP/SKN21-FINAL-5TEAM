@@ -102,7 +102,7 @@ def test_food_vertical_slice_generates_all_v2_artifacts(monkeypatch, tmp_path: P
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
-        lambda workspace: CompilePreflightResult(
+        lambda workspace, scan_paths=None: CompilePreflightResult(
             passed=True,
             failure_code=None,
             failure_summary=None,

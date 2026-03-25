@@ -107,7 +107,7 @@ def test_engine_entry_returns_v2_payload(monkeypatch, tmp_path: Path):
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
-        lambda workspace: CompilePreflightResult(
+        lambda workspace, scan_paths=None: CompilePreflightResult(
             passed=True,
             failure_code=None,
             failure_summary=None,
@@ -224,7 +224,7 @@ def test_engine_entry_passes_snapshot_roots_and_allowlists_to_export(monkeypatch
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
-        lambda workspace: CompilePreflightResult(
+        lambda workspace, scan_paths=None: CompilePreflightResult(
             passed=True,
             failure_code=None,
             failure_summary=None,
@@ -263,10 +263,129 @@ def test_engine_entry_passes_snapshot_roots_and_allowlists_to_export(monkeypatch
     assert captured["chatbot_allowed_targets"]
 
 
+def test_engine_entry_passes_preflight_scan_paths(monkeypatch, tmp_path: Path):
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "host" / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
+        readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
+    )
+    runtime_state = BackendRuntimeState(
+        framework="django",
+        passed=True,
+        pid=1234,
+        command=runtime_plan.command,
+        readiness_url=runtime_plan.readiness_url,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.prepare_backend_runtime",
+        lambda **kwargs: BackendRuntimePrepResult(framework="django", passed=True),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.build_backend_runtime_plan",
+        lambda **kwargs: runtime_plan,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
+        lambda plan: runtime_state,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
+        lambda state: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "host auth bootstrap passed",
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "session-token",
+                "user": {"id": "7"},
+            },
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget bundle fetch passed",
+            "target_url": "http://localhost:8100/widget.js",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot adapter auth passed",
+            "validated_user": {"id": "7", "siteId": "food"},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_order_e2e",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget order e2e passed",
+            "related_files": [],
+        },
+    )
+
+    captured: dict[str, object] = {}
+
+    def _capturing_preflight(workspace, scan_paths=None):
+        captured["workspace"] = workspace
+        captured["scan_paths"] = list(scan_paths or [])
+        return CompilePreflightResult(
+            passed=True,
+            failure_code=None,
+            failure_summary=None,
+            related_files=[],
+            details={"import_smoke": "passed"},
+        )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
+        _capturing_preflight,
+        raising=False,
+    )
+
+    result = run_onboarding_generation_v2(
+        site="food",
+        source_root=str(ROOT / "food"),
+        generated_root=str(tmp_path / "generated"),
+        runtime_root=str(tmp_path / "runtime"),
+        run_id="food-run-v2-preflight-scope",
+        chatbot_server_base_url="http://localhost:8100",
+    )
+
+    assert result["status"] == "exported"
+    assert str(captured["workspace"]).endswith("/workspace/chatbot")
+    assert set(captured["scan_paths"]) == {
+        "src/adapters/setup.py",
+        "src/adapters/generated/food/__init__.py",
+        "src/adapters/generated/food/client.py",
+        "src/adapters/generated/food/auth.py",
+        "src/adapters/generated/food/mappers.py",
+        "src/adapters/generated/food/adapter.py",
+    }
+
+
 def test_engine_stops_at_compile_when_chatbot_preflight_fails(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
-        lambda workspace: CompilePreflightResult(
+        lambda workspace, scan_paths=None: CompilePreflightResult(
             passed=False,
             failure_code="banned_import_detected",
             failure_summary="banned import detected: ecommerce.backend",
@@ -321,7 +440,7 @@ def test_engine_stops_at_compile_when_chatbot_preflight_fails(monkeypatch, tmp_p
 def test_engine_reports_compile_stage_on_preflight_crash(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
-        lambda workspace: (_ for _ in ()).throw(RuntimeError("preflight boom")),
+        lambda workspace, scan_paths=None: (_ for _ in ()).throw(RuntimeError("preflight boom")),
         raising=False,
     )
     monkeypatch.setattr(
@@ -446,7 +565,7 @@ def test_engine_entry_rewinds_validation_failures(monkeypatch, tmp_path: Path):
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
-        lambda workspace: CompilePreflightResult(
+        lambda workspace, scan_paths=None: CompilePreflightResult(
             passed=True,
             failure_code=None,
             failure_summary=None,
@@ -590,7 +709,7 @@ def test_engine_entry_derives_effective_compile_rewind_from_overrides(monkeypatc
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
-        lambda workspace: CompilePreflightResult(
+        lambda workspace, scan_paths=None: CompilePreflightResult(
             passed=True,
             failure_code=None,
             failure_summary=None,
@@ -757,7 +876,7 @@ def test_engine_entry_stops_after_repeated_failure_signature(monkeypatch, tmp_pa
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
-        lambda workspace: CompilePreflightResult(
+        lambda workspace, scan_paths=None: CompilePreflightResult(
             passed=True,
             failure_code=None,
             failure_summary=None,

@@ -74,6 +74,14 @@ def test_compiler_builds_complete_food_program():
     assert program.chatbot_program.compile_preflight is not None
     assert program.chatbot_program.compile_preflight.artifact_type == "compile-preflight"
     assert program.chatbot_program.compile_preflight.check_name == "chatbot_runtime_import"
+    assert set(program.chatbot_program.compile_preflight.scan_paths) == {
+        "src/adapters/setup.py",
+        "src/adapters/generated/food/__init__.py",
+        "src/adapters/generated/food/client.py",
+        "src/adapters/generated/food/auth.py",
+        "src/adapters/generated/food/mappers.py",
+        "src/adapters/generated/food/adapter.py",
+    }
     assert program.execution_metadata["planning_notes"] == plan.planning_notes.model_dump(mode="json")
     assert program.execution_metadata["target_bindings"]
     assert program.execution_metadata["repair_hints"] == [
