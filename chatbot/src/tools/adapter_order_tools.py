@@ -190,7 +190,7 @@ def _derive_site_order_actions(
         normalized_payment = "paid"
     is_paid = normalized_payment == "paid"
     return {
-        "can_cancel": normalized_status == "preparing",
+        "can_cancel": normalized_status in {"paid", "preparing"},
         "can_return": is_paid and normalized_status in {"shipped", "delivered"},
         "can_exchange": is_paid and normalized_status in {"shipped", "delivered"},
     }

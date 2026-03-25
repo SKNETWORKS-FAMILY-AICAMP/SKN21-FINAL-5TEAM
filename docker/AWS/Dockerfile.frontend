@@ -4,6 +4,8 @@ WORKDIR /app
 
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ARG NEXT_PUBLIC_CHATBOT_API_URL
+ENV NEXT_PUBLIC_CHATBOT_API_URL=${NEXT_PUBLIC_CHATBOT_API_URL}
 
 # 의존성 먼저 복사 (캐시 활용)
 COPY ecommerce/frontend/package.json ecommerce/frontend/package-lock.json* ./

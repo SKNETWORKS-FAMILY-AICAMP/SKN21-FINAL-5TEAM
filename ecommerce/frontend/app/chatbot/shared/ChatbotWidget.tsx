@@ -1,5 +1,5 @@
 import React from 'react';
-import OrderListUI from '../OrderListUI';
+import OrderListUI from '../../../shared_chatbot/OrderListUI';
 import ProductListUI, { type UiProduct } from './ProductListUI';
 import styles from './chatbot-widget.module.css';
 

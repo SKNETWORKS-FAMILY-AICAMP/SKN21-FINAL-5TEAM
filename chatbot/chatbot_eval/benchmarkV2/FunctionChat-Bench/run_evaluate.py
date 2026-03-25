@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 # 경로 설정
 CUR_DIR = Path(__file__).resolve().parent
 BENCH_DIR = CUR_DIR
-RESULTS_DIR = CUR_DIR
+RESULTS_DIR = CUR_DIR.parent / "result" / "toolcall_acc"
 ENV_PATH = CUR_DIR.parents[3] / ".env"
 
 # .env 로드

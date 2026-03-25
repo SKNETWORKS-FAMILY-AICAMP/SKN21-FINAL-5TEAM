@@ -1,4 +1,4 @@
-import os
+﻿import os
 import random
 import time
 from typing import Any
@@ -12,15 +12,15 @@ from locust import HttpUser, LoadTestShape, between, task
 # 2) Start backend (separate terminal):
 #    uv run python -m ecommerce.backend.app.main
 # 3) Run locust (UI):
-#    uv run locust -f Locust/locustfile.py
+#    uv run locust -f Locust/locustfile_dev.py
 # 4) Run locust (headless):
-#    uv run locust -f Locust/locustfile.py --headless --run-time 5m
+#    uv run locust -f Locust/locustfile_dev.py --headless --run-time 5m
 # 5) Optional env:
 #    $env:LOCUST_TEST_PASSWORD="locust1234"
-#    $env:LOCUST_HOST="https://moyeo.kro.kr"
+#    $env:LOCUST_HOST="http://127.0.0.1:8000"
 #    $env:LOCUST_RELOGIN_INTERVAL_SECONDS="60"
 
-LOCUST_HOST = os.getenv("LOCUST_HOST", "https://moyeo.kro.kr")
+LOCUST_HOST = os.getenv("LOCUST_HOST", "http://127.0.0.1:8000")
 AUTH_TOKEN = os.getenv("LOCUST_AUTH_TOKEN", "").strip()
 LOCUST_TEST_PASSWORD = os.getenv("LOCUST_TEST_PASSWORD", "locust1234")
 MIN_USER_ID = int(os.getenv("LOCUST_MIN_USER_ID", "1"))
