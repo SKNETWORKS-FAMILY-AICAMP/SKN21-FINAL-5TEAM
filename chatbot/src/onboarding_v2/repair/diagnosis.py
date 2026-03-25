@@ -68,7 +68,9 @@ def _build_compile_import_graph_decision(failure_bundle: FailureBundle) -> Repai
 def diagnose_failure(
     *,
     failure_bundle: FailureBundle,
+    analysis_bundle_payload: dict[str, Any],
     snapshot_payload: dict[str, Any],
+    planning_bundle_payload: dict[str, Any],
     plan_payload: dict[str, Any],
     edit_program_payload: dict[str, Any],
     validation_payload: dict[str, Any],
@@ -79,7 +81,9 @@ def diagnose_failure(
 ) -> RepairDecision:
     payload = {
         "failure_bundle": failure_bundle.model_dump(mode="json"),
+        "analysis_bundle": analysis_bundle_payload,
         "snapshot": snapshot_payload,
+        "planning_bundle": planning_bundle_payload,
         "plan": plan_payload,
         "edit_program": edit_program_payload,
         "validation": validation_payload,

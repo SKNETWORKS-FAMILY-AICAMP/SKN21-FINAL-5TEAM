@@ -142,7 +142,9 @@ def test_diagnose_failure_returns_stop_when_llm_unavailable(tmp_path: Path):
 
     decision = diagnose_failure(
         failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
         snapshot_payload={"repo_profile": {"site": "food"}},
+        planning_bundle_payload={},
         plan_payload={},
         edit_program_payload={},
         validation_payload={"passed": False},
@@ -189,7 +191,9 @@ def test_diagnose_failure_prefers_compile_rewind_for_import_graph_preflight_fail
 
     decision = diagnose_failure(
         failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
         snapshot_payload={"repo_profile": {"site": "food"}},
+        planning_bundle_payload={},
         plan_payload={},
         edit_program_payload={},
         validation_payload={},
@@ -241,7 +245,9 @@ def test_diagnose_failure_parses_v2_repair_decision(tmp_path: Path):
 
     decision = diagnose_failure(
         failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
         snapshot_payload={"repo_profile": {"site": "food"}},
+        planning_bundle_payload={},
         plan_payload={},
         edit_program_payload={},
         validation_payload={"passed": False},

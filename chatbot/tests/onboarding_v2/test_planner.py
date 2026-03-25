@@ -7,24 +7,100 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
 os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
-from chatbot.src.onboarding_v2.analysis import build_analysis_snapshot
+import pytest
+
+from chatbot.src.onboarding_v2.analysis import build_analysis_bundle, build_analysis_snapshot
 from chatbot.src.onboarding_v2.models.analysis import (
+    AnalysisBundle,
+    AnalysisGraph,
     AnalysisSnapshot,
     BackendSeams,
+    CandidateSet,
+    ContractRecord,
     DomainIntegration,
     FrontendSeams,
+    FrameworkProfile,
     PathCandidate,
     RepoProfile,
+    RetrievalPlan,
+    VerifiedContracts,
+    WorkspaceProfile,
 )
-from chatbot.src.onboarding_v2.planning import build_integration_plan
+from chatbot.src.onboarding_v2.planning import build_integration_plan, build_planning_bundle
+
+
+def _analysis_bundle_from_snapshot(snapshot: AnalysisSnapshot) -> AnalysisBundle:
+    valid_candidates = [
+        candidate.path
+        for candidate in snapshot.domain_integration.order_bridge_targets
+        if candidate.path
+        and not candidate.path.endswith(("/urls.py", "/tests.py"))
+        and "/migrations/" not in candidate.path
+    ]
+    lookup_target = next(
+        (
+            path
+            for path in valid_candidates
+            if any(token in path.lower() for token in ("lookup", "status", "list", "detail", "query", "read"))
+        ),
+        valid_candidates[0] if valid_candidates else "backend/orders/views.py",
+    )
+    action_target = next(
+        (
+            path
+            for path in valid_candidates
+            if any(token in path.lower() for token in ("action", "update", "cancel", "refund", "exchange", "modify", "mutat", "command", "handler", "write"))
+        ),
+        valid_candidates[0] if valid_candidates else "backend/orders/views.py",
+    )
+    return AnalysisBundle(
+        workspace_profile=WorkspaceProfile(root=snapshot.repo_profile.source_root),
+        framework_profile=FrameworkProfile(
+            backend_framework=snapshot.repo_profile.backend_framework,
+            frontend_framework=snapshot.repo_profile.frontend_framework,
+            auth_style=snapshot.repo_profile.auth_style,
+        ),
+        retrieval_plan=RetrievalPlan(),
+        candidate_set=CandidateSet(
+            route_definitions=list(snapshot.backend_seams.route_registration_points),
+            auth_components=list(snapshot.backend_seams.auth_source_candidates),
+            api_clients=list(snapshot.frontend_seams.api_client_candidates),
+            app_shells=list(snapshot.frontend_seams.app_shell_candidates),
+            router_boundaries=list(snapshot.frontend_seams.router_boundary_candidates),
+            widget_mounts=list(snapshot.frontend_seams.widget_mount_candidates),
+            order_targets=list(snapshot.domain_integration.order_bridge_targets),
+        ),
+        verified_contracts=VerifiedContracts(
+            tool_targets=[
+                ContractRecord(
+                    identifier="order_lookup",
+                    kind="tool_target",
+                    location=lookup_target,
+                    evidence_refs=[lookup_target],
+                ),
+                ContractRecord(
+                    identifier="order_action",
+                    kind="tool_target",
+                    location=action_target,
+                    evidence_refs=[action_target],
+                ),
+            ]
+        ),
+        analysis_graph=AnalysisGraph(),
+        unresolved_ambiguities=list(snapshot.ambiguity.open_questions),
+        snapshot=snapshot,
+    )
 
 
 def test_planner_selects_food_strategies():
-    snapshot = build_analysis_snapshot(site="food", source_root=ROOT / "food")
-    plan = build_integration_plan(
-        snapshot,
+    analysis_bundle = build_analysis_bundle(site="food", source_root=ROOT / "food")
+    snapshot = analysis_bundle.snapshot
+    planning_bundle = build_planning_bundle(
+        snapshot=snapshot,
+        analysis_bundle=analysis_bundle,
         chatbot_server_base_url="http://localhost:8100",
     )
+    plan = planning_bundle.integration_plan
 
     assert plan.host_backend.strategy == "django_project_urlconf_import_view"
     assert plan.host_backend.route_target == "backend/foodshop/urls.py"
@@ -56,6 +132,8 @@ def test_planner_selects_food_strategies():
         "refund",
         "exchange",
     ]
+    assert planning_bundle.target_bindings
+    assert planning_bundle.repair_hints
 
 
 def test_planner_ignores_invalid_order_bridge_candidates_and_falls_back():
@@ -80,6 +158,7 @@ def test_planner_ignores_invalid_order_bridge_candidates_and_falls_back():
 
     plan = build_integration_plan(
         snapshot,
+        analysis_bundle=_analysis_bundle_from_snapshot(snapshot),
         chatbot_server_base_url="http://localhost:8100",
     )
 
@@ -110,6 +189,7 @@ def test_planner_prefers_valid_generic_order_seam_over_fallback():
 
     plan = build_integration_plan(
         snapshot,
+        analysis_bundle=_analysis_bundle_from_snapshot(snapshot),
         chatbot_server_base_url="http://localhost:8100",
     )
 
@@ -148,8 +228,19 @@ def test_planner_can_split_lookup_and_action_targets_from_generic_candidates():
 
     plan = build_integration_plan(
         snapshot,
+        analysis_bundle=_analysis_bundle_from_snapshot(snapshot),
         chatbot_server_base_url="http://localhost:8100",
     )
 
     assert plan.host_backend.order_lookup_target == "backend/orders/lookup.py"
     assert plan.host_backend.order_action_target == "backend/orders/actions.py"
+
+
+def test_build_integration_plan_requires_analysis_bundle():
+    snapshot = build_analysis_snapshot(site="food", source_root=ROOT / "food")
+
+    with pytest.raises(ValueError, match="analysis_bundle is required"):
+        build_integration_plan(
+            snapshot,
+            chatbot_server_base_url="http://localhost:8100",
+        )

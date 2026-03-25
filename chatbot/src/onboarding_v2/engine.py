@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +79,8 @@ class _RunState:
     latest_failure_signature: str | None = None
     latest_rewind_to: str | None = None
     repair_attempt_count: int = 0
+    pending_required_rechecks: list[str] = field(default_factory=list)
+    pending_preserve_artifacts: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -226,8 +228,18 @@ def run_onboarding_generation_v2(
             )
             decision = diagnose_failure(
                 failure_bundle=failure_bundle,
+                analysis_bundle_payload=(
+                    {}
+                    if state.analysis_bundle is None
+                    else state.analysis_bundle.model_dump(mode="json")
+                ),
                 snapshot_payload=(
                     {} if state.snapshot is None else state.snapshot.model_dump(mode="json")
+                ),
+                planning_bundle_payload=(
+                    {}
+                    if state.planning_bundle is None
+                    else state.planning_bundle.model_dump(mode="json")
                 ),
                 plan_payload={} if state.plan is None else state.plan.model_dump(mode="json"),
                 edit_program_payload=(
@@ -284,8 +296,18 @@ def run_onboarding_generation_v2(
                     )
                     decision = diagnose_failure(
                         failure_bundle=failure_bundle,
+                        analysis_bundle_payload=(
+                            {}
+                            if state.analysis_bundle is None
+                            else state.analysis_bundle.model_dump(mode="json")
+                        ),
                         snapshot_payload=(
                             {} if state.snapshot is None else state.snapshot.model_dump(mode="json")
+                        ),
+                        planning_bundle_payload=(
+                            {}
+                            if state.planning_bundle is None
+                            else state.planning_bundle.model_dump(mode="json")
                         ),
                         plan_payload=(
                             {} if state.plan is None else state.plan.model_dump(mode="json")
@@ -368,7 +390,10 @@ def run_onboarding_generation_v2(
                 state=state,
                 failed_stage=failure.stage,
                 rewind_to=decision.rewind_to,
+                preserve_artifacts=decision.preserve_artifacts,
             )
+            state.pending_required_rechecks = list(dict.fromkeys(decision.required_rechecks))
+            state.pending_preserve_artifacts = list(dict.fromkeys(decision.preserve_artifacts))
             analysis_overrides = dict(decision.artifact_overrides.get("analysis") or {})
             planning_overrides = dict(decision.artifact_overrides.get("planning") or {})
             next_stage = decision.rewind_to
@@ -627,6 +652,9 @@ def run_analysis_stage(
                 },
                 "unresolved_ambiguities": list(analysis_bundle.unresolved_ambiguities),
                 "confidence_notes": list(analysis_bundle.framework_profile.confidence_notes),
+                "repair_override_applied": bool(overrides),
+                "repair_overrides": dict(overrides),
+                "required_rechecks": list(state.pending_required_rechecks),
             },
         )
         analysis_ref = artifact_store.write_json_artifact(
@@ -747,6 +775,9 @@ def run_planning_stage(
                     "repair_hints": "llm_assisted",
                 },
                 "coverage": planning_bundle.coverage_report.model_dump(mode="json"),
+                "repair_override_applied": bool(overrides),
+                "repair_overrides": dict(overrides),
+                "required_rechecks": list(state.pending_required_rechecks),
             },
         )
         plan_ref = artifact_store.write_json_artifact(
@@ -815,12 +846,14 @@ def run_compile_stage(
     attempt: int,
 ) -> None:
     if (
-        state.snapshot is None
+        state.analysis_bundle is None
+        or state.snapshot is None
         or state.analysis_ref is None
+        or state.planning_bundle is None
         or state.plan is None
         or state.plan_ref is None
     ):
-        raise ValueError("analysis snapshot and plan are required before compile")
+        raise ValueError("analysis bundle, snapshot, planning bundle, and plan are required before compile")
     started = event_store.write_event(
         run_id=run_id,
         stage="compile",
@@ -841,8 +874,8 @@ def run_compile_stage(
     )
     try:
         edit_program = compile_plan(
-            snapshot=state.snapshot,
-            plan=state.plan,
+            analysis_bundle=state.analysis_bundle,
+            planning_bundle=state.planning_bundle,
             source_root=source_root,
             chatbot_source_root=chatbot_source_root,
         )
@@ -1054,8 +1087,12 @@ def run_export_stage(
         export_bundle_ref, replay_result, replay_ref = export_and_replay(
             host_source_root=source_root,
             chatbot_source_root=chatbot_source_root,
+            host_baseline_root=state.apply_result.host_source_snapshot_path or source_root,
+            chatbot_baseline_root=state.apply_result.chatbot_source_snapshot_path or chatbot_source_root,
             host_runtime_workspace=state.apply_result.host_workspace_path,
             chatbot_runtime_workspace=state.apply_result.chatbot_workspace_path,
+            host_allowed_targets=state.apply_result.host_applied_files,
+            chatbot_allowed_targets=state.apply_result.chatbot_applied_files,
             runtime_root=runtime_root,
             run_root=run_root,
             site=site,
@@ -1212,6 +1249,7 @@ def run_compile_preflight_stage(
         state.compile_preflight_result = preflight_result
 
         if preflight_result.passed:
+            _mark_required_rechecks_satisfied(state=state, satisfied=["compile_preflight"])
             event_store.write_event(
                 run_id=run_id,
                 stage="compile",
@@ -1372,6 +1410,7 @@ def run_validation_stage(
             "replay": state.replay_ref,
         },
         onboarding_credentials=onboarding_credentials,
+        required_rechecks=list(state.pending_required_rechecks),
     )
     prep_ref = artifact_store.write_json_artifact(
         stage="validation",
@@ -1607,6 +1646,12 @@ def run_validation_stage(
     state.widget_order_ref = widget_order_ref
     state.validation_ref = validation_ref
     state.latest_failure_signature = None
+    _mark_required_rechecks_satisfied(
+        state=state,
+        satisfied=[check.name for check in validation_bundle.checks],
+    )
+    if not state.pending_required_rechecks:
+        state.pending_preserve_artifacts = []
 
 
 def _related_compile_files(plan: IntegrationPlan) -> list[str]:
@@ -1653,10 +1698,21 @@ def _resolve_workspace_root(*, source_root: str, state: _RunState) -> str:
     return source_root
 
 
-def _clear_state_for_failure(*, state: _RunState, failed_stage: str, rewind_to: str) -> None:
-    _clear_from_stage(state, failed_stage)
-    if rewind_to != "validation":
-        _clear_from_stage(state, rewind_to)
+def _clear_state_for_failure(
+    *,
+    state: _RunState,
+    failed_stage: str,
+    rewind_to: str,
+    preserve_artifacts: list[str],
+) -> None:
+    del failed_stage
+    rerun_stages = set(_stages_from(rewind_to))
+    preserved = {
+        stage for stage in preserve_artifacts if stage in _stage_order() and stage not in rerun_stages
+    }
+    for stage in _stage_order():
+        if stage in rerun_stages or stage not in preserved:
+            _clear_from_stage_exact(state, stage)
 
 
 def _clear_from_stage(state: _RunState, stage: str) -> None:
@@ -1702,6 +1758,75 @@ def _clear_from_stage(state: _RunState, stage: str) -> None:
         state.chatbot_adapter_auth_ref = None
         state.widget_order_ref = None
         state.validation_ref = None
+
+
+def _clear_from_stage_exact(state: _RunState, stage: str) -> None:
+    if stage == "analysis":
+        state.analysis_bundle = None
+        state.snapshot = None
+        state.analysis_bundle_ref = None
+        state.analysis_ref = None
+        return
+    if stage == "planning":
+        state.planning_bundle = None
+        state.plan = None
+        state.planning_bundle_ref = None
+        state.plan_ref = None
+        return
+    if stage == "compile":
+        state.edit_program = None
+        state.compile_ref = None
+        state.chatbot_compile_ref = None
+        state.compile_preflight_ref = None
+        state.compile_preflight_result = None
+        return
+    if stage == "apply":
+        state.apply_result = None
+        state.apply_ref = None
+        state.compile_preflight_ref = None
+        state.compile_preflight_result = None
+        return
+    if stage == "export":
+        state.patch_ref = None
+        state.chatbot_patch_ref = None
+        state.replay_result = None
+        state.replay_ref = None
+        state.export_bundle_ref = None
+        return
+    if stage == "validation":
+        state.validation_run = None
+        state.prep_ref = None
+        state.state_ref = None
+        state.chatbot_runtime_boot_ref = None
+        state.host_auth_ref = None
+        state.chatbot_adapter_auth_ref = None
+        state.widget_order_ref = None
+        state.validation_ref = None
+        return
+
+
+def _stage_order() -> list[str]:
+    return ["analysis", "planning", "compile", "apply", "export", "validation"]
+
+
+def _stages_from(stage: str) -> list[str]:
+    ordered = _stage_order()
+    try:
+        start = ordered.index(stage)
+    except ValueError:
+        return []
+    return ordered[start:]
+
+
+def _mark_required_rechecks_satisfied(*, state: _RunState, satisfied: list[str]) -> None:
+    if not state.pending_required_rechecks:
+        return
+    satisfied_set = {item for item in satisfied if item}
+    if not satisfied_set:
+        return
+    state.pending_required_rechecks = [
+        item for item in state.pending_required_rechecks if item not in satisfied_set
+    ]
 
 
 def _apply_analysis_overrides(

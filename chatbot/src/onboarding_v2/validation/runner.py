@@ -15,8 +15,6 @@ from unittest.mock import patch
 import httpx
 
 from chatbot.src.adapters.schema import AuthenticatedContext
-from chatbot.src.onboarding import backend_evaluator as legacy_backend
-from chatbot.src.onboarding import frontend_evaluator as legacy_frontend
 from chatbot.src.onboarding_v2.models.analysis import AnalysisSnapshot
 from chatbot.src.onboarding_v2.models.common import ArtifactRef
 from chatbot.src.onboarding_v2.models.planning import IntegrationPlan
@@ -34,6 +32,10 @@ from chatbot.src.onboarding_v2.validation.backend_runtime import (
     launch_backend_runtime,
     prepare_backend_runtime,
     stop_backend_runtime,
+)
+from chatbot.src.onboarding_v2.validation.replay_evaluator import (
+    evaluate_backend_workspace_static,
+    evaluate_frontend_workspace_static,
 )
 from chatbot.src.onboarding_v2.validation.signatures import build_failure_signature
 from fastapi.testclient import TestClient
@@ -62,6 +64,7 @@ def run_validation(
     replay_result: ReplayResult,
     artifact_refs: dict[str, ArtifactRef | None],
     onboarding_credentials: dict[str, str] | None = None,
+    required_rechecks: list[str] | None = None,
 ) -> ValidationBundle:
     return run_validation_cycle(
         run_root=run_root,
@@ -72,6 +75,7 @@ def run_validation(
         replay_result=replay_result,
         artifact_refs=artifact_refs,
         onboarding_credentials=onboarding_credentials,
+        required_rechecks=required_rechecks,
     ).bundle
 
 
@@ -85,6 +89,7 @@ def run_validation_cycle(
     replay_result: ReplayResult,
     artifact_refs: dict[str, ArtifactRef | None],
     onboarding_credentials: dict[str, str] | None = None,
+    required_rechecks: list[str] | None = None,
 ) -> ValidationRunResult:
     run_root = Path(run_root)
     host_runtime_workspace = Path(host_runtime_workspace)
@@ -236,6 +241,10 @@ def run_validation_cycle(
             details=replay_validation_payload,
         ),
     ]
+    _enforce_required_rechecks(
+        required_rechecks=list(required_rechecks or []),
+        checks=[check.model_dump(mode="json") for check in checks],
+    )
 
     first_failure = next((check for check in checks if not check.passed), None)
     related_artifacts = [ref for ref in artifact_refs.values() if ref is not None]
@@ -850,60 +859,31 @@ def _widget_order_related_files(plan: IntegrationPlan) -> list[str]:
 
 
 def _evaluate_backend(workspace: Path) -> dict[str, Any]:
-    ignore_matcher = legacy_backend.OnboardingIgnoreMatcher(workspace)
-    checked_files: list[str] = []
-    failed_files: list[dict[str, str]] = []
-    for path in legacy_backend._iter_python_files(workspace, ignore_matcher):
-        relative = path.relative_to(workspace).as_posix()
-        checked_files.append(relative)
-        try:
-            import py_compile
-
-            py_compile.compile(str(path), doraise=True)
-        except py_compile.PyCompileError as exc:
-            failed_files.append({"path": relative, "error": str(exc)})
-    framework = legacy_backend._detect_backend_framework(workspace)
-    route_wiring = legacy_backend._evaluate_route_wiring(workspace, framework=framework)
-    passed = not failed_files and not route_wiring["validation_errors"]
-    failure_summary = ""
-    if failed_files:
-        failure_summary = f"python compile failed for {failed_files[0]['path']}"
-    elif route_wiring["validation_errors"]:
-        failure_summary = str(route_wiring["validation_errors"][0])
-    return {
-        "passed": passed,
-        "framework": framework,
-        "checked_files": checked_files,
-        "failed_files": failed_files,
-        "route_wiring": route_wiring,
-        "failure_summary": failure_summary or "backend evaluation passed",
-        "related_files": sorted(
-            set(checked_files) | set(route_wiring.get("files") or [])
-        ),
-    }
+    return evaluate_backend_workspace_static(workspace)
 
 
 def _evaluate_frontend(workspace: Path) -> dict[str, Any]:
-    framework = legacy_frontend._detect_frontend_framework(workspace)
-    mount_candidates = legacy_frontend._find_mount_candidates(workspace)
-    mount_path = legacy_frontend._resolve_mount_path(workspace, mount_candidates)
-    validation_errors = legacy_frontend._collect_validation_errors(
-        workspace=workspace,
-        mount=mount_path,
-        framework=framework,
-    )
-    passed = not validation_errors
-    return {
-        "passed": passed,
-        "framework": framework,
-        "mount_candidates": mount_candidates,
-        "mount_path": str(mount_path) if mount_path else None,
-        "validation_errors": validation_errors,
-        "failure_summary": validation_errors[0]
-        if validation_errors
-        else "frontend evaluation passed",
-        "related_files": mount_candidates,
+    return evaluate_frontend_workspace_static(workspace)
+
+
+def _enforce_required_rechecks(
+    *,
+    required_rechecks: list[str],
+    checks: list[dict[str, Any]],
+) -> None:
+    requested = [item for item in required_rechecks if item]
+    if not requested:
+        return
+    available = {
+        str(check.get("name") or "").strip()
+        for check in checks
+        if str(check.get("name") or "").strip()
     }
+    missing = [item for item in requested if item not in available]
+    if missing:
+        raise ValueError(
+            "required validation rechecks missing: " + ", ".join(missing)
+        )
 
 
 def _evaluate_replay_workspaces(

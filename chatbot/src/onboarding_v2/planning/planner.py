@@ -143,7 +143,9 @@ def build_planning_bundle(
     strict_coverage: bool = True,
     artifact_refs: list[ArtifactRef] | None = None,
 ) -> PlanningBundle:
-    bundle = analysis_bundle or _build_shell_analysis_bundle(snapshot)
+    if analysis_bundle is None:
+        raise ValueError("analysis_bundle is required for onboarding_v2 planning")
+    bundle = analysis_bundle
     adapters = set(available_adapters or DEFAULT_AVAILABLE_ADAPTERS)
     goal_materialization = _build_goal_materialization()
     coverage_report = _build_coverage_report(
@@ -321,7 +323,9 @@ def build_integration_plan(
     analysis_bundle: AnalysisBundle | None = None,
     **kwargs: Any,
 ) -> IntegrationPlan:
-    if analysis_bundle is None and "strict_coverage" not in kwargs:
+    if analysis_bundle is None:
+        raise ValueError("analysis_bundle is required for onboarding_v2 planning")
+    if "strict_coverage" not in kwargs:
         kwargs["strict_coverage"] = False
     return build_planning_bundle(
         snapshot=snapshot,
@@ -329,106 +333,6 @@ def build_integration_plan(
         chatbot_server_base_url=chatbot_server_base_url,
         **kwargs,
     ).integration_plan
-
-
-def _build_shell_analysis_bundle(snapshot: AnalysisSnapshot) -> AnalysisBundle:
-    lookup_target = _choose_order_target_from_candidates(
-        snapshot.domain_integration.order_bridge_targets,
-        role="lookup",
-        default="backend/orders/views.py",
-    )
-    action_target = _choose_order_target_from_candidates(
-        snapshot.domain_integration.order_bridge_targets,
-        role="action",
-        default="backend/orders/views.py",
-    )
-    candidate_set = CandidateSet(
-        route_definitions=list(snapshot.backend_seams.route_registration_points),
-        auth_components=_dedupe_candidates(
-            [
-                *snapshot.backend_seams.auth_source_candidates,
-                *snapshot.backend_seams.user_resolver_candidates,
-                *snapshot.frontend_seams.auth_store_candidates,
-            ]
-        ),
-        api_clients=list(snapshot.frontend_seams.api_client_candidates),
-        app_shells=list(snapshot.frontend_seams.app_shell_candidates),
-        router_boundaries=list(snapshot.frontend_seams.router_boundary_candidates),
-        widget_mounts=list(snapshot.frontend_seams.widget_mount_candidates),
-        order_targets=list(snapshot.domain_integration.order_bridge_targets),
-        services=list(snapshot.backend_seams.tool_registry_candidates),
-    )
-    verified_contracts = VerifiedContracts(
-        database_entities=[
-            ContractRecord(
-                identifier="orders_order" if snapshot.repo_profile.backend_framework == "django" else "orders",
-                kind="database_entity",
-                location=_path_or_default(
-                    snapshot.domain_integration.order_bridge_targets,
-                    default="backend/orders/views.py",
-                ),
-                evidence_refs=[_path_or_default(snapshot.domain_integration.order_bridge_targets, default="backend/orders/views.py")],
-            )
-        ],
-        api_endpoints=[
-            ContractRecord(
-                identifier=path,
-                kind="api_endpoint",
-                location=_path_or_default(snapshot.backend_seams.route_registration_points, default="backend/foodshop/urls.py"),
-                details={"domain": "order" if "order" in path.lower() else "product"},
-                evidence_refs=[_path_or_default(snapshot.backend_seams.route_registration_points, default="backend/foodshop/urls.py")],
-            )
-            for path in [*snapshot.domain_integration.product_api_base_paths, *snapshot.domain_integration.order_api_base_paths]
-        ]
-        + [
-            ContractRecord(
-                identifier="/api/chat/auth-token",
-                kind="api_endpoint",
-                location=_path_or_default(snapshot.backend_seams.auth_source_candidates, default="backend/users/views.py"),
-                details={"domain": "auth_bootstrap"},
-                evidence_refs=[_path_or_default(snapshot.backend_seams.auth_source_candidates, default="backend/users/views.py")],
-            )
-        ],
-        auth_components=[
-            ContractRecord(
-                identifier="chat_auth_bootstrap",
-                kind="auth_component",
-                location=_path_or_default(snapshot.backend_seams.auth_source_candidates, default="backend/users/views.py"),
-                details={"role": "chatbot_bootstrap_contract"},
-                evidence_refs=[_path_or_default(snapshot.backend_seams.auth_source_candidates, default="backend/users/views.py")],
-            )
-        ],
-        tool_targets=[
-            ContractRecord(
-                identifier="order_lookup",
-                kind="tool_target",
-                location=lookup_target,
-                details={"tool_name": "list_orders"},
-                evidence_refs=[lookup_target],
-            ),
-            ContractRecord(
-                identifier="order_action",
-                kind="tool_target",
-                location=action_target,
-                details={"tool_name": "cancel|refund|exchange"},
-                evidence_refs=[action_target],
-            ),
-        ],
-    )
-    return AnalysisBundle(
-        workspace_profile=WorkspaceProfile(root=snapshot.repo_profile.source_root),
-        framework_profile=FrameworkProfile(
-            backend_framework=snapshot.repo_profile.backend_framework,
-            frontend_framework=snapshot.repo_profile.frontend_framework,
-            auth_style=snapshot.repo_profile.auth_style,
-        ),
-        retrieval_plan=RetrievalPlan(),
-        candidate_set=candidate_set,
-        verified_contracts=verified_contracts,
-        analysis_graph=AnalysisGraph(),
-        unresolved_ambiguities=list(snapshot.ambiguity.open_questions),
-        snapshot=snapshot,
-    )
 
 
 def _build_goal_materialization() -> GoalMaterialization:

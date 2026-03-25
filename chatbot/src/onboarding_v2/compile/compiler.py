@@ -11,14 +11,14 @@ from chatbot.src.onboarding_v2.compile.strategies.chatbot.generated_adapter impo
 )
 from chatbot.src.onboarding_v2.compile.strategies.frontend.react_api import compile_react_api_bundle
 from chatbot.src.onboarding_v2.compile.strategies.frontend.react_mount import compile_react_mount_bundle
-from chatbot.src.onboarding_v2.models.analysis import AnalysisSnapshot
+from chatbot.src.onboarding_v2.models.analysis import AnalysisBundle
 from chatbot.src.onboarding_v2.models.compile import (
     ChatbotEditProgram,
     CompilePreflightSpec,
     EditProgram,
     HostEditProgram,
 )
-from chatbot.src.onboarding_v2.models.planning import IntegrationPlan
+from chatbot.src.onboarding_v2.models.planning import PlanningBundle
 
 
 def build_compiler_registry() -> CompilerRegistry:
@@ -33,12 +33,12 @@ def build_compiler_registry() -> CompilerRegistry:
 
 def compile_plan(
     *,
-    snapshot: AnalysisSnapshot,
-    plan: IntegrationPlan,
+    analysis_bundle: AnalysisBundle,
+    planning_bundle: PlanningBundle,
     source_root: str | Path,
     chatbot_source_root: str | Path | None = None,
 ) -> EditProgram:
-    del snapshot
+    plan = planning_bundle.integration_plan
     registry = build_compiler_registry()
     host_source_root = Path(source_root)
     chatbot_source_root = Path(chatbot_source_root) if chatbot_source_root is not None else Path(__file__).resolve().parents[3]
@@ -71,5 +71,13 @@ def compile_plan(
             "host_mount_strategy": plan.host_frontend.mount_strategy,
             "host_api_strategy": plan.host_frontend.api_strategy,
             "chatbot_bridge_site_key": plan.chatbot_bridge.site_key,
+            "planning_notes": plan.planning_notes.model_dump(mode="json"),
+            "target_bindings": [
+                item.model_dump(mode="json") for item in planning_bundle.target_bindings
+            ],
+            "repair_hints": [
+                item.model_dump(mode="json") for item in planning_bundle.repair_hints
+            ],
+            "analysis_unresolved_ambiguities": list(analysis_bundle.unresolved_ambiguities),
         },
     )

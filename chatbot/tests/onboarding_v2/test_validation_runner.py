@@ -1,5 +1,6 @@
 import os
 import sys
+import pytest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -7,26 +8,44 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
 os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
-from chatbot.src.onboarding_v2.analysis import build_analysis_snapshot
+from chatbot.src.onboarding_v2.analysis import build_analysis_bundle
 from chatbot.src.onboarding_v2.apply import apply_edit_program
 from chatbot.src.onboarding_v2.compile import compile_plan
 from chatbot.src.onboarding_v2.export import export_and_replay
 from chatbot.src.onboarding_v2.models.validation import BackendRuntimePlan, BackendRuntimePrepResult, BackendRuntimeState
-from chatbot.src.onboarding_v2.planning import build_integration_plan
+from chatbot.src.onboarding_v2.planning import build_planning_bundle
 from chatbot.src.onboarding_v2.storage import ArtifactStore
-from chatbot.src.onboarding_v2.validation.runner import _evaluate_widget_order_flow_report, run_validation
+from chatbot.src.onboarding_v2.validation.runner import (
+    _evaluate_widget_order_flow_report,
+    _enforce_required_rechecks,
+    run_validation,
+)
 from chatbot.src.onboarding_v2.validation.signatures import build_failure_signature
+
+
+@pytest.fixture(autouse=True)
+def _disable_onboarding_v2_llm(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ONBOARDING_V2_ENABLE_LLM", "0")
 
 
 def _build_food_runtime_artifacts(tmp_path: Path):
     generated_root = tmp_path / "generated" / "food" / "food-run-v2"
     runtime_root = tmp_path / "runtime"
-    snapshot = build_analysis_snapshot(site="food", source_root=ROOT / "food")
-    plan = build_integration_plan(
-        snapshot,
+    analysis_bundle = build_analysis_bundle(site="food", source_root=ROOT / "food")
+    snapshot = analysis_bundle.snapshot
+    planning_bundle = build_planning_bundle(
+        snapshot=snapshot,
+        analysis_bundle=analysis_bundle,
         chatbot_server_base_url="http://localhost:8100",
     )
-    program = compile_plan(snapshot=snapshot, plan=plan, source_root=ROOT / "food")
+    plan = planning_bundle.integration_plan
+    program = compile_plan(
+        analysis_bundle=analysis_bundle,
+        planning_bundle=planning_bundle,
+        source_root=ROOT / "food",
+    )
     apply_result = apply_edit_program(
         host_source_root=ROOT / "food",
         chatbot_source_root=ROOT / "chatbot",
@@ -43,8 +62,12 @@ def _build_food_runtime_artifacts(tmp_path: Path):
     _, replay_result, replay_ref = export_and_replay(
         host_source_root=ROOT / "food",
         chatbot_source_root=ROOT / "chatbot",
+        host_baseline_root=apply_result.host_source_snapshot_path,
+        chatbot_baseline_root=apply_result.chatbot_source_snapshot_path,
         host_runtime_workspace=apply_result.host_workspace_path,
         chatbot_runtime_workspace=apply_result.chatbot_workspace_path,
+        host_allowed_targets=apply_result.host_applied_files,
+        chatbot_allowed_targets=apply_result.chatbot_applied_files,
         runtime_root=runtime_root,
         run_root=generated_root,
         site="food",
@@ -65,6 +88,16 @@ def _build_food_runtime_artifacts(tmp_path: Path):
             "replay": replay_ref,
         },
     }
+
+
+def _build_food_plan():
+    analysis_bundle = build_analysis_bundle(site="food", source_root=ROOT / "food")
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+    )
+    return planning_bundle.integration_plan
 
 
 def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
@@ -197,6 +230,17 @@ def test_validation_runner_does_not_allow_static_fallback_success(monkeypatch, t
     assert bundle.failure_signature.startswith("backend_runtime_prep")
 
 
+def test_validation_runner_requires_requested_rechecks():
+    with pytest.raises(ValueError, match="required validation rechecks missing: host_auth_bootstrap"):
+        _enforce_required_rechecks(
+            required_rechecks=["host_auth_bootstrap"],
+            checks=[
+                {"name": "backend_runtime_prep", "passed": True},
+                {"name": "widget_order_e2e", "passed": True},
+            ],
+        )
+
+
 def test_validation_runner_fails_when_chatbot_runtime_boot_fails(monkeypatch, tmp_path: Path):
     runtime_plan = BackendRuntimePlan(
         framework="django",
@@ -281,10 +325,7 @@ def test_failure_signature_distinguishes_runtime_validation_phases():
 
 def test_widget_order_e2e_report_tracks_all_required_flows():
     result = _evaluate_widget_order_flow_report(
-        plan=build_integration_plan(
-            build_analysis_snapshot(site="food", source_root=ROOT / "food"),
-            chatbot_server_base_url="http://localhost:8100",
-        ),
+        plan=_build_food_plan(),
         flow_reports={
             "get_order_status": {"passed": True, "steps": []},
             "list_orders": {"steps": ["show_order_list"], "fragments": ["list-stream"]},
@@ -300,10 +341,7 @@ def test_widget_order_e2e_report_tracks_all_required_flows():
 
 def test_widget_order_e2e_report_marks_missing_exchange_option_step_as_failure():
     result = _evaluate_widget_order_flow_report(
-        plan=build_integration_plan(
-            build_analysis_snapshot(site="food", source_root=ROOT / "food"),
-            chatbot_server_base_url="http://localhost:8100",
-        ),
+        plan=_build_food_plan(),
         flow_reports={
             "get_order_status": {"passed": True, "steps": []},
             "list_orders": {"steps": ["show_order_list"], "fragments": ["list-stream"]},

@@ -7,20 +7,26 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
 os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
-from chatbot.src.onboarding_v2.analysis import build_analysis_snapshot
+from chatbot.src.onboarding_v2.analysis import build_analysis_bundle
 from chatbot.src.onboarding_v2.compile import compile_plan
 from chatbot.src.onboarding_v2.compile.strategies.backend.django import compile_django_backend_bundle
 from chatbot.src.onboarding_v2.models.planning import HostBackendPlan
-from chatbot.src.onboarding_v2.planning import build_integration_plan
+from chatbot.src.onboarding_v2.planning import build_planning_bundle
 
 
 def test_compiler_builds_complete_food_program():
-    snapshot = build_analysis_snapshot(site="food", source_root=ROOT / "food")
-    plan = build_integration_plan(
-        snapshot,
+    analysis_bundle = build_analysis_bundle(site="food", source_root=ROOT / "food")
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
         chatbot_server_base_url="http://localhost:8100",
     )
-    program = compile_plan(snapshot=snapshot, plan=plan, source_root=ROOT / "food")
+    plan = planning_bundle.integration_plan
+    program = compile_plan(
+        analysis_bundle=analysis_bundle,
+        planning_bundle=planning_bundle,
+        source_root=ROOT / "food",
+    )
 
     backend_bundle = program.host_program.backend_wiring_bundles[0]
     assert backend_bundle.target_paths == [
@@ -58,6 +64,11 @@ def test_compiler_builds_complete_food_program():
     assert program.chatbot_program.compile_preflight is not None
     assert program.chatbot_program.compile_preflight.artifact_type == "compile-preflight"
     assert program.chatbot_program.compile_preflight.check_name == "chatbot_runtime_import"
+    assert program.execution_metadata["planning_notes"] == plan.planning_notes.model_dump(mode="json")
+    assert program.execution_metadata["target_bindings"]
+    assert program.execution_metadata["repair_hints"] == [
+        item.model_dump(mode="json") for item in planning_bundle.repair_hints
+    ]
 
 
 def test_compiler_tolerates_multiline_models_import_and_next_def_boundary(tmp_path: Path):

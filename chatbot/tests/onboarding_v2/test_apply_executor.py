@@ -7,19 +7,24 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
 os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
-from chatbot.src.onboarding_v2.analysis import build_analysis_snapshot
+from chatbot.src.onboarding_v2.analysis import build_analysis_bundle
 from chatbot.src.onboarding_v2.apply import apply_edit_program
 from chatbot.src.onboarding_v2.compile import compile_plan
-from chatbot.src.onboarding_v2.planning import build_integration_plan
+from chatbot.src.onboarding_v2.planning import build_planning_bundle
 
 
 def test_apply_executor_materializes_food_changes(tmp_path: Path):
-    snapshot = build_analysis_snapshot(site="food", source_root=ROOT / "food")
-    plan = build_integration_plan(
-        snapshot,
+    analysis_bundle = build_analysis_bundle(site="food", source_root=ROOT / "food")
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
         chatbot_server_base_url="http://localhost:8100",
     )
-    program = compile_plan(snapshot=snapshot, plan=plan, source_root=ROOT / "food")
+    program = compile_plan(
+        analysis_bundle=analysis_bundle,
+        planning_bundle=planning_bundle,
+        source_root=ROOT / "food",
+    )
 
     result = apply_edit_program(
         host_source_root=ROOT / "food",
