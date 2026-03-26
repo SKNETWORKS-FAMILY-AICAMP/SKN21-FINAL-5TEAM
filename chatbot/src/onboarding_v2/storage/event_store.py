@@ -18,6 +18,9 @@ class EventStore:
         self.events_root = self.run_root / "events"
         self.events_root.mkdir(parents=True, exist_ok=True)
         self.events_path = self.events_root / "events.jsonl"
+        self.views_root = self.run_root / "views"
+        self.views_root.mkdir(parents=True, exist_ok=True)
+        self.timeline_path = self.views_root / "timeline.txt"
 
     def write_event(self, **payload) -> EventRecord:
         record = EventRecord(
@@ -27,6 +30,9 @@ class EventStore:
         )
         with self.events_path.open("a", encoding="utf-8") as handle:
             handle.write(record.model_dump_json())
+            handle.write("\n")
+        with self.timeline_path.open("a", encoding="utf-8") as handle:
+            handle.write(self._format_timeline_line(record))
             handle.write("\n")
         return record
 
@@ -39,3 +45,6 @@ class EventStore:
                 continue
             records.append(EventRecord.model_validate_json(line))
         return records
+
+    def _format_timeline_line(self, record: EventRecord) -> str:
+        return f"{record.timestamp} {record.stage} {record.event_type} {record.summary}"

@@ -54,7 +54,7 @@ def test_engine_entry_returns_v2_payload(monkeypatch, tmp_path: Path):
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
@@ -204,7 +204,7 @@ def test_engine_entry_writes_llm_usage_summary_artifact(monkeypatch, tmp_path: P
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
@@ -311,7 +311,7 @@ def test_engine_entry_passes_snapshot_roots_and_allowlists_to_export(monkeypatch
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
@@ -429,7 +429,7 @@ def test_engine_entry_stops_at_export_when_replay_verification_fails(monkeypatch
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
@@ -538,7 +538,7 @@ def test_engine_entry_passes_preflight_scan_paths(monkeypatch, tmp_path: Path):
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
@@ -752,7 +752,7 @@ def test_engine_entry_rewinds_validation_failures(monkeypatch, tmp_path: Path):
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
@@ -896,7 +896,7 @@ def test_engine_entry_derives_effective_compile_rewind_from_overrides(monkeypatc
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
@@ -1085,7 +1085,7 @@ def test_engine_entry_stops_after_repeated_failure_signature(monkeypatch, tmp_pa
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",

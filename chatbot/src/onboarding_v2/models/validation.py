@@ -61,6 +61,9 @@ class BackendRuntimeCommandResult(BaseModel):
     stderr: str = ""
     passed: bool
     skipped: bool = False
+    skipped_reason: str | None = None
+    log_path: str | None = None
+    duration_ms: int | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -80,6 +83,7 @@ class BackendRuntimePrepResult(BaseModel):
     seed_source_path: str | None = None
     reset_source_path: str | None = None
     fixture_manifest: dict[str, Any] = Field(default_factory=dict)
+    live_log_paths: dict[str, str] = Field(default_factory=dict)
     related_files: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -109,6 +113,8 @@ class BackendRuntimeState(BaseModel):
     launcher_mode: str | None = None
     startup_hooks_skipped: list[str] = Field(default_factory=list)
     readiness: dict[str, Any] = Field(default_factory=dict)
+    launcher_log_path: str | None = None
+    readiness_probe_log_path: str | None = None
     failure_summary: str | None = None
     stdout: str = ""
     stderr: str = ""
@@ -149,6 +155,7 @@ class ConversationScenarioResult(BaseModel):
     final_verdict: str
     transcript_path: str | None = None
     trace_path: str | None = None
+    log_path: str | None = None
     sampled_or_fixture_order_id: str | None = None
     sampled_or_fixture_option_id: str | None = None
     deterministic_failures: list[str] = Field(default_factory=list)

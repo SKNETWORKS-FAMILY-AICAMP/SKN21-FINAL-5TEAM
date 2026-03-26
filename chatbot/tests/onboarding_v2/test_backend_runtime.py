@@ -215,7 +215,8 @@ def test_prepare_backend_runtime_discovers_reset_and_seed_scripts(tmp_path: Path
     (seed_root / "reset.py").write_text("print('reset')\n", encoding="utf-8")
     (seed_root / "seed.py").write_text("print('seed')\n", encoding="utf-8")
 
-    def _ok_command(*, name: str, command: list[str], cwd: Path):
+    def _ok_command(*, name: str, command: list[str], cwd: Path, log_path: Path | None = None, **kwargs):
+        del kwargs
         return backend_runtime_module.BackendRuntimeCommandResult(
             name=name,
             command=command,
@@ -224,6 +225,7 @@ def test_prepare_backend_runtime_discovers_reset_and_seed_scripts(tmp_path: Path
             stdout=f"{name} ok",
             stderr="",
             passed=True,
+            log_path=str(log_path) if log_path is not None else None,
         )
 
     monkeypatch.setattr(backend_runtime_module, "_create_venv", lambda *args, **kwargs: _ok_command(name="create_venv", command=["python", "-m", "venv"], cwd=tmp_path))
@@ -253,7 +255,8 @@ def test_prepare_backend_runtime_keeps_fixture_manifest_metadata_when_seed_missi
     backend_root.mkdir(parents=True)
     (backend_root / "manage.py").write_text("print('django')\n", encoding="utf-8")
 
-    def _ok_command(*, name: str, command: list[str], cwd: Path):
+    def _ok_command(*, name: str, command: list[str], cwd: Path, log_path: Path | None = None, **kwargs):
+        del kwargs
         return backend_runtime_module.BackendRuntimeCommandResult(
             name=name,
             command=command,
@@ -262,6 +265,7 @@ def test_prepare_backend_runtime_keeps_fixture_manifest_metadata_when_seed_missi
             stdout=f"{name} ok",
             stderr="",
             passed=True,
+            log_path=str(log_path) if log_path is not None else None,
         )
 
     monkeypatch.setattr(backend_runtime_module, "_create_venv", lambda *args, **kwargs: _ok_command(name="create_venv", command=["python", "-m", "venv"], cwd=tmp_path))
@@ -278,3 +282,96 @@ def test_prepare_backend_runtime_keeps_fixture_manifest_metadata_when_seed_missi
     assert prep.seed.skipped is True
     assert prep.fixture_manifest["available"] is False
     assert prep.fixture_manifest["reason"] == "fixture_unavailable"
+
+
+def test_run_command_writes_live_log_and_emits_progress(tmp_path: Path):
+    log_path = tmp_path / "live-logs" / "prep-reset.log"
+    progress_events: list[dict[str, object]] = []
+    command = [
+        sys.executable,
+        "-c",
+        (
+            "import sys,time; "
+            "print('reset-start', flush=True); "
+            "time.sleep(0.2); "
+            "print('reset-stderr', file=sys.stderr, flush=True); "
+            "time.sleep(0.2)"
+        ),
+    ]
+
+    result = backend_runtime_module._run_command(
+        name="reset",
+        command=command,
+        cwd=tmp_path,
+        log_path=log_path,
+        heartbeat_interval_s=0.1,
+        progress_callback=lambda payload: progress_events.append(payload),
+    )
+
+    assert result.passed is True
+    assert result.log_path == str(log_path)
+    assert "reset-start" in result.stdout
+    assert "reset-stderr" in result.stderr
+    assert log_path.read_text(encoding="utf-8")
+    assert progress_events
+    assert all(event["log_path"] == str(log_path) for event in progress_events)
+
+
+def test_prepare_backend_runtime_emits_step_events_and_records_skips(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    backend_root = workspace / "backend"
+    backend_root.mkdir(parents=True)
+    (backend_root / "manage.py").write_text("print('django')\n", encoding="utf-8")
+    live_logs_root = tmp_path / "generated" / "artifacts" / "05-validation" / "live-logs"
+    observed_events: list[dict[str, object]] = []
+
+    def _record_event(payload: dict[str, object]) -> None:
+        observed_events.append(payload)
+
+    def _ok_command(*, name: str, command: list[str], cwd: Path, log_path: Path | None = None, **kwargs):
+        del kwargs
+        return backend_runtime_module.BackendRuntimeCommandResult(
+            name=name,
+            command=command,
+            cwd=str(cwd),
+            returncode=0,
+            stdout=f"{name} ok",
+            stderr="",
+            passed=True,
+            log_path=str(log_path) if log_path is not None else None,
+        )
+
+    monkeypatch.setattr(backend_runtime_module, "_create_venv", lambda *args, **kwargs: _ok_command(name="create_venv", command=["python", "-m", "venv"], cwd=tmp_path, log_path=kwargs.get("log_path")))
+    monkeypatch.setattr(backend_runtime_module, "_install_backend_requirements", lambda **kwargs: _ok_command(name="install", command=["pip", "install"], cwd=backend_root, log_path=kwargs.get("log_path")))
+    monkeypatch.setattr(backend_runtime_module, "_run_django_migrate", lambda **kwargs: _ok_command(name="migrate", command=["manage.py", "migrate"], cwd=backend_root, log_path=kwargs.get("log_path")))
+    monkeypatch.setattr(backend_runtime_module, "_run_command", _ok_command)
+
+    prep = prepare_backend_runtime(
+        workspace=workspace,
+        snapshot=_snapshot(backend_framework="django"),
+        live_logs_root=live_logs_root,
+        event_callback=_record_event,
+    )
+
+    assert prep.passed is True
+    phases = [str(event["phase"]) for event in observed_events]
+    assert phases[:6] == [
+        "prep_venv_start",
+        "prep_venv_finish",
+        "prep_install_start",
+        "prep_install_finish",
+        "prep_migrate_start",
+        "prep_migrate_finish",
+    ]
+    assert "prep_reset_finish" in phases
+    assert "prep_seed_finish" in phases
+    assert "prep_fixture_manifest_finish" in phases
+    reset_finish = next(event for event in observed_events if event["phase"] == "prep_reset_finish")
+    seed_finish = next(event for event in observed_events if event["phase"] == "prep_seed_finish")
+    assert reset_finish["details"]["status"] == "skipped"
+    assert seed_finish["details"]["status"] == "skipped"
+    assert "skipped_reason" in reset_finish["details"]
+    assert "skipped_reason" in seed_finish["details"]
+    assert prep.create_venv is not None and prep.create_venv.log_path is not None
+    assert prep.install is not None and prep.install.log_path is not None
+    assert prep.migrate is not None and prep.migrate.log_path is not None

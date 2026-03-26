@@ -1452,6 +1452,17 @@ def run_validation_stage(
         ],
         attempt=attempt,
     )
+    validation_live_logs_root = run_root / "artifacts" / "05-validation" / "live-logs"
+    validation_live_logs_root.mkdir(parents=True, exist_ok=True)
+
+    def _validation_event_callback(payload: dict[str, object]) -> None:
+        event_store.write_event(
+            run_id=run_id,
+            stage="validation",
+            attempt=attempt,
+            **payload,
+        )
+
     event_store.write_event(
         run_id=run_id,
         stage="validation",
@@ -1478,6 +1489,8 @@ def run_validation_stage(
         },
         onboarding_credentials=onboarding_credentials,
         required_rechecks=list(state.pending_required_rechecks),
+        event_callback=_validation_event_callback,
+        live_logs_root=validation_live_logs_root,
     )
     prep_ref = artifact_store.write_json_artifact(
         stage="validation",
@@ -1502,7 +1515,13 @@ def run_validation_stage(
         artifact_refs=[prep_ref],
         input_refs=[state.analysis_ref, state.plan_ref, state.apply_ref],
         failure_signature=(
-            None if validation_run.backend_runtime_prep.passed else "backend_runtime_prep_failed"
+            None
+            if validation_run.backend_runtime_prep.passed
+            else build_failure_signature(
+                check_name="backend_runtime_prep",
+                summary=validation_run.backend_runtime_prep.failure_summary
+                or "backend runtime prep failed",
+            )
         ),
         attempt=attempt,
     )

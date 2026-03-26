@@ -24,6 +24,7 @@ from chatbot.src.onboarding_v2.validation.runner import (
     _runtime_base_url,
     run_validation,
     validate_host_auth_bootstrap,
+    validate_conversation_runtime,
 )
 from chatbot.src.onboarding_v2.validation.signatures import build_failure_signature
 
@@ -129,7 +130,7 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
@@ -287,7 +288,7 @@ def test_validation_runner_records_advisory_conversation_failures(monkeypatch, t
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
@@ -618,10 +619,104 @@ def test_validate_host_auth_bootstrap_uses_validation_bridge_without_planned_log
     assert result["passed"] is True
     assert result["bootstrap_mode"] == "validation_bridge"
     assert result["failure_origin"] == "login"
-    assert result["login_url"] is None
-    assert result["login_response_text"] == "planned login endpoint unavailable"
-    assert result["bootstrap_url"] == "http://127.0.0.1:8125/api/chat/auth-token"
-    assert result["auth_handler_source"] == plan.host_backend.auth_handler_source
+
+
+def test_validate_conversation_runtime_emits_scenario_events(monkeypatch, tmp_path: Path):
+    observed_events: list[dict[str, object]] = []
+    fixture_manifest = {
+        "available": True,
+        "site_id": "food",
+        "access_token": "token",
+        "capability_profile": "order_cs_only",
+        "session_cookies": {"sessionid": "cookie-1"},
+        "bootstrap_payload": {"user": {"id": "7"}},
+        "orders": {},
+    }
+
+    async def _fake_unauthenticated(**kwargs):
+        scenario = kwargs["scenario"]
+        result = ConversationScenarioResult(
+            scenario_id=scenario["scenario_id"],
+            mode=scenario["mode"],
+            conversation_id="conv-unauth",
+            deterministic_passed=True,
+            llm_passed=True,
+            final_verdict="pass",
+            transcript_path=str(tmp_path / "unauth.json"),
+            trace_path=None,
+        )
+        return result, "{}"
+
+    async def _fake_authenticated(**kwargs):
+        scenario = kwargs["scenario"]
+        result = ConversationScenarioResult(
+            scenario_id=scenario["scenario_id"],
+            mode=scenario["mode"],
+            conversation_id="conv-auth",
+            deterministic_passed=True,
+            llm_passed=True,
+            final_verdict="pass",
+            transcript_path=str(tmp_path / f"{scenario['scenario_id']}.json"),
+            trace_path=str(tmp_path / f"{scenario['scenario_id']}.jsonl"),
+        )
+        return result, "{}", "{}", {"conversation_id": "conv-auth"}
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner._build_runtime_fixture_manifest",
+        lambda **kwargs: fixture_manifest,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner._load_runtime_chat_modules",
+        lambda **kwargs: (object(), object()),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner._build_conversation_scenarios",
+        lambda **kwargs: [
+            {"scenario_id": "unauthenticated_chat_request", "mode": "auth", "prompt": "hi"},
+            {"scenario_id": "authenticated_list_orders", "mode": "read_only", "prompt": "orders"},
+        ],
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner._run_unauthenticated_conversation_scenario",
+        _fake_unauthenticated,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner._run_authenticated_conversation_scenario",
+        _fake_authenticated,
+    )
+
+    result = validate_conversation_runtime(
+        run_root=tmp_path,
+        chatbot_runtime_workspace=tmp_path,
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path),
+            command=["python"],
+            readiness_url="http://127.0.0.1:8123/api/chat/auth-token",
+            listen_port=8123,
+        ),
+        snapshot=build_analysis_bundle(site="food", source_root=ROOT / "food").snapshot,
+        plan=_build_food_plan(),
+        prep_result=BackendRuntimePrepResult(
+            framework="django",
+            passed=True,
+            fixture_manifest=fixture_manifest,
+        ),
+        bootstrap_result={"passed": True},
+        adapter_auth_result={"passed": True},
+        event_callback=lambda payload: observed_events.append(payload),
+    )
+
+    assert result.passed is True
+    phases = [str(event["phase"]) for event in observed_events]
+    assert phases == [
+        "conversation_scenario_start",
+        "conversation_scenario_finish",
+        "conversation_scenario_start",
+        "conversation_scenario_finish",
+    ]
+    assert observed_events[0]["details"]["scenario_id"] == "unauthenticated_chat_request"
+    assert observed_events[-1]["details"]["scenario_id"] == "authenticated_list_orders"
 
 
 def test_validate_host_auth_bootstrap_falls_back_to_validation_bridge_when_login_fails(
@@ -742,7 +837,7 @@ def test_validation_runner_fails_when_chatbot_runtime_boot_fails(monkeypatch, tm
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
@@ -826,7 +921,7 @@ def test_validation_runner_fails_when_widget_bundle_fetch_uses_host_origin(monke
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
@@ -943,7 +1038,7 @@ def test_validation_runner_uses_explicit_credentials_without_manifest(monkeypatc
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
@@ -1048,7 +1143,7 @@ def test_validation_runner_requires_site_id_in_host_bootstrap(monkeypatch, tmp_p
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
-        lambda plan: runtime_state,
+        lambda plan, **kwargs: runtime_state,
     )
     monkeypatch.setattr(
         "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",

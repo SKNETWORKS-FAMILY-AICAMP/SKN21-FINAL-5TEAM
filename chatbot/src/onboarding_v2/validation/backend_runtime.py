@@ -6,7 +6,10 @@ import os
 import socket
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
+from typing import Any, Callable
 
 from chatbot.src.onboarding.runtime_completion_runner import _probe_http_ready, _terminate_process
 from chatbot.src.onboarding_v2.models.analysis import AnalysisSnapshot
@@ -18,86 +21,191 @@ from chatbot.src.onboarding_v2.models.validation import (
     BackendRuntimeState,
 )
 
+ValidationEventCallback = Callable[[dict[str, Any]], None]
+
 
 def prepare_backend_runtime(
     *,
     workspace: str | Path,
     snapshot: AnalysisSnapshot,
+    live_logs_root: str | Path | None = None,
+    event_callback: ValidationEventCallback | None = None,
+    heartbeat_interval_s: float = 15.0,
 ) -> BackendRuntimePrepResult:
     workspace = Path(workspace).resolve()
     backend_root = _resolve_backend_root(workspace)
     framework = snapshot.repo_profile.backend_framework
     runtime_root = _resolve_validation_support_root(workspace)
+    live_logs_root_path = (
+        Path(live_logs_root).resolve() if live_logs_root is not None else None
+    )
+    if live_logs_root_path is not None:
+        live_logs_root_path.mkdir(parents=True, exist_ok=True)
     venv_path = runtime_root / "venv"
     python_executable = _venv_python(venv_path)
     runtime_root.mkdir(parents=True, exist_ok=True)
+    live_log_paths: dict[str, str] = {}
 
-    create_venv = _create_venv(sys.executable, venv_path)
+    create_venv = _run_prep_step(
+        step_name="venv",
+        command_preview=[sys.executable, "-m", "venv", str(venv_path)],
+        cwd=venv_path.parent,
+        command_factory=lambda log_path: _create_venv(
+            sys.executable,
+            venv_path,
+            log_path=log_path,
+            heartbeat_interval_s=heartbeat_interval_s,
+            progress_callback=_step_progress_emitter(
+                event_callback,
+                step_name="venv",
+                command=[sys.executable, "-m", "venv", str(venv_path)],
+                cwd=venv_path.parent,
+                log_path=log_path,
+            ),
+        ),
+        live_logs_root=live_logs_root_path,
+        event_callback=event_callback,
+    )
+    _record_live_log_path(live_log_paths, "venv", create_venv.log_path)
     if not create_venv.passed:
         return BackendRuntimePrepResult(
             framework=framework,
             passed=False,
-            failure_summary=create_venv.stderr or create_venv.stdout or "failed to create backend runtime venv",
+            failure_summary=_prep_failure_summary("venv", create_venv),
             backend_root=str(backend_root),
             venv_path=str(venv_path),
             python_executable=str(python_executable),
             create_venv=create_venv,
+            live_log_paths=live_log_paths,
             related_files=_default_related_files(framework),
         )
 
-    install = _install_backend_requirements(backend_root=backend_root, python_executable=python_executable)
+    install = _run_prep_step(
+        step_name="install",
+        command_preview=[
+            str(python_executable),
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "-r",
+            str(backend_root / "requirements.txt"),
+        ],
+        cwd=backend_root,
+        command_factory=lambda log_path: _install_backend_requirements(
+            backend_root=backend_root,
+            python_executable=python_executable,
+            log_path=log_path,
+            heartbeat_interval_s=heartbeat_interval_s,
+            progress_callback=_step_progress_emitter(
+                event_callback,
+                step_name="install",
+                command=[
+                    str(python_executable),
+                    "-m",
+                    "pip",
+                    "install",
+                    "--disable-pip-version-check",
+                    "-r",
+                    str(backend_root / "requirements.txt"),
+                ],
+                cwd=backend_root,
+                log_path=log_path,
+            ),
+        ),
+        live_logs_root=live_logs_root_path,
+        event_callback=event_callback,
+    )
+    _record_live_log_path(live_log_paths, "install", install.log_path)
     if not install.passed:
         return BackendRuntimePrepResult(
             framework=framework,
             passed=False,
-            failure_summary=install.stderr or install.stdout or "dependency install failed",
+            failure_summary=_prep_failure_summary("install", install),
             backend_root=str(backend_root),
             venv_path=str(venv_path),
             python_executable=str(python_executable),
             create_venv=create_venv,
             install=install,
+            live_log_paths=live_log_paths,
             related_files=_default_related_files(framework),
         )
 
-    migrate = _run_django_migrate(
-        framework=framework,
-        backend_root=backend_root,
-        python_executable=python_executable,
+    migrate = _run_prep_step(
+        step_name="migrate",
+        command_preview=[str(python_executable), "manage.py", "migrate", "--noinput"],
+        cwd=backend_root,
+        command_factory=lambda log_path: _run_django_migrate(
+            framework=framework,
+            backend_root=backend_root,
+            python_executable=python_executable,
+            log_path=log_path,
+            heartbeat_interval_s=heartbeat_interval_s,
+            progress_callback=_step_progress_emitter(
+                event_callback,
+                step_name="migrate",
+                command=[str(python_executable), "manage.py", "migrate", "--noinput"],
+                cwd=backend_root,
+                log_path=log_path,
+            ),
+        ),
+        live_logs_root=live_logs_root_path,
+        event_callback=event_callback,
     )
+    _record_live_log_path(live_log_paths, "migrate", migrate.log_path)
     if not migrate.passed:
         return BackendRuntimePrepResult(
             framework=framework,
             passed=False,
-            failure_summary=migrate.stderr or migrate.stdout or "backend migrate failed",
+            failure_summary=_prep_failure_summary("migrate", migrate),
             backend_root=str(backend_root),
             venv_path=str(venv_path),
             python_executable=str(python_executable),
             create_venv=create_venv,
             install=install,
             migrate=migrate,
+            live_log_paths=live_log_paths,
             fixture_manifest=_build_fixture_manifest(
                 available=False,
                 seed_source={},
-                reason=migrate.stderr or migrate.stdout or "backend migrate failed",
+                reason=_prep_failure_summary("migrate", migrate),
             ),
             related_files=_default_related_files(framework),
         )
 
     reset_path = _discover_reset_script(workspace=workspace, backend_root=backend_root)
     seed_path = _discover_seed_script(workspace=workspace, backend_root=backend_root)
-    reset = _run_optional_script(
-        name="reset",
-        script_path=reset_path,
-        framework=framework,
-        backend_root=backend_root,
-        python_executable=python_executable,
-        missing_stdout="reset script not found; skipped reset",
+    reset_command = [str(python_executable), str(reset_path)] if reset_path is not None else []
+    reset = _run_prep_step(
+        step_name="reset",
+        command_preview=reset_command,
+        cwd=backend_root,
+        command_factory=lambda log_path: _run_optional_script(
+            name="reset",
+            script_path=reset_path,
+            framework=framework,
+            backend_root=backend_root,
+            python_executable=python_executable,
+            missing_stdout="reset script not found; skipped reset",
+            log_path=log_path,
+            heartbeat_interval_s=heartbeat_interval_s,
+            progress_callback=_step_progress_emitter(
+                event_callback,
+                step_name="reset",
+                command=reset_command,
+                cwd=backend_root,
+                log_path=log_path,
+            ),
+        ),
+        live_logs_root=live_logs_root_path,
+        event_callback=event_callback,
     )
+    _record_live_log_path(live_log_paths, "reset", reset.log_path)
     if not reset.passed:
         return BackendRuntimePrepResult(
             framework=framework,
             passed=False,
-            failure_summary=reset.stderr or reset.stdout or "backend reset failed",
+            failure_summary=_prep_failure_summary("reset", reset),
             backend_root=str(backend_root),
             venv_path=str(venv_path),
             python_executable=str(python_executable),
@@ -105,6 +213,7 @@ def prepare_backend_runtime(
             install=install,
             migrate=migrate,
             reset=reset,
+            live_log_paths=live_log_paths,
             seed_source_path=str(seed_path) if seed_path is not None else None,
             reset_source_path=str(reset_path) if reset_path is not None else None,
             fixture_manifest=_build_fixture_manifest(
@@ -115,24 +224,42 @@ def prepare_backend_runtime(
                     seed_path=seed_path,
                     python_executable=python_executable,
                 ),
-                reason=reset.stderr or reset.stdout or "backend reset failed",
+                reason=_prep_failure_summary("reset", reset),
             ),
             related_files=_default_related_files(framework),
         )
 
-    seed = _run_optional_script(
-        name="seed",
-        script_path=seed_path,
-        framework=framework,
-        backend_root=backend_root,
-        python_executable=python_executable,
-        missing_stdout="seed script not found; skipped seed",
+    seed_command = [str(python_executable), str(seed_path)] if seed_path is not None else []
+    seed = _run_prep_step(
+        step_name="seed",
+        command_preview=seed_command,
+        cwd=backend_root,
+        command_factory=lambda log_path: _run_optional_script(
+            name="seed",
+            script_path=seed_path,
+            framework=framework,
+            backend_root=backend_root,
+            python_executable=python_executable,
+            missing_stdout="seed script not found; skipped seed",
+            log_path=log_path,
+            heartbeat_interval_s=heartbeat_interval_s,
+            progress_callback=_step_progress_emitter(
+                event_callback,
+                step_name="seed",
+                command=seed_command,
+                cwd=backend_root,
+                log_path=log_path,
+            ),
+        ),
+        live_logs_root=live_logs_root_path,
+        event_callback=event_callback,
     )
+    _record_live_log_path(live_log_paths, "seed", seed.log_path)
     if not seed.passed:
         return BackendRuntimePrepResult(
             framework=framework,
             passed=False,
-            failure_summary=seed.stderr or seed.stdout or "backend seed failed",
+            failure_summary=_prep_failure_summary("seed", seed),
             backend_root=str(backend_root),
             venv_path=str(venv_path),
             python_executable=str(python_executable),
@@ -141,6 +268,7 @@ def prepare_backend_runtime(
             migrate=migrate,
             reset=reset,
             seed=seed,
+            live_log_paths=live_log_paths,
             seed_source_path=str(seed_path) if seed_path is not None else None,
             reset_source_path=str(reset_path) if reset_path is not None else None,
             fixture_manifest=_build_fixture_manifest(
@@ -151,11 +279,21 @@ def prepare_backend_runtime(
                     seed_path=seed_path,
                     python_executable=python_executable,
                 ),
-                reason=seed.stderr or seed.stdout or "backend seed failed",
+                reason=_prep_failure_summary("seed", seed),
             ),
             related_files=_default_related_files(framework),
         )
 
+    fixture_manifest_log_path = _step_log_path(live_logs_root_path, "fixture_manifest")
+    _emit_step_event(
+        event_callback,
+        step_name="fixture_manifest",
+        phase_kind="start",
+        command=[],
+        cwd=backend_root,
+        log_path=fixture_manifest_log_path,
+        status="running",
+    )
     fixture_manifest = _build_fixture_manifest(
         available=seed_path is not None and not seed.skipped,
         seed_source=_build_seed_source(
@@ -165,6 +303,22 @@ def prepare_backend_runtime(
             python_executable=python_executable,
         ),
         reason=None if seed_path is not None and not seed.skipped else "fixture_unavailable",
+    )
+    if fixture_manifest_log_path is not None:
+        fixture_manifest_log_path.parent.mkdir(parents=True, exist_ok=True)
+        fixture_manifest_log_path.write_text(
+            json.dumps(fixture_manifest, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        _record_live_log_path(live_log_paths, "fixture_manifest", str(fixture_manifest_log_path))
+    _emit_step_event(
+        event_callback,
+        step_name="fixture_manifest",
+        phase_kind="finish",
+        command=[],
+        cwd=backend_root,
+        log_path=fixture_manifest_log_path,
+        status="completed",
     )
 
     return BackendRuntimePrepResult(
@@ -182,6 +336,7 @@ def prepare_backend_runtime(
         seed_source_path=str(seed_path) if seed_path is not None else None,
         reset_source_path=str(reset_path) if reset_path is not None else None,
         fixture_manifest=fixture_manifest,
+        live_log_paths=live_log_paths,
         related_files=_default_related_files(framework),
     )
 
@@ -252,18 +407,39 @@ def build_backend_runtime_plan(
     )
 
 
-def launch_backend_runtime(plan: BackendRuntimePlan) -> BackendRuntimeState:
+def launch_backend_runtime(
+    plan: BackendRuntimePlan,
+    *,
+    log_path: str | Path | None = None,
+) -> BackendRuntimeState:
     environment = os.environ.copy()
     environment.update(plan.environment)
-    process = subprocess.Popen(
-        plan.command,
-        cwd=plan.backend_root,
-        env=environment,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    launcher_log_path = Path(log_path).resolve() if log_path is not None else None
+    popen_kwargs: dict[str, Any] = {
+        "cwd": plan.backend_root,
+        "env": environment,
+        "text": True,
+    }
+    log_handle = None
+    if launcher_log_path is None:
+        popen_kwargs.update({"stdout": subprocess.PIPE, "stderr": subprocess.PIPE})
+    else:
+        launcher_log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_handle = launcher_log_path.open("a", encoding="utf-8")
+        popen_kwargs.update({"stdout": log_handle, "stderr": log_handle})
+    process = subprocess.Popen(plan.command, **popen_kwargs)
+    if log_handle is not None:
+        log_handle.close()
     readiness = _probe_http_ready(plan.readiness_url)
+    if launcher_log_path is not None:
+        with launcher_log_path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    {"readiness_url": plan.readiness_url, "readiness": readiness},
+                    ensure_ascii=False,
+                )
+            )
+            handle.write("\n")
     launcher_metadata = _read_launcher_metadata(plan.launcher_metadata_path)
     if readiness.get("passed"):
         return BackendRuntimeState(
@@ -276,11 +452,16 @@ def launch_backend_runtime(plan: BackendRuntimePlan) -> BackendRuntimeState:
             launcher_mode=str(launcher_metadata.get("launcher_mode") or plan.launcher_mode or ""),
             startup_hooks_skipped=list(launcher_metadata.get("startup_hooks_skipped") or []),
             readiness=readiness,
+            launcher_log_path=str(launcher_log_path) if launcher_log_path is not None else None,
             related_files=_default_related_files(plan.framework),
             process_handle=process,
         )
 
-    stdout, stderr = _collect_process_output(process)
+    if launcher_log_path is None:
+        stdout, stderr = _collect_process_output(process)
+    else:
+        stdout = _read_text_if_exists(launcher_log_path)
+        stderr = ""
     _terminate_process(process)
     return BackendRuntimeState(
         framework=plan.framework,
@@ -292,6 +473,7 @@ def launch_backend_runtime(plan: BackendRuntimePlan) -> BackendRuntimeState:
         launcher_mode=str(launcher_metadata.get("launcher_mode") or plan.launcher_mode or ""),
         startup_hooks_skipped=list(launcher_metadata.get("startup_hooks_skipped") or []),
         readiness=readiness,
+        launcher_log_path=str(launcher_log_path) if launcher_log_path is not None else None,
         failure_summary=str(readiness.get("error") or "backend readiness probe failed"),
         stdout=stdout,
         stderr=stderr,
@@ -502,37 +684,50 @@ def _is_os_getenv_call(node: ast.Call) -> bool:
     )
 
 
-def _create_venv(python_executable: str, venv_path: Path) -> BackendRuntimeCommandResult:
+def _create_venv(
+    python_executable: str,
+    venv_path: Path,
+    *,
+    log_path: Path | None = None,
+    heartbeat_interval_s: float = 15.0,
+    progress_callback: ValidationEventCallback | None = None,
+) -> BackendRuntimeCommandResult:
     if _venv_python(venv_path).exists():
-        return BackendRuntimeCommandResult(
+        return _skipped_command_result(
             name="create_venv",
             command=[python_executable, "-m", "venv", str(venv_path)],
-            cwd=str(venv_path.parent),
-            returncode=0,
+            cwd=venv_path.parent,
             stdout="existing venv reused",
-            stderr="",
-            passed=True,
-            skipped=True,
+            skipped_reason="existing venv reused",
+            log_path=log_path,
         )
     return _run_command(
         name="create_venv",
         command=[python_executable, "-m", "venv", str(venv_path)],
         cwd=venv_path.parent,
+        log_path=log_path,
+        heartbeat_interval_s=heartbeat_interval_s,
+        progress_callback=progress_callback,
     )
 
 
-def _install_backend_requirements(*, backend_root: Path, python_executable: Path) -> BackendRuntimeCommandResult:
+def _install_backend_requirements(
+    *,
+    backend_root: Path,
+    python_executable: Path,
+    log_path: Path | None = None,
+    heartbeat_interval_s: float = 15.0,
+    progress_callback: ValidationEventCallback | None = None,
+) -> BackendRuntimeCommandResult:
     requirements_path = backend_root / "requirements.txt"
     if not requirements_path.exists():
-        return BackendRuntimeCommandResult(
+        return _skipped_command_result(
             name="install",
             command=[],
-            cwd=str(backend_root),
-            returncode=0,
+            cwd=backend_root,
             stdout="requirements.txt not found; skipped install",
-            stderr="",
-            passed=True,
-            skipped=True,
+            skipped_reason="requirements.txt not found",
+            log_path=log_path,
         )
     return _run_command(
         name="install",
@@ -546,25 +741,37 @@ def _install_backend_requirements(*, backend_root: Path, python_executable: Path
             str(requirements_path),
         ],
         cwd=backend_root,
+        log_path=log_path,
+        heartbeat_interval_s=heartbeat_interval_s,
+        progress_callback=progress_callback,
     )
 
 
-def _run_django_migrate(*, framework: str, backend_root: Path, python_executable: Path) -> BackendRuntimeCommandResult:
+def _run_django_migrate(
+    *,
+    framework: str,
+    backend_root: Path,
+    python_executable: Path,
+    log_path: Path | None = None,
+    heartbeat_interval_s: float = 15.0,
+    progress_callback: ValidationEventCallback | None = None,
+) -> BackendRuntimeCommandResult:
     if framework != "django" or not (backend_root / "manage.py").exists():
-        return BackendRuntimeCommandResult(
+        return _skipped_command_result(
             name="migrate",
             command=[],
-            cwd=str(backend_root),
-            returncode=0,
+            cwd=backend_root,
             stdout="migrate skipped",
-            stderr="",
-            passed=True,
-            skipped=True,
+            skipped_reason="framework does not require migrate",
+            log_path=log_path,
         )
     return _run_command(
         name="migrate",
         command=[str(python_executable), "manage.py", "migrate", "--noinput"],
         cwd=backend_root,
+        log_path=log_path,
+        heartbeat_interval_s=heartbeat_interval_s,
+        progress_callback=progress_callback,
     )
 
 
@@ -576,23 +783,27 @@ def _run_optional_script(
     backend_root: Path,
     python_executable: Path,
     missing_stdout: str,
+    log_path: Path | None = None,
+    heartbeat_interval_s: float = 15.0,
+    progress_callback: ValidationEventCallback | None = None,
 ) -> BackendRuntimeCommandResult:
     del framework
     if script_path is None:
-        return BackendRuntimeCommandResult(
+        return _skipped_command_result(
             name=name,
             command=[],
-            cwd=str(backend_root),
-            returncode=0,
+            cwd=backend_root,
             stdout=missing_stdout,
-            stderr="",
-            passed=True,
-            skipped=True,
+            skipped_reason=missing_stdout,
+            log_path=log_path,
         )
     return _run_command(
         name=name,
         command=[str(python_executable), str(script_path)],
         cwd=backend_root,
+        log_path=log_path,
+        heartbeat_interval_s=heartbeat_interval_s,
+        progress_callback=progress_callback,
     )
 
 
@@ -619,6 +830,125 @@ def _first_existing_path(candidates: list[Path]) -> Path | None:
         if candidate.exists():
             return candidate
     return None
+
+
+def _run_prep_step(
+    *,
+    step_name: str,
+    command_preview: list[str],
+    cwd: Path,
+    command_factory: Callable[[Path | None], BackendRuntimeCommandResult],
+    live_logs_root: Path | None,
+    event_callback: ValidationEventCallback | None,
+) -> BackendRuntimeCommandResult:
+    log_path = _step_log_path(live_logs_root, step_name)
+    _emit_step_event(
+        event_callback,
+        step_name=step_name,
+        phase_kind="start",
+        command=command_preview,
+        cwd=cwd,
+        log_path=log_path,
+        status="running",
+    )
+    result = command_factory(log_path)
+    _emit_step_event(
+        event_callback,
+        step_name=step_name,
+        phase_kind="finish",
+        command=result.command,
+        cwd=Path(result.cwd) if result.cwd else None,
+        log_path=Path(result.log_path) if result.log_path else log_path,
+        status="skipped" if result.skipped else ("completed" if result.passed else "failed"),
+        duration_ms=result.duration_ms,
+        skipped_reason=result.skipped_reason,
+    )
+    return result
+
+
+def _emit_step_event(
+    event_callback: ValidationEventCallback | None,
+    *,
+    step_name: str,
+    phase_kind: str,
+    command: list[str],
+    cwd: Path | None,
+    log_path: Path | None,
+    status: str,
+    duration_ms: int | None = None,
+    skipped_reason: str | None = None,
+    elapsed_ms: int | None = None,
+) -> None:
+    if event_callback is None:
+        return
+    details: dict[str, object] = {
+        "step_name": step_name,
+        "command": list(command),
+        "cwd": str(cwd) if cwd is not None else None,
+        "log_path": str(log_path) if log_path is not None else None,
+        "status": status,
+    }
+    if duration_ms is not None:
+        details["duration_ms"] = duration_ms
+    if skipped_reason:
+        details["skipped_reason"] = skipped_reason
+    if elapsed_ms is not None:
+        details["elapsed_ms"] = elapsed_ms
+    summary_suffix = {
+        "start": "started",
+        "finish": "completed" if status == "completed" else ("failed" if status == "failed" else "skipped"),
+        "progress": "still running",
+    }[phase_kind]
+    event_callback(
+        {
+            "phase": f"prep_{step_name}_{phase_kind}",
+            "event_type": {
+                "start": "backend_runtime_prep_step_started",
+                "finish": "backend_runtime_prep_step_completed",
+                "progress": "backend_runtime_prep_progress",
+            }[phase_kind],
+            "summary": f"backend runtime prep {step_name} {summary_suffix}",
+            "details": details,
+            "failure_signature": None,
+        }
+    )
+
+
+def _step_progress_emitter(
+    event_callback: ValidationEventCallback | None,
+    *,
+    step_name: str,
+    command: list[str],
+    cwd: Path,
+    log_path: Path | None,
+) -> ValidationEventCallback | None:
+    if event_callback is None:
+        return None
+
+    def _emit(payload: dict[str, Any]) -> None:
+        _emit_step_event(
+            event_callback,
+            step_name=step_name,
+            phase_kind="progress",
+            command=command,
+            cwd=cwd,
+            log_path=log_path,
+            status="running",
+            elapsed_ms=int(payload.get("elapsed_ms") or 0),
+        )
+
+    return _emit
+
+
+def _record_live_log_path(mapping: dict[str, str], step_name: str, log_path: str | None) -> None:
+    if log_path:
+        mapping[step_name] = log_path
+
+
+def _step_log_path(live_logs_root: Path | None, step_name: str) -> Path | None:
+    if live_logs_root is None:
+        return None
+    return live_logs_root / f"prep-{step_name.replace('_', '-')}.log"
 
 
 def _build_seed_source(
@@ -658,22 +988,121 @@ def _build_fixture_manifest(
     return manifest
 
 
-def _run_command(*, name: str, command: list[str], cwd: Path) -> BackendRuntimeCommandResult:
-    result = subprocess.run(
-        command,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+def _prep_failure_summary(step_name: str, result: BackendRuntimeCommandResult) -> str:
+    text = (result.stderr or result.stdout or "").strip()
+    if text:
+        first_line = text.splitlines()[0].strip()
+        return f"{step_name} failed: {first_line}"
+    if result.returncode not in (None, 0):
+        return f"{step_name} nonzero exit"
+    return f"{step_name} failed"
+
+
+def _skipped_command_result(
+    *,
+    name: str,
+    command: list[str],
+    cwd: Path,
+    stdout: str,
+    skipped_reason: str,
+    log_path: Path | None,
+) -> BackendRuntimeCommandResult:
     return BackendRuntimeCommandResult(
         name=name,
         command=list(command),
         cwd=str(cwd),
-        returncode=result.returncode,
-        stdout=result.stdout or "",
-        stderr=result.stderr or "",
-        passed=result.returncode == 0,
+        returncode=0,
+        stdout=stdout,
+        stderr="",
+        passed=True,
+        skipped=True,
+        skipped_reason=skipped_reason,
+        log_path=str(log_path) if log_path is not None else None,
+    )
+
+
+def _run_command(
+    *,
+    name: str,
+    command: list[str],
+    cwd: Path,
+    log_path: Path | None = None,
+    heartbeat_interval_s: float = 15.0,
+    progress_callback: ValidationEventCallback | None = None,
+) -> BackendRuntimeCommandResult:
+    resolved_log_path = log_path.resolve() if log_path is not None else None
+    if resolved_log_path is not None:
+        resolved_log_path.parent.mkdir(parents=True, exist_ok=True)
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
+    start = time.monotonic()
+    last_heartbeat = start
+    log_lock = threading.Lock()
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+
+    def _write_log(text: str) -> None:
+        if resolved_log_path is None:
+            return
+        with log_lock:
+            with resolved_log_path.open("a", encoding="utf-8") as handle:
+                handle.write(text)
+
+    def _drain(pipe, collector: list[str]) -> None:
+        if pipe is None:
+            return
+        try:
+            for line in iter(pipe.readline, ""):
+                collector.append(line)
+                _write_log(line)
+        finally:
+            pipe.close()
+
+    stdout_thread = threading.Thread(
+        target=_drain,
+        args=(process.stdout, stdout_chunks),
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=_drain,
+        args=(process.stderr, stderr_chunks),
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+
+    while process.poll() is None:
+        time.sleep(0.1)
+        now = time.monotonic()
+        if progress_callback is not None and now - last_heartbeat >= heartbeat_interval_s:
+            progress_callback(
+                {
+                    "name": name,
+                    "elapsed_ms": int((now - start) * 1000),
+                    "log_path": str(resolved_log_path) if resolved_log_path is not None else None,
+                }
+            )
+            last_heartbeat = now
+
+    stdout_thread.join(timeout=1)
+    stderr_thread.join(timeout=1)
+    duration_ms = int((time.monotonic() - start) * 1000)
+    return BackendRuntimeCommandResult(
+        name=name,
+        command=list(command),
+        cwd=str(cwd),
+        returncode=process.returncode,
+        stdout="".join(stdout_chunks),
+        stderr="".join(stderr_chunks),
+        passed=process.returncode == 0,
+        log_path=str(resolved_log_path) if resolved_log_path is not None else None,
+        duration_ms=duration_ms,
     )
 
 
@@ -710,6 +1139,15 @@ def _collect_process_output(process: subprocess.Popen[str]) -> tuple[str, str]:
         process.kill()
         stdout, stderr = process.communicate(timeout=1)
     return stdout or "", stderr or ""
+
+
+def _read_text_if_exists(path: Path) -> str:
+    if not path.exists():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
 
 
 def _default_related_files(framework: str) -> list[str]:

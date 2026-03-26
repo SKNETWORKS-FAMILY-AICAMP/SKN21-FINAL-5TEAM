@@ -121,6 +121,20 @@ class _ConversationTraceCallbackHandler(BaseCallbackHandler):
         self._logger.log_model_end(name, response)
 
 
+def _emit_validation_event(event_callback: Any | None, **payload: Any) -> None:
+    if event_callback is None:
+        return
+    event_callback(payload)
+
+
+def _append_text(path: Path | None, content: str) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(content)
+
+
 def run_validation(
     *,
     run_root: str | Path,
@@ -132,6 +146,8 @@ def run_validation(
     artifact_refs: dict[str, ArtifactRef | None],
     onboarding_credentials: dict[str, str] | None = None,
     required_rechecks: list[str] | None = None,
+    event_callback: Any | None = None,
+    live_logs_root: str | Path | None = None,
 ) -> ValidationBundle:
     return run_validation_cycle(
         run_root=run_root,
@@ -143,6 +159,8 @@ def run_validation(
         artifact_refs=artifact_refs,
         onboarding_credentials=onboarding_credentials,
         required_rechecks=required_rechecks,
+        event_callback=event_callback,
+        live_logs_root=live_logs_root,
     ).bundle
 
 
@@ -157,13 +175,19 @@ def run_validation_cycle(
     artifact_refs: dict[str, ArtifactRef | None],
     onboarding_credentials: dict[str, str] | None = None,
     required_rechecks: list[str] | None = None,
+    event_callback: Any | None = None,
+    live_logs_root: str | Path | None = None,
 ) -> ValidationRunResult:
     run_root = Path(run_root)
     host_runtime_workspace = Path(host_runtime_workspace)
     chatbot_runtime_workspace = Path(chatbot_runtime_workspace)
+    live_logs_root_path = Path(live_logs_root).resolve() if live_logs_root is not None else None
 
     prep_result = prepare_backend_runtime(
-        workspace=host_runtime_workspace, snapshot=snapshot
+        workspace=host_runtime_workspace,
+        snapshot=snapshot,
+        live_logs_root=live_logs_root_path,
+        event_callback=event_callback,
     )
     runtime_state: BackendRuntimeState
     chatbot_runtime_boot: dict[str, Any]
@@ -179,7 +203,14 @@ def run_validation_cycle(
             plan=plan,
             prep_result=prep_result,
         )
-        runtime_state = launch_backend_runtime(runtime_plan)
+        runtime_state = launch_backend_runtime(
+            runtime_plan,
+            log_path=(
+                live_logs_root_path / "backend-launch.log"
+                if live_logs_root_path is not None
+                else None
+            ),
+        )
     else:
         runtime_plan = None
         runtime_state = _skipped_runtime_state(
@@ -260,6 +291,8 @@ def run_validation_cycle(
                 bootstrap_result=host_auth_bootstrap,
                 adapter_auth_result=chatbot_adapter_auth,
                 onboarding_credentials=onboarding_credentials,
+                event_callback=event_callback,
+                live_logs_root=live_logs_root_path,
             )
         finally:
             stop_backend_runtime(runtime_state)
@@ -790,6 +823,8 @@ def validate_conversation_runtime(
     bootstrap_result: dict[str, Any],
     adapter_auth_result: dict[str, Any],
     onboarding_credentials: dict[str, str] | None = None,
+    event_callback: Any | None = None,
+    live_logs_root: str | Path | None = None,
 ) -> ConversationValidationResult:
     if not bootstrap_result.get("passed"):
         return ConversationValidationResult(
@@ -829,6 +864,9 @@ def validate_conversation_runtime(
 
     transcripts_dir = run_root / "conversation-validation"
     transcripts_dir.mkdir(parents=True, exist_ok=True)
+    live_logs_root_path = Path(live_logs_root).resolve() if live_logs_root is not None else None
+    if live_logs_root_path is not None:
+        live_logs_root_path.mkdir(parents=True, exist_ok=True)
     scenarios = _build_conversation_scenarios(fixture_manifest=fixture_manifest)
     previous_states: dict[str, dict[str, Any]] = {}
     results: list[ConversationScenarioResult] = []
@@ -836,6 +874,35 @@ def validate_conversation_runtime(
     trace_contents: dict[str, str] = {}
 
     for scenario in scenarios:
+        scenario_log_path = (
+            live_logs_root_path / f"conversation-{scenario['scenario_id']}.log"
+            if live_logs_root_path is not None
+            else None
+        )
+        _emit_validation_event(
+            event_callback,
+            phase="conversation_scenario_start",
+            event_type="conversation_validation_scenario_started",
+            summary=f"conversation scenario {scenario['scenario_id']} started",
+            details={
+                "scenario_id": scenario["scenario_id"],
+                "mode": scenario["mode"],
+                "log_path": str(scenario_log_path) if scenario_log_path is not None else None,
+                "status": "running",
+            },
+        )
+        _append_text(
+            scenario_log_path,
+            json.dumps(
+                {
+                    "event": "start",
+                    "scenario_id": scenario["scenario_id"],
+                    "mode": scenario["mode"],
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+        )
         if scenario["scenario_id"] == "unauthenticated_chat_request":
             result, transcript_text = asyncio.run(
                 _run_unauthenticated_conversation_scenario(
@@ -863,8 +930,42 @@ def validate_conversation_runtime(
             trace_contents[scenario["scenario_id"]] = trace_text
             if final_state:
                 previous_states[scenario["scenario_id"]] = final_state
+        result = result.model_copy(
+            update={
+                "log_path": str(scenario_log_path) if scenario_log_path is not None else result.log_path
+            }
+        )
         results.append(result)
         transcript_contents[scenario["scenario_id"]] = transcript_text
+        _append_text(
+            scenario_log_path,
+            json.dumps(
+                {
+                    "event": "finish",
+                    "scenario_id": scenario["scenario_id"],
+                    "final_verdict": result.final_verdict,
+                    "transcript_path": result.transcript_path,
+                    "trace_path": result.trace_path,
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+        )
+        _emit_validation_event(
+            event_callback,
+            phase="conversation_scenario_finish",
+            event_type="conversation_validation_scenario_completed",
+            summary=f"conversation scenario {scenario['scenario_id']} completed",
+            details={
+                "scenario_id": scenario["scenario_id"],
+                "mode": scenario["mode"],
+                "status": "completed" if result.final_verdict == "pass" else "failed",
+                "log_path": str(scenario_log_path) if scenario_log_path is not None else None,
+                "transcript_path": result.transcript_path,
+                "trace_path": result.trace_path,
+                "final_verdict": result.final_verdict,
+            },
+        )
 
     passed = all(result.final_verdict == "pass" for result in results)
     failure_summary = None if passed else "one or more conversation scenarios failed"
