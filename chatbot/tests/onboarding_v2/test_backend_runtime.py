@@ -317,6 +317,45 @@ def test_run_command_writes_live_log_and_emits_progress(tmp_path: Path):
     assert all(event["log_path"] == str(log_path) for event in progress_events)
 
 
+def test_run_command_uses_devnull_stdin_for_non_interactive_scripts(tmp_path: Path, monkeypatch):
+    log_path = tmp_path / "live-logs" / "prep-reset.log"
+    captured: dict[str, object] = {}
+
+    class _FakePipe:
+        def readline(self):
+            return ""
+
+        def close(self):
+            return None
+
+    class _FakeProcess:
+        def __init__(self):
+            self.stdout = _FakePipe()
+            self.stderr = _FakePipe()
+            self.returncode = 0
+
+        def poll(self):
+            return 0
+
+    def _fake_popen(command, **kwargs):
+        captured["command"] = command
+        captured["stdin"] = kwargs.get("stdin")
+        return _FakeProcess()
+
+    monkeypatch.setattr(backend_runtime_module.subprocess, "Popen", _fake_popen)
+
+    result = backend_runtime_module._run_command(
+        name="reset",
+        command=[sys.executable, "-c", "input('continue? ')"],
+        cwd=tmp_path,
+        log_path=log_path,
+        heartbeat_interval_s=0.1,
+    )
+
+    assert result.passed is True
+    assert captured["stdin"] is backend_runtime_module.subprocess.DEVNULL
+
+
 def test_prepare_backend_runtime_emits_step_events_and_records_skips(tmp_path: Path, monkeypatch):
     workspace = tmp_path / "workspace"
     backend_root = workspace / "backend"

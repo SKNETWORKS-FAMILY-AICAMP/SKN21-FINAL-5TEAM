@@ -18,6 +18,7 @@ from pydantic import ValidationError
 
 from chatbot.src.capability_profiles import (
     ORDER_CS_ONLY_PROFILE,
+    RETRIEVAL_UNSUPPORTED_MESSAGE,
     ORDER_CS_ONLY_UNSUPPORTED_MESSAGE,
     normalize_capability_profile,
     split_tasks_for_profile,
@@ -276,14 +277,20 @@ def _apply_capability_profile(state: GlobalAgentState, pending_tasks: list[str])
     allowed_tasks, disallowed_tasks = split_tasks_for_profile(
         pending_tasks,
         capability_profile=state.get("capability_profile"),
+        enabled_retrieval_corpora=state.get("enabled_retrieval_corpora"),
     )
     if not disallowed_tasks:
         return {"pending_tasks": allowed_tasks}
 
+    unsupported_message = (
+        ORDER_CS_ONLY_UNSUPPORTED_MESSAGE
+        if normalize_capability_profile(state.get("capability_profile")) == ORDER_CS_ONLY_PROFILE
+        else RETRIEVAL_UNSUPPORTED_MESSAGE
+    )
     response: dict = {
         "completed_tasks": [TaskIntent.GENERAL_CHAT],
         "agent_results": {
-            TaskIntent.GENERAL_CHAT: ORDER_CS_ONLY_UNSUPPORTED_MESSAGE,
+            TaskIntent.GENERAL_CHAT: unsupported_message,
         },
     }
     filtered_pending = [task for task in allowed_tasks if task != TaskIntent.GENERAL_CHAT]

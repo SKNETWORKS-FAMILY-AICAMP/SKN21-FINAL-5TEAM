@@ -47,6 +47,14 @@ class ChatRequest(BaseModel):
         None,
         description="Capability profile for runtime routing (for example order_cs_only|full)",
     )
+    enabled_retrieval_corpora: list[str] | None = Field(
+        None,
+        description="Enabled retrieval corpora for runtime gating (faq|policy|discovery_image)",
+    )
+    widget_features: Dict[str, Any] | None = Field(
+        None,
+        description="Explicit widget feature flags such as image_upload",
+    )
     model_config = ConfigDict(extra="ignore")
 
     @field_validator("message")

@@ -23,6 +23,8 @@ from chatbot.src.onboarding_v2.models.analysis import (
     PathCandidate,
     RepoProfile,
     RetrievalPlan,
+    RagSourceRecord,
+    RagSources,
     VerifiedContracts,
     WorkspaceProfile,
 )
@@ -415,3 +417,64 @@ def test_planner_fails_closed_when_login_endpoint_missing():
             analysis_bundle=_analysis_bundle_from_snapshot(snapshot),
             chatbot_server_base_url="http://localhost:8100",
         )
+
+
+def test_planner_builds_site_scoped_retrieval_index_plan_and_capability_upgrade():
+    analysis_bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
+    rag_sources = RagSources(
+        faq=[
+            RagSourceRecord(
+                path="scripts/faq_crawling.py",
+                kind="crawl_script",
+                corpus="faq",
+                reason="faq crawler",
+            )
+        ],
+        policy=[
+            RagSourceRecord(
+                path="docs/refund-policy.md",
+                kind="markdown_doc",
+                corpus="policy",
+                reason="policy doc",
+            )
+        ],
+        discovery_image=[
+            RagSourceRecord(
+                path="scripts/product_crawling.py",
+                kind="crawl_script",
+                corpus="discovery_image",
+                reason="remote image crawler",
+            )
+        ],
+    )
+    analysis_bundle = analysis_bundle.model_copy(
+        update={
+            "rag_sources": rag_sources,
+            "snapshot": analysis_bundle.snapshot.model_copy(update={"rag_sources": rag_sources}),
+        }
+    )
+
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+    )
+
+    retrieval_index_plan = planning_bundle.retrieval_index_plan
+    assert retrieval_index_plan.site_slug == "bilyeo"
+    assert {item.corpus for item in retrieval_index_plan.corpora} == {
+        "faq",
+        "policy",
+        "discovery_image",
+    }
+    assert {
+        item.collection_alias for item in retrieval_index_plan.corpora
+    } == {
+        "site_bilyeo__faq",
+        "site_bilyeo__policy",
+        "site_bilyeo__discovery_image",
+    }
+    assert all("__run_runtime" in item.build_collection for item in retrieval_index_plan.corpora)
+    assert planning_bundle.integration_plan.capability_upgrade["capability_profile"] == "order_cs_plus_retrieval"
+    assert planning_bundle.integration_plan.host_frontend.widget_features["image_upload"] is False
+    assert planning_bundle.integration_plan.host_frontend.enabled_retrieval_corpora == []

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from types import ModuleType, SimpleNamespace
 from pathlib import Path
@@ -65,3 +66,12 @@ def test_widget_bundle_route_returns_404_when_artifact_is_missing(tmp_path, monk
 def test_widget_bundle_path_points_to_built_dist_artifact():
     assert chat_endpoint.WIDGET_BUNDLE_PATH.name == "widget.js"
     assert chat_endpoint.WIDGET_BUNDLE_PATH.parent.name == "dist"
+
+
+def test_shared_widget_build_inlines_browser_safe_chatbot_api_env() -> None:
+    shared_widget_dir = Path(__file__).resolve().parents[2] / "frontend" / "shared_widget"
+
+    subprocess.run(["node", "build.mjs"], cwd=shared_widget_dir, check=True)
+
+    bundle_source = (shared_widget_dir / "dist" / "widget.js").read_text(encoding="utf-8")
+    assert "process.env.NEXT_PUBLIC_CHATBOT_API_URL" not in bundle_source

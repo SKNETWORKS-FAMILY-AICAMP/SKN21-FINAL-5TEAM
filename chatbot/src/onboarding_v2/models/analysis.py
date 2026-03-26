@@ -163,6 +163,31 @@ class ContractRecord(BaseModel):
         return _normalize_text(value)
 
 
+class RagSourceRecord(BaseModel):
+    path: str
+    kind: str
+    corpus: str
+    reason: str
+    owner: str = "deterministic"
+    details: dict[str, Any] = Field(default_factory=dict)
+    evidence_refs: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("path", "kind", "corpus", "reason", "owner", mode="before")
+    @classmethod
+    def _normalize_text(cls, value: Any) -> str:
+        return _normalize_text(value)
+
+
+class RagSources(BaseModel):
+    faq: list[RagSourceRecord] = Field(default_factory=list)
+    policy: list[RagSourceRecord] = Field(default_factory=list)
+    discovery_image: list[RagSourceRecord] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class VerifiedContracts(BaseModel):
     database_entities: list[ContractRecord] = Field(default_factory=list)
     api_endpoints: list[ContractRecord] = Field(default_factory=list)
@@ -282,6 +307,7 @@ class AnalysisSnapshot(BaseModel):
     backend_seams: BackendSeams
     frontend_seams: FrontendSeams
     domain_integration: DomainIntegration
+    rag_sources: RagSources = Field(default_factory=RagSources)
     ambiguity: AmbiguitySnapshot = Field(default_factory=AmbiguitySnapshot)
     provenance: AnalysisProvenance = Field(default_factory=AnalysisProvenance)
 
@@ -299,6 +325,7 @@ class AnalysisBundle(BaseModel):
     rejected_claims: list[RejectedClaim] = Field(default_factory=list)
     analysis_graph: AnalysisGraph = Field(default_factory=AnalysisGraph)
     unresolved_ambiguities: list[str] = Field(default_factory=list)
+    rag_sources: RagSources = Field(default_factory=RagSources)
     snapshot: AnalysisSnapshot
 
     model_config = ConfigDict(extra="forbid")

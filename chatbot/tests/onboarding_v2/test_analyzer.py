@@ -11,7 +11,11 @@ os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
 from chatbot.src.onboarding_v2.analysis import build_analysis_bundle, build_analysis_snapshot
 from chatbot.src.onboarding_v2.analysis import analyzer as analyzer_module
-from chatbot.src.onboarding_v2.models.analysis import ContractRecord, EvidencePacket, VerifiedContracts
+from chatbot.src.onboarding_v2.models.analysis import (
+    ContractRecord,
+    EvidencePacket,
+    VerifiedContracts,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -258,6 +262,50 @@ def test_analyzer_canonicalizes_food_llm_order_contracts_and_filters_noise():
     assert "order_action" in verified_tool_ids
     assert "backend/seed/seed.py" not in {record.location for record in verified.tool_targets}
     assert not any("seed" in record.identifier.lower() for record in verified.tool_targets)
+
+
+def test_analyzer_discovers_rag_sources_without_manifest(tmp_path: Path):
+    backend = tmp_path / "backend"
+    frontend = tmp_path / "frontend" / "src"
+    scripts = tmp_path / "scripts"
+    docs = tmp_path / "docs"
+    backend.mkdir(parents=True)
+    frontend.mkdir(parents=True)
+    scripts.mkdir()
+    docs.mkdir()
+
+    (tmp_path / "site-manifest.json").write_text(
+        '{"retrieval":{"faq_policy_source":{"type":"should_not_be_used"}}}',
+        encoding="utf-8",
+    )
+    (backend / "app.py").write_text(
+        "from flask import Flask\napp = Flask(__name__)\n",
+        encoding="utf-8",
+    )
+    (docs / "returns.md").write_text(
+        "# 반품 규정\n반품은 7일 이내 가능합니다.\n",
+        encoding="utf-8",
+    )
+    (scripts / "faq_seed.json").write_text(
+        '[{"question":"배송은 얼마나 걸리나요?","answer":"2일"}]',
+        encoding="utf-8",
+    )
+    (scripts / "product_crawling.py").write_text(
+        "def crawl():\n    image_url='https://cdn.example.com/item.jpg'\n    return image_url\n",
+        encoding="utf-8",
+    )
+    (frontend / "api.js").write_text(
+        "export async function listProducts(){ return fetch('/api/products'); }\n",
+        encoding="utf-8",
+    )
+
+    bundle = build_analysis_bundle(site="demo-shop", source_root=tmp_path)
+
+    assert bundle.workspace_profile.manifest_path is None
+    assert bundle.snapshot.domain_integration.site_id_source == "cli_site_argument"
+    assert any(source.path.endswith("faq_seed.json") for source in bundle.rag_sources.faq)
+    assert any(source.path.endswith("returns.md") for source in bundle.rag_sources.policy)
+    assert any(source.path.endswith("product_crawling.py") for source in bundle.rag_sources.discovery_image)
     assert any("seed" in claim.identifier.lower() for claim in rejected)
     assert "verified order lookup target missing" not in ambiguities
     assert "verified order action target missing" not in ambiguities

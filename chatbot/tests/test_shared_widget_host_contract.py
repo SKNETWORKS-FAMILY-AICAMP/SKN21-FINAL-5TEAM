@@ -141,6 +141,9 @@ def test_shared_widget_runtime_exposes_site_without_site_id():
     payload = module.build_widget_runtime_payload(
         site="food",
         chatbot_server_base_url="https://chat.example.com/",
+        capability_profile="order_cs_plus_retrieval",
+        enabled_retrieval_corpora=["faq"],
+        widget_features={"image_upload": False},
     )
 
     assert payload["site"] == "food"
@@ -149,4 +152,7 @@ def test_shared_widget_runtime_exposes_site_without_site_id():
     assert payload["widgetBundlePath"] == "/widget.js"
     assert payload["widgetElementTag"] == "order-cs-widget"
     assert payload["mountMode"] == "floating_launcher"
+    assert payload["capabilityProfile"] == "order_cs_plus_retrieval"
+    assert payload["enabledRetrievalCorpora"] == ["faq"]
+    assert payload["widgetFeatures"] == {"image_upload": False}
     assert "site_id" not in payload

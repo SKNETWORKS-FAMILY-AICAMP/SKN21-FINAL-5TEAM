@@ -25,6 +25,8 @@ from chatbot.src.onboarding_v2.models.analysis import (
     FrameworkProfile,
     FrontendSeams,
     ReadTarget,
+    RagSourceRecord,
+    RagSources,
     RejectedClaim,
     RetrievalPlan,
     RepoProfile,
@@ -277,6 +279,11 @@ def build_analysis_bundle(
         )
 
     analysis_graph = _build_analysis_graph(verified_contracts)
+    rag_sources = _discover_rag_sources(
+        root=root,
+        framework_profile=framework_profile,
+        candidate_set=current_candidate_set,
+    )
     snapshot = _build_snapshot_from_bundle(
         site=site,
         root=root,
@@ -285,6 +292,7 @@ def build_analysis_bundle(
         candidate_set=current_candidate_set,
         verified_contracts=verified_contracts,
         unresolved_ambiguities=unresolved_ambiguities,
+        rag_sources=rag_sources,
     )
     return AnalysisBundle(
         workspace_profile=workspace_profile,
@@ -297,6 +305,7 @@ def build_analysis_bundle(
         rejected_claims=rejected_claims,
         analysis_graph=analysis_graph,
         unresolved_ambiguities=unresolved_ambiguities,
+        rag_sources=rag_sources,
         snapshot=snapshot,
     )
 
@@ -339,31 +348,25 @@ def _resolve_root(source_root: str | Path) -> Path:
 def _build_workspace_profile(*, root: Path) -> WorkspaceProfile:
     backend_root = "backend" if (root / "backend").exists() else None
     frontend_root = "frontend" if (root / "frontend").exists() else None
-    manifest_path = "site-manifest.json" if (root / "site-manifest.json").exists() else None
     return WorkspaceProfile(
         root=str(root),
         backend_root=backend_root,
         frontend_root=frontend_root,
-        manifest_path=manifest_path,
+        manifest_path=None,
     )
 
 
 def _build_framework_profile(*, root: Path) -> FrameworkProfile:
-    manifest = _load_manifest(root)
     backend_framework = _normalize_backend_framework(
-        manifest.get("backend_framework", {}).get("name")
-        if isinstance(manifest.get("backend_framework"), dict)
-        else None,
+        None,
         root=root,
     )
     frontend_framework = _normalize_frontend_framework(
-        manifest.get("frontend_framework", {}).get("name")
-        if isinstance(manifest.get("frontend_framework"), dict)
-        else None,
+        None,
         root=root,
     )
     auth_style = _normalize_auth_style(
-        manifest.get("auth", {}).get("auth_type") if isinstance(manifest.get("auth"), dict) else None,
+        None,
         root=root,
     )
     orm_family = {
@@ -377,7 +380,7 @@ def _build_framework_profile(*, root: Path) -> FrameworkProfile:
         auth_style=auth_style,
         orm_family=orm_family,
         confidence_notes=[
-            "framework profile derived from manifest plus deterministic repo fingerprinting",
+            "framework profile derived from deterministic repo fingerprinting",
         ],
     )
 
@@ -1029,6 +1032,7 @@ def _build_snapshot_from_bundle(
     candidate_set: CandidateSet,
     verified_contracts: VerifiedContracts,
     unresolved_ambiguities: list[str],
+    rag_sources: RagSources,
 ) -> AnalysisSnapshot:
     backend_entrypoints = [item.path for item in candidate_set.route_definitions[:3]]
     frontend_entrypoints = [item.path for item in candidate_set.app_shells[:3]]
@@ -1163,8 +1167,9 @@ def _build_snapshot_from_bundle(
             order_detail_endpoint=order_detail_endpoint,
             order_action_endpoint=order_action_endpoint,
             order_action_endpoints=order_action_endpoints,
-            site_id_source=str(root / "site-manifest.json"),
+            site_id_source="cli_site_argument",
         ),
+        rag_sources=rag_sources,
         ambiguity=AmbiguitySnapshot(
             open_questions=list(unresolved_ambiguities),
             competing_candidates=[],
@@ -1178,7 +1183,6 @@ def _build_snapshot_from_bundle(
             llm_augmented=True,
             soft_dropped_candidates=[],
             evidence_refs=[
-                *(workspace_profile.manifest_path and [workspace_profile.manifest_path] or []),
                 *backend_entrypoints,
                 *frontend_entrypoints,
             ],
@@ -1188,6 +1192,126 @@ def _build_snapshot_from_bundle(
             ])),
         ),
     )
+
+
+def _discover_rag_sources(
+    *,
+    root: Path,
+    framework_profile: FrameworkProfile,
+    candidate_set: CandidateSet,
+) -> RagSources:
+    del framework_profile, candidate_set
+    ignore_matcher = OnboardingIgnoreMatcher(root)
+    faq_sources: list[RagSourceRecord] = []
+    policy_sources: list[RagSourceRecord] = []
+    discovery_image_sources: list[RagSourceRecord] = []
+    allowed_suffixes = {".py", ".js", ".jsx", ".ts", ".tsx", ".json", ".txt", ".md", ".csv"}
+
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in allowed_suffixes:
+            continue
+        if not ignore_matcher.includes(path):
+            continue
+        relative = path.relative_to(root).as_posix()
+        lowered = relative.lower()
+        try:
+            content = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        content_lower = content.lower()
+
+        if _is_faq_source(lowered, content_lower):
+            faq_sources.append(
+                RagSourceRecord(
+                    path=relative,
+                    kind=_rag_source_kind(path),
+                    corpus="faq",
+                    reason="repo evidence suggests FAQ-style knowledge source",
+                )
+            )
+        if _is_policy_source(lowered, content_lower):
+            policy_sources.append(
+                RagSourceRecord(
+                    path=relative,
+                    kind=_rag_source_kind(path),
+                    corpus="policy",
+                    reason="repo evidence suggests policy/terms knowledge source",
+                )
+            )
+        if _is_discovery_image_source(lowered, content_lower):
+            details = {}
+            if "r2_" in content_lower or "cloudflare" in content_lower:
+                details = {"loader_strategy": "remote_object_storage"}
+            elif "image_url" in content_lower or "thumbnail" in content_lower:
+                details = {"loader_strategy": "remote_image_url_fetch"}
+            discovery_image_sources.append(
+                RagSourceRecord(
+                    path=relative,
+                    kind=_rag_source_kind(path),
+                    corpus="discovery_image",
+                    reason="repo evidence suggests product image source",
+                    details=details,
+                )
+            )
+
+    return RagSources(
+        faq=_dedupe_rag_source_records(faq_sources),
+        policy=_dedupe_rag_source_records(policy_sources),
+        discovery_image=_dedupe_rag_source_records(discovery_image_sources),
+    )
+
+
+def _rag_source_kind(path: Path) -> str:
+    suffix = path.suffix.lower()
+    return {
+        ".md": "markdown_doc",
+        ".txt": "text_doc",
+        ".json": "json_file",
+        ".csv": "csv_file",
+        ".py": "crawl_script" if "script" in path.as_posix().lower() else "code_file",
+        ".js": "code_file",
+        ".jsx": "code_file",
+        ".ts": "code_file",
+        ".tsx": "code_file",
+    }.get(suffix, "file")
+
+
+def _dedupe_rag_source_records(items: list[RagSourceRecord]) -> list[RagSourceRecord]:
+    seen: set[tuple[str, str]] = set()
+    deduped: list[RagSourceRecord] = []
+    for item in items:
+        key = (item.corpus, item.path)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def _is_faq_source(path: str, content: str) -> bool:
+    if "site-manifest.json" in path:
+        return False
+    return (
+        "faq" in path
+        or ("question" in content and "answer" in content)
+        or ("faq" in content and "crawl" in content)
+    )
+
+
+def _is_policy_source(path: str, content: str) -> bool:
+    if "site-manifest.json" in path:
+        return False
+    policy_tokens = ("policy", "terms", "refund", "return", "shipping", "exchange", "cancel", "약관", "환불", "반품", "교환", "배송")
+    return any(token in path or token in content for token in policy_tokens)
+
+
+def _is_discovery_image_source(path: str, content: str) -> bool:
+    if "site-manifest.json" in path:
+        return False
+    image_tokens = ("image_url", "thumbnail", "image", "img", "cloudflare", "r2_bucket", "r2_", "s3", "media/")
+    return any(token in path or token in content for token in image_tokens)
 
 
 def _resolve_endpoint_path(

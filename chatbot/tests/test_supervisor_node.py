@@ -40,3 +40,20 @@ def test_supervisor_order_cs_only_keeps_allowed_order_task_and_records_notice() 
     assert result["pending_tasks"] == []
     assert result["completed_tasks"] == [TaskIntent.GENERAL_CHAT]
     assert "지원하지 않습니다" in result["agent_results"][TaskIntent.GENERAL_CHAT]
+
+
+def test_supervisor_retrieval_profile_blocks_image_when_discovery_corpus_missing() -> None:
+    result = supervisor.supervisor_node(
+        {
+            "pending_tasks": [TaskIntent.SEARCH_SIMILAR_IMAGE, TaskIntent.POLICY_RAG],
+            "completed_tasks": [],
+            "agent_results": {},
+            "capability_profile": "order_cs_plus_retrieval",
+            "enabled_retrieval_corpora": ["faq"],
+        }
+    )
+
+    assert result["current_active_task"] == TaskIntent.POLICY_RAG
+    assert result["pending_tasks"] == []
+    assert result["completed_tasks"] == [TaskIntent.GENERAL_CHAT]
+    assert "지원하지 않습니다" in result["agent_results"][TaskIntent.GENERAL_CHAT]

@@ -13,6 +13,7 @@ Supervisor Router 노드.
 
 from chatbot.src.capability_profiles import (
     ORDER_CS_ONLY_UNSUPPORTED_MESSAGE,
+    RETRIEVAL_UNSUPPORTED_MESSAGE,
     split_tasks_for_profile,
 )
 from chatbot.src.graph.state import GlobalAgentState
@@ -42,8 +43,14 @@ def supervisor_node(state: GlobalAgentState) -> dict:
     allowed_tasks, disallowed_tasks = split_tasks_for_profile(
         pending,
         capability_profile=state.get("capability_profile"),
+        enabled_retrieval_corpora=state.get("enabled_retrieval_corpora"),
     )
     if disallowed_tasks:
+        notice = (
+            ORDER_CS_ONLY_UNSUPPORTED_MESSAGE
+            if str(state.get("capability_profile") or "").strip().lower() == "order_cs_only"
+            else RETRIEVAL_UNSUPPORTED_MESSAGE
+        )
         result = {
             "completed_tasks": [
                 *list(state.get("completed_tasks", [])),
@@ -51,7 +58,7 @@ def supervisor_node(state: GlobalAgentState) -> dict:
             ],
             "agent_results": {
                 **dict(state.get("agent_results", {})),
-                TaskIntent.GENERAL_CHAT: ORDER_CS_ONLY_UNSUPPORTED_MESSAGE,
+                TaskIntent.GENERAL_CHAT: notice,
             },
         }
         pending = [task for task in allowed_tasks if task != TaskIntent.GENERAL_CHAT]

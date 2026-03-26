@@ -15,6 +15,7 @@ from chatbot.src.onboarding_v2.models.analysis import (
     ContractRecord,
     DomainIntegration,
     FrameworkProfile,
+    RagSources,
     RetrievalPlan,
     VerifiedContracts,
     WorkspaceProfile,
@@ -33,7 +34,9 @@ from chatbot.src.onboarding_v2.models.planning import (
     PlanningCoverageReport,
     PlanningNotes,
     PlanningRisk,
+    RagCorpusPlan,
     RepairHint,
+    RetrievalIndexPlan,
     StrategyCandidate,
     TargetBinding,
 )
@@ -290,6 +293,15 @@ def build_planning_bundle(
     )
     risk_register = _dedupe_risks(risk_and_repair_response.risk_register or risk_fallback)
     repair_hints = _dedupe_repair_hints(risk_and_repair_response.repair_hints or repair_fallback)
+    retrieval_index_plan = _build_retrieval_index_plan(
+        site_id=_resolve_site_id(snapshot),
+        rag_sources=bundle.rag_sources,
+        run_id="runtime",
+    )
+    capability_upgrade = _build_capability_upgrade(
+        rag_sources=bundle.rag_sources,
+        retrieval_index_plan=retrieval_index_plan,
+    )
 
     integration_plan = _derive_integration_plan(
         snapshot=snapshot,
@@ -299,6 +311,8 @@ def build_planning_bundle(
         chatbot_server_base_url=chatbot_server_base_url,
         coverage_report=coverage_report,
         risk_register=risk_register,
+        retrieval_index_plan=retrieval_index_plan,
+        capability_upgrade=capability_upgrade,
     )
 
     return PlanningBundle(
@@ -311,6 +325,8 @@ def build_planning_bundle(
         validation_plan=validation_plan,
         risk_register=risk_register,
         repair_hints=repair_hints,
+        retrieval_index_plan=retrieval_index_plan,
+        capability_upgrade=capability_upgrade,
         integration_plan=integration_plan,
     )
 
@@ -816,6 +832,8 @@ def _derive_integration_plan(
     chatbot_server_base_url: str,
     coverage_report: PlanningCoverageReport,
     risk_register: list[PlanningRisk],
+    retrieval_index_plan: RetrievalIndexPlan,
+    capability_upgrade: dict[str, Any],
 ) -> IntegrationPlan:
     del coverage_report
     binding_map = {binding.capability: binding for binding in target_bindings}
@@ -865,6 +883,9 @@ def _derive_integration_plan(
             generated_handler_path=_choose_generated_handler_path(analysis_bundle.framework_profile.backend_framework),
             chat_auth_contract_path="/api/chat/auth-token",
             site_id=site_id,
+            capability_profile=str(capability_upgrade.get("capability_profile") or "order_cs_only"),
+            enabled_retrieval_corpora=[],
+            widget_features={"image_upload": False},
         ),
         host_frontend=HostFrontendPlan(
             mount_strategy=integration_strategy.frontend_mount_strategy,
@@ -881,6 +902,9 @@ def _derive_integration_plan(
                 source_root=Path(snapshot.repo_profile.source_root),
                 runtime_base_url=normalized_chatbot_server_base_url,
             ),
+            capability_profile=str(capability_upgrade.get("capability_profile") or "order_cs_only"),
+            enabled_retrieval_corpora=[],
+            widget_features={"image_upload": False},
         ),
         chatbot_bridge=ChatbotBridgePlan(
             site_key=_normalize_site_key(site_id),
@@ -899,6 +923,8 @@ def _derive_integration_plan(
             request_field_mappings=bridge_contract["request_field_mappings"],
             supported_tools=list(SUPPORTED_ORDER_TOOLS),
         ),
+        retrieval_index_plan=retrieval_index_plan,
+        capability_upgrade=capability_upgrade,
         planning_notes=PlanningNotes(
             assumptions=assumptions,
             ambiguities=list(analysis_bundle.unresolved_ambiguities),
@@ -1023,6 +1049,53 @@ def _choose_generated_handler_path(backend_framework: str) -> str | None:
 def _normalize_site_key(site_id: str) -> str:
     cleaned = site_id.strip().lower().replace(" ", "_")
     return "".join(character if character.isalnum() or character in {"_", "-"} else "_" for character in cleaned)
+
+
+def _build_retrieval_index_plan(
+    *,
+    site_id: str,
+    rag_sources: RagSources,
+    run_id: str,
+) -> RetrievalIndexPlan:
+    site_slug = _normalize_site_key(site_id)
+    corpora: list[RagCorpusPlan] = []
+    corpus_specs = {
+        "faq": ("qa_level", rag_sources.faq, ["배송은 얼마나 걸리나요?"], "faq_source_scan"),
+        "policy": ("heading_sections", rag_sources.policy, ["환불 규정"], "policy_source_scan"),
+        "discovery_image": ("entity_level", rag_sources.discovery_image, ["검은색 자켓"], "discovery_image_scan"),
+    }
+    for corpus, (chunking_strategy, records, smoke_queries, default_loader) in corpus_specs.items():
+        if not records:
+            continue
+        corpora.append(
+            RagCorpusPlan(
+                corpus=corpus,
+                enabled=True,
+                chunking_strategy=chunking_strategy,
+                collection_alias=f"site_{site_slug}__{corpus}",
+                build_collection=f"site_{site_slug}__{corpus}__run_{run_id}",
+                sources=[record.path for record in records],
+                smoke_queries=smoke_queries,
+                minimum_expected_documents=1,
+                loader_strategy=str(records[0].details.get("loader_strategy") or default_loader),
+            )
+        )
+    return RetrievalIndexPlan(site_id=site_id, site_slug=site_slug, corpora=corpora)
+
+
+def _build_capability_upgrade(
+    *,
+    rag_sources: RagSources,
+    retrieval_index_plan: RetrievalIndexPlan,
+) -> dict[str, Any]:
+    del rag_sources
+    enabled_corpora = [item.corpus for item in retrieval_index_plan.corpora if item.enabled]
+    profile = "order_cs_plus_retrieval" if enabled_corpora else "order_cs_only"
+    return {
+        "capability_profile": profile,
+        "enabled_retrieval_corpora": enabled_corpora,
+        "widget_features": {"image_upload": "discovery_image" in enabled_corpora},
+    }
 
 
 def _build_chatbot_bridge_env_var(site_id: str) -> str:

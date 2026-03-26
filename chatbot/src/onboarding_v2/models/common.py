@@ -73,6 +73,9 @@ class RunSummaryView(BaseModel):
     repair_attempt_count: int = 0
     stopped_for_review: bool = False
     latest_event_id: str | None = None
+    retrieval_status: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    final_capability_profile: str | None = None
+    enabled_retrieval_corpora: list[str] = Field(default_factory=list)
     stages: list[StageLatestView] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")

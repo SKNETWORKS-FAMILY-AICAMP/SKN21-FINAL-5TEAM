@@ -467,6 +467,16 @@ def _build_current_state(
         or getattr(request, "capability_profile", None)
         or previous_state.get("capability_profile")
     )
+    effective_enabled_retrieval_corpora = list(
+        getattr(request, "enabled_retrieval_corpora", None)
+        or previous_state.get("enabled_retrieval_corpora")
+        or []
+    )
+    effective_widget_features = dict(
+        getattr(request, "widget_features", None)
+        or previous_state.get("widget_features")
+        or {}
+    )
     turn_defaults = {
         "pending_tasks": [],
         "completed_tasks": [],
@@ -500,6 +510,8 @@ def _build_current_state(
         "llm_provider": provider,
         "llm_model": model,
         "capability_profile": effective_capability_profile,
+        "enabled_retrieval_corpora": effective_enabled_retrieval_corpora,
+        "widget_features": effective_widget_features,
         "conversation_id": conversation_id,
         "turn_id": turn_id,
     }

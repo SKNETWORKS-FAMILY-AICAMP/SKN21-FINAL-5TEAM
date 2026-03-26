@@ -41,6 +41,9 @@ class HostBackendPlan(BaseModel):
     generated_handler_path: str | None = None
     chat_auth_contract_path: str = "/api/chat/auth-token"
     site_id: str
+    capability_profile: str = "order_cs_only"
+    enabled_retrieval_corpora: list[str] = Field(default_factory=list)
+    widget_features: dict[str, Any] = Field(default_factory=lambda: {"image_upload": False})
 
     model_config = ConfigDict(extra="forbid")
 
@@ -61,6 +64,7 @@ class HostBackendPlan(BaseModel):
         "generated_handler_path",
         "chat_auth_contract_path",
         "site_id",
+        "capability_profile",
         mode="before",
     )
     @classmethod
@@ -77,6 +81,9 @@ class HostFrontendPlan(BaseModel):
     auth_bootstrap_path: str = "/api/chat/auth-token"
     chatbot_server_base_url: str
     chatbot_server_base_url_expression: str = ""
+    capability_profile: str = "order_cs_only"
+    enabled_retrieval_corpora: list[str] = Field(default_factory=list)
+    widget_features: dict[str, Any] = Field(default_factory=lambda: {"image_upload": False})
 
     model_config = ConfigDict(extra="forbid")
 
@@ -89,6 +96,7 @@ class HostFrontendPlan(BaseModel):
         "auth_bootstrap_path",
         "chatbot_server_base_url",
         "chatbot_server_base_url_expression",
+        "capability_profile",
         mode="before",
     )
     @classmethod
@@ -259,10 +267,51 @@ class PlanningNotes(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class RagCorpusPlan(BaseModel):
+    corpus: str
+    enabled: bool = True
+    chunking_strategy: str
+    collection_alias: str
+    build_collection: str
+    sources: list[str] = Field(default_factory=list)
+    smoke_queries: list[str] = Field(default_factory=list)
+    minimum_expected_documents: int = 1
+    loader_strategy: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator(
+        "corpus",
+        "chunking_strategy",
+        "collection_alias",
+        "build_collection",
+        "loader_strategy",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_text(cls, value: Any) -> str | None:
+        return _normalize_optional_text(value)
+
+
+class RetrievalIndexPlan(BaseModel):
+    site_id: str
+    site_slug: str
+    corpora: list[RagCorpusPlan] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("site_id", "site_slug", mode="before")
+    @classmethod
+    def _normalize_text(cls, value: Any) -> str:
+        return _normalize_text(value)
+
+
 class IntegrationPlan(BaseModel):
     host_backend: HostBackendPlan
     host_frontend: HostFrontendPlan
     chatbot_bridge: ChatbotBridgePlan
+    retrieval_index_plan: RetrievalIndexPlan | None = None
+    capability_upgrade: dict[str, Any] = Field(default_factory=dict)
     planning_notes: PlanningNotes = Field(default_factory=PlanningNotes)
 
     model_config = ConfigDict(extra="forbid")
@@ -338,6 +387,8 @@ class PlanningBundle(BaseModel):
     validation_plan: list[PlannedValidation] = Field(default_factory=list)
     risk_register: list[PlanningRisk] = Field(default_factory=list)
     repair_hints: list[RepairHint] = Field(default_factory=list)
+    retrieval_index_plan: RetrievalIndexPlan | None = None
+    capability_upgrade: dict[str, Any] = Field(default_factory=dict)
     integration_plan: IntegrationPlan
 
     model_config = ConfigDict(extra="forbid")
