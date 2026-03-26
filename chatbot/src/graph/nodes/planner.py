@@ -16,17 +16,24 @@ from typing import cast
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import ValidationError
 
+from chatbot.src.capability_profiles import (
+    ORDER_CS_ONLY_PROFILE,
+    ORDER_CS_ONLY_UNSUPPORTED_MESSAGE,
+    normalize_capability_profile,
+    split_tasks_for_profile,
+)
 from chatbot.src.graph.state import GlobalAgentState
 from chatbot.src.schemas.planner import PlannerOutput, TaskIntent
 from chatbot.src.graph.llm_providers import make_chat_llm, resolve_llm_runtime_policy
+from chatbot.src.graph.brand_profiles import resolve_brand_profile
 
 # ── 프롬프트 ──────────────────────────────────────────────
 
-PLANNER_SYSTEM_PROMPT = """당신은 MOYEO 쇼핑몰 CS 챗봇의 Planner입니다.
+PLANNER_SYSTEM_PROMPT = """당신은 {brand_store_label} CS 챗봇의 Planner입니다.
 사용자의 메시지를 분석하여 처리해야 할 작업 목록을 결정합니다.
 
 [서비스 범위]
-MOYEO는 패션 이커머스 플랫폼입니다. 아래 도메인의 질문만 처리합니다:
+{brand_display_name}는 패션 이커머스 플랫폼입니다. 아래 도메인의 질문만 처리합니다:
 - 주문 취소 / 반품 / 교환
 - 상품 검색 및 스타일 추천 (텍스트 or 이미지)
 - 배송/환불/교환 정책 및 약관 조회
@@ -137,7 +144,7 @@ def planner_node(state: GlobalAgentState) -> dict:
     latest_user_message = _get_last_user_message(state.get("messages", []))
     heuristic_pending = _match_high_precision_intent(latest_user_message)
     if heuristic_pending:
-        return {"pending_tasks": heuristic_pending}
+        return _apply_capability_profile(state, heuristic_pending)
 
     llm = make_chat_llm(
         provider=runtime_policy.provider,
@@ -155,7 +162,7 @@ def planner_node(state: GlobalAgentState) -> dict:
     else:
         pending = _invoke_label_text_planner(llm, input_messages)
 
-    return {"pending_tasks": pending}
+    return _apply_capability_profile(state, pending)
 
 
 # ── 라우팅 조건 함수 ──────────────────────────────────────
@@ -190,11 +197,21 @@ def _build_planner_messages(
     include_label_text_contract: bool,
 ) -> list:
     conversation_summary: str | None = state.get("conversation_summary")
+    brand_profile = resolve_brand_profile((state.get("user_info") or {}).get("site_id"))
     summary_prefix = (
         f"\n\n[이전 대화 요약]\n{conversation_summary}\n"
         if conversation_summary else ""
     )
-    system_content = PLANNER_SYSTEM_PROMPT + summary_prefix
+    system_content = PLANNER_SYSTEM_PROMPT.format(
+        brand_store_label=brand_profile.store_label,
+        brand_display_name=brand_profile.display_name,
+    ) + summary_prefix
+    if normalize_capability_profile(state.get("capability_profile")) == ORDER_CS_ONLY_PROFILE:
+        system_content += (
+            "\n\n[기능 제한]\n"
+            "현재 런타임은 주문 조회, 배송 조회, 취소, 환불, 교환과 관련된 문의만 지원합니다.\n"
+            "상품 추천, 리뷰 작성, 중고 등록, 상품권 등록 의도는 계획에서 제외하세요."
+        )
     if include_label_text_contract:
         system_content += f"\n\n{PLANNER_LABEL_TEXT_OUTPUT_CONTRACT}"
 
@@ -253,6 +270,28 @@ def _matches_discovery_rule(message: str) -> bool:
         ("옷" in message and any(token in message for token in ("추천", "코디", "기본템", "입을까")))
         or ("신뢰감" in message and any(token in message for token in ("줄 수 있", "주고 싶")))
     )
+
+
+def _apply_capability_profile(state: GlobalAgentState, pending_tasks: list[str]) -> dict:
+    allowed_tasks, disallowed_tasks = split_tasks_for_profile(
+        pending_tasks,
+        capability_profile=state.get("capability_profile"),
+    )
+    if not disallowed_tasks:
+        return {"pending_tasks": allowed_tasks}
+
+    response: dict = {
+        "completed_tasks": [TaskIntent.GENERAL_CHAT],
+        "agent_results": {
+            TaskIntent.GENERAL_CHAT: ORDER_CS_ONLY_UNSUPPORTED_MESSAGE,
+        },
+    }
+    filtered_pending = [task for task in allowed_tasks if task != TaskIntent.GENERAL_CHAT]
+    if filtered_pending:
+        response["pending_tasks"] = filtered_pending
+    else:
+        response["pending_tasks"] = [TaskIntent.GENERAL_CHAT]
+    return response
 
 
 def _invoke_schema_planner(llm, input_messages: list) -> list[str]:

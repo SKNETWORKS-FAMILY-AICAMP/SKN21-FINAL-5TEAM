@@ -8,6 +8,7 @@ export type SharedWidgetHostConfig = {
   chatbotApiBase: string;
   chatPath?: string;
   streamPath?: string;
+  capabilityProfile?: string;
 };
 
 export type SharedWidgetAuthResult = {
@@ -244,6 +245,7 @@ export async function sendSharedChatRequest(
     accessToken: string;
     siteId: string;
     previousState?: Record<string, unknown> | null;
+    capabilityProfile?: string | null;
   },
 ): Promise<SharedChatApiResponse> {
   const response = await fetchImpl(_resolveChatEndpoint(host), {
@@ -257,6 +259,7 @@ export async function sendSharedChatRequest(
       previous_state: payload.previousState ?? null,
       site_id: payload.siteId,
       access_token: payload.accessToken,
+      capability_profile: payload.capabilityProfile ?? host.capabilityProfile ?? undefined,
     }),
   });
 
@@ -326,6 +329,7 @@ export async function streamSharedChatResponse(
     model?: string | null;
     bootstrap: SharedChatBootstrap;
     fetchImpl: FetchLike;
+    capabilityProfile?: string | null;
   },
   callbacks: SharedChatStreamHandlers = {},
 ): Promise<{ state: Record<string, unknown> | null }> {
@@ -343,6 +347,7 @@ export async function streamSharedChatResponse(
       model: args.model ?? undefined,
       site_id: args.bootstrap.site_id,
       access_token: args.bootstrap.access_token,
+      capability_profile: args.capabilityProfile ?? args.host.capabilityProfile ?? undefined,
     }),
   });
 

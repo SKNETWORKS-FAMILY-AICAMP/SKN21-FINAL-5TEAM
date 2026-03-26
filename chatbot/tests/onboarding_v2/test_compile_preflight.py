@@ -248,3 +248,31 @@ def test_preflight_passes_on_generated_adapter_only_workspace(tmp_path: Path):
 
     assert result.passed is True
     assert result.failure_code is None
+
+
+def test_preflight_ignores_banned_imports_outside_scan_paths(tmp_path: Path):
+    workspace = tmp_path / "chatbot"
+    tools_dir = workspace / "src" / "tools"
+    generated_dir = workspace / "src" / "adapters" / "generated" / "food"
+    tools_dir.mkdir(parents=True)
+    generated_dir.mkdir(parents=True)
+    (workspace / "server_fastapi.py").write_text(
+        "app = object()\n",
+        encoding="utf-8",
+    )
+    (tools_dir / "order_tools.py").write_text(
+        "from ecommerce.backend.app.database import SessionLocal\n",
+        encoding="utf-8",
+    )
+    (generated_dir / "adapter.py").write_text(
+        "def build_adapter():\n    return object()\n",
+        encoding="utf-8",
+    )
+
+    result = run_chatbot_compile_preflight(
+        workspace,
+        scan_paths=["src/adapters/generated/food/adapter.py"],
+    )
+
+    assert result.passed is True
+    assert result.failure_code is None

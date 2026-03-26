@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from langchain_core.messages import (
     AIMessage,
@@ -35,11 +35,7 @@ from chatbot.src.adapters import setup as adapter_setup
 from chatbot.src.adapters.schema import AuthenticatedContext
 from chatbot.src.graph.llm_providers import resolve_llm_runtime_policy
 from chatbot.src.infrastructure.conversation_logger import SessionConversationLogger
-from chatbot.src.schemas.chat import ChatRequest, FeedbackRequest, ReviewDraftRequest
-from chatbot.src.tools.service_tools import generate_review_draft
-from ecommerce.backend.app.core.auth import get_current_user, get_current_user_optional
-from ecommerce.backend.app.router.users.models import User
-from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR
+from chatbot.src.schemas.chat import ChatRequest
 
 class OrjsonResponse(JSONResponse):
     """orjson 기반 고성능 JSON 응답 클래스."""
@@ -271,7 +267,7 @@ def _get_fallback_text(final_state: dict) -> str | None:
     return None
 
 
-def _get_session_logger(current_user: User, conversation_id: str) -> SessionConversationLogger:
+def _get_session_logger(current_user: Any, conversation_id: str) -> SessionConversationLogger:
     return SessionConversationLogger(
         conversation_id=conversation_id,
         user_id=current_user.id,
@@ -300,7 +296,7 @@ def _resolve_assistant_log_text(
 
 def _append_session_turn_log(
     *,
-    current_user: User,
+    current_user: Any,
     conversation_id: str,
     user_message: str,
     assistant_message: str | None,
@@ -444,7 +440,7 @@ def _build_shared_chat_response(final_state: dict, conversation_id: str) -> dict
 
 def _build_current_state(
     request: ChatRequest,
-    current_user: User,
+    current_user: Any,
     previous_state: dict,
     provider: str,
     model: str,
@@ -452,6 +448,7 @@ def _build_current_state(
     turn_id: str,
     access_token: str | None = None,
     site_id: str | None = None,
+    capability_profile: str | None = None,
 ) -> dict:
     """요청/이전 상태 기반 GlobalAgentState 구성."""
     history = _deserialize_messages(previous_state.get("messages", []))
@@ -464,6 +461,11 @@ def _build_current_state(
     effective_access_token = (
         access_token
         or previous_state.get("user_info", {}).get("access_token")
+    )
+    effective_capability_profile = (
+        capability_profile
+        or getattr(request, "capability_profile", None)
+        or previous_state.get("capability_profile")
     )
     turn_defaults = {
         "pending_tasks": [],
@@ -497,13 +499,14 @@ def _build_current_state(
         },
         "llm_provider": provider,
         "llm_model": model,
+        "capability_profile": effective_capability_profile,
         "conversation_id": conversation_id,
         "turn_id": turn_id,
     }
 
 
 def _build_stream_config(
-    current_user: User,
+    current_user: Any,
     provider: str,
     model: str,
     conversation_id: str,
@@ -533,15 +536,11 @@ def _build_stream_config(
     return base_config
 
 
-async def _resolve_stream_current_user(
+async def _resolve_authenticated_current_user(
     *,
     request: ChatRequest,
-    cookie_user: User | None,
     http_request: Request,
-) -> User | Any:
-    if cookie_user is not None:
-        return cookie_user
-
+) -> Any:
     previous_user_info = request.previous_state.get("user_info", {}) if isinstance(request.previous_state, dict) else {}
     effective_site_id = request.site_id or previous_user_info.get("site_id")
     effective_access_token = (
@@ -551,7 +550,7 @@ async def _resolve_stream_current_user(
         or http_request.cookies.get("session_token")
     )
 
-    if not effective_site_id or effective_site_id == SHARED_WIDGET_SITE_ID or not effective_access_token:
+    if not effective_site_id or not effective_access_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     try:
@@ -639,76 +638,15 @@ def _is_langgraph_end_event(event: Any) -> bool:
     return event.get("name") == "LangGraph"
 
 
-@router.post("/upload-image")
-async def upload_chat_image(
-    request: Request,
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
-):
-    """이미지 업로드 후 챗봇 접근 가능한 URL 반환."""
-    _ = current_user
-    content_type = (file.content_type or "").lower()
-    if not content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="이미지 파일만 업로드할 수 있습니다.")
-
-    filename = f"{uuid4().hex}{_normalize_image_extension(file.filename, content_type)}"
-    target_path = CHATBOT_UPLOAD_DIR / filename
-
-    try:
-        contents = await file.read()
-        if not contents:
-            raise HTTPException(status_code=400, detail="빈 이미지 파일은 업로드할 수 없습니다.")
-        target_path.write_bytes(contents)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail="이미지를 저장하는 중 오류가 발생했습니다.",
-        ) from exc
-
-    image_url = request.url_for("chatbot_uploads", path=filename)
-    return {"url": str(image_url)}
-
-
-@router.post("/auth-token")
-async def chat_auth_token(
-    request: Request,
-    current_user: User | None = Depends(get_current_user_optional),
-):
-    access_token = request.cookies.get("access_token") or request.cookies.get("session_token")
-    if not access_token or current_user is None:
-        return {
-            "authenticated": False,
-            "site_id": SHARED_WIDGET_SITE_ID,
-            "access_token": "",
-            "user": None,
-        }
-
-    return {
-        "authenticated": True,
-        "site_id": SHARED_WIDGET_SITE_ID,
-        "access_token": access_token,
-        "user": {
-            "id": str(current_user.id),
-            "email": current_user.email,
-            "name": current_user.name,
-        },
-    }
-
-
-
 # ── 스트리밍 엔드포인트 ────────────────────────────────────────────────────────
 @router.post("/stream")
 async def chat_streaming_endpoint(
     http_request: Request,
     request: ChatRequest,
-    cookie_user: User | None = Depends(get_current_user_optional),
 ):
     """SSE 스트리밍으로 챗봇 응답 반환."""
-    current_user = await _resolve_stream_current_user(
+    current_user = await _resolve_authenticated_current_user(
         request=request,
-        cookie_user=cookie_user,
         http_request=http_request,
     )
 
@@ -810,6 +748,7 @@ async def chat_streaming_endpoint(
                         or http_request.cookies.get("session_token")
                     ),
                     site_id=resolved_adapter.site_id,
+                    capability_profile=request.capability_profile,
                 )
                 stream_input = current_state
 
@@ -998,11 +937,14 @@ async def chat_streaming_endpoint(
 
 
 @router.post("/")
-def chat_json_endpoint(
+async def chat_json_endpoint(
     http_request: Request,
     request: ChatRequest,
-    current_user: User = Depends(get_current_user),
 ):
+    current_user = await _resolve_authenticated_current_user(
+        request=request,
+        http_request=http_request,
+    )
     previous_state: dict = request.previous_state or {}
     provider, model = _resolve_chat_runtime_policy(request, previous_state)
     conversation_id = previous_state.get("conversation_id") or f"conv_{uuid4().hex[:12]}"
@@ -1026,6 +968,7 @@ def chat_json_endpoint(
             or http_request.cookies.get("session_token")
         ),
         site_id=resolved_adapter.site_id,
+        capability_profile=request.capability_profile,
     )
 
     final_state = graph_app.invoke(
@@ -1040,50 +983,3 @@ def chat_json_endpoint(
     )
 
     return _build_shared_chat_response(final_state, conversation_id)
-
-
-@router.post("/feedback")
-async def submit_chat_feedback(
-    request: FeedbackRequest,
-    current_user: User = Depends(get_current_user),
-):
-    session_logger = _get_session_logger(current_user, request.conversation_id)
-
-    if not session_logger.file_path.exists():
-        raise HTTPException(status_code=404, detail="대화 로그를 찾을 수 없습니다.")
-
-    finalized = session_logger.record_feedback(request.feedback_label)
-    return {
-        "conversation_id": finalized["conversation_id"],
-        "status": finalized["status"],
-        "feedback_label": finalized["feedback_label"],
-        "reset_required": finalized["reset_required"],
-        "state": None,
-        "messages": [],
-    }
-
-
-# ── 리뷰 초안 엔드포인트 ──────────────────────────────────────────────────────
-
-@router.post("/review-draft")
-async def generate_review_draft_endpoint(
-    request: ReviewDraftRequest,
-    current_user: User = Depends(get_current_user),
-):
-    """만족도 + 상품명 기반 리뷰 초안 생성."""
-    try:
-        result = await generate_review_draft.ainvoke({
-            "product_name": request.product_name,
-            "satisfaction": request.satisfaction,
-            "keywords":     request.keywords or [],
-        })
-        if isinstance(result, str):
-            try:
-                result = orjson.loads(result)
-            except Exception:
-                pass
-        if isinstance(result, dict) and "drafts" in result:
-            return result
-        return {"success": True, "drafts": result}
-    except Exception as e:
-        return {"success": False, "error": str(e)}

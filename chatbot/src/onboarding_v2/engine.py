@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +22,8 @@ from chatbot.src.onboarding_v2.models import (
     PlanningBundle,
     ReplayResult,
 )
+from chatbot.src.onboarding_v2.models.common import DebugRecord
+from chatbot.src.onboarding_v2.models.repair import RepairDecision
 from chatbot.src.onboarding_v2.models.validation import ValidationBundle
 from chatbot.src.onboarding_v2.planning import build_planning_bundle
 from chatbot.src.onboarding_v2.repair import (
@@ -71,14 +73,21 @@ class _RunState:
     prep_ref: ArtifactRef | None = None
     state_ref: ArtifactRef | None = None
     chatbot_runtime_boot_ref: ArtifactRef | None = None
+    widget_bundle_fetch_ref: ArtifactRef | None = None
     host_auth_ref: ArtifactRef | None = None
     chatbot_adapter_auth_ref: ArtifactRef | None = None
     widget_order_ref: ArtifactRef | None = None
+    fixture_manifest_ref: ArtifactRef | None = None
+    conversation_validation_ref: ArtifactRef | None = None
+    conversation_transcript_refs: list[ArtifactRef] = field(default_factory=list)
     validation_ref: ArtifactRef | None = None
     latest_repair_ref: ArtifactRef | None = None
     latest_failure_signature: str | None = None
     latest_rewind_to: str | None = None
     repair_attempt_count: int = 0
+    pending_required_stage_rechecks: list[str] = field(default_factory=list)
+    pending_required_rechecks: list[str] = field(default_factory=list)
+    pending_preserve_artifacts: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -112,8 +121,10 @@ def run_onboarding_generation_v2(
     analysis_llm_builder: Any | None = None,
     planning_llm_builder: Any | None = None,
     chatbot_server_base_url: str | None = None,
+    max_repair_attempts: int = 4,
     **_: Any,
 ) -> dict[str, Any]:
+    max_repair_attempts = max(1, int(max_repair_attempts))
     run_root = Path(generated_root) / site / run_id
     run_root.mkdir(parents=True, exist_ok=True)
     event_store = EventStore(run_root)
@@ -226,8 +237,18 @@ def run_onboarding_generation_v2(
             )
             decision = diagnose_failure(
                 failure_bundle=failure_bundle,
+                analysis_bundle_payload=(
+                    {}
+                    if state.analysis_bundle is None
+                    else state.analysis_bundle.model_dump(mode="json")
+                ),
                 snapshot_payload=(
                     {} if state.snapshot is None else state.snapshot.model_dump(mode="json")
+                ),
+                planning_bundle_payload=(
+                    {}
+                    if state.planning_bundle is None
+                    else state.planning_bundle.model_dump(mode="json")
                 ),
                 plan_payload={} if state.plan is None else state.plan.model_dump(mode="json"),
                 edit_program_payload=(
@@ -284,8 +305,18 @@ def run_onboarding_generation_v2(
                     )
                     decision = diagnose_failure(
                         failure_bundle=failure_bundle,
+                        analysis_bundle_payload=(
+                            {}
+                            if state.analysis_bundle is None
+                            else state.analysis_bundle.model_dump(mode="json")
+                        ),
                         snapshot_payload=(
                             {} if state.snapshot is None else state.snapshot.model_dump(mode="json")
+                        ),
+                        planning_bundle_payload=(
+                            {}
+                            if state.planning_bundle is None
+                            else state.planning_bundle.model_dump(mode="json")
                         ),
                         plan_payload=(
                             {} if state.plan is None else state.plan.model_dump(mode="json")
@@ -301,10 +332,21 @@ def run_onboarding_generation_v2(
                         debug_store=debug_store,
                     )
 
-            if repeat_count >= 4:
+            if repeat_count >= max_repair_attempts:
                 decision = decision.model_copy(
                     update={"stop": True, "stop_reason": "repeated_failure_signature"}
                 )
+
+            requested_rewind_to = decision.rewind_to
+            effective_rewind_to = _derive_effective_rewind_to(decision)
+            normalized_rechecks = _normalize_required_rechecks(decision.required_rechecks)
+            decision_payload = decision.model_dump(mode="json")
+            decision_payload["requested_rewind_to"] = requested_rewind_to
+            decision_payload["effective_rewind_to"] = effective_rewind_to
+            decision_payload["requested_required_rechecks"] = list(decision.required_rechecks)
+            decision_payload["required_stage_rechecks"] = list(normalized_rechecks["stage_rechecks"])
+            decision_payload["required_check_rechecks"] = list(normalized_rechecks["check_rechecks"])
+            decision_payload["ignored_required_rechecks"] = list(normalized_rechecks["ignored_rechecks"])
 
             decision_event = event_store.write_event(
                 run_id=run_id,
@@ -314,7 +356,9 @@ def run_onboarding_generation_v2(
                 summary="repair decision emitted",
                 input_refs=[failure_ref],
                 failure_signature=decision.failure_signature,
-                rewind_to=decision.rewind_to,
+                rewind_to=effective_rewind_to,
+                requested_rewind_to=requested_rewind_to,
+                effective_rewind_to=effective_rewind_to,
                 attempt=attempt,
                 actor="repair_agent",
                 source="llm",
@@ -322,15 +366,33 @@ def run_onboarding_generation_v2(
             decision_ref = artifact_store.write_json_artifact(
                 stage="repair",
                 artifact_type="repair-decision",
-                payload=decision.model_dump(mode="json"),
+                payload=decision_payload,
                 producer="repair",
                 input_artifact_refs=[failure_ref],
                 event_ref=decision_event.event_id,
                 status="completed" if not decision.stop else "failed",
                 attempt=attempt,
             )
+            debug_store.write_record(
+                stage="repair",
+                label="effective-rewind",
+                record=DebugRecord(
+                    stage="repair",
+                    attempt=attempt,
+                    prompt={
+                        "failure_signature": decision.failure_signature,
+                        "artifact_overrides": decision.artifact_overrides,
+                    },
+                    normalized_response=decision_payload,
+                    parse_result={"status": "derived"},
+                    artifact_refs=[failure_ref],
+                    event_ref=decision_event.event_id,
+                    requested_rewind_to=requested_rewind_to,
+                    effective_rewind_to=effective_rewind_to,
+                ),
+            )
             state.latest_repair_ref = decision_ref
-            state.latest_rewind_to = decision.rewind_to
+            state.latest_rewind_to = effective_rewind_to
             state.repair_attempt_count = attempt
 
             if decision.stop:
@@ -342,7 +404,9 @@ def run_onboarding_generation_v2(
                     summary="repair stopped",
                     input_refs=[failure_ref, decision_ref],
                     failure_signature=decision.failure_signature,
-                    rewind_to=decision.rewind_to,
+                    rewind_to=effective_rewind_to,
+                    requested_rewind_to=requested_rewind_to,
+                    effective_rewind_to=effective_rewind_to,
                     details={"stop_reason": decision.stop_reason},
                     attempt=attempt,
                     actor="repair_agent",
@@ -356,10 +420,12 @@ def run_onboarding_generation_v2(
                 stage="repair",
                 phase="rewind",
                 event_type="rewind_requested",
-                summary=f"rewind requested to {decision.rewind_to}",
+                summary=f"rewind requested to {requested_rewind_to} (effective {effective_rewind_to})",
                 input_refs=[failure_ref, decision_ref],
                 failure_signature=decision.failure_signature,
-                rewind_to=decision.rewind_to,
+                rewind_to=effective_rewind_to,
+                requested_rewind_to=requested_rewind_to,
+                effective_rewind_to=effective_rewind_to,
                 attempt=attempt,
                 actor="repair_agent",
                 source="llm",
@@ -367,11 +433,15 @@ def run_onboarding_generation_v2(
             _clear_state_for_failure(
                 state=state,
                 failed_stage=failure.stage,
-                rewind_to=decision.rewind_to,
+                rewind_to=effective_rewind_to,
+                preserve_artifacts=decision.preserve_artifacts,
             )
+            state.pending_required_stage_rechecks = list(normalized_rechecks["stage_rechecks"])
+            state.pending_required_rechecks = list(normalized_rechecks["check_rechecks"])
+            state.pending_preserve_artifacts = list(dict.fromkeys(decision.preserve_artifacts))
             analysis_overrides = dict(decision.artifact_overrides.get("analysis") or {})
             planning_overrides = dict(decision.artifact_overrides.get("planning") or {})
-            next_stage = decision.rewind_to
+            next_stage = effective_rewind_to
             event_store.write_event(
                 run_id=run_id,
                 stage=next_stage,
@@ -379,12 +449,21 @@ def run_onboarding_generation_v2(
                 event_type="stage_rerun_started",
                 summary=f"{next_stage} rerun started",
                 failure_signature=decision.failure_signature,
-                rewind_to=decision.rewind_to,
+                rewind_to=effective_rewind_to,
+                requested_rewind_to=requested_rewind_to,
+                effective_rewind_to=effective_rewind_to,
                 attempt=attempt + 1,
                 actor="repair_agent",
                 source="deterministic",
             )
 
+    llm_usage_ref = _write_llm_usage_summary_artifact(
+        artifact_store=artifact_store,
+        usage_store=usage_store,
+        analysis_ref=state.analysis_ref,
+        plan_ref=state.plan_ref,
+        attempt=attempt,
+    )
     view_projector.project(
         run_id=run_id,
         site=site,
@@ -422,6 +501,7 @@ def run_onboarding_generation_v2(
         "latest_apply_artifact": _artifact_abspath(run_root, state.apply_ref),
         "latest_validation_artifact": _artifact_abspath(run_root, state.validation_ref),
         "latest_export_artifact": _artifact_abspath(run_root, state.export_bundle_ref),
+        "latest_llm_usage_artifact": _artifact_abspath(run_root, llm_usage_ref),
         "approved_patch_path": _artifact_abspath(run_root, state.patch_ref),
         "chatbot_approved_patch_path": _artifact_abspath(
             run_root, state.chatbot_patch_ref
@@ -601,6 +681,7 @@ def run_analysis_stage(
             debug_store=debug_store,
             usage_store=usage_store,
             attempt=attempt,
+            overrides=overrides,
         )
         snapshot = analysis_bundle.snapshot
         snapshot = _apply_analysis_overrides(snapshot=snapshot, overrides=overrides)
@@ -627,6 +708,11 @@ def run_analysis_stage(
                 },
                 "unresolved_ambiguities": list(analysis_bundle.unresolved_ambiguities),
                 "confidence_notes": list(analysis_bundle.framework_profile.confidence_notes),
+                "repair_override_applied": bool(overrides),
+                "repair_overrides": dict(overrides),
+                "required_rechecks": _combined_pending_required_rechecks(state),
+                "required_stage_rechecks": list(state.pending_required_stage_rechecks),
+                "required_check_rechecks": list(state.pending_required_rechecks),
             },
         )
         analysis_ref = artifact_store.write_json_artifact(
@@ -657,6 +743,7 @@ def run_analysis_stage(
         state.analysis_bundle_ref = analysis_bundle_ref
         state.snapshot = snapshot
         state.analysis_ref = analysis_ref
+        _mark_required_stage_rechecks_satisfied(state=state, satisfied=["analysis"])
     except Exception as exc:
         failure_signature = build_failure_signature(check_name="analysis", summary=str(exc))
         failed_event = event_store.write_event(
@@ -747,6 +834,11 @@ def run_planning_stage(
                     "repair_hints": "llm_assisted",
                 },
                 "coverage": planning_bundle.coverage_report.model_dump(mode="json"),
+                "repair_override_applied": bool(overrides),
+                "repair_overrides": dict(overrides),
+                "required_rechecks": _combined_pending_required_rechecks(state),
+                "required_stage_rechecks": list(state.pending_required_stage_rechecks),
+                "required_check_rechecks": list(state.pending_required_rechecks),
             },
         )
         plan_ref = artifact_store.write_json_artifact(
@@ -778,6 +870,7 @@ def run_planning_stage(
         state.planning_bundle_ref = planning_bundle_ref
         state.plan = plan
         state.plan_ref = plan_ref
+        _mark_required_stage_rechecks_satisfied(state=state, satisfied=["planning"])
     except Exception as exc:
         failure_signature = build_failure_signature(check_name="planning", summary=str(exc))
         failed_event = event_store.write_event(
@@ -815,12 +908,14 @@ def run_compile_stage(
     attempt: int,
 ) -> None:
     if (
-        state.snapshot is None
+        state.analysis_bundle is None
+        or state.snapshot is None
         or state.analysis_ref is None
+        or state.planning_bundle is None
         or state.plan is None
         or state.plan_ref is None
     ):
-        raise ValueError("analysis snapshot and plan are required before compile")
+        raise ValueError("analysis bundle, snapshot, planning bundle, and plan are required before compile")
     started = event_store.write_event(
         run_id=run_id,
         stage="compile",
@@ -841,8 +936,8 @@ def run_compile_stage(
     )
     try:
         edit_program = compile_plan(
-            snapshot=state.snapshot,
-            plan=state.plan,
+            analysis_bundle=state.analysis_bundle,
+            planning_bundle=state.planning_bundle,
             source_root=source_root,
             chatbot_source_root=chatbot_source_root,
         )
@@ -887,6 +982,7 @@ def run_compile_stage(
         state.edit_program = edit_program
         state.compile_ref = compile_ref
         state.chatbot_compile_ref = chatbot_compile_ref
+        _mark_required_stage_rechecks_satisfied(state=state, satisfied=["compile"])
     except Exception as exc:
         failure_signature = build_failure_signature(check_name="compile", summary=str(exc))
         failed_event = event_store.write_event(
@@ -991,6 +1087,7 @@ def run_apply_stage(
         )
         state.apply_result = apply_result
         state.apply_ref = apply_ref
+        _mark_required_stage_rechecks_satisfied(state=state, satisfied=["apply"])
         run_compile_preflight_stage(
             run_id=run_id,
             state=state,
@@ -1054,8 +1151,12 @@ def run_export_stage(
         export_bundle_ref, replay_result, replay_ref = export_and_replay(
             host_source_root=source_root,
             chatbot_source_root=chatbot_source_root,
+            host_baseline_root=state.apply_result.host_source_snapshot_path or source_root,
+            chatbot_baseline_root=state.apply_result.chatbot_source_snapshot_path or chatbot_source_root,
             host_runtime_workspace=state.apply_result.host_workspace_path,
             chatbot_runtime_workspace=state.apply_result.chatbot_workspace_path,
+            host_allowed_targets=state.apply_result.host_applied_files,
+            chatbot_allowed_targets=state.apply_result.chatbot_applied_files,
             runtime_root=runtime_root,
             run_root=run_root,
             site=site,
@@ -1127,6 +1228,7 @@ def run_export_stage(
         state.replay_result = replay_result
         state.replay_ref = replay_ref
         state.export_bundle_ref = export_bundle_ref
+        _mark_required_stage_rechecks_satisfied(state=state, satisfied=["export"])
     except _StageFailure:
         raise
     except Exception as exc:
@@ -1190,12 +1292,14 @@ def run_compile_preflight_stage(
             attempt=attempt,
         )
         preflight_result = run_chatbot_compile_preflight(
-            Path(state.apply_result.chatbot_workspace_path)
+            Path(state.apply_result.chatbot_workspace_path),
+            scan_paths=preflight_spec.scan_paths,
         )
         preflight_payload = {
             "artifact_type": preflight_spec.artifact_type,
             "check_name": preflight_spec.check_name,
             "chatbot_workspace_path": state.apply_result.chatbot_workspace_path,
+            "scan_paths": list(preflight_spec.scan_paths),
             **preflight_result.model_dump(mode="json"),
         }
         preflight_ref = artifact_store.write_json_artifact(
@@ -1212,6 +1316,7 @@ def run_compile_preflight_stage(
         state.compile_preflight_result = preflight_result
 
         if preflight_result.passed:
+            _mark_required_rechecks_satisfied(state=state, satisfied=["compile_preflight"])
             event_store.write_event(
                 run_id=run_id,
                 stage="compile",
@@ -1347,6 +1452,17 @@ def run_validation_stage(
         ],
         attempt=attempt,
     )
+    validation_live_logs_root = run_root / "artifacts" / "05-validation" / "live-logs"
+    validation_live_logs_root.mkdir(parents=True, exist_ok=True)
+
+    def _validation_event_callback(payload: dict[str, object]) -> None:
+        event_store.write_event(
+            run_id=run_id,
+            stage="validation",
+            attempt=attempt,
+            **payload,
+        )
+
     event_store.write_event(
         run_id=run_id,
         stage="validation",
@@ -1372,6 +1488,9 @@ def run_validation_stage(
             "replay": state.replay_ref,
         },
         onboarding_credentials=onboarding_credentials,
+        required_rechecks=list(state.pending_required_rechecks),
+        event_callback=_validation_event_callback,
+        live_logs_root=validation_live_logs_root,
     )
     prep_ref = artifact_store.write_json_artifact(
         stage="validation",
@@ -1396,7 +1515,13 @@ def run_validation_stage(
         artifact_refs=[prep_ref],
         input_refs=[state.analysis_ref, state.plan_ref, state.apply_ref],
         failure_signature=(
-            None if validation_run.backend_runtime_prep.passed else "backend_runtime_prep_failed"
+            None
+            if validation_run.backend_runtime_prep.passed
+            else build_failure_signature(
+                check_name="backend_runtime_prep",
+                summary=validation_run.backend_runtime_prep.failure_summary
+                or "backend runtime prep failed",
+            )
         ),
         attempt=attempt,
     )
@@ -1446,12 +1571,22 @@ def run_validation_stage(
         status="completed" if validation_run.chatbot_runtime_boot["passed"] else "failed",
         attempt=attempt,
     )
+    widget_bundle_fetch_ref = artifact_store.write_json_artifact(
+        stage="validation",
+        artifact_type="widget-bundle-fetch",
+        payload=validation_run.widget_bundle_fetch,
+        producer="validator",
+        input_artifact_refs=[state_ref, chatbot_runtime_boot_ref],
+        event_ref=validation_started.event_id,
+        status="completed" if validation_run.widget_bundle_fetch["passed"] else "failed",
+        attempt=attempt,
+    )
     host_auth_ref = artifact_store.write_json_artifact(
         stage="validation",
         artifact_type="host-auth-bootstrap",
         payload=validation_run.host_auth_bootstrap,
         producer="validator",
-        input_artifact_refs=[state_ref, chatbot_runtime_boot_ref],
+        input_artifact_refs=[state_ref, chatbot_runtime_boot_ref, widget_bundle_fetch_ref],
         event_ref=validation_started.event_id,
         status="completed" if validation_run.host_auth_bootstrap["passed"] else "failed",
         attempt=attempt,
@@ -1502,6 +1637,46 @@ def run_validation_stage(
         ),
         attempt=attempt,
     )
+    fixture_manifest_ref = artifact_store.write_json_artifact(
+        stage="validation",
+        artifact_type="validation-fixture-manifest",
+        payload=dict(validation_run.conversation_validation.fixture_manifest or {}),
+        producer="validator",
+        input_artifact_refs=[prep_ref, host_auth_ref, chatbot_adapter_auth_ref],
+        event_ref=validation_started.event_id,
+        status="completed",
+        attempt=attempt,
+    )
+    conversation_transcript_refs: list[ArtifactRef] = []
+    for scenario_id, content in sorted(
+        validation_run.conversation_validation.transcript_contents.items()
+    ):
+        transcript_ref = artifact_store.write_text_artifact(
+            stage="validation",
+            artifact_type="conversation-transcript",
+            content=content,
+            suffix=f"-{scenario_id}.json",
+        )
+        conversation_transcript_refs.append(transcript_ref)
+    conversation_validation_ref = artifact_store.write_json_artifact(
+        stage="validation",
+        artifact_type="conversation-validation",
+        payload=validation_run.conversation_validation.model_dump(mode="json"),
+        producer="validator",
+        input_artifact_refs=[
+            state_ref,
+            chatbot_runtime_boot_ref,
+            widget_bundle_fetch_ref,
+            host_auth_ref,
+            chatbot_adapter_auth_ref,
+            widget_order_ref,
+            fixture_manifest_ref,
+            *conversation_transcript_refs,
+        ],
+        event_ref=validation_started.event_id,
+        status="completed" if validation_run.conversation_validation.passed else "failed",
+        attempt=attempt,
+    )
     validation_bundle = validation_run.bundle
     validation_ref = artifact_store.write_json_artifact(
         stage="validation",
@@ -1518,14 +1693,19 @@ def run_validation_stage(
             prep_ref,
             state_ref,
             chatbot_runtime_boot_ref,
+            widget_bundle_fetch_ref,
             host_auth_ref,
             chatbot_adapter_auth_ref,
             widget_order_ref,
+            fixture_manifest_ref,
+            conversation_validation_ref,
+            *conversation_transcript_refs,
         ],
         event_ref=validation_started.event_id,
         status="completed" if validation_bundle.passed else "failed",
         attempt=attempt,
     )
+    _mark_required_stage_rechecks_satisfied(state=state, satisfied=["validation"])
     if not validation_bundle.passed:
         failed_event = event_store.write_event(
             run_id=run_id,
@@ -1549,9 +1729,13 @@ def run_validation_stage(
         state.prep_ref = prep_ref
         state.state_ref = state_ref
         state.chatbot_runtime_boot_ref = chatbot_runtime_boot_ref
+        state.widget_bundle_fetch_ref = widget_bundle_fetch_ref
         state.host_auth_ref = host_auth_ref
         state.chatbot_adapter_auth_ref = chatbot_adapter_auth_ref
         state.widget_order_ref = widget_order_ref
+        state.fixture_manifest_ref = fixture_manifest_ref
+        state.conversation_validation_ref = conversation_validation_ref
+        state.conversation_transcript_refs = conversation_transcript_refs
         state.validation_ref = validation_ref
         raise _StageFailure(
             stage="validation",
@@ -1571,9 +1755,13 @@ def run_validation_stage(
                 state.replay_ref,
                 prep_ref,
                 state_ref,
+                widget_bundle_fetch_ref,
                 host_auth_ref,
                 chatbot_adapter_auth_ref,
                 widget_order_ref,
+                fixture_manifest_ref,
+                conversation_validation_ref,
+                *conversation_transcript_refs,
                 validation_ref,
             ],
             related_files=validation_bundle.related_files,
@@ -1602,11 +1790,21 @@ def run_validation_stage(
     state.prep_ref = prep_ref
     state.state_ref = state_ref
     state.chatbot_runtime_boot_ref = chatbot_runtime_boot_ref
+    state.widget_bundle_fetch_ref = widget_bundle_fetch_ref
     state.host_auth_ref = host_auth_ref
     state.chatbot_adapter_auth_ref = chatbot_adapter_auth_ref
     state.widget_order_ref = widget_order_ref
+    state.fixture_manifest_ref = fixture_manifest_ref
+    state.conversation_validation_ref = conversation_validation_ref
+    state.conversation_transcript_refs = conversation_transcript_refs
     state.validation_ref = validation_ref
     state.latest_failure_signature = None
+    _mark_required_rechecks_satisfied(
+        state=state,
+        satisfied=[check.name for check in validation_bundle.checks],
+    )
+    if not state.pending_required_rechecks and not state.pending_required_stage_rechecks:
+        state.pending_preserve_artifacts = []
 
 
 def _related_compile_files(plan: IntegrationPlan) -> list[str]:
@@ -1634,6 +1832,27 @@ def _artifact_versions(state: _RunState) -> dict[str, int]:
     return {stage: ref.version for stage, ref in mapping.items() if ref is not None}
 
 
+def _write_llm_usage_summary_artifact(
+    *,
+    artifact_store: ArtifactStore,
+    usage_store: LlmUsageStore,
+    analysis_ref: ArtifactRef | None,
+    plan_ref: ArtifactRef | None,
+    attempt: int,
+) -> ArtifactRef | None:
+    summary_payload = usage_store.read_summary()
+    if not summary_payload or not list(summary_payload.get("calls") or []):
+        return None
+    return artifact_store.write_json_artifact(
+        stage="export",
+        artifact_type="llm-usage-summary",
+        payload=summary_payload,
+        producer="llm_usage_store",
+        input_artifact_refs=[ref for ref in (analysis_ref, plan_ref) if ref is not None],
+        attempt=attempt,
+    )
+
+
 def _artifact_abspath(run_root: Path, artifact_ref: ArtifactRef | None) -> str | None:
     if artifact_ref is None:
         return None
@@ -1653,10 +1872,88 @@ def _resolve_workspace_root(*, source_root: str, state: _RunState) -> str:
     return source_root
 
 
-def _clear_state_for_failure(*, state: _RunState, failed_stage: str, rewind_to: str) -> None:
-    _clear_from_stage(state, failed_stage)
-    if rewind_to != "validation":
-        _clear_from_stage(state, rewind_to)
+def _derive_effective_rewind_to(decision: RepairDecision) -> str:
+    artifact_overrides = dict(decision.artifact_overrides or {})
+    if dict(artifact_overrides.get("analysis") or {}):
+        return "analysis"
+    if dict(artifact_overrides.get("planning") or {}):
+        return "planning"
+    if dict(artifact_overrides.get("compile") or {}):
+        return "compile"
+    return decision.rewind_to
+
+
+_STAGE_RECHECK_NAMES = ("analysis", "planning", "compile", "apply", "export", "validation")
+_CHECK_RECHECK_NAMES = (
+    "compile_preflight",
+    "backend_runtime_prep",
+    "backend_runtime_boot",
+    "chatbot_runtime_boot",
+    "widget_bundle_fetch",
+    "host_auth_bootstrap",
+    "chatbot_adapter_auth",
+    "widget_order_e2e",
+    "replay_apply",
+    "replay_validation",
+)
+
+
+def _normalize_required_rechecks(required_rechecks: list[str]) -> dict[str, list[str]]:
+    stage_rechecks: list[str] = []
+    check_rechecks: list[str] = []
+    ignored_rechecks: list[str] = []
+    seen_stage: set[str] = set()
+    seen_check: set[str] = set()
+    seen_ignored: set[str] = set()
+
+    for item in required_rechecks:
+        token = str(item or "").strip()
+        if not token:
+            continue
+        if token in _STAGE_RECHECK_NAMES:
+            if token not in seen_stage:
+                seen_stage.add(token)
+                stage_rechecks.append(token)
+            continue
+        if token in _CHECK_RECHECK_NAMES:
+            if token not in seen_check:
+                seen_check.add(token)
+                check_rechecks.append(token)
+            continue
+        if token not in seen_ignored:
+            seen_ignored.add(token)
+            ignored_rechecks.append(token)
+
+    return {
+        "stage_rechecks": stage_rechecks,
+        "check_rechecks": check_rechecks,
+        "ignored_rechecks": ignored_rechecks,
+    }
+
+
+def _combined_pending_required_rechecks(state: _RunState) -> list[str]:
+    return list(
+        dict.fromkeys(
+            [*state.pending_required_stage_rechecks, *state.pending_required_rechecks]
+        )
+    )
+
+
+def _clear_state_for_failure(
+    *,
+    state: _RunState,
+    failed_stage: str,
+    rewind_to: str,
+    preserve_artifacts: list[str],
+) -> None:
+    del failed_stage
+    rerun_stages = set(_stages_from(rewind_to))
+    preserved = {
+        stage for stage in preserve_artifacts if stage in _stage_order() and stage not in rerun_stages
+    }
+    for stage in _stage_order():
+        if stage in rerun_stages or stage not in preserved:
+            _clear_from_stage_exact(state, stage)
 
 
 def _clear_from_stage(state: _RunState, stage: str) -> None:
@@ -1698,10 +1995,98 @@ def _clear_from_stage(state: _RunState, stage: str) -> None:
         state.prep_ref = None
         state.state_ref = None
         state.chatbot_runtime_boot_ref = None
+        state.widget_bundle_fetch_ref = None
         state.host_auth_ref = None
         state.chatbot_adapter_auth_ref = None
         state.widget_order_ref = None
+        state.fixture_manifest_ref = None
+        state.conversation_validation_ref = None
+        state.conversation_transcript_refs = []
         state.validation_ref = None
+
+
+def _clear_from_stage_exact(state: _RunState, stage: str) -> None:
+    if stage == "analysis":
+        state.analysis_bundle = None
+        state.snapshot = None
+        state.analysis_bundle_ref = None
+        state.analysis_ref = None
+        return
+    if stage == "planning":
+        state.planning_bundle = None
+        state.plan = None
+        state.planning_bundle_ref = None
+        state.plan_ref = None
+        return
+    if stage == "compile":
+        state.edit_program = None
+        state.compile_ref = None
+        state.chatbot_compile_ref = None
+        state.compile_preflight_ref = None
+        state.compile_preflight_result = None
+        return
+    if stage == "apply":
+        state.apply_result = None
+        state.apply_ref = None
+        state.compile_preflight_ref = None
+        state.compile_preflight_result = None
+        return
+    if stage == "export":
+        state.patch_ref = None
+        state.chatbot_patch_ref = None
+        state.replay_result = None
+        state.replay_ref = None
+        state.export_bundle_ref = None
+        return
+    if stage == "validation":
+        state.validation_run = None
+        state.prep_ref = None
+        state.state_ref = None
+        state.chatbot_runtime_boot_ref = None
+        state.widget_bundle_fetch_ref = None
+        state.host_auth_ref = None
+        state.chatbot_adapter_auth_ref = None
+        state.widget_order_ref = None
+        state.fixture_manifest_ref = None
+        state.conversation_validation_ref = None
+        state.conversation_transcript_refs = []
+        state.validation_ref = None
+        return
+
+
+def _stage_order() -> list[str]:
+    return ["analysis", "planning", "compile", "apply", "export", "validation"]
+
+
+def _stages_from(stage: str) -> list[str]:
+    ordered = _stage_order()
+    try:
+        start = ordered.index(stage)
+    except ValueError:
+        return []
+    return ordered[start:]
+
+
+def _mark_required_rechecks_satisfied(*, state: _RunState, satisfied: list[str]) -> None:
+    if not state.pending_required_rechecks:
+        return
+    satisfied_set = {item for item in satisfied if item}
+    if not satisfied_set:
+        return
+    state.pending_required_rechecks = [
+        item for item in state.pending_required_rechecks if item not in satisfied_set
+    ]
+
+
+def _mark_required_stage_rechecks_satisfied(*, state: _RunState, satisfied: list[str]) -> None:
+    if not state.pending_required_stage_rechecks:
+        return
+    satisfied_set = {item for item in satisfied if item}
+    if not satisfied_set:
+        return
+    state.pending_required_stage_rechecks = [
+        item for item in state.pending_required_stage_rechecks if item not in satisfied_set
+    ]
 
 
 def _apply_analysis_overrides(

@@ -631,11 +631,11 @@ require("__EMITTED__");
 
 
 def test_ecommerce_wrapper_enables_full_shared_widget_capabilities(tmp_path: Path) -> None:
-    chatbotfab_source = (
-        REPO_ROOT / "chatbot" / "frontend" / "shared_widget" / "chatbotfab.tsx"
+    wrapper_source = (
+        REPO_ROOT / "ecommerce" / "frontend" / "app" / "ChatbotFabWrapper.tsx"
     ).read_text(encoding="utf-8")
 
-    assert 'capabilities="full"' in chatbotfab_source
+    assert 'capabilities="full"' in wrapper_source
 
     output = _run_typescript_transport(
         tmp_path,

@@ -13,6 +13,7 @@ from chatbot.src.onboarding_v2.models.analysis import (
     AnalysisSnapshot,
     CandidateSet,
     ContractRecord,
+    DomainIntegration,
     FrameworkProfile,
     RetrievalPlan,
     VerifiedContracts,
@@ -102,6 +103,18 @@ Rules:
 - Use analysis for missing facts, planning for unsupported strategies/binding drift, validation for runtime mismatches.
 - Do not include markdown."""
 
+_RISK_AND_REPAIR_PROMPT = """You are the planning risk and repair analyzer for onboarding_v2.
+Return JSON with two keys:
+- risk_register: array of objects with code, summary, severity, owner, mitigations
+- repair_hints: array of objects with code, rewind_to, reason, trigger_conditions, owner
+
+Rules:
+- Mention only concrete failure modes supported by the analysis input.
+- Keep risks concise and actionable.
+- rewind_to must be one of analysis, planning, validation.
+- Use analysis for missing facts, planning for unsupported strategies/binding drift, validation for runtime mismatches.
+- Do not include markdown."""
+
 
 class _StrategyEnvelope(BaseModel):
     strategy_candidates: list[StrategyCandidate] = Field(default_factory=list)
@@ -127,6 +140,13 @@ class _RepairEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class _RiskAndRepairEnvelope(BaseModel):
+    risk_register: list[PlanningRisk] = Field(default_factory=list)
+    repair_hints: list[RepairHint] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 def build_planning_bundle(
     *,
     snapshot: AnalysisSnapshot,
@@ -143,7 +163,9 @@ def build_planning_bundle(
     strict_coverage: bool = True,
     artifact_refs: list[ArtifactRef] | None = None,
 ) -> PlanningBundle:
-    bundle = analysis_bundle or _build_shell_analysis_bundle(snapshot)
+    if analysis_bundle is None:
+        raise ValueError("analysis_bundle is required for onboarding_v2 planning")
+    bundle = analysis_bundle
     adapters = set(available_adapters or DEFAULT_AVAILABLE_ADAPTERS)
     goal_materialization = _build_goal_materialization()
     coverage_report = _build_coverage_report(
@@ -235,12 +257,17 @@ def build_planning_bundle(
         strategy_candidates=strategy_candidates,
         coverage_report=coverage_report,
     )
-    risk_response = invoke_structured_stage(
+    repair_fallback = _build_repair_hints_fallback(
+        coverage_report=coverage_report,
+        strategy_candidates=strategy_candidates,
+        target_bindings=target_bindings,
+    )
+    risk_and_repair_response = invoke_structured_stage(
         stage="planning",
-        phase="risk-register",
+        phase="risk-and-repair",
         provider=llm_provider,
         model=llm_model,
-        system_prompt=_RISK_PROMPT,
+        system_prompt=_RISK_AND_REPAIR_PROMPT,
         payload={
             "coverage_report": coverage_report.model_dump(mode="json"),
             "strategy_candidates": [item.model_dump(mode="json") for item in strategy_candidates],
@@ -250,9 +277,10 @@ def build_planning_bundle(
                 "unresolved_ambiguities": bundle.unresolved_ambiguities,
             },
         },
-        response_model=_RiskEnvelope,
+        response_model=_RiskAndRepairEnvelope,
         fallback_payload={
-            "risk_register": [item.model_dump(mode="json") for item in risk_fallback]
+            "risk_register": [item.model_dump(mode="json") for item in risk_fallback],
+            "repair_hints": [item.model_dump(mode="json") for item in repair_fallback],
         },
         attempt=attempt,
         debug_store=debug_store,
@@ -260,35 +288,8 @@ def build_planning_bundle(
         llm_builder=llm_builder,
         artifact_refs=artifact_refs,
     )
-    risk_register = _dedupe_risks(risk_response.risk_register or risk_fallback)
-
-    repair_fallback = _build_repair_hints_fallback(
-        coverage_report=coverage_report,
-        strategy_candidates=strategy_candidates,
-        target_bindings=target_bindings,
-    )
-    repair_response = invoke_structured_stage(
-        stage="planning",
-        phase="repair-hints",
-        provider=llm_provider,
-        model=llm_model,
-        system_prompt=_REPAIR_HINT_PROMPT,
-        payload={
-            "coverage_report": coverage_report.model_dump(mode="json"),
-            "strategy_candidates": [item.model_dump(mode="json") for item in strategy_candidates],
-            "target_bindings": [item.model_dump(mode="json") for item in target_bindings],
-        },
-        response_model=_RepairEnvelope,
-        fallback_payload={
-            "repair_hints": [item.model_dump(mode="json") for item in repair_fallback]
-        },
-        attempt=attempt,
-        debug_store=debug_store,
-        usage_store=usage_store,
-        llm_builder=llm_builder,
-        artifact_refs=artifact_refs,
-    )
-    repair_hints = _dedupe_repair_hints(repair_response.repair_hints or repair_fallback)
+    risk_register = _dedupe_risks(risk_and_repair_response.risk_register or risk_fallback)
+    repair_hints = _dedupe_repair_hints(risk_and_repair_response.repair_hints or repair_fallback)
 
     integration_plan = _derive_integration_plan(
         snapshot=snapshot,
@@ -321,7 +322,9 @@ def build_integration_plan(
     analysis_bundle: AnalysisBundle | None = None,
     **kwargs: Any,
 ) -> IntegrationPlan:
-    if analysis_bundle is None and "strict_coverage" not in kwargs:
+    if analysis_bundle is None:
+        raise ValueError("analysis_bundle is required for onboarding_v2 planning")
+    if "strict_coverage" not in kwargs:
         kwargs["strict_coverage"] = False
     return build_planning_bundle(
         snapshot=snapshot,
@@ -329,106 +332,6 @@ def build_integration_plan(
         chatbot_server_base_url=chatbot_server_base_url,
         **kwargs,
     ).integration_plan
-
-
-def _build_shell_analysis_bundle(snapshot: AnalysisSnapshot) -> AnalysisBundle:
-    lookup_target = _choose_order_target_from_candidates(
-        snapshot.domain_integration.order_bridge_targets,
-        role="lookup",
-        default="backend/orders/views.py",
-    )
-    action_target = _choose_order_target_from_candidates(
-        snapshot.domain_integration.order_bridge_targets,
-        role="action",
-        default="backend/orders/views.py",
-    )
-    candidate_set = CandidateSet(
-        route_definitions=list(snapshot.backend_seams.route_registration_points),
-        auth_components=_dedupe_candidates(
-            [
-                *snapshot.backend_seams.auth_source_candidates,
-                *snapshot.backend_seams.user_resolver_candidates,
-                *snapshot.frontend_seams.auth_store_candidates,
-            ]
-        ),
-        api_clients=list(snapshot.frontend_seams.api_client_candidates),
-        app_shells=list(snapshot.frontend_seams.app_shell_candidates),
-        router_boundaries=list(snapshot.frontend_seams.router_boundary_candidates),
-        widget_mounts=list(snapshot.frontend_seams.widget_mount_candidates),
-        order_targets=list(snapshot.domain_integration.order_bridge_targets),
-        services=list(snapshot.backend_seams.tool_registry_candidates),
-    )
-    verified_contracts = VerifiedContracts(
-        database_entities=[
-            ContractRecord(
-                identifier="orders_order" if snapshot.repo_profile.backend_framework == "django" else "orders",
-                kind="database_entity",
-                location=_path_or_default(
-                    snapshot.domain_integration.order_bridge_targets,
-                    default="backend/orders/views.py",
-                ),
-                evidence_refs=[_path_or_default(snapshot.domain_integration.order_bridge_targets, default="backend/orders/views.py")],
-            )
-        ],
-        api_endpoints=[
-            ContractRecord(
-                identifier=path,
-                kind="api_endpoint",
-                location=_path_or_default(snapshot.backend_seams.route_registration_points, default="backend/foodshop/urls.py"),
-                details={"domain": "order" if "order" in path.lower() else "product"},
-                evidence_refs=[_path_or_default(snapshot.backend_seams.route_registration_points, default="backend/foodshop/urls.py")],
-            )
-            for path in [*snapshot.domain_integration.product_api_base_paths, *snapshot.domain_integration.order_api_base_paths]
-        ]
-        + [
-            ContractRecord(
-                identifier="/api/chat/auth-token",
-                kind="api_endpoint",
-                location=_path_or_default(snapshot.backend_seams.auth_source_candidates, default="backend/users/views.py"),
-                details={"domain": "auth_bootstrap"},
-                evidence_refs=[_path_or_default(snapshot.backend_seams.auth_source_candidates, default="backend/users/views.py")],
-            )
-        ],
-        auth_components=[
-            ContractRecord(
-                identifier="chat_auth_bootstrap",
-                kind="auth_component",
-                location=_path_or_default(snapshot.backend_seams.auth_source_candidates, default="backend/users/views.py"),
-                details={"role": "chatbot_bootstrap_contract"},
-                evidence_refs=[_path_or_default(snapshot.backend_seams.auth_source_candidates, default="backend/users/views.py")],
-            )
-        ],
-        tool_targets=[
-            ContractRecord(
-                identifier="order_lookup",
-                kind="tool_target",
-                location=lookup_target,
-                details={"tool_name": "list_orders"},
-                evidence_refs=[lookup_target],
-            ),
-            ContractRecord(
-                identifier="order_action",
-                kind="tool_target",
-                location=action_target,
-                details={"tool_name": "cancel|refund|exchange"},
-                evidence_refs=[action_target],
-            ),
-        ],
-    )
-    return AnalysisBundle(
-        workspace_profile=WorkspaceProfile(root=snapshot.repo_profile.source_root),
-        framework_profile=FrameworkProfile(
-            backend_framework=snapshot.repo_profile.backend_framework,
-            frontend_framework=snapshot.repo_profile.frontend_framework,
-            auth_style=snapshot.repo_profile.auth_style,
-        ),
-        retrieval_plan=RetrievalPlan(),
-        candidate_set=candidate_set,
-        verified_contracts=verified_contracts,
-        analysis_graph=AnalysisGraph(),
-        unresolved_ambiguities=list(snapshot.ambiguity.open_questions),
-        snapshot=snapshot,
-    )
 
 
 def _build_goal_materialization() -> GoalMaterialization:
@@ -916,7 +819,7 @@ def _derive_integration_plan(
 ) -> IntegrationPlan:
     del coverage_report
     binding_map = {binding.capability: binding for binding in target_bindings}
-    site_id = _load_required_site_id(Path(snapshot.repo_profile.source_root))
+    site_id = _resolve_site_id(snapshot)
     normalized_chatbot_server_base_url = str(chatbot_server_base_url or "").strip().rstrip("/")
     if not normalized_chatbot_server_base_url:
         raise ValueError("chatbot_server_base_url is required for V2 dual-patch planning")
@@ -926,6 +829,10 @@ def _derive_integration_plan(
     api_client_target = binding_map["api_client"].target_path
     order_lookup_target = binding_map["order_lookup"].target_path
     order_action_target = binding_map["order_action"].target_path
+    bridge_contract = _derive_chatbot_bridge_contract(
+        domain_integration=analysis_bundle.snapshot.domain_integration,
+        site_id=site_id,
+    )
     assumptions = [
         "planner consumed verified analysis graph and deterministic compiler capabilities",
         "host auth bootstrap returns access_token payload for chatbot adapter validation",
@@ -940,9 +847,19 @@ def _derive_integration_plan(
             strategy=integration_strategy.backend_strategy,
             route_target=route_target,
             import_target=route_target,
+            login_endpoint=_derive_host_login_endpoint(analysis_bundle.snapshot.domain_integration),
             order_lookup_target=order_lookup_target,
             order_action_target=order_action_target,
-            exchange_strategy=_choose_exchange_strategy(site_id=site_id, order_action_target=order_action_target),
+            exchange_strategy=_choose_exchange_strategy(
+                site_id=site_id,
+                order_action_target=order_action_target,
+                domain_integration=analysis_bundle.snapshot.domain_integration,
+            ),
+            order_action_request_field=bridge_contract["request_field_mappings"]["action"],
+            order_action_reason_field=bridge_contract["request_field_mappings"]["reason"],
+            order_action_new_option_field=bridge_contract["request_field_mappings"]["new_option_id"],
+            order_action_response_serializer="serialize_order",
+            exchange_status_transition="EXCHANGE_REQUESTED",
             supported_order_tools=list(SUPPORTED_ORDER_TOOLS),
             auth_handler_source=auth_source,
             generated_handler_path=_choose_generated_handler_path(analysis_bundle.framework_profile.backend_framework),
@@ -970,6 +887,16 @@ def _derive_integration_plan(
             adapter_package=f"src/adapters/generated/{_normalize_site_key(site_id)}",
             setup_target=binding_map["chatbot_setup"].target_path,
             host_base_url_env_var=_build_chatbot_bridge_env_var(site_id),
+            auth_validation_endpoint=bridge_contract["auth_validation_endpoint"],
+            current_user_endpoint=bridge_contract["current_user_endpoint"],
+            product_search_endpoint=bridge_contract["product_search_endpoint"],
+            order_list_endpoint=bridge_contract["order_list_endpoint"],
+            order_detail_endpoint=bridge_contract["order_detail_endpoint"],
+            order_action_endpoint=bridge_contract["order_action_endpoint"],
+            order_action_endpoints=bridge_contract["order_action_endpoints"],
+            auth_transport=bridge_contract["auth_transport"],
+            response_mapping_profile=bridge_contract["response_mapping_profile"],
+            request_field_mappings=bridge_contract["request_field_mappings"],
             supported_tools=list(SUPPORTED_ORDER_TOOLS),
         ),
         planning_notes=PlanningNotes(
@@ -1073,28 +1000,24 @@ def _dedupe_repair_hints(items: list[RepairHint]) -> list[RepairHint]:
     return deduped
 
 
-def _choose_exchange_strategy(*, site_id: str, order_action_target: str) -> str:
+def _choose_exchange_strategy(
+    *,
+    site_id: str,
+    order_action_target: str,
+    domain_integration: DomainIntegration,
+) -> str:
     del site_id, order_action_target
+    if domain_integration.order_action_endpoints:
+        return "reuse_existing_order_action_endpoint"
     return "augment_existing_order_action_endpoint"
 
 
 def _choose_generated_handler_path(backend_framework: str) -> str | None:
-    if backend_framework == "django":
+    if backend_framework in {"django", "flask"}:
         return "backend/chat_auth.py"
-    if backend_framework in {"flask", "fastapi"}:
+    if backend_framework == "fastapi":
         return "chat_auth.py"
     return None
-
-
-def _load_required_site_id(source_root: Path) -> str:
-    manifest_path = source_root / "site-manifest.json"
-    if not manifest_path.exists():
-        raise ValueError("site-manifest.json with site_id is required for V2 dual-patch planning")
-    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    site_id = str(payload.get("site_id") or "").strip()
-    if not site_id:
-        raise ValueError("site-manifest.json must declare a non-empty site_id")
-    return site_id
 
 
 def _normalize_site_key(site_id: str) -> str:
@@ -1142,3 +1065,75 @@ def _normalize_runtime_fallback(runtime_base_url: str) -> str:
     if normalized in {"http://localhost:8100", "http://127.0.0.1:8100"}:
         return "http://127.0.0.1:8100"
     return normalized
+
+
+def _derive_chatbot_bridge_contract(
+    *,
+    domain_integration: DomainIntegration,
+    site_id: str,
+) -> dict[str, Any]:
+    auth_validation_endpoint = str(
+        domain_integration.auth_validation_endpoint or domain_integration.current_user_endpoint or ""
+    ).strip()
+    current_user_endpoint = str(
+        domain_integration.current_user_endpoint or auth_validation_endpoint
+    ).strip()
+    product_search_endpoint = str(domain_integration.product_search_endpoint or "").strip()
+    order_list_endpoint = str(domain_integration.order_list_endpoint or "").strip()
+    order_detail_endpoint = str(domain_integration.order_detail_endpoint or "").strip()
+    order_action_endpoint = str(domain_integration.order_action_endpoint or "").strip()
+    order_action_endpoints = {
+        str(action).strip(): str(path).strip()
+        for action, path in (domain_integration.order_action_endpoints or {}).items()
+        if str(action).strip() and str(path).strip()
+    }
+
+    missing = [
+        name
+        for name, value in {
+            "auth_validation_endpoint": auth_validation_endpoint,
+            "current_user_endpoint": current_user_endpoint,
+            "product_search_endpoint": product_search_endpoint,
+            "order_list_endpoint": order_list_endpoint,
+            "order_detail_endpoint": order_detail_endpoint,
+        }.items()
+        if not value
+    ]
+    if not order_action_endpoint and not order_action_endpoints:
+        missing.append("order_action_endpoint")
+    if missing:
+        raise ValueError(
+            "missing verified chatbot bridge seams for planning: " + ", ".join(sorted(missing))
+        )
+
+    return {
+        "auth_validation_endpoint": auth_validation_endpoint,
+        "current_user_endpoint": current_user_endpoint,
+        "product_search_endpoint": product_search_endpoint,
+        "order_list_endpoint": order_list_endpoint,
+        "order_detail_endpoint": order_detail_endpoint,
+        "order_action_endpoint": order_action_endpoint
+        or next(iter(order_action_endpoints.values())),
+        "order_action_endpoints": order_action_endpoints,
+        "auth_transport": "session_token_cookie",
+        "response_mapping_profile": "site_a" if _normalize_site_key(site_id) == "food" else "generic",
+        "request_field_mappings": {
+            "action": "action",
+            "reason": "reason",
+            "new_option_id": "new_option_id",
+        },
+    }
+
+
+def _derive_host_login_endpoint(domain_integration: DomainIntegration) -> str:
+    login_endpoint = str(domain_integration.login_endpoint or "").strip()
+    if login_endpoint:
+        return login_endpoint
+    raise ValueError("missing verified host login endpoint for planning")
+
+
+def _resolve_site_id(snapshot: AnalysisSnapshot) -> str:
+    site_id = str(snapshot.repo_profile.site or "").strip()
+    if site_id:
+        return site_id
+    raise ValueError("analysis snapshot must provide a non-empty site id for planning")

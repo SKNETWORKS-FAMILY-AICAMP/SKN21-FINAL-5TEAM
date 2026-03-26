@@ -133,18 +133,29 @@ def _parse_json(raw: str) -> dict[str, Any]:
 
 def _extract_token_usage(response: Any) -> dict[str, Any]:
     usage = getattr(response, "usage_metadata", None) or {}
-    if not usage:
-        metadata = getattr(response, "response_metadata", None) or {}
-        usage = metadata.get("token_usage") or metadata.get("usage") or {}
+    metadata = getattr(response, "response_metadata", None) or {}
+    metadata_usage = metadata.get("token_usage") or metadata.get("usage") or {}
+    input_details = usage.get("input_token_details") or usage.get("prompt_tokens_details") or {}
+    metadata_input_details = metadata_usage.get("prompt_tokens_details") or {}
 
-    input_tokens = int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
-    output_tokens = int(usage.get("output_tokens") or usage.get("completion_tokens") or 0)
-    total_tokens = int(usage.get("total_tokens") or (input_tokens + output_tokens))
+    input_tokens = int(usage.get("input_tokens") or usage.get("prompt_tokens") or metadata_usage.get("prompt_tokens") or 0)
+    output_tokens = int(
+        usage.get("output_tokens") or usage.get("completion_tokens") or metadata_usage.get("completion_tokens") or 0
+    )
+    cached_input_tokens = int(
+        usage.get("cached_input_tokens")
+        or input_details.get("cached_tokens")
+        or input_details.get("cache_read")
+        or metadata_input_details.get("cached_tokens")
+        or 0
+    )
+    total_tokens = int(usage.get("total_tokens") or metadata_usage.get("total_tokens") or (input_tokens + output_tokens))
     if not usage and not total_tokens:
         return {}
     return {
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
+        "cached_input_tokens": cached_input_tokens,
         "total_tokens": total_tokens,
-        "raw": usage,
+        "raw": usage or metadata_usage,
     }

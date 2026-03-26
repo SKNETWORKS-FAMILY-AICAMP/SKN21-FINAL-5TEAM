@@ -14,7 +14,6 @@ from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, messages_from_dict, messages_to_dict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 def _bootstrap_legacy_import_alias() -> None:
     """
     레거시 경로(`chatbot.src...`)를 현재 경로(`chatbot.src...`)로 매핑.
@@ -48,6 +47,7 @@ def _bootstrap_legacy_import_alias() -> None:
 
 _bootstrap_legacy_import_alias()
 
+from chatbot.src.infrastructure.model_startup_logging import configure_model_startup_logging  # noqa: E402
 from chatbot.src.core.config import settings  # noqa: E402
 from chatbot.src.adapters.base import AdapterError  # noqa: E402
 from chatbot.src.adapters import setup as adapter_setup  # noqa: E402
@@ -61,7 +61,28 @@ from chatbot.src.tools.retrieval_tools import ensure_retrieval_models  # noqa: E
 from chatbot.src.data_preprocessing.bge_m3_embedding import preload_model as preload_bge_m3  # noqa: E402
 from chatbot.src.infrastructure.kobart_summarizer import preload_model as preload_kobart  # noqa: E402
 from chatbot.src.tools.image_search_tools import preload_clip_resources  # noqa: E402
-from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR  # noqa: E402
+
+_optional_extensions: dict[str, dict[str, Any]] = {}
+
+try:
+    from chatbot.src.api.v1.endpoints.chat_extensions_ecommerce import (  # noqa: E402
+        UPLOAD_ROOT as CHATBOT_UPLOAD_DIR,
+        router as ecommerce_chat_router,
+    )
+except Exception as exc:  # noqa: BLE001
+    CHATBOT_UPLOAD_DIR = None
+    ecommerce_chat_router = None
+    _optional_extensions["ecommerce_chat"] = {
+        "enabled": False,
+        "error": f"{type(exc).__name__}: {exc}",
+    }
+else:
+    _optional_extensions["ecommerce_chat"] = {
+        "enabled": True,
+        "error": None,
+    }
+
+configure_model_startup_logging()
 
 
 def _env_flag(name: str) -> bool:
@@ -75,6 +96,7 @@ class ChatRequest(BaseModel):
     model: str | None = None
     site_id: str | None = Field(None, description="Adapter site ID (site-a|site-b|site-c)")
     access_token: str | None = Field(None, description="Bridge token or session token")
+    capability_profile: str | None = Field(None, description="Capability profile for runtime routing")
     user_id: int = 1
     user_name: str = "테스트 사용자"
     user_email: str | None = None
@@ -200,6 +222,7 @@ def _build_graph_input(req: ChatRequest) -> tuple[dict[str, Any], str]:
         "user_info": user_info,
         "llm_provider": provider,
         "llm_model": model,
+        "capability_profile": req.capability_profile or previous_state.get("capability_profile"),
         "agent_results": {},
         "guardrail_passed": True,
         "conversation_id": conversation_id,
@@ -218,6 +241,7 @@ def _build_persistent_state(final_state: dict[str, Any], conversation_id: str) -
         "user_info": final_state.get("user_info", {}),
         "llm_provider": final_state.get("llm_provider", "openai"),
         "llm_model": final_state.get("llm_model", ""),
+        "capability_profile": final_state.get("capability_profile"),
         "conversation_summary": final_state.get("conversation_summary"),
         "conversation_id": conversation_id,
     }
@@ -230,11 +254,12 @@ app = FastAPI(
     description="SaaS Adapter/Tool 연동 테스트를 위한 챗봇 단독 서버",
 )
 
-app.mount(
-    "/chatbot_uploads",
-    StaticFiles(directory=str(CHATBOT_UPLOAD_DIR)),
-    name="chatbot_uploads",
-)
+if CHATBOT_UPLOAD_DIR is not None:
+    app.mount(
+        "/chatbot_uploads",
+        StaticFiles(directory=str(CHATBOT_UPLOAD_DIR)),
+        name="chatbot_uploads",
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -245,7 +270,10 @@ app.add_middleware(
 )
 
 app.include_router(chat_router, prefix=f"{settings.API_V1_STR}/chat")
+if ecommerce_chat_router is not None:
+    app.include_router(ecommerce_chat_router, prefix=f"{settings.API_V1_STR}/chat")
 app.include_router(onboarding_runs_router, prefix=settings.API_V1_STR)
+app.state.optional_extensions = _optional_extensions
 
 
 @app.on_event("startup")
@@ -300,6 +328,7 @@ def healthcheck() -> dict[str, Any]:
         "provider_default": settings.LLM_PROVIDER,
         "openai_model_default": settings.OPENAI_MODEL,
         "vllm_model_default": settings.VLLM_MODEL,
+        "optional_extensions": _optional_extensions,
     }
 
 

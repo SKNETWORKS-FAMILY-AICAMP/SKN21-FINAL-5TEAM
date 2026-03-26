@@ -1302,9 +1302,11 @@ def test_cli_runner_dispatches_v2_engine(monkeypatch, capsys):
         "chatbot.scripts.run_onboarding_generation.run_onboarding_generation",
         lambda **kwargs: pytest.fail("legacy engine should not run when --engine v2 is used"),
     )
-    monkeypatch.setattr(
-        "chatbot.scripts.run_onboarding_generation.run_onboarding_generation_v2",
-        lambda **kwargs: {
+    captured_kwargs = {}
+
+    def _fake_v2_runner(**kwargs):
+        captured_kwargs.update(kwargs)
+        return {
             "engine": "v2",
             "run_root": "/tmp/generated/food/food-run-v2",
             "status": "exported",
@@ -1313,7 +1315,11 @@ def test_cli_runner_dispatches_v2_engine(monkeypatch, capsys):
             "latest_compile_artifact": "/tmp/generated/food/food-run-v2/artifacts/03-compile/host-edit-program/v0001.json",
             "latest_validation_artifact": "/tmp/generated/food/food-run-v2/artifacts/05-validation/validation-bundle/v0001.json",
             "latest_export_artifact": "/tmp/generated/food/food-run-v2/artifacts/06-export/export-bundle/v0001.json",
-        },
+        }
+
+    monkeypatch.setattr(
+        "chatbot.scripts.run_onboarding_generation.run_onboarding_generation_v2",
+        _fake_v2_runner,
     )
     monkeypatch.setattr(
         sys,
@@ -1343,3 +1349,4 @@ def test_cli_runner_dispatches_v2_engine(monkeypatch, capsys):
     assert exit_code == 0
     assert payload["engine"] == "v2"
     assert payload["status"] == "exported"
+    assert captured_kwargs["max_repair_attempts"] == 2

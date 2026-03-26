@@ -43,6 +43,10 @@ class ChatRequest(BaseModel):
     )
     # 어느 사이트(어댑터)로부터 호출되었는지 식별 (예: "site-a", "site-b", "site-c")
     site_id: str | None = Field(None, description="Adapter site ID (site-a|site-b|site-c)")
+    capability_profile: str | None = Field(
+        None,
+        description="Capability profile for runtime routing (for example order_cs_only|full)",
+    )
     model_config = ConfigDict(extra="ignore")
 
     @field_validator("message")

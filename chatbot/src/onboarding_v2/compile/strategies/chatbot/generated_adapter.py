@@ -44,7 +44,7 @@ def compile_generated_chatbot_bridge_bundle(
         SupportingArtifactBundle(
             bundle_id=f"chatbot:{plan.site_key}:mappers",
             path=f"{plan.adapter_package}/mappers.py",
-            content=_build_generated_mappers(),
+            content=_build_generated_mappers(plan=plan),
             reason="generated adapter mappers",
         ),
         SupportingArtifactBundle(
@@ -121,15 +121,87 @@ def _build_generated_init(*, plan: ChatbotBridgePlan) -> str:
 
 def _build_generated_client(*, plan: ChatbotBridgePlan) -> str:
     class_name = _class_name(plan.site_key)
+    action_endpoints = {
+        action: path
+        for action, path in sorted((plan.order_action_endpoints or {}).items())
+        if str(action).strip() and str(path).strip()
+    }
     return (
-        "from ...site_a.client import SiteAClient\n\n\n"
-        f"class Generated{class_name}Client(SiteAClient):\n"
-        '    """Generated site-a compatible client for the host runtime."""\n\n'
-        "    pass\n"
+        "from typing import Any, Dict, Optional\n\n"
+        "import httpx\n\n"
+        "from ...schema import (\n"
+        "    AdapterError,\n"
+        "    GetDeliveryTrackingInput,\n"
+        "    GetOrderStatusInput,\n"
+        "    ProductSearchFilter,\n"
+        "    SubmitOrderActionInput,\n"
+        ")\n\n\n"
+        f"class Generated{class_name}Client:\n"
+        '    """Generated host client from verified onboarding seams."""\n\n'
+        "    def __init__(self, base_url: str, timeout_ms: int = 10000, default_headers: Optional[Dict[str, str]] = None):\n"
+        '        self.base_url = base_url.rstrip("/")\n'
+        "        self.timeout = timeout_ms / 1000.0\n"
+        "        self.default_headers = default_headers or {}\n\n"
+        "    async def _request(self, method: str, path: str, headers: Optional[Dict[str, str]] = None, params: Optional[Dict[str, Any]] = None, json: Optional[Dict[str, Any]] = None) -> Any:\n"
+        '        req_headers = {"Content-Type": "application/json", **self.default_headers, **(headers or {})}\n'
+        '        url = f"{self.base_url}{path}"\n'
+        "        async with httpx.AsyncClient(timeout=self.timeout) as client:\n"
+        "            try:\n"
+        "                response = await client.request(method, url, headers=req_headers, params=params, json=json)\n"
+        "                response.raise_for_status()\n"
+        "                return response.json() if response.text else None\n"
+        "            except httpx.HTTPStatusError as exc:\n"
+        "                response = exc.response\n"
+        "                message = None\n"
+        "                try:\n"
+        "                    payload = response.json()\n"
+        '                    message = payload.get("detail") or payload.get("message")\n'
+        "                except Exception:\n"
+        "                    message = response.text or None\n"
+        '                code = {400: "INVALID_INPUT", 401: "UNAUTHORIZED", 403: "FORBIDDEN", 404: "NOT_FOUND"}.get(response.status_code, "GENERATED_UPSTREAM_ERROR")\n'
+        '                raise AdapterError(code, message or f"요청 실패: {exc}", {"url": url, "status_code": response.status_code}) from exc\n'
+        "            except httpx.HTTPError as exc:\n"
+        '                raise AdapterError("GENERATED_UPSTREAM_ERROR", f"요청 실패: {exc}", {"url": url}) from exc\n\n'
+        "    def _format_path(self, template: str, *, order_id: str | None = None) -> str:\n"
+        "        path = template\n"
+        "        if order_id is not None:\n"
+        '            path = path.replace("{order_id}", str(order_id))\n'
+        "        return path\n\n"
+        "    async def validate_session(self, headers: Dict[str, str]) -> Any:\n"
+        f'        return await self._request("GET", "{plan.current_user_endpoint}", headers=headers)\n\n'
+        "    async def search_products(self, filter_input: ProductSearchFilter, headers: Dict[str, str]) -> Any:\n"
+        "        params = {}\n"
+        "        if filter_input.query:\n"
+        '            params["search"] = filter_input.query\n'
+        "        if filter_input.categoryIds:\n"
+        '            params["category"] = filter_input.categoryIds[0]\n'
+        f'        return await self._request("GET", "{plan.product_search_endpoint}", headers=headers, params=params)\n\n'
+        "    async def get_order(self, input_data: GetOrderStatusInput, headers: Dict[str, str]) -> Any:\n"
+        f'        return await self._request("GET", self._format_path("{plan.order_detail_endpoint}", order_id=input_data.orderId), headers=headers)\n\n'
+        "    async def list_orders(self, headers: Dict[str, str]) -> Any:\n"
+        f'        return await self._request("GET", "{plan.order_list_endpoint}", headers=headers)\n\n'
+        "    async def get_delivery(self, input_data: GetDeliveryTrackingInput, headers: Dict[str, str]) -> Any:\n"
+        "        return await self.get_order(GetOrderStatusInput(orderId=input_data.orderId), headers)\n\n"
+        f"    ORDER_ACTION_ENDPOINTS = {action_endpoints!r}\n"
+        f'    DEFAULT_ORDER_ACTION_ENDPOINT = "{plan.order_action_endpoint}"\n'
+        f"    REQUEST_FIELD_MAPPINGS = {dict(plan.request_field_mappings)!r}\n\n"
+        "    async def submit_order_action(self, input_data: SubmitOrderActionInput, headers: Dict[str, str]) -> Any:\n"
+        "        payload: Dict[str, Any] = {}\n"
+        '        action_field = self.REQUEST_FIELD_MAPPINGS.get("action", "action")\n'
+        '        reason_field = self.REQUEST_FIELD_MAPPINGS.get("reason", "reason")\n'
+        '        option_field = self.REQUEST_FIELD_MAPPINGS.get("new_option_id", "new_option_id")\n'
+        "        endpoint = self.ORDER_ACTION_ENDPOINTS.get(input_data.actionType.value) or self.DEFAULT_ORDER_ACTION_ENDPOINT\n"
+        '        payload[action_field] = input_data.actionType.value\n'
+        "        if input_data.reasonText:\n"
+        "            payload[reason_field] = input_data.reasonText\n"
+        "        if input_data.newOptionId:\n"
+        "            payload[option_field] = input_data.newOptionId\n"
+        '        return await self._request("POST", self._format_path(endpoint, order_id=input_data.orderId), headers=headers, json=payload)\n'
     )
 
 
 def _build_generated_auth(*, plan: ChatbotBridgePlan) -> str:
+    cookie_name = "session_token"
     return (
         "from typing import Dict\n\n"
         "from ...schema import AuthenticatedContext, AdapterError\n\n\n"
@@ -144,7 +216,7 @@ def _build_generated_auth(*, plan: ChatbotBridgePlan) -> str:
         "def build_generated_auth_headers(ctx: AuthenticatedContext) -> Dict[str, str]:\n"
         "    cookie_map = ctx.cookies.copy() if ctx.cookies else {}\n"
         "    if ctx.accessToken:\n"
-        '        cookie_map["session_token"] = ctx.accessToken\n'
+        f'        cookie_map["{cookie_name}"] = ctx.accessToken\n'
         "    headers: Dict[str, str] = {}\n"
         "    if cookie_map:\n"
         '        headers["Cookie"] = \"; \".join([f\"{key}={value}\" for key, value in cookie_map.items()])\n'
@@ -152,14 +224,31 @@ def _build_generated_auth(*, plan: ChatbotBridgePlan) -> str:
     )
 
 
-def _build_generated_mappers() -> str:
+def _build_generated_mappers(*, plan: ChatbotBridgePlan) -> str:
+    if plan.response_mapping_profile == "site_a":
+        return (
+            "from ...site_a.mappers import (\n"
+            "    map_site_a_delivery,\n"
+            "    map_site_a_order,\n"
+            "    map_site_a_order_action,\n"
+            "    map_site_a_product_search,\n"
+            "    map_site_a_user,\n"
+            ")\n\n"
+            "__all__ = [\n"
+            '    "map_site_a_user",\n'
+            '    "map_site_a_product_search",\n'
+            '    "map_site_a_order",\n'
+            '    "map_site_a_delivery",\n'
+            '    "map_site_a_order_action",\n'
+            "]\n"
+        )
     return (
         "from ...site_a.mappers import (\n"
-        "    map_site_a_delivery,\n"
-        "    map_site_a_order,\n"
-        "    map_site_a_order_action,\n"
-        "    map_site_a_product_search,\n"
-        "    map_site_a_user,\n"
+        "    map_site_a_delivery as map_site_a_delivery,\n"
+        "    map_site_a_order as map_site_a_order,\n"
+        "    map_site_a_order_action as map_site_a_order_action,\n"
+        "    map_site_a_product_search as map_site_a_product_search,\n"
+        "    map_site_a_user as map_site_a_user,\n"
         ")\n\n"
         "__all__ = [\n"
         '    "map_site_a_user",\n'

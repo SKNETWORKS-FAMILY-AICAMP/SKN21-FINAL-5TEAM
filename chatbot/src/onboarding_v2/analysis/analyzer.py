@@ -92,6 +92,18 @@ class _EvidenceEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class _EndpointCatalogRecord(BaseModel):
+    identifier: str
+    path: str
+    http_method: str | None = None
+    source_path: str
+    source_kind: str
+    blueprint_symbol: str | None = None
+    local_path: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 def build_analysis_bundle(
     *,
     site: str,
@@ -103,9 +115,11 @@ def build_analysis_bundle(
     usage_store: LlmUsageStore | None = None,
     attempt: int = 1,
     ambiguity_retry_limit: int = 1,
+    overrides: dict[str, Any] | None = None,
     artifact_refs: list[ArtifactRef] | None = None,
 ) -> AnalysisBundle:
     root = _resolve_root(source_root)
+    analysis_overrides = _normalize_analysis_overrides(overrides)
     workspace_profile = _build_workspace_profile(root=root)
     framework_profile = _build_framework_profile(root=root)
 
@@ -229,12 +243,23 @@ def build_analysis_bundle(
             llm_builder=llm_builder,
             artifact_refs=artifact_refs,
         )
+        extracted_contracts = _merge_extracted_contract_sets(
+            primary=extracted_contracts,
+            fallback=extracted_fallback,
+        )
+        extracted_contracts = _apply_analysis_contract_overrides(
+            root=root,
+            candidate_set=current_candidate_set,
+            contracts=extracted_contracts,
+            overrides=analysis_overrides,
+        )
 
         verified_contracts, rejected_claims, unresolved_ambiguities = _verify_contracts(
             root=root,
             framework_profile=framework_profile,
             candidate_set=current_candidate_set,
             contracts=extracted_contracts,
+            overrides=analysis_overrides,
         )
         if _analysis_coverage_satisfied(
             verified_contracts=verified_contracts,
@@ -286,6 +311,7 @@ def build_analysis_snapshot(
     debug_store: DebugStore | None = None,
     usage_store: LlmUsageStore | None = None,
     attempt: int = 1,
+    overrides: dict[str, Any] | None = None,
 ) -> AnalysisSnapshot:
     return build_analysis_bundle(
         site=site,
@@ -296,6 +322,7 @@ def build_analysis_snapshot(
         debug_store=debug_store,
         usage_store=usage_store,
         attempt=attempt,
+        overrides=overrides,
     ).snapshot
 
 
@@ -598,6 +625,101 @@ def _collect_file_snippets(*, root: Path, read_queue: list[ReadTarget]) -> list[
     ]
 
 
+def _normalize_analysis_overrides(overrides: dict[str, Any] | None) -> dict[str, Any]:
+    raw = dict(overrides or {})
+    normalized: dict[str, Any] = {}
+
+    forced = []
+    for item in raw.get("force_verify_endpoints") or []:
+        if not isinstance(item, dict):
+            continue
+        path = _normalize_contract_endpoint_identifier(str(item.get("path") or ""))
+        if not path:
+            continue
+        methods = _normalize_override_methods(item.get("methods"))
+        handler_hint = str(item.get("handler_hint") or "").strip()
+        forced.append(
+            {
+                "path": path,
+                "methods": methods,
+                "handler_hint": handler_hint,
+            }
+        )
+    if forced:
+        normalized["force_verify_endpoints"] = forced
+    if "treat_api_view_as_method_source" in raw:
+        normalized["treat_api_view_as_method_source"] = bool(raw.get("treat_api_view_as_method_source"))
+    return normalized
+
+
+def _normalize_override_methods(value: Any) -> list[str]:
+    methods: list[str] = []
+    for item in value or []:
+        method = str(item or "").strip().upper()
+        if method in {"GET", "POST", "PATCH", "PUT", "DELETE"} and method not in methods:
+            methods.append(method)
+    return methods
+
+
+def _merge_extracted_contract_sets(
+    *,
+    primary: VerifiedContracts,
+    fallback: VerifiedContracts,
+) -> VerifiedContracts:
+    return VerifiedContracts(
+        database_entities=_dedupe_contracts([*primary.database_entities, *fallback.database_entities]),
+        api_endpoints=_dedupe_contracts([*primary.api_endpoints, *fallback.api_endpoints]),
+        auth_components=_dedupe_contracts([*primary.auth_components, *fallback.auth_components]),
+        tool_targets=_dedupe_contracts([*primary.tool_targets, *fallback.tool_targets]),
+    )
+
+
+def _apply_analysis_contract_overrides(
+    *,
+    root: Path,
+    candidate_set: CandidateSet,
+    contracts: VerifiedContracts,
+    overrides: dict[str, Any],
+) -> VerifiedContracts:
+    forced_records: list[ContractRecord] = []
+    for item in overrides.get("force_verify_endpoints") or []:
+        path = str(item.get("path") or "").strip()
+        if not path:
+            continue
+        methods = _normalize_override_methods(item.get("methods"))
+        handler_hint = str(item.get("handler_hint") or "").strip()
+        handler_path = handler_hint.split(":", 1)[0].strip() if ":" in handler_hint else handler_hint
+        location = handler_path or _find_endpoint_location(
+            identifier=path,
+            candidate_set=candidate_set,
+            root=root,
+        )
+        details: dict[str, Any] = {"path": path}
+        if methods:
+            details["declared_http_methods"] = methods
+        if len(methods) == 1:
+            details["http_method"] = methods[0]
+        if handler_hint:
+            details["handler_hint"] = handler_hint
+        forced_records.append(
+            ContractRecord(
+                identifier=path,
+                kind="api_endpoint",
+                location=location,
+                owner="repair_override",
+                details=details,
+                evidence_refs=[ref for ref in [location, handler_path] if ref],
+            )
+        )
+    if not forced_records:
+        return contracts
+    return contracts.model_copy(
+        update={
+            "api_endpoints": _dedupe_contracts([*contracts.api_endpoints, *forced_records]),
+        }
+    )
+
+
 def _sanitize_evidence_packets(
     *,
     packets: list[EvidencePacket],
@@ -605,11 +727,12 @@ def _sanitize_evidence_packets(
     root: Path,
 ) -> list[EvidencePacket]:
     sanitized: list[EvidencePacket] = []
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     for packet in [*packets, *fallback]:
-        if not packet.path or packet.packet_id in seen or not (root / packet.path).exists():
+        key = (packet.path, packet.kind)
+        if not packet.path or key in seen or not (root / packet.path).exists():
             continue
-        seen.add(packet.packet_id)
+        seen.add(key)
         sanitized.append(packet)
     return sanitized
 
@@ -647,11 +770,14 @@ def _verify_contracts(
     framework_profile: FrameworkProfile,
     candidate_set: CandidateSet,
     contracts: VerifiedContracts,
+    overrides: dict[str, Any] | None = None,
 ) -> tuple[VerifiedContracts, list[RejectedClaim], list[str]]:
+    analysis_overrides = _normalize_analysis_overrides(overrides)
     route_catalog = _build_route_catalog(
         root=root,
         framework_profile=framework_profile,
         candidate_set=candidate_set,
+        prefer_decorator_methods=bool(analysis_overrides.get("treat_api_view_as_method_source")),
     )
     table_catalog = _build_table_catalog(
         root=root,
@@ -659,45 +785,108 @@ def _verify_contracts(
         candidate_set=candidate_set,
     )
     api_client_catalog = _build_api_client_catalog(root=root, candidate_set=candidate_set)
+    route_by_path = {record.path: record for record in route_catalog}
+    client_by_path = {record.path: record for record in api_client_catalog}
+    route_aliases = _build_endpoint_alias_map(route_catalog)
+    client_aliases = _build_endpoint_alias_map(api_client_catalog)
 
     verified = VerifiedContracts()
     rejected: list[RejectedClaim] = []
     ambiguities: list[str] = []
 
     for record in contracts.database_entities:
+        canonical_record = _canonicalize_database_entity_contract(
+            record=record,
+            table_catalog=table_catalog,
+        )
         text = _safe_read_text(root / record.location)
         if (root / record.location).exists() and (
-            record.identifier in table_catalog or record.identifier in text or record.location.endswith("models.py")
+            canonical_record.identifier in table_catalog
+            or canonical_record.identifier in text
+            or canonical_record.location.endswith("models.py")
         ):
-            verified.database_entities.append(record)
+            verified.database_entities.append(canonical_record)
         else:
             rejected.append(
                 RejectedClaim(
-                    identifier=record.identifier,
-                    kind=record.kind,
+                    identifier=canonical_record.identifier,
+                    kind=canonical_record.kind,
                     reason="database entity could not be verified from models or table catalog",
-                    evidence_refs=list(record.evidence_refs),
+                    evidence_refs=list(canonical_record.evidence_refs),
                 )
             )
 
     for record in contracts.api_endpoints:
-        normalized = _normalize_endpoint_template(record.identifier)
-        if normalized in route_catalog or normalized in api_client_catalog:
-            verified.api_endpoints.append(record)
-        else:
+        canonical_record = _canonicalize_endpoint_input_contract(record)
+        resolution = _resolve_endpoint_record(
+            record=canonical_record,
+            route_by_path=route_by_path,
+            client_by_path=client_by_path,
+            route_aliases=route_aliases,
+            client_aliases=client_aliases,
+            route_catalog=route_catalog,
+        )
+        if resolution is None:
             rejected.append(
                 RejectedClaim(
-                    identifier=record.identifier,
-                    kind=record.kind,
+                    identifier=canonical_record.identifier,
+                    kind=canonical_record.kind,
                     reason="api endpoint could not be verified from route or client catalogs",
-                    evidence_refs=list(record.evidence_refs),
+                    evidence_refs=list(canonical_record.evidence_refs),
                 )
             )
+            continue
+
+        status, endpoint_record, mismatch_record = resolution
+        if status == "server_route":
+            verified.api_endpoints.append(
+                _canonicalize_endpoint_contract(
+                    record=canonical_record,
+                    endpoint_record=endpoint_record,
+                )
+            )
+            continue
+
+        if status == "client_server_mismatch" and mismatch_record is not None:
+            rejected.append(
+                RejectedClaim(
+                    identifier=endpoint_record.path,
+                    kind=canonical_record.kind,
+                    reason=(
+                        f"client endpoint path {endpoint_record.path} does not match verified server route "
+                        f"{mismatch_record.path}"
+                    ),
+                    evidence_refs=list(
+                        dict.fromkeys(
+                            [
+                                *canonical_record.evidence_refs,
+                                endpoint_record.source_path,
+                                mismatch_record.source_path,
+                            ]
+                        )
+                    ),
+                )
+            )
+            continue
+
+        rejected.append(
+            RejectedClaim(
+                identifier=endpoint_record.path,
+                kind=canonical_record.kind,
+                reason="api endpoint appears only in frontend client catalog and could not be verified from server routes",
+                evidence_refs=list(dict.fromkeys([*canonical_record.evidence_refs, endpoint_record.source_path])),
+            )
+        )
 
     for record in contracts.auth_components:
         content = _safe_read_text(root / record.location)
         if (root / record.location).exists() and _looks_like_auth_content(content):
-            verified.auth_components.append(record)
+            verified.auth_components.extend(
+                _canonicalize_auth_component_contracts(
+                    record=record,
+                    content=content,
+                )
+            )
         else:
             rejected.append(
                 RejectedClaim(
@@ -711,7 +900,23 @@ def _verify_contracts(
     for record in contracts.tool_targets:
         content = _safe_read_text(root / record.location)
         if (root / record.location).exists() and "order" in content.lower():
-            verified.tool_targets.append(record)
+            canonicalized = _canonicalize_tool_target_contracts(
+                record=record,
+                content=content,
+            )
+            if canonicalized:
+                verified.tool_targets.extend(canonicalized)
+            elif record.identifier in {"order_lookup", "order_action"}:
+                verified.tool_targets.append(record)
+            else:
+                rejected.append(
+                    RejectedClaim(
+                        identifier=record.identifier,
+                        kind=record.kind,
+                        reason="tool target could not be mapped to planner-critical order_lookup/order_action contracts",
+                        evidence_refs=list(record.evidence_refs),
+                    )
+                )
         else:
             rejected.append(
                 RejectedClaim(
@@ -870,6 +1075,55 @@ def _build_snapshot_from_bundle(
         )
         for record in verified_contracts.tool_targets
     ]
+    endpoint_index = {
+        str(record.identifier or "").strip(): str(record.details.get("path") or record.identifier or "").strip()
+        for record in verified_contracts.api_endpoints
+        if str(record.identifier or "").strip()
+    }
+    login_endpoint = _resolve_endpoint_path(
+        endpoint_index,
+        preferred=["/api/users/login/", "/api/auth/login", "/api/session/login", "/api/login"],
+        fallbacks=["/api/users/login/", "/api/auth/login"],
+    )
+    auth_validation_endpoint = _resolve_endpoint_path(
+        endpoint_index,
+        preferred=["/api/users/me/", "/api/auth/me", "/api/session/me"],
+        fallbacks=["/api/auth/login", "/api/users/login/"],
+    )
+    current_user_endpoint = _resolve_endpoint_path(
+        endpoint_index,
+        preferred=["/api/users/me/", "/api/auth/me", "/api/session/me"],
+        fallbacks=[auth_validation_endpoint],
+    )
+    product_search_endpoint = _resolve_endpoint_path(
+        endpoint_index,
+        preferred=["/api/products/", "/api/products"],
+        fallbacks=["/api/products/{product_id}", "/api/products/categories"],
+    )
+    order_list_endpoint = _resolve_endpoint_path(
+        endpoint_index,
+        preferred=["/api/orders/", "/api/orders/all", "/api/orders"],
+        fallbacks=[],
+    )
+    order_detail_endpoint = _resolve_endpoint_path(
+        endpoint_index,
+        preferred=["/api/orders/{order_id}/", "/api/orders/{order_id}"],
+        fallbacks=[],
+    )
+    order_action_endpoint = _resolve_endpoint_path(
+        endpoint_index,
+        preferred=["/api/orders/{order_id}/actions/"],
+        fallbacks=["/api/orders/{order_id}/exchange", "/api/orders/{order_id}/refund", "/api/orders/{order_id}/cancel"],
+    )
+    order_action_endpoints = {
+        action: path
+        for action, path in {
+            "cancel": endpoint_index.get("/api/orders/{order_id}/cancel", ""),
+            "refund": endpoint_index.get("/api/orders/{order_id}/refund", ""),
+            "exchange": endpoint_index.get("/api/orders/{order_id}/exchange", ""),
+        }.items()
+        if path
+    }
     return AnalysisSnapshot(
         repo_profile=RepoProfile(
             site=site,
@@ -901,6 +1155,15 @@ def _build_snapshot_from_bundle(
             product_api_base_paths=product_api_paths,
             order_api_base_paths=order_api_paths,
             order_bridge_targets=order_targets or candidate_set.order_targets,
+            login_endpoint=login_endpoint,
+            auth_validation_endpoint=auth_validation_endpoint,
+            current_user_endpoint=current_user_endpoint,
+            product_search_endpoint=product_search_endpoint,
+            order_list_endpoint=order_list_endpoint,
+            order_detail_endpoint=order_detail_endpoint,
+            order_action_endpoint=order_action_endpoint,
+            order_action_endpoints=order_action_endpoints,
+            site_id_source=str(root / "site-manifest.json"),
         ),
         ambiguity=AmbiguitySnapshot(
             open_questions=list(unresolved_ambiguities),
@@ -925,6 +1188,23 @@ def _build_snapshot_from_bundle(
             ])),
         ),
     )
+
+
+def _resolve_endpoint_path(
+    endpoint_index: dict[str, str],
+    *,
+    preferred: list[str],
+    fallbacks: list[str],
+) -> str | None:
+    for key in preferred:
+        value = str(endpoint_index.get(key) or "").strip()
+        if value:
+            return value
+    for key in fallbacks:
+        value = str(endpoint_index.get(key) or "").strip()
+        if value:
+            return value
+    return None
 
 
 def _build_analysis_graph(verified_contracts: VerifiedContracts) -> AnalysisGraph:
@@ -1140,32 +1420,41 @@ def _extract_api_endpoints(
 ) -> list[ContractRecord]:
     route_catalog = _build_route_catalog(root=root, framework_profile=framework_profile, candidate_set=candidate_set)
     api_client_catalog = _build_api_client_catalog(root=root, candidate_set=candidate_set)
-    identifiers = list(dict.fromkeys([*route_catalog, *api_client_catalog]))
     records: list[ContractRecord] = []
-    for identifier in identifiers:
-        domain = "order" if "order" in identifier.lower() else "product" if "product" in identifier.lower() else "auth_bootstrap" if "chat/auth-token" in identifier else "auth" if "login" in identifier.lower() or "users/me" in identifier.lower() else "generic"
-        location = _find_endpoint_location(identifier=identifier, candidate_set=candidate_set, root=root)
+    for endpoint in _dedupe_endpoint_records([*route_catalog, *api_client_catalog]):
+        domain = _infer_endpoint_domain(endpoint.path)
         records.append(
             ContractRecord(
-                identifier=identifier,
+                identifier=endpoint.path,
                 kind="api_endpoint",
-                location=location,
+                location=endpoint.source_path,
                 owner="deterministic",
-                details={"domain": domain},
-                evidence_refs=[location] if location else [],
+                details={
+                    "domain": domain,
+                    "path": endpoint.path,
+                    "http_method": endpoint.http_method,
+                    "source_kind": endpoint.source_kind,
+                },
+                evidence_refs=[endpoint.source_path] if endpoint.source_path else [],
             )
         )
     bootstrap_source = _choose_backend_auth_source(candidate_set)
-    records.append(
-        ContractRecord(
-            identifier="/api/chat/auth-token",
-            kind="api_endpoint",
-            location=bootstrap_source,
-            owner="deterministic",
-            details={"domain": "auth_bootstrap"},
-            evidence_refs=[bootstrap_source] if bootstrap_source else [],
+    if bootstrap_source:
+        records.append(
+            ContractRecord(
+                identifier="/api/chat/auth-token",
+                kind="api_endpoint",
+                location=bootstrap_source,
+                owner="deterministic",
+                details={
+                    "domain": "auth_bootstrap",
+                    "path": "/api/chat/auth-token",
+                    "http_method": "POST",
+                    "source_kind": "server_route",
+                },
+                evidence_refs=[bootstrap_source],
+            )
         )
-    )
     return _dedupe_contracts(records)
 
 
@@ -1258,9 +1547,14 @@ def _build_route_catalog(
     root: Path,
     framework_profile: FrameworkProfile,
     candidate_set: CandidateSet,
-) -> list[str]:
+    prefer_decorator_methods: bool = False,
+) -> list[_EndpointCatalogRecord]:
     if framework_profile.backend_framework == "django":
-        return _build_django_route_catalog(root=root, route_candidates=candidate_set.route_definitions)
+        return _build_django_route_catalog(
+            root=root,
+            route_candidates=candidate_set.route_definitions,
+            prefer_decorator_methods=prefer_decorator_methods,
+        )
     if framework_profile.backend_framework == "flask":
         return _build_flask_route_catalog(root=root, route_candidates=candidate_set.route_definitions)
     if framework_profile.backend_framework == "fastapi":
@@ -1268,39 +1562,116 @@ def _build_route_catalog(
     return []
 
 
-def _build_django_route_catalog(*, root: Path, route_candidates: list[PathCandidate]) -> list[str]:
-    path_pattern = re.compile(r'path\(\s*[\'"]([^\'"]*)[\'"]')
+def _build_django_route_catalog(
+    *,
+    root: Path,
+    route_candidates: list[PathCandidate],
+    prefer_decorator_methods: bool = False,
+) -> list[_EndpointCatalogRecord]:
+    route_pattern = re.compile(r'path\(\s*[\'"]([^\'"]*)[\'"]\s*,\s*([A-Za-z0-9_\.]+)')
     include_pattern = re.compile(r'path\(\s*[\'"]([^\'"]*)[\'"].*include\(\s*[\'"]([^\'"]+)[\'"]\)')
     module_prefixes: dict[str, str] = {}
-    file_patterns: dict[str, list[str]] = {}
+    file_patterns: dict[str, list[tuple[str, str | None]]] = {}
     for candidate in route_candidates:
         text = _safe_read_text(root / candidate.path)
-        patterns = [match.group(1) for match in path_pattern.finditer(text)]
+        patterns = [(match.group(1), match.group(2)) for match in route_pattern.finditer(text)]
         file_patterns[candidate.path] = patterns
         for match in include_pattern.finditer(text):
             module_prefixes[match.group(2)] = _normalize_endpoint_template(match.group(1))
 
-    endpoints: list[str] = []
+    endpoints: list[_EndpointCatalogRecord] = []
     for candidate in route_candidates:
         module_name = _django_module_name(candidate.path)
         prefix = module_prefixes.get(module_name)
-        for pattern in file_patterns.get(candidate.path, []):
+        handler_methods = (
+            _parse_django_view_methods(root / candidate.path)
+            if prefer_decorator_methods
+            else {}
+        )
+        for pattern, handler_ref in file_patterns.get(candidate.path, []):
             if pattern == "" and prefix:
-                endpoints.append(prefix)
+                methods = _resolve_django_handler_methods(handler_ref=handler_ref, handler_methods=handler_methods)
+                for method in methods or [None]:
+                    endpoints.append(
+                        _EndpointCatalogRecord(
+                            identifier=prefix,
+                            path=prefix,
+                            http_method=method,
+                            source_path=candidate.path,
+                            source_kind="server_route",
+                        )
+                    )
                 continue
             normalized = _normalize_endpoint_template(pattern)
             if prefix and candidate.path.endswith("/urls.py") and prefix != normalized:
-                endpoints.append(_join_url_parts(prefix, normalized))
+                path = _join_url_parts(prefix, normalized)
             else:
-                endpoints.append(normalized)
-    return list(dict.fromkeys(endpoint for endpoint in endpoints if endpoint))
+                path = normalized
+            if path:
+                methods = _resolve_django_handler_methods(handler_ref=handler_ref, handler_methods=handler_methods)
+                for method in methods or [None]:
+                    endpoints.append(
+                        _EndpointCatalogRecord(
+                            identifier=path,
+                            path=path,
+                            http_method=method,
+                            source_path=candidate.path,
+                            source_kind="server_route",
+                        )
+                    )
+    return _dedupe_endpoint_records(endpoints)
 
 
-def _build_flask_route_catalog(*, root: Path, route_candidates: list[PathCandidate]) -> list[str]:
+def _parse_django_view_methods(route_path: Path) -> dict[str, list[str]]:
+    if route_path.name != "urls.py":
+        return {}
+    view_path = route_path.with_name("views.py")
+    text = _safe_read_text(view_path)
+    if not text:
+        return {}
+
+    methods_by_handler: dict[str, list[str]] = {}
+    decorator_block_pattern = re.compile(
+        r"(?P<decorators>(?:^[ \t]*@.*\n)+)^[ \t]*def[ \t]+(?P<name>\w+)\s*\(",
+        re.MULTILINE,
+    )
+    for match in decorator_block_pattern.finditer(text):
+        decorators = match.group("decorators") or ""
+        methods: list[str] = []
+        api_view_match = re.search(r"api_view\(\s*\[([^\]]+)\]\s*\)", decorators)
+        require_methods_match = re.search(r"require_http_methods\(\s*\[([^\]]+)\]\s*\)", decorators)
+        if api_view_match:
+            methods = _parse_http_methods(api_view_match.group(1))
+        elif require_methods_match:
+            methods = _parse_http_methods(require_methods_match.group(1))
+        elif "require_get" in decorators.lower():
+            methods = ["GET"]
+        elif "require_post" in decorators.lower():
+            methods = ["POST"]
+        if methods:
+            methods_by_handler[match.group("name")] = methods
+    return methods_by_handler
+
+
+def _resolve_django_handler_methods(
+    *,
+    handler_ref: str | None,
+    handler_methods: dict[str, list[str]],
+) -> list[str]:
+    if not handler_ref:
+        return []
+    return list(handler_methods.get(handler_ref.split(".")[-1], []))
+
+
+def _build_flask_route_catalog(*, root: Path, route_candidates: list[PathCandidate]) -> list[_EndpointCatalogRecord]:
     register_pattern = re.compile(r"register_blueprint\(\s*([a-zA-Z0-9_]+),\s*url_prefix=['\"]([^'\"]+)['\"]")
-    route_pattern = re.compile(r"@([a-zA-Z0-9_]+)\.route\(\s*['\"]([^'\"]+)['\"]")
+    route_pattern = re.compile(
+        r"@([a-zA-Z0-9_]+)\.route\(\s*['\"]([^'\"]+)['\"](?P<tail>.*?)\)",
+        re.DOTALL,
+    )
+    methods_pattern = re.compile(r"methods\s*=\s*\[([^\]]+)\]")
     prefixes: dict[str, str] = {}
-    endpoints: list[str] = []
+    endpoints: list[_EndpointCatalogRecord] = []
     for candidate in route_candidates:
         text = _safe_read_text(root / candidate.path)
         for match in register_pattern.finditer(text):
@@ -1308,19 +1679,35 @@ def _build_flask_route_catalog(*, root: Path, route_candidates: list[PathCandida
     for candidate in route_candidates:
         text = _safe_read_text(root / candidate.path)
         for match in route_pattern.finditer(text):
-            blueprint = match.group(1)
-            prefix = prefixes.get(blueprint, "")
-            endpoints.append(_join_url_parts(prefix, match.group(2)))
-    return list(dict.fromkeys(endpoint for endpoint in endpoints if endpoint))
+            owner = match.group(1)
+            local_path = _normalize_endpoint_template(match.group(2))
+            prefix = prefixes.get(owner, "")
+            external_path = local_path if owner == "app" else _join_url_parts(prefix, local_path)
+            methods_match = methods_pattern.search(match.group("tail") or "")
+            methods = _parse_http_methods(methods_match.group(1) if methods_match else "")
+            for method in methods or [None]:
+                if external_path:
+                    endpoints.append(
+                        _EndpointCatalogRecord(
+                            identifier=external_path,
+                            path=external_path,
+                            http_method=method or "GET",
+                            source_path=candidate.path,
+                            source_kind="server_route",
+                            blueprint_symbol=None if owner == "app" else owner,
+                            local_path=local_path,
+                        )
+                    )
+    return _dedupe_endpoint_records(endpoints)
 
 
-def _build_fastapi_route_catalog(*, root: Path, route_candidates: list[PathCandidate]) -> list[str]:
+def _build_fastapi_route_catalog(*, root: Path, route_candidates: list[PathCandidate]) -> list[_EndpointCatalogRecord]:
     import_pattern = re.compile(r"from\s+([a-zA-Z0-9_\.]+)\s+import\s+router\s+as\s+([a-zA-Z0-9_]+)")
     include_pattern = re.compile(r"include_router\(\s*([a-zA-Z0-9_]+),\s*prefix=['\"]([^'\"]+)['\"]")
-    decorator_pattern = re.compile(r"@([a-zA-Z0-9_]+)\.(?:get|post|patch|put|delete)\(\s*['\"]([^'\"]+)['\"]")
+    decorator_pattern = re.compile(r"@([a-zA-Z0-9_]+)\.(get|post|patch|put|delete)\(\s*['\"]([^'\"]+)['\"]")
     prefixes: dict[str, str] = {}
     alias_modules: dict[str, str] = {}
-    endpoints: list[str] = []
+    endpoints: list[_EndpointCatalogRecord] = []
     for candidate in route_candidates:
         text = _safe_read_text(root / candidate.path)
         for match in import_pattern.finditer(text):
@@ -1340,9 +1727,20 @@ def _build_fastapi_route_catalog(*, root: Path, route_candidates: list[PathCandi
                 inferred_prefix = prefixes.get(alias, inferred_prefix)
         for match in decorator_pattern.finditer(text):
             router_name = match.group(1)
+            method = (match.group(2) or "").upper()
             prefix = prefixes.get(router_name, inferred_prefix)
-            endpoints.append(_join_url_parts(prefix, match.group(2)))
-    return list(dict.fromkeys(endpoint for endpoint in endpoints if endpoint))
+            path = _join_url_parts(prefix, match.group(3))
+            if path:
+                endpoints.append(
+                    _EndpointCatalogRecord(
+                        identifier=path,
+                        path=path,
+                        http_method=method,
+                        source_path=candidate.path,
+                        source_kind="server_route",
+                    )
+                )
+    return _dedupe_endpoint_records(endpoints)
 
 
 def _build_table_catalog(
@@ -1361,14 +1759,44 @@ def _build_table_catalog(
     ]
 
 
-def _build_api_client_catalog(*, root: Path, candidate_set: CandidateSet) -> list[str]:
-    endpoint_pattern = re.compile(r"['\"](/api/[^'\"]+|/orders[^'\"]+|/users/[^'\"]+|/products[^'\"]+)['\"]")
-    catalog: list[str] = []
+def _build_api_client_catalog(*, root: Path, candidate_set: CandidateSet) -> list[_EndpointCatalogRecord]:
+    base_url_pattern = re.compile(r"baseURL\s*:\s*['\"]([^'\"]+)['\"]")
+    client_call_pattern = re.compile(r"\.((?:get|post|patch|put|delete))\(\s*['\"]([^'\"]+)['\"]")
+    fetch_call_pattern = re.compile(r"fetch\(\s*['\"]([^'\"]+)['\"](?P<tail>.*?)\)", re.DOTALL)
+    method_pattern = re.compile(r"method\s*:\s*['\"](GET|POST|PATCH|PUT|DELETE)['\"]", re.IGNORECASE)
+    catalog: list[_EndpointCatalogRecord] = []
     for candidate in candidate_set.api_clients:
         text = _safe_read_text(root / candidate.path)
-        for match in endpoint_pattern.finditer(text):
-            catalog.append(_normalize_endpoint_template(match.group(1)))
-    return list(dict.fromkeys(catalog))
+        base_url_match = base_url_pattern.search(text)
+        base_url = _normalize_endpoint_template(base_url_match.group(1) if base_url_match else "")
+        for match in client_call_pattern.finditer(text):
+            path = _normalize_client_endpoint_path(base_url=base_url, path=match.group(2))
+            if not path:
+                continue
+            catalog.append(
+                _EndpointCatalogRecord(
+                    identifier=path,
+                    path=path,
+                    http_method=(match.group(1) or "").upper(),
+                    source_path=candidate.path,
+                    source_kind="frontend_client",
+                )
+            )
+        for match in fetch_call_pattern.finditer(text):
+            path = _normalize_client_endpoint_path(base_url=base_url, path=match.group(1))
+            if not path:
+                continue
+            method_match = method_pattern.search(match.group("tail") or "")
+            catalog.append(
+                _EndpointCatalogRecord(
+                    identifier=path,
+                    path=path,
+                    http_method=(method_match.group(1).upper() if method_match else "GET"),
+                    source_path=candidate.path,
+                    source_kind="frontend_client",
+                )
+            )
+    return _dedupe_endpoint_records(catalog)
 
 
 def _find_endpoint_location(*, identifier: str, candidate_set: CandidateSet, root: Path) -> str:
@@ -1479,15 +1907,393 @@ def _normalize_frontend_framework(value: Any, *, root: Path) -> str:
 
 def _normalize_auth_style(value: Any, *, root: Path) -> str:
     normalized = str(value or "").strip().lower()
+    backend_session = False
+    frontend_credentials = False
+    bearer_markers = False
+    for path, text in _iter_text_files(root):
+        lowered = text.lower()
+        relative = path.relative_to(root).as_posix().lower()
+        if path.suffix == ".py" and (
+            "from flask import session" in lowered
+            or "session[" in lowered
+            or "session.get(" in lowered
+            or "session.clear(" in lowered
+        ):
+            backend_session = True
+        if relative.startswith("frontend/") and (
+            "withcredentials: true" in lowered
+            or "credentials: \"include\"" in lowered
+            or "credentials: 'include'" in lowered
+        ):
+            frontend_credentials = True
+        if "authorization" in lowered and "bearer" in lowered:
+            bearer_markers = True
+    if backend_session and frontend_credentials:
+        return "session_cookie"
+    if bearer_markers:
+        return "jwt_bearer"
     if normalized:
         return normalized
-    for _path, text in _iter_text_files(root):
-        lowered = text.lower()
-        if "authorization" in lowered and "bearer" in lowered:
-            return "jwt_bearer"
-        if "session_token" in lowered or "cookie" in lowered:
-            return "session_cookie"
     return "unknown"
+
+
+def _canonicalize_database_entity_contract(
+    *,
+    record: ContractRecord,
+    table_catalog: list[str],
+) -> ContractRecord:
+    canonical_identifier = _canonicalize_database_identifier(record.identifier, table_catalog)
+    if canonical_identifier == record.identifier:
+        return record
+    details = dict(record.details)
+    details.setdefault("semantic_identifier", record.identifier)
+    return record.model_copy(update={"identifier": canonical_identifier, "details": details})
+
+
+def _canonicalize_database_identifier(identifier: str, table_catalog: list[str]) -> str:
+    normalized = str(identifier or "").strip()
+    if not normalized:
+        return normalized
+    catalog_by_lower = {item.lower(): item for item in table_catalog}
+    if normalized.lower() in catalog_by_lower:
+        return catalog_by_lower[normalized.lower()]
+    tail = re.split(r"[./:]", normalized)[-1].strip().lower()
+    return catalog_by_lower.get(tail, normalized)
+
+
+def _canonicalize_endpoint_input_contract(record: ContractRecord) -> ContractRecord:
+    identifier_methods = _extract_contract_endpoint_methods(record.identifier)
+    canonical_identifier = _normalize_contract_endpoint_identifier(record.identifier)
+    details = dict(record.details)
+    raw_path = details.get("path")
+    if raw_path:
+        path_methods = _extract_contract_endpoint_methods(str(raw_path))
+        details["path"] = _normalize_contract_endpoint_identifier(str(raw_path))
+        if not identifier_methods:
+            identifier_methods = path_methods
+    if identifier_methods:
+        details["declared_http_methods"] = list(identifier_methods)
+        if len(identifier_methods) == 1:
+            details["http_method"] = identifier_methods[0]
+    if canonical_identifier == record.identifier and details == record.details:
+        return record
+    if canonical_identifier != record.identifier:
+        details.setdefault("raw_identifier", record.identifier)
+    return record.model_copy(update={"identifier": canonical_identifier, "details": details})
+
+
+def _dedupe_endpoint_records(records: list[_EndpointCatalogRecord]) -> list[_EndpointCatalogRecord]:
+    deduped: list[_EndpointCatalogRecord] = []
+    seen: set[tuple[str, str | None, str, str]] = set()
+    for record in records:
+        key = (record.path, record.http_method, record.source_kind, record.source_path)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(record)
+    return deduped
+
+
+def _parse_http_methods(raw: str) -> list[str]:
+    methods = [
+        item.strip().strip("'\"").upper()
+        for item in str(raw or "").split(",")
+        if item.strip().strip("'\"")
+    ]
+    return [method for method in methods if method in {"GET", "POST", "PATCH", "PUT", "DELETE"}]
+
+
+def _normalize_client_endpoint_path(*, base_url: str, path: str) -> str:
+    normalized = _normalize_endpoint_template(path)
+    if not normalized:
+        return ""
+    if base_url and not normalized.startswith(base_url.rstrip("/") + "/") and normalized != base_url:
+        return _join_url_parts(base_url, normalized)
+    return normalized
+
+
+def _infer_endpoint_domain(path: str) -> str:
+    lowered = str(path or "").lower()
+    if "chat/auth-token" in lowered:
+        return "auth_bootstrap"
+    if "/orders" in lowered or "/order" in lowered:
+        return "order"
+    if "/products" in lowered or "/product" in lowered:
+        return "product"
+    if "/auth/" in lowered or lowered.endswith("/login") or lowered.endswith("/logout") or lowered.endswith("/me"):
+        return "auth"
+    return "generic"
+
+
+def _build_endpoint_alias_map(records: list[_EndpointCatalogRecord]) -> dict[str, _EndpointCatalogRecord]:
+    aliases: dict[str, _EndpointCatalogRecord] = {}
+    for record in records:
+        for alias in _endpoint_aliases(record):
+            aliases.setdefault(alias, record)
+    return aliases
+
+
+def _endpoint_aliases(record: _EndpointCatalogRecord) -> set[str]:
+    aliases = {
+        str(record.identifier or "").strip().lower(),
+        str(record.path or "").strip().lower(),
+    }
+    path = str(record.path or "").lower()
+    method = str(record.http_method or "").upper()
+    if _infer_endpoint_domain(path) == "order" and method == "GET":
+        if path.endswith("/all"):
+            aliases.update({"orders_all", "order_lookup"})
+        elif "{order_id}" in path or "{id}" in path:
+            aliases.update({"order_detail", "get_order"})
+    if path.endswith("/login"):
+        aliases.add("auth_login")
+    if path.endswith("/logout"):
+        aliases.add("auth_logout")
+    if path.endswith("/me"):
+        aliases.add("auth_me")
+    if "chat/auth-token" in path:
+        aliases.add("chat_auth_bootstrap")
+    return {alias for alias in aliases if alias}
+
+
+def _resolve_endpoint_record(
+    *,
+    record: ContractRecord,
+    route_by_path: dict[str, _EndpointCatalogRecord],
+    client_by_path: dict[str, _EndpointCatalogRecord],
+    route_aliases: dict[str, _EndpointCatalogRecord],
+    client_aliases: dict[str, _EndpointCatalogRecord],
+    route_catalog: list[_EndpointCatalogRecord],
+) -> tuple[str, _EndpointCatalogRecord, _EndpointCatalogRecord | None] | None:
+    details_path = _normalize_endpoint_template(str((record.details or {}).get("path") or ""))
+    identifier = str(record.identifier or "").strip()
+    for candidate in [details_path, _normalize_endpoint_template(identifier)]:
+        if not candidate:
+            continue
+        route_match = route_by_path.get(candidate)
+        if route_match is not None:
+            return ("server_route", route_match, None)
+        client_match = client_by_path.get(candidate)
+        if client_match is not None:
+            mismatch = _find_nearest_server_route(client_match=client_match, route_catalog=route_catalog)
+            if mismatch is not None and mismatch.path != client_match.path:
+                return ("client_server_mismatch", client_match, mismatch)
+            return ("frontend_client", client_match, mismatch)
+
+    if _is_path_like_endpoint(identifier):
+        return None
+
+    semantic = identifier.lower()
+    route_match = route_aliases.get(semantic)
+    if route_match is not None:
+        return ("server_route", route_match, None)
+    client_match = client_aliases.get(semantic)
+    if client_match is not None:
+        mismatch = _find_nearest_server_route(client_match=client_match, route_catalog=route_catalog)
+        if mismatch is not None and mismatch.path != client_match.path:
+            return ("client_server_mismatch", client_match, mismatch)
+        return ("frontend_client", client_match, mismatch)
+    return None
+
+
+def _find_nearest_server_route(
+    *,
+    client_match: _EndpointCatalogRecord,
+    route_catalog: list[_EndpointCatalogRecord],
+) -> _EndpointCatalogRecord | None:
+    domain = _infer_endpoint_domain(client_match.path)
+    method = str(client_match.http_method or "").upper()
+    candidates = [
+        record
+        for record in route_catalog
+        if _infer_endpoint_domain(record.path) == domain
+        and (not method or str(record.http_method or "").upper() == method)
+    ]
+    if not candidates:
+        return None
+    return sorted(
+        candidates,
+        key=lambda record: (
+            0 if record.path == client_match.path else 1,
+            abs(len(record.path) - len(client_match.path)),
+            record.path,
+        ),
+    )[0]
+
+
+def _canonicalize_auth_component_contracts(
+    *,
+    record: ContractRecord,
+    content: str,
+) -> list[ContractRecord]:
+    details = dict(record.details)
+    semantic_identifier = str(record.identifier or "")
+    lowered = " ".join(
+        [
+            semantic_identifier.lower(),
+            record.location.lower(),
+            json.dumps(details, ensure_ascii=False).lower(),
+            content.lower(),
+        ]
+    )
+    canonical_ids: list[str] = []
+    if record.location.startswith("backend/"):
+        if any(token in lowered for token in ("login", "logout", "auth handler", "auth route", "auth_bp")):
+            canonical_ids.append("auth_handler")
+        if any(token in lowered for token in ("session", "login", "logout", "bootstrap", "current_user", "/me")):
+            canonical_ids.append("chat_auth_bootstrap")
+        if "session" in lowered:
+            canonical_ids.append("backend_session_resolver")
+    elif record.location.startswith("frontend/"):
+        canonical_ids.append("frontend_auth_store")
+    if not canonical_ids:
+        return [record]
+    canonicalized: list[ContractRecord] = []
+    for canonical_id in canonical_ids:
+        updated_details = dict(details)
+        if canonical_id != semantic_identifier:
+            updated_details.setdefault("semantic_identifier", semantic_identifier)
+        canonicalized.append(
+            record.model_copy(
+                update={
+                    "identifier": canonical_id,
+                    "details": updated_details,
+                }
+            )
+        )
+    return canonicalized
+
+
+def _canonicalize_tool_target_contracts(
+    *,
+    record: ContractRecord,
+    content: str,
+) -> list[ContractRecord]:
+    if _is_noise_tool_target_path(record.location):
+        return []
+    semantic_identifier = str(record.identifier or "")
+    api_surface = [
+        _normalize_contract_endpoint_identifier(str(item or ""))
+        for item in (record.details or {}).get("api_surface") or []
+        if str(item or "").strip()
+    ]
+    lowered = " ".join(
+        [
+            semantic_identifier.lower(),
+            record.location.lower(),
+            json.dumps(record.details, ensure_ascii=False).lower(),
+            content.lower(),
+            " ".join(api_surface).lower(),
+        ]
+    )
+    roles: list[str] = []
+    has_lookup_surface = any(
+        path in {"/api/orders/", "/api/orders/{order_id}/"}
+        for path in api_surface
+    )
+    has_action_surface = any("actions" in path or path.endswith(("/cancel", "/refund", "/exchange")) for path in api_surface)
+    if any(
+        token in lowered
+        for token in (
+            "order_lookup",
+            "list_orders",
+            "get_order_status",
+            "order_read",
+            "list all orders",
+            "get_order_detail",
+            "order_list",
+            "order_detail",
+            "serialize_order",
+            "can_lookup",
+        )
+    ) or has_lookup_surface:
+        roles.append("order_lookup")
+    if any(
+        token in lowered
+        for token in (
+            "order_action",
+            "cancel",
+            "refund",
+            "exchange",
+            "management_routes",
+            "modify order",
+            "order_action",
+        )
+    ) or has_action_surface:
+        roles.append("order_action")
+    if "management_routes" in lowered or (has_lookup_surface and has_action_surface):
+        roles = ["order_lookup", "order_action"]
+    roles = list(dict.fromkeys(roles))
+    if not roles:
+        return []
+    canonicalized: list[ContractRecord] = []
+    for role in roles:
+        updated_details = dict(record.details)
+        if role != semantic_identifier:
+            updated_details.setdefault("semantic_identifier", semantic_identifier)
+        if role == "order_lookup":
+            updated_details.setdefault("tool_name", "list_orders")
+        if role == "order_action":
+            updated_details.setdefault("tool_name", "cancel|refund|exchange")
+        canonicalized.append(
+            record.model_copy(
+                update={
+                    "identifier": role,
+                    "details": updated_details,
+                }
+            )
+        )
+    return canonicalized
+
+
+def _is_noise_tool_target_path(path: str) -> bool:
+    normalized = path.replace("\\", "/").lower()
+    return normalized.endswith(
+        (
+            "/__init__.py",
+            "/admin.py",
+            "/apps.py",
+            "/settings.py",
+            "/seed.py",
+        )
+    )
+
+
+def _canonicalize_endpoint_contract(
+    *,
+    record: ContractRecord,
+    endpoint_record: _EndpointCatalogRecord,
+) -> ContractRecord:
+    details = dict(record.details)
+    details.update(
+        {
+            "path": endpoint_record.path,
+            "http_method": endpoint_record.http_method,
+            "source_kind": endpoint_record.source_kind,
+        }
+    )
+    if endpoint_record.blueprint_symbol:
+        details["blueprint_symbol"] = endpoint_record.blueprint_symbol
+    if endpoint_record.local_path:
+        details["local_path"] = endpoint_record.local_path
+    if record.identifier != endpoint_record.path:
+        details["semantic_identifier"] = record.identifier
+    evidence_refs = list(
+        dict.fromkeys([endpoint_record.source_path, *record.evidence_refs])
+    )
+    return record.model_copy(
+        update={
+            "identifier": endpoint_record.path,
+            "location": endpoint_record.source_path,
+            "details": details,
+            "evidence_refs": evidence_refs,
+        }
+    )
+
+
+def _is_path_like_endpoint(value: str) -> bool:
+    text = str(value or "").strip()
+    return text.startswith("/") or "/" in text
 
 
 def _is_route_definition(*, path: Path, text: str) -> bool:
@@ -1557,12 +2363,63 @@ def _is_widget_mount(*, path: Path, text: str) -> bool:
 
 
 def _is_order_target(*, path: Path, text: str) -> bool:
-    relative = path.as_posix().lower()
+    normalized_path = path.as_posix().lower()
+    if "/backend/" in normalized_path:
+        relative = f"backend/{normalized_path.split('/backend/', 1)[1]}"
+    else:
+        relative = normalized_path
     if path.suffix != ".py":
+        return False
+    if not relative.startswith("backend/"):
         return False
     if "/migrations/" in relative or relative.endswith(("/tests.py", "/urls.py")):
         return False
-    return "order" in relative or "order" in text.lower()
+    if relative.endswith(("/__init__.py", "/admin.py", "/apps.py", "/settings.py", "/seed.py")):
+        return False
+    if any(
+        token in relative
+        for token in (
+            "/orders/",
+            "/order.py",
+            "/orders.py",
+            "/routes/order",
+            "/router/orders/",
+            "/services/order",
+            "/repositories/order",
+        )
+    ):
+        return True
+    lowered = text.lower()
+    if "order" not in lowered:
+        return False
+    if not any(
+        token in relative
+        for token in (
+            "/views.py",
+            "/service.py",
+            "/services/",
+            "/router/",
+            "/routes/",
+            "/repository",
+            "/crud.py",
+            "/models.py",
+        )
+    ):
+        return False
+    return any(
+        token in lowered
+        for token in (
+            "order_list",
+            "order_detail",
+            "order_action",
+            "available_actions",
+            "serialize_order",
+            "cancel",
+            "refund",
+            "exchange",
+            "order.objects",
+        )
+    )
 
 
 def _is_service_candidate(relative: str) -> bool:
@@ -1682,8 +2539,36 @@ def _normalize_endpoint_template(value: str) -> str:
     if not normalized.startswith("/"):
         normalized = f"/{normalized}"
     normalized = re.sub(r"<(?:[^:>]+:)?([^>]+)>", r"{\1}", normalized)
+    normalized = re.sub(r"(?<=/):([A-Za-z_][A-Za-z0-9_]*)", r"{\1}", normalized)
     normalized = re.sub(r"/+", "/", normalized)
     return normalized
+
+
+def _extract_contract_endpoint_methods(value: str) -> list[str]:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return []
+    match = re.match(r"^(?P<methods>[A-Z]+(?:\|[A-Z]+)*)\s+(?P<path>/.*)$", normalized)
+    if not match:
+        return []
+    methods: list[str] = []
+    for token in (match.group("methods") or "").split("|"):
+        method = token.strip().upper()
+        if method in {"GET", "POST", "PATCH", "PUT", "DELETE"} and method not in methods:
+            methods.append(method)
+    return methods
+
+
+def _normalize_contract_endpoint_identifier(value: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    had_method_prefix = bool(re.match(r"^[A-Z]+(?:\|[A-Z]+)*\s+/", normalized))
+    normalized = re.sub(r"^[A-Z]+(?:\|[A-Z]+)*\s+", "", normalized)
+    normalized = re.sub(r"\s+\((?:frontend|backend)\s+client\)$", "", normalized, flags=re.IGNORECASE)
+    if not had_method_prefix and not normalized.startswith("/"):
+        return normalized
+    return _normalize_endpoint_template(normalized)
 
 
 def _join_url_parts(prefix: str, suffix: str) -> str:

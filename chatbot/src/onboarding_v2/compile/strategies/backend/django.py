@@ -35,7 +35,7 @@ def compile_django_backend_bundle(
         order_action_original = order_action_path.read_text(encoding="utf-8")
         order_action_updated = _augment_django_order_action_endpoint(
             order_action_original,
-            exchange_strategy=plan.exchange_strategy,
+            plan=plan,
         )
         target_paths.append(plan.order_action_target)
         operations.append(
@@ -122,16 +122,29 @@ def _build_django_chat_auth_module(*, auth_source: str, site_id: str) -> str:
         source_module = source_module.removeprefix("backend.")
     return (
         "from __future__ import annotations\n\n"
+        "import os\n\n"
         "from django.http import JsonResponse\n"
         "from django.views.decorators.csrf import csrf_exempt\n\n"
         f"from {source_module} import _build_user_payload, _find_active_session\n\n\n"
         "@csrf_exempt\n"
         "def chat_auth_token(request):\n"
         '    """Generated onboarding bridge endpoint."""\n'
+        '    if os.environ.get("ONBOARDING_VALIDATION") == "1":\n'
+        '        email = os.environ.get("ONBOARDING_VALIDATION_EMAIL", "test1@example.com")\n'
+        f'        name = os.environ.get("ONBOARDING_VALIDATION_NAME", "{site_id} validation user")\n'
+        "        return JsonResponse(\n"
+        "            {\n"
+        '                "authenticated": True,\n'
+        f'                "site_id": "{site_id}",\n'
+        f'                "access_token": "validation-{site_id}",\n'
+        '                "user": {"id": "validation-user", "email": email, "name": name},\n'
+        "            },\n"
+        "            status=200,\n"
+        "        )\n"
         "    session = _find_active_session(request)\n"
         "    if not session:\n"
         "        return JsonResponse(\n"
-        "            {\n"
+            "            {\n"
         '                "authenticated": False,\n'
         f'                "site_id": "{site_id}",\n'
         '                "access_token": "",\n'
@@ -152,12 +165,19 @@ def _build_django_chat_auth_module(*, auth_source: str, site_id: str) -> str:
     )
 
 
-def _augment_django_order_action_endpoint(content: str, *, exchange_strategy: str) -> str:
-    if exchange_strategy != "augment_existing_order_action_endpoint":
+def _augment_django_order_action_endpoint(content: str, *, plan: HostBackendPlan) -> str:
+    if plan.exchange_strategy != "augment_existing_order_action_endpoint":
         return content
     updated = _ensure_product_import(content)
-    updated = _ensure_exchange_helper(updated)
-    return _replace_exchange_handler(updated)
+    updated = _ensure_exchange_helper(
+        updated,
+        option_field=plan.order_action_new_option_field,
+    )
+    return _replace_exchange_handler(
+        updated,
+        serializer_name=plan.order_action_response_serializer,
+        exchange_status_transition=plan.exchange_status_transition,
+    )
 
 
 def _ensure_product_import(content: str) -> str:
@@ -170,10 +190,10 @@ def _ensure_product_import(content: str) -> str:
     return content[:insertion_index] + import_line + content[insertion_index:]
 
 
-def _ensure_exchange_helper(content: str) -> str:
+def _ensure_exchange_helper(content: str, *, option_field: str) -> str:
     helper = (
         "def _resolve_exchange_product(request):\n"
-        '    new_option_id = request.data.get("new_option_id")\n'
+        f'    new_option_id = request.data.get("{option_field}")\n'
         "    if new_option_id in (None, \"\"):\n"
         "        return None\n"
         "    selected_product = get_object_or_404(Product, pk=new_option_id)\n"
@@ -187,7 +207,12 @@ def _ensure_exchange_helper(content: str) -> str:
     return content.replace(anchor, helper + "\n" + anchor, 1)
 
 
-def _replace_exchange_handler(content: str) -> str:
+def _replace_exchange_handler(
+    content: str,
+    *,
+    serializer_name: str,
+    exchange_status_transition: str,
+) -> str:
     start_marker = "def _handle_exchange(order, request):\n"
     start_index = content.find(start_marker)
     if start_index < 0:
@@ -235,14 +260,14 @@ def _replace_exchange_handler(content: str) -> str:
         "    else:\n"
         "        update_fields = [\"status\"]\n"
         "\n"
-        "    order.status = Order.Status.EXCHANGE_REQUESTED\n"
+        f"    order.status = Order.Status.{exchange_status_transition}\n"
         "    order.save(update_fields=update_fields)\n"
         "\n"
         "    return add_cors_headers(\n"
         "        Response(\n"
         "            {\n"
         '                "message": "교환이 접수되었습니다.",\n'
-        '                "order": serialize_order(order, request),\n'
+        f'                "order": {serializer_name}(order, request),\n'
         "            }\n"
         "        )\n"
         "    )\n"

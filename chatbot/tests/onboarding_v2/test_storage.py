@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
 os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
-from chatbot.src.onboarding_v2.storage import ArtifactStore, EventStore, RunStore, ViewProjector
+from chatbot.src.onboarding_v2.storage import ArtifactStore, EventStore, LlmUsageStore, RunStore, ViewProjector
 
 
 def test_event_and_artifact_store_round_trip(tmp_path: Path):
@@ -99,3 +99,45 @@ def test_run_store_writes_top_level_metadata(tmp_path: Path):
     manifest_payload = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
     assert run_payload["engine"] == "v2"
     assert manifest_payload["credentials"]["email"] == "test1@example.com"
+
+
+def test_llm_usage_store_writes_cost_summary(tmp_path: Path):
+    run_root = tmp_path / "generated" / "food" / "food-run-v2"
+    usage_store = LlmUsageStore(run_root)
+
+    usage_store.append(
+        stage="analysis",
+        phase="retrieval-plan",
+        attempt=1,
+        provider="openai",
+        model="gpt-5-mini",
+        usage={
+            "input_tokens": 1200,
+            "output_tokens": 300,
+            "cached_input_tokens": 200,
+            "total_tokens": 1500,
+        },
+        extra={"status": "parsed"},
+    )
+
+    summary_path = run_root / "debug" / "llm-usage-summary.json"
+    summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
+
+    assert summary_payload["totals"] == {
+        "input_tokens": 1200,
+        "output_tokens": 300,
+        "cached_input_tokens": 200,
+        "total_tokens": 1500,
+        "estimated_input_cost_usd": 0.00025,
+        "estimated_output_cost_usd": 0.0006,
+        "estimated_cached_input_cost_usd": 0.000005,
+        "estimated_total_cost_usd": 0.000855,
+    }
+    assert summary_payload["pricing"] == {
+        "input_cost_per_1m": 0.25,
+        "output_cost_per_1m": 2.0,
+        "cached_input_cost_per_1m": 0.025,
+        "pricing_source": "openai_public_pricing_2026-03-16",
+    }
+    assert summary_payload["calls"][0]["stage"] == "analysis"
+    assert summary_payload["calls"][0]["estimated_total_cost_usd"] == 0.000855

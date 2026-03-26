@@ -42,9 +42,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--generate-llm-patch-draft", action="store_true")
     parser.add_argument("--enable-runtime-completion-loop", action="store_true")
     parser.add_argument("--llm-provider", default="openai")
-    parser.add_argument("--llm-model", default="gpt-5-mini")
-    parser.add_argument("--engine", choices=("legacy", "v2"), default="legacy")
-    parser.add_argument("--chatbot-server-base-url")
+    parser.add_argument("--llm-model", default="gpt-5.2")
+    parser.add_argument("--engine", choices=("legacy", "v2"), default="v2")
+    parser.add_argument("--chatbot-server-base-url", default="http://localhost:8100")
     parser.add_argument("--print-report-paths", action="store_true")
     parser.add_argument("--slack-channel")
     parser.add_argument("--approval-store-root")
@@ -119,7 +119,9 @@ def main() -> int:
     }
     if args.engine == "v2":
         if not str(args.chatbot_server_base_url or "").strip():
-            parser.error("--chatbot-server-base-url is required when --engine v2 is used")
+            parser.error(
+                "--chatbot-server-base-url is required when --engine v2 is used"
+            )
         result = _get_v2_runner()(
             site=args.site,
             source_root=args.source_root,
@@ -134,6 +136,7 @@ def main() -> int:
             generate_llm_patch_draft=args.generate_llm_patch_draft,
             enable_runtime_completion_loop=args.enable_runtime_completion_loop,
             chatbot_server_base_url=args.chatbot_server_base_url,
+            max_repair_attempts=2,
         )
     else:
         slack_bridge = (

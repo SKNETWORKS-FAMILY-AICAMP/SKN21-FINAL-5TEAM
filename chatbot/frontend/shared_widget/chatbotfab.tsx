@@ -220,6 +220,12 @@ const ORDER_LIST_BASE_MESSAGE = '최근 30일간의 주문 목록입니다.';
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.2'] as const;
 const HF_MODELS = ['Qwen/Qwen3-0.6B'] as const;
 const VLLM_MODELS = ['Qwen/Qwen3.5-35B-A3B'] as const;
+const ORDER_CS_ONLY_CAPABILITIES: SharedWidgetCapabilities = [
+  'orders_view',
+  'orders_cancel',
+  'orders_exchange',
+  'orders_return',
+];
 
 const MODEL_OPTIONS: ModelOption[] = [
   ...OPENAI_MODELS.map((id) => ({ id, provider: 'openai' as const, label: id })),
@@ -626,11 +632,16 @@ function OptionSelectCard({
 export default function ChatbotFab({
   isLoggedIn,
   host,
+  capabilities,
 }: {
   isLoggedIn: boolean;
   host?: SharedWidgetHostConfig;
+  capabilities?: SharedWidgetCapabilities;
 }) {
   const effectiveHost = host ?? SHARED_WIDGET_HOST;
+  const effectiveCapabilities = capabilities ?? ORDER_CS_ONLY_CAPABILITIES;
+  const capabilityProfile = effectiveCapabilities === 'full' ? 'full' : 'order_cs_only';
+  const imageUploadEnabled = effectiveCapabilities === 'full';
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMsg[]>([INITIAL_BOT_MESSAGE]);
@@ -871,6 +882,7 @@ export default function ChatbotFab({
           model: selectedModel,
           bootstrap,
           fetchImpl: sharedFetch,
+          capabilityProfile,
         },
         {
           onStatusChange: (status) => {
@@ -1410,7 +1422,7 @@ export default function ChatbotFab({
         <div className={styles.msgList} ref={listRef}>
           <ChatbotWidget
             messages={messages}
-            capabilities="full"
+            capabilities={effectiveCapabilities}
             renderTextMessage={(message, index) => {
               if (message.role === 'user') {
                 return (
@@ -1673,16 +1685,18 @@ export default function ChatbotFab({
             </div>
           ) : null}
           <div className={styles.inputBar}>
-            <button
-              type="button"
-              className={styles.uploadBtn}
-              onClick={openImagePicker}
-              disabled={isUploadingImage || isLoading}
-              aria-label="이미지 업로드"
-              title="이미지 업로드"
-            >
-              <span className={styles.uploadBtnIcon}>+</span>
-            </button>
+            {imageUploadEnabled ? (
+              <button
+                type="button"
+                className={styles.uploadBtn}
+                onClick={openImagePicker}
+                disabled={isUploadingImage || isLoading}
+                aria-label="이미지 업로드"
+                title="이미지 업로드"
+              >
+                <span className={styles.uploadBtnIcon}>+</span>
+              </button>
+            ) : null}
             <textarea
               ref={inputRef}
               className={styles.input}
@@ -1701,13 +1715,15 @@ export default function ChatbotFab({
             >
               전송
             </button>
-            <input
-              type="file"
-              accept="image/*"
-              ref={fileInputRef}
-              onChange={handleImageSelect}
-              className={styles.imageInputField}
-            />
+            {imageUploadEnabled ? (
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                onChange={handleImageSelect}
+                className={styles.imageInputField}
+              />
+            ) : null}
           </div>
           {uploadNotice && (
             <div

@@ -27,9 +27,15 @@ class HostBackendPlan(BaseModel):
     strategy: str
     route_target: str
     import_target: str
+    login_endpoint: str
     order_lookup_target: str = "backend/orders/views.py"
     order_action_target: str = "backend/orders/views.py"
     exchange_strategy: str = "augment_existing_order_action_endpoint"
+    order_action_request_field: str = "action"
+    order_action_reason_field: str = "reason"
+    order_action_new_option_field: str = "new_option_id"
+    order_action_response_serializer: str = "serialize_order"
+    exchange_status_transition: str = "EXCHANGE_REQUESTED"
     supported_order_tools: list[str] = Field(default_factory=lambda: list(DEFAULT_ORDER_TOOLS))
     auth_handler_source: str
     generated_handler_path: str | None = None
@@ -42,9 +48,15 @@ class HostBackendPlan(BaseModel):
         "strategy",
         "route_target",
         "import_target",
+        "login_endpoint",
         "order_lookup_target",
         "order_action_target",
         "exchange_strategy",
+        "order_action_request_field",
+        "order_action_reason_field",
+        "order_action_new_option_field",
+        "order_action_response_serializer",
+        "exchange_status_transition",
         "auth_handler_source",
         "generated_handler_path",
         "chat_auth_contract_path",
@@ -89,6 +101,22 @@ class ChatbotBridgePlan(BaseModel):
     adapter_package: str
     setup_target: str
     host_base_url_env_var: str
+    auth_validation_endpoint: str
+    current_user_endpoint: str
+    product_search_endpoint: str
+    order_list_endpoint: str
+    order_detail_endpoint: str
+    order_action_endpoint: str
+    order_action_endpoints: dict[str, str] = Field(default_factory=dict)
+    auth_transport: str = "session_token_cookie"
+    response_mapping_profile: str = "site_a"
+    request_field_mappings: dict[str, str] = Field(
+        default_factory=lambda: {
+            "action": "action",
+            "reason": "reason",
+            "new_option_id": "new_option_id",
+        }
+    )
     supported_tools: list[str] = Field(default_factory=lambda: list(DEFAULT_ORDER_TOOLS))
     runtime_base_url: str | None = None
 
@@ -99,7 +127,15 @@ class ChatbotBridgePlan(BaseModel):
         "adapter_package",
         "setup_target",
         "host_base_url_env_var",
+        "auth_validation_endpoint",
+        "current_user_endpoint",
+        "product_search_endpoint",
+        "order_list_endpoint",
+        "order_detail_endpoint",
+        "order_action_endpoint",
         "supported_tools",
+        "auth_transport",
+        "response_mapping_profile",
         "runtime_base_url",
         mode="before",
     )

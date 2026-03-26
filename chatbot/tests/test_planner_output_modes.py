@@ -61,6 +61,7 @@ def _state(message: str, provider: str = "openai") -> dict:
         "llm_provider": provider,
         "llm_model": "test-model",
         "conversation_summary": None,
+        "user_info": {},
     }
 
 
@@ -198,3 +199,64 @@ def test_planner_node_short_circuits_known_hard_failures_with_rules(monkeypatch,
     result = planner.planner_node(_state(message, provider="local"))
 
     assert result["pending_tasks"] == expected
+
+
+def test_planner_order_cs_only_turns_disallowed_review_request_into_explicit_unsupported_notice(monkeypatch):
+    def fail_if_llm_called(**kwargs):
+        raise AssertionError("order_cs_only hard-failure should be handled before LLM")
+
+    monkeypatch.setattr(
+        planner,
+        "resolve_llm_runtime_policy",
+        lambda provider, model: _FakeRuntimePolicy(
+            provider=provider,
+            model=model,
+            supports_structured_output=False,
+            planner_output_mode="strict-label-text",
+            planner_prompt_variant="strict-label-text",
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(planner, "make_chat_llm", fail_if_llm_called)
+
+    state = _state("리뷰를 작성하고 싶어요.", provider="local")
+    state["capability_profile"] = "order_cs_only"
+
+    result = planner.planner_node(state)
+
+    assert result["pending_tasks"] == [TaskIntent.GENERAL_CHAT]
+    assert result["completed_tasks"] == [TaskIntent.GENERAL_CHAT]
+    assert "지원하지 않습니다" in result["agent_results"][TaskIntent.GENERAL_CHAT]
+
+
+def test_planner_order_cs_only_keeps_order_cs_but_records_notice_for_disallowed_llm_tasks(monkeypatch):
+    fake_llm = _LabelTextLLM(["ORDER_CS, WRITE_REVIEW"])
+
+    monkeypatch.setattr(
+        planner,
+        "_match_high_precision_intent",
+        lambda message: None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        planner,
+        "resolve_llm_runtime_policy",
+        lambda provider, model: _FakeRuntimePolicy(
+            provider=provider,
+            model=model,
+            supports_structured_output=False,
+            planner_output_mode="strict-label-text",
+            planner_prompt_variant="strict-label-text",
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(planner, "make_chat_llm", lambda **_: fake_llm)
+
+    state = _state("주문 취소도 하고 후기 작성도 하고 싶어요.", provider="local")
+    state["capability_profile"] = "order_cs_only"
+
+    result = planner.planner_node(state)
+
+    assert result["pending_tasks"] == [TaskIntent.ORDER_CS]
+    assert result["completed_tasks"] == [TaskIntent.GENERAL_CHAT]
+    assert "지원하지 않습니다" in result["agent_results"][TaskIntent.GENERAL_CHAT]

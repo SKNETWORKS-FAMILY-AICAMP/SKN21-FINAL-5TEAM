@@ -33,19 +33,27 @@ _IGNORED_RUNTIME_DIR_NAMES = {
 }
 
 
-def run_chatbot_compile_preflight(chatbot_workspace: Path) -> CompilePreflightResult:
+def run_chatbot_compile_preflight(
+    chatbot_workspace: Path,
+    *,
+    scan_paths: list[str] | None = None,
+) -> CompilePreflightResult:
     workspace = Path(chatbot_workspace)
-    banned_scan = _scan_for_banned_imports(workspace)
+    banned_scan = _scan_for_banned_imports(workspace, scan_paths=scan_paths)
     if banned_scan is not None:
         return banned_scan
     return _run_server_fastapi_import_smoke(workspace)
 
 
-def _scan_for_banned_imports(workspace: Path) -> CompilePreflightResult | None:
+def _scan_for_banned_imports(
+    workspace: Path,
+    *,
+    scan_paths: list[str] | None = None,
+) -> CompilePreflightResult | None:
     matches: list[dict[str, str]] = []
     related_files: set[str] = set()
 
-    for file_path in _iter_runtime_source_files(workspace):
+    for file_path in _iter_runtime_source_files(workspace, scan_paths=scan_paths):
         content = _read_source(file_path)
         try:
             tree = ast.parse(content, filename=str(file_path))
@@ -87,7 +95,36 @@ def _scan_for_banned_imports(workspace: Path) -> CompilePreflightResult | None:
     )
 
 
-def _iter_runtime_source_files(workspace: Path) -> list[Path]:
+def _iter_runtime_source_files(
+    workspace: Path,
+    *,
+    scan_paths: list[str] | None = None,
+) -> list[Path]:
+    if scan_paths:
+        files: list[Path] = []
+        seen: set[Path] = set()
+        for relative_path_str in scan_paths:
+            relative_path = Path(relative_path_str)
+            candidate = workspace / relative_path
+            if candidate.is_dir():
+                for file_path in sorted(candidate.rglob("*.py")):
+                    try:
+                        file_relative = file_path.relative_to(workspace)
+                    except ValueError:
+                        continue
+                    if _is_ignored_runtime_path(file_relative):
+                        continue
+                    if file_path not in seen:
+                        seen.add(file_path)
+                        files.append(file_path)
+                continue
+            if candidate.suffix != ".py" or not candidate.exists():
+                continue
+            if candidate not in seen:
+                seen.add(candidate)
+                files.append(candidate)
+        return files
+
     files: list[Path] = []
     server_fastapi_path = workspace / "server_fastapi.py"
     if server_fastapi_path.exists():
