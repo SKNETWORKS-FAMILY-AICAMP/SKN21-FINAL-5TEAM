@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import type { SharedWidgetHostConfig } from './ChatbotWidget';
+import type { SharedWidgetCapabilities, SharedWidgetHostConfig } from './ChatbotWidget';
 import ChatbotFab from './chatbotfab';
 
 type SharedWidgetHostContract = {
@@ -37,7 +37,8 @@ type HostAttributeName =
   | 'chatbot-server-base-url'
   | 'auth-bootstrap-path'
   | 'widget-bundle-path'
-  | 'mount-mode';
+  | 'mount-mode'
+  | 'capabilities';
 
 type AttributeOverrides = Partial<Record<HostAttributeName, string | null | undefined>>;
 
@@ -55,6 +56,7 @@ function readAttributeOverrides(element: HTMLElement): AttributeOverrides {
     'auth-bootstrap-path': element.getAttribute('auth-bootstrap-path'),
     'widget-bundle-path': element.getAttribute('widget-bundle-path'),
     'mount-mode': element.getAttribute('mount-mode'),
+    capabilities: element.getAttribute('capabilities'),
   };
 }
 
@@ -106,6 +108,16 @@ function toHostedWidgetConfig(contract: SharedWidgetHostContract): SharedWidgetH
   };
 }
 
+function resolveHostedWidgetCapabilities(
+  attributeOverrides: AttributeOverrides = {},
+): SharedWidgetCapabilities | undefined {
+  const capabilityValue = normalizeString(attributeOverrides.capabilities);
+  if (capabilityValue.toLowerCase() === 'full') {
+    return 'full';
+  }
+  return undefined;
+}
+
 function injectWidgetStyles(shadowRoot: ShadowRoot): void {
   const rootWithMarker = shadowRoot as ShadowRoot & {
     __orderCsWidgetStylesInjected?: boolean;
@@ -144,14 +156,18 @@ export class OrderCsWidgetElement extends HTMLElementBase {
   connectedCallback() {
     const shadowRoot = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
     injectWidgetStyles(shadowRoot);
-    const contract = resolveOrderCsWidgetHostContract(readAttributeOverrides(this));
+    const attributeOverrides = readAttributeOverrides(this);
+    const contract = resolveOrderCsWidgetHostContract(attributeOverrides);
     const widgetHost = toHostedWidgetConfig(contract);
+    const widgetCapabilities = resolveHostedWidgetCapabilities(attributeOverrides);
 
     if (!this.root) {
       this.root = createRoot(shadowRoot);
     }
 
-      this.root.render(<ChatbotFab isLoggedIn={true} host={widgetHost} />);
+      this.root.render(
+        <ChatbotFab isLoggedIn={true} host={widgetHost} capabilities={widgetCapabilities} />
+      );
   }
 
   disconnectedCallback() {

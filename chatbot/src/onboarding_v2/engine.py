@@ -82,6 +82,7 @@ class _RunState:
     latest_failure_signature: str | None = None
     latest_rewind_to: str | None = None
     repair_attempt_count: int = 0
+    pending_required_stage_rechecks: list[str] = field(default_factory=list)
     pending_required_rechecks: list[str] = field(default_factory=list)
     pending_preserve_artifacts: list[str] = field(default_factory=list)
 
@@ -335,9 +336,14 @@ def run_onboarding_generation_v2(
 
             requested_rewind_to = decision.rewind_to
             effective_rewind_to = _derive_effective_rewind_to(decision)
+            normalized_rechecks = _normalize_required_rechecks(decision.required_rechecks)
             decision_payload = decision.model_dump(mode="json")
             decision_payload["requested_rewind_to"] = requested_rewind_to
             decision_payload["effective_rewind_to"] = effective_rewind_to
+            decision_payload["requested_required_rechecks"] = list(decision.required_rechecks)
+            decision_payload["required_stage_rechecks"] = list(normalized_rechecks["stage_rechecks"])
+            decision_payload["required_check_rechecks"] = list(normalized_rechecks["check_rechecks"])
+            decision_payload["ignored_required_rechecks"] = list(normalized_rechecks["ignored_rechecks"])
 
             decision_event = event_store.write_event(
                 run_id=run_id,
@@ -427,7 +433,8 @@ def run_onboarding_generation_v2(
                 rewind_to=effective_rewind_to,
                 preserve_artifacts=decision.preserve_artifacts,
             )
-            state.pending_required_rechecks = list(dict.fromkeys(decision.required_rechecks))
+            state.pending_required_stage_rechecks = list(normalized_rechecks["stage_rechecks"])
+            state.pending_required_rechecks = list(normalized_rechecks["check_rechecks"])
             state.pending_preserve_artifacts = list(dict.fromkeys(decision.preserve_artifacts))
             analysis_overrides = dict(decision.artifact_overrides.get("analysis") or {})
             planning_overrides = dict(decision.artifact_overrides.get("planning") or {})
@@ -447,6 +454,13 @@ def run_onboarding_generation_v2(
                 source="deterministic",
             )
 
+    llm_usage_ref = _write_llm_usage_summary_artifact(
+        artifact_store=artifact_store,
+        usage_store=usage_store,
+        analysis_ref=state.analysis_ref,
+        plan_ref=state.plan_ref,
+        attempt=attempt,
+    )
     view_projector.project(
         run_id=run_id,
         site=site,
@@ -484,6 +498,7 @@ def run_onboarding_generation_v2(
         "latest_apply_artifact": _artifact_abspath(run_root, state.apply_ref),
         "latest_validation_artifact": _artifact_abspath(run_root, state.validation_ref),
         "latest_export_artifact": _artifact_abspath(run_root, state.export_bundle_ref),
+        "latest_llm_usage_artifact": _artifact_abspath(run_root, llm_usage_ref),
         "approved_patch_path": _artifact_abspath(run_root, state.patch_ref),
         "chatbot_approved_patch_path": _artifact_abspath(
             run_root, state.chatbot_patch_ref
@@ -663,6 +678,7 @@ def run_analysis_stage(
             debug_store=debug_store,
             usage_store=usage_store,
             attempt=attempt,
+            overrides=overrides,
         )
         snapshot = analysis_bundle.snapshot
         snapshot = _apply_analysis_overrides(snapshot=snapshot, overrides=overrides)
@@ -691,7 +707,9 @@ def run_analysis_stage(
                 "confidence_notes": list(analysis_bundle.framework_profile.confidence_notes),
                 "repair_override_applied": bool(overrides),
                 "repair_overrides": dict(overrides),
-                "required_rechecks": list(state.pending_required_rechecks),
+                "required_rechecks": _combined_pending_required_rechecks(state),
+                "required_stage_rechecks": list(state.pending_required_stage_rechecks),
+                "required_check_rechecks": list(state.pending_required_rechecks),
             },
         )
         analysis_ref = artifact_store.write_json_artifact(
@@ -722,6 +740,7 @@ def run_analysis_stage(
         state.analysis_bundle_ref = analysis_bundle_ref
         state.snapshot = snapshot
         state.analysis_ref = analysis_ref
+        _mark_required_stage_rechecks_satisfied(state=state, satisfied=["analysis"])
     except Exception as exc:
         failure_signature = build_failure_signature(check_name="analysis", summary=str(exc))
         failed_event = event_store.write_event(
@@ -814,7 +833,9 @@ def run_planning_stage(
                 "coverage": planning_bundle.coverage_report.model_dump(mode="json"),
                 "repair_override_applied": bool(overrides),
                 "repair_overrides": dict(overrides),
-                "required_rechecks": list(state.pending_required_rechecks),
+                "required_rechecks": _combined_pending_required_rechecks(state),
+                "required_stage_rechecks": list(state.pending_required_stage_rechecks),
+                "required_check_rechecks": list(state.pending_required_rechecks),
             },
         )
         plan_ref = artifact_store.write_json_artifact(
@@ -846,6 +867,7 @@ def run_planning_stage(
         state.planning_bundle_ref = planning_bundle_ref
         state.plan = plan
         state.plan_ref = plan_ref
+        _mark_required_stage_rechecks_satisfied(state=state, satisfied=["planning"])
     except Exception as exc:
         failure_signature = build_failure_signature(check_name="planning", summary=str(exc))
         failed_event = event_store.write_event(
@@ -957,6 +979,7 @@ def run_compile_stage(
         state.edit_program = edit_program
         state.compile_ref = compile_ref
         state.chatbot_compile_ref = chatbot_compile_ref
+        _mark_required_stage_rechecks_satisfied(state=state, satisfied=["compile"])
     except Exception as exc:
         failure_signature = build_failure_signature(check_name="compile", summary=str(exc))
         failed_event = event_store.write_event(
@@ -1061,6 +1084,7 @@ def run_apply_stage(
         )
         state.apply_result = apply_result
         state.apply_ref = apply_ref
+        _mark_required_stage_rechecks_satisfied(state=state, satisfied=["apply"])
         run_compile_preflight_stage(
             run_id=run_id,
             state=state,
@@ -1201,6 +1225,7 @@ def run_export_stage(
         state.replay_result = replay_result
         state.replay_ref = replay_ref
         state.export_bundle_ref = export_bundle_ref
+        _mark_required_stage_rechecks_satisfied(state=state, satisfied=["export"])
     except _StageFailure:
         raise
     except Exception as exc:
@@ -1615,6 +1640,7 @@ def run_validation_stage(
         status="completed" if validation_bundle.passed else "failed",
         attempt=attempt,
     )
+    _mark_required_stage_rechecks_satisfied(state=state, satisfied=["validation"])
     if not validation_bundle.passed:
         failed_event = event_store.write_event(
             run_id=run_id,
@@ -1703,7 +1729,7 @@ def run_validation_stage(
         state=state,
         satisfied=[check.name for check in validation_bundle.checks],
     )
-    if not state.pending_required_rechecks:
+    if not state.pending_required_rechecks and not state.pending_required_stage_rechecks:
         state.pending_preserve_artifacts = []
 
 
@@ -1730,6 +1756,27 @@ def _artifact_versions(state: _RunState) -> dict[str, int]:
         "validation": state.validation_ref,
     }
     return {stage: ref.version for stage, ref in mapping.items() if ref is not None}
+
+
+def _write_llm_usage_summary_artifact(
+    *,
+    artifact_store: ArtifactStore,
+    usage_store: LlmUsageStore,
+    analysis_ref: ArtifactRef | None,
+    plan_ref: ArtifactRef | None,
+    attempt: int,
+) -> ArtifactRef | None:
+    summary_payload = usage_store.read_summary()
+    if not summary_payload or not list(summary_payload.get("calls") or []):
+        return None
+    return artifact_store.write_json_artifact(
+        stage="export",
+        artifact_type="llm-usage-summary",
+        payload=summary_payload,
+        producer="llm_usage_store",
+        input_artifact_refs=[ref for ref in (analysis_ref, plan_ref) if ref is not None],
+        attempt=attempt,
+    )
 
 
 def _artifact_abspath(run_root: Path, artifact_ref: ArtifactRef | None) -> str | None:
@@ -1760,6 +1807,62 @@ def _derive_effective_rewind_to(decision: RepairDecision) -> str:
     if dict(artifact_overrides.get("compile") or {}):
         return "compile"
     return decision.rewind_to
+
+
+_STAGE_RECHECK_NAMES = ("analysis", "planning", "compile", "apply", "export", "validation")
+_CHECK_RECHECK_NAMES = (
+    "compile_preflight",
+    "backend_runtime_prep",
+    "backend_runtime_boot",
+    "chatbot_runtime_boot",
+    "widget_bundle_fetch",
+    "host_auth_bootstrap",
+    "chatbot_adapter_auth",
+    "widget_order_e2e",
+    "replay_apply",
+    "replay_validation",
+)
+
+
+def _normalize_required_rechecks(required_rechecks: list[str]) -> dict[str, list[str]]:
+    stage_rechecks: list[str] = []
+    check_rechecks: list[str] = []
+    ignored_rechecks: list[str] = []
+    seen_stage: set[str] = set()
+    seen_check: set[str] = set()
+    seen_ignored: set[str] = set()
+
+    for item in required_rechecks:
+        token = str(item or "").strip()
+        if not token:
+            continue
+        if token in _STAGE_RECHECK_NAMES:
+            if token not in seen_stage:
+                seen_stage.add(token)
+                stage_rechecks.append(token)
+            continue
+        if token in _CHECK_RECHECK_NAMES:
+            if token not in seen_check:
+                seen_check.add(token)
+                check_rechecks.append(token)
+            continue
+        if token not in seen_ignored:
+            seen_ignored.add(token)
+            ignored_rechecks.append(token)
+
+    return {
+        "stage_rechecks": stage_rechecks,
+        "check_rechecks": check_rechecks,
+        "ignored_rechecks": ignored_rechecks,
+    }
+
+
+def _combined_pending_required_rechecks(state: _RunState) -> list[str]:
+    return list(
+        dict.fromkeys(
+            [*state.pending_required_stage_rechecks, *state.pending_required_rechecks]
+        )
+    )
 
 
 def _clear_state_for_failure(
@@ -1892,6 +1995,17 @@ def _mark_required_rechecks_satisfied(*, state: _RunState, satisfied: list[str])
         return
     state.pending_required_rechecks = [
         item for item in state.pending_required_rechecks if item not in satisfied_set
+    ]
+
+
+def _mark_required_stage_rechecks_satisfied(*, state: _RunState, satisfied: list[str]) -> None:
+    if not state.pending_required_stage_rechecks:
+        return
+    satisfied_set = {item for item in satisfied if item}
+    if not satisfied_set:
+        return
+    state.pending_required_stage_rechecks = [
+        item for item in state.pending_required_stage_rechecks if item not in satisfied_set
     ]
 
 

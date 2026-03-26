@@ -27,6 +27,12 @@ KNOWN_MODEL_PRICING = {
         "cached_input_cost_per_1m": 0.025,
         "pricing_source": "openai_public_pricing_2026-03-16",
     },
+    "gpt-5.2": {
+        "input_cost_per_1m": 1.75,
+        "output_cost_per_1m": 14.00,
+        "cached_input_cost_per_1m": 0.175,
+        "pricing_source": "openai_public_pricing_2026-03-26",
+    },
 }
 
 
@@ -203,11 +209,15 @@ def append_recovery_event(
         stage="recovery",
         event="recovery_applied" if source == "recovered_llm" else "hard_fallback_used",
         severity="info" if source == "recovered_llm" else "warn",
-        summary="recovery applied" if source == "recovered_llm" else "hard fallback used",
+        summary="recovery applied"
+        if source == "recovered_llm"
+        else "hard fallback used",
         source=source,
         recovery={
             "applied": source == "recovered_llm",
-            "reason": recovery_reason if source == "recovered_llm" else hard_fallback_reason,
+            "reason": recovery_reason
+            if source == "recovered_llm"
+            else hard_fallback_reason,
         },
         details={
             "recovery_reason": recovery_reason,
@@ -221,12 +231,22 @@ def extract_llm_usage(response: Any) -> dict[str, Any]:
     usage = getattr(response, "usage_metadata", None) or {}
     response_metadata = getattr(response, "response_metadata", None) or {}
     token_usage = response_metadata.get("token_usage") or {}
-    input_details = usage.get("input_token_details") or usage.get("prompt_tokens_details") or {}
+    input_details = (
+        usage.get("input_token_details") or usage.get("prompt_tokens_details") or {}
+    )
     response_input_details = token_usage.get("prompt_tokens_details") or {}
 
-    input_tokens = int(usage.get("input_tokens") or usage.get("prompt_tokens") or token_usage.get("prompt_tokens") or 0)
+    input_tokens = int(
+        usage.get("input_tokens")
+        or usage.get("prompt_tokens")
+        or token_usage.get("prompt_tokens")
+        or 0
+    )
     output_tokens = int(
-        usage.get("output_tokens") or usage.get("completion_tokens") or token_usage.get("completion_tokens") or 0
+        usage.get("output_tokens")
+        or usage.get("completion_tokens")
+        or token_usage.get("completion_tokens")
+        or 0
     )
     cached_input_tokens = int(
         usage.get("cached_input_tokens")
@@ -235,7 +255,11 @@ def extract_llm_usage(response: Any) -> dict[str, Any]:
         or response_input_details.get("cached_tokens")
         or 0
     )
-    total_tokens = int(usage.get("total_tokens") or token_usage.get("total_tokens") or (input_tokens + output_tokens))
+    total_tokens = int(
+        usage.get("total_tokens")
+        or token_usage.get("total_tokens")
+        or (input_tokens + output_tokens)
+    )
 
     return {
         "input_tokens": input_tokens,
@@ -300,11 +324,14 @@ def append_llm_usage(
     totals["total_tokens"] += normalized["total_tokens"]
     totals["estimated_input_cost_usd"] += estimated["estimated_input_cost_usd"]
     totals["estimated_output_cost_usd"] += estimated["estimated_output_cost_usd"]
-    totals["estimated_cached_input_cost_usd"] += estimated["estimated_cached_input_cost_usd"]
+    totals["estimated_cached_input_cost_usd"] += estimated[
+        "estimated_cached_input_cost_usd"
+    ]
     totals["estimated_total_cost_usd"] += estimated["estimated_total_cost_usd"]
 
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
+
 
 def _estimate_llm_usage_cost(
     usage: dict[str, int],
@@ -316,15 +343,23 @@ def _estimate_llm_usage_cost(
     uncached_input_tokens = max(input_tokens - cached_input_tokens, 0)
     output_tokens = int(usage.get("output_tokens") or 0)
 
-    input_cost = (uncached_input_tokens / 1_000_000) * float(pricing.get("input_cost_per_1m") or 0.0)
-    output_cost = (output_tokens / 1_000_000) * float(pricing.get("output_cost_per_1m") or 0.0)
-    cached_input_cost = (cached_input_tokens / 1_000_000) * float(pricing.get("cached_input_cost_per_1m") or 0.0)
+    input_cost = (uncached_input_tokens / 1_000_000) * float(
+        pricing.get("input_cost_per_1m") or 0.0
+    )
+    output_cost = (output_tokens / 1_000_000) * float(
+        pricing.get("output_cost_per_1m") or 0.0
+    )
+    cached_input_cost = (cached_input_tokens / 1_000_000) * float(
+        pricing.get("cached_input_cost_per_1m") or 0.0
+    )
 
     return {
         "estimated_input_cost_usd": round(input_cost, 8),
         "estimated_output_cost_usd": round(output_cost, 8),
         "estimated_cached_input_cost_usd": round(cached_input_cost, 8),
-        "estimated_total_cost_usd": round(input_cost + output_cost + cached_input_cost, 8),
+        "estimated_total_cost_usd": round(
+            input_cost + output_cost + cached_input_cost, 8
+        ),
     }
 
 
@@ -340,7 +375,9 @@ def _resolve_pricing(*, provider: str | None, model: str | None) -> dict[str, An
 
     normalized_model = (model or "").strip()
     for candidate, pricing in KNOWN_MODEL_PRICING.items():
-        if normalized_model == candidate or normalized_model.startswith(f"{candidate}-"):
+        if normalized_model == candidate or normalized_model.startswith(
+            f"{candidate}-"
+        ):
             return pricing
 
     return {
@@ -443,7 +480,15 @@ def _build_line_details(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _infer_stage_from_event(event: str) -> str:
     normalized = event.lower()
-    for stage in ("analysis", "planning", "generation", "validation", "export", "recovery", "simulation"):
+    for stage in (
+        "analysis",
+        "planning",
+        "generation",
+        "validation",
+        "export",
+        "recovery",
+        "simulation",
+    ):
         if stage in normalized:
             return stage
     return "unknown"

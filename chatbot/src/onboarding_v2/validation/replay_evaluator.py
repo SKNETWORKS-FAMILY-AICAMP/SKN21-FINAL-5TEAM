@@ -83,6 +83,63 @@ def evaluate_backend_workspace_static(workspace: Path) -> dict[str, Any]:
     }
 
 
+def evaluate_python_workspace_static(workspace: Path) -> dict[str, Any]:
+    ignore_matcher = OnboardingIgnoreMatcher(workspace)
+    checked_files: list[str] = []
+    failed_files: list[dict[str, str]] = []
+    for path in _iter_python_files(workspace, ignore_matcher):
+        relative = path.relative_to(workspace).as_posix()
+        checked_files.append(relative)
+        try:
+            py_compile.compile(str(path), doraise=True)
+        except py_compile.PyCompileError as exc:
+            failed_files.append({"path": relative, "error": str(exc)})
+    passed = not failed_files
+    failure_summary = (
+        f"python compile failed for {failed_files[0]['path']}"
+        if failed_files
+        else "python workspace evaluation passed"
+    )
+    return {
+        "passed": passed,
+        "checked_files": checked_files,
+        "failed_files": failed_files,
+        "failure_summary": failure_summary,
+        "related_files": checked_files,
+    }
+
+
+def evaluate_selected_python_targets(
+    workspace: Path,
+    targets: list[str] | set[str],
+) -> dict[str, Any]:
+    checked_files: list[str] = []
+    failed_files: list[dict[str, str]] = []
+    for relative in sorted({str(target) for target in targets if str(target).endswith(".py")}):
+        path = workspace / relative
+        checked_files.append(relative)
+        if not path.exists():
+            failed_files.append({"path": relative, "error": "target missing"})
+            continue
+        try:
+            py_compile.compile(str(path), doraise=True)
+        except py_compile.PyCompileError as exc:
+            failed_files.append({"path": relative, "error": str(exc)})
+    passed = not failed_files
+    failure_summary = (
+        f"python compile failed for {failed_files[0]['path']}"
+        if failed_files
+        else "selected python target evaluation passed"
+    )
+    return {
+        "passed": passed,
+        "checked_files": checked_files,
+        "failed_files": failed_files,
+        "failure_summary": failure_summary,
+        "related_files": checked_files,
+    }
+
+
 def evaluate_frontend_workspace_static(workspace: Path) -> dict[str, Any]:
     framework = _detect_frontend_framework(workspace)
     mount_candidates = _find_mount_candidates(workspace)

@@ -10,7 +10,10 @@ os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
 from chatbot.src.onboarding_v2.models import ArtifactRef, FailureBundle
 from chatbot.src.onboarding_v2.models.repair import RepairDecision
-from chatbot.src.onboarding_v2.engine import _derive_effective_rewind_to
+from chatbot.src.onboarding_v2.engine import (
+    _derive_effective_rewind_to,
+    _normalize_required_rechecks,
+)
 from chatbot.src.onboarding_v2.repair import diagnose_failure, synthesize_failure
 from chatbot.src.onboarding_v2.repair.synthesis import collect_file_samples
 from chatbot.src.onboarding_v2.storage import DebugStore
@@ -305,3 +308,13 @@ def test_derive_effective_rewind_to_promotes_planning_and_analysis_overrides():
 
     assert _derive_effective_rewind_to(planning_decision) == "planning"
     assert _derive_effective_rewind_to(analysis_decision) == "analysis"
+
+
+def test_normalize_required_rechecks_splits_stage_and_check_tokens():
+    normalized = _normalize_required_rechecks(
+        ["compile_preflight", "validation", "host_auth_bootstrap", "unknown_token", ""]
+    )
+
+    assert normalized["stage_rechecks"] == ["validation"]
+    assert normalized["check_rechecks"] == ["compile_preflight", "host_auth_bootstrap"]
+    assert normalized["ignored_rechecks"] == ["unknown_token"]

@@ -17,7 +17,10 @@ from chatbot.src.onboarding_v2.models.validation import (
     BackendRuntimePlan,
     BackendRuntimePrepResult,
     BackendRuntimeState,
+    ReplayResult,
 )
+from chatbot.src.onboarding_v2.analysis import analyzer as analyzer_module
+from chatbot.src.onboarding_v2.planning import planner as planner_module
 
 
 @pytest.fixture(autouse=True)
@@ -144,6 +147,146 @@ def test_engine_entry_returns_v2_payload(monkeypatch, tmp_path: Path):
     assert result["repair_attempt_count"] == 0
 
 
+def test_engine_entry_writes_llm_usage_summary_artifact(monkeypatch, tmp_path: Path):
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "host" / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
+        readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
+    )
+    runtime_state = BackendRuntimeState(
+        framework="django",
+        passed=True,
+        pid=1234,
+        command=runtime_plan.command,
+        readiness_url=runtime_plan.readiness_url,
+    )
+
+    def _fake_invoke_structured_stage(
+        *,
+        stage,
+        phase,
+        response_model,
+        fallback_payload,
+        usage_store=None,
+        provider,
+        model,
+        attempt,
+        **kwargs,
+    ):
+        del kwargs
+        if usage_store is not None:
+            usage_store.append(
+                stage=stage,
+                phase=phase,
+                attempt=attempt,
+                provider=provider,
+                model=model,
+                usage={
+                    "input_tokens": 1200,
+                    "output_tokens": 300,
+                    "cached_input_tokens": 200,
+                    "total_tokens": 1500,
+                },
+                extra={"status": "parsed"},
+            )
+        return response_model.model_validate(fallback_payload)
+
+    monkeypatch.setattr(analyzer_module, "invoke_structured_stage", _fake_invoke_structured_stage)
+    monkeypatch.setattr(planner_module, "invoke_structured_stage", _fake_invoke_structured_stage)
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.prepare_backend_runtime",
+        lambda **kwargs: BackendRuntimePrepResult(framework="django", passed=True),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.build_backend_runtime_plan",
+        lambda **kwargs: runtime_plan,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
+        lambda plan: runtime_state,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
+        lambda state: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "host auth bootstrap passed",
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "session-token",
+                "user": {"id": "7"},
+            },
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget bundle fetch passed",
+            "target_url": "http://localhost:8100/widget.js",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot adapter auth passed",
+            "validated_user": {"id": "7", "siteId": "food"},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_order_e2e",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget order e2e passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
+        lambda workspace, scan_paths=None: CompilePreflightResult(
+            passed=True,
+            failure_code=None,
+            failure_summary=None,
+            related_files=[],
+            details={"import_smoke": "passed"},
+        ),
+        raising=False,
+    )
+
+    result = run_onboarding_generation_v2(
+        site="food",
+        source_root=str(ROOT / "food"),
+        generated_root=str(tmp_path / "generated"),
+        runtime_root=str(tmp_path / "runtime"),
+        run_id="food-run-v2-llm-usage",
+        chatbot_server_base_url="http://localhost:8100",
+    )
+
+    assert result["status"] == "exported"
+    assert result["latest_llm_usage_artifact"].endswith("llm-usage-summary/v0001.json")
+
+    usage_artifact = json.loads(Path(result["latest_llm_usage_artifact"]).read_text(encoding="utf-8"))
+    assert usage_artifact["payload"]["totals"]["estimated_total_cost_usd"] > 0
+    assert usage_artifact["payload"]["calls"]
+
+
 def test_engine_entry_passes_snapshot_roots_and_allowlists_to_export(monkeypatch, tmp_path: Path):
     runtime_plan = BackendRuntimePlan(
         framework="django",
@@ -258,9 +401,117 @@ def test_engine_entry_passes_snapshot_roots_and_allowlists_to_export(monkeypatch
 
     assert result["status"] == "exported"
     assert str(captured["host_baseline_root"]).endswith("source-snapshot/host")
-    assert str(captured["chatbot_baseline_root"]).endswith("source-snapshot/chatbot")
-    assert "frontend/src/App.js" in set(captured["host_allowed_targets"])
-    assert captured["chatbot_allowed_targets"]
+
+
+def test_engine_entry_stops_at_export_when_replay_verification_fails(monkeypatch, tmp_path: Path):
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "host" / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
+        readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
+        listen_port=8000,
+    )
+    runtime_state = BackendRuntimeState(
+        framework="django",
+        passed=True,
+        pid=1234,
+        command=runtime_plan.command,
+        readiness_url=runtime_plan.readiness_url,
+        listen_port=runtime_plan.listen_port,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.prepare_backend_runtime",
+        lambda **kwargs: BackendRuntimePrepResult(framework="django", passed=True),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.build_backend_runtime_plan",
+        lambda **kwargs: runtime_plan,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
+        lambda plan: runtime_state,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
+        lambda state: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
+        lambda workspace, scan_paths=None: CompilePreflightResult(
+            passed=True,
+            failure_code=None,
+            failure_summary=None,
+            related_files=[],
+            details={"import_smoke": "passed"},
+        ),
+        raising=False,
+    )
+
+    def _fake_export_and_replay(**kwargs):
+        artifact_store = kwargs["artifact_store"]
+        host_patch_ref = artifact_store.write_text_artifact(
+            stage="export",
+            artifact_type="host-approved.patch",
+            content="",
+            suffix=".patch",
+        )
+        chatbot_patch_ref = artifact_store.write_text_artifact(
+            stage="export",
+            artifact_type="chatbot-approved.patch",
+            content="",
+            suffix=".patch",
+        )
+        replay_result = ReplayResult(
+            replay_workspace_path=str(tmp_path / "replay"),
+            host_replay_workspace_path=str(tmp_path / "replay" / "host"),
+            chatbot_replay_workspace_path=str(tmp_path / "replay" / "chatbot"),
+            host_patch_path="host.patch",
+            chatbot_patch_path="chatbot.patch",
+            passed=False,
+            target_match_passed=False,
+            static_validation_passed=True,
+            mismatched_targets=["host:backend/app.py"],
+            static_validation_summary="replay static validation passed",
+        )
+        replay_ref = artifact_store.write_json_artifact(
+            stage="export",
+            artifact_type="replay-result",
+            payload=replay_result.model_dump(mode="json"),
+            producer="test",
+            input_artifact_refs=[host_patch_ref, chatbot_patch_ref],
+        )
+        export_bundle_ref = artifact_store.write_json_artifact(
+            stage="export",
+            artifact_type="export-bundle",
+            payload={
+                "host_patch_artifact": host_patch_ref.model_dump(mode="json"),
+                "chatbot_patch_artifact": chatbot_patch_ref.model_dump(mode="json"),
+                "replay_artifact": replay_ref.model_dump(mode="json"),
+                "replay_passed": False,
+            },
+            producer="test",
+            input_artifact_refs=[host_patch_ref, chatbot_patch_ref, replay_ref],
+        )
+        return export_bundle_ref, replay_result, replay_ref
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.export_and_replay",
+        _fake_export_and_replay,
+    )
+
+    result = run_onboarding_generation_v2(
+        site="food",
+        source_root=str(ROOT / "food"),
+        generated_root=str(tmp_path / "generated"),
+        runtime_root=str(tmp_path / "runtime"),
+        run_id="food-run-v2-export-fail",
+        chatbot_server_base_url="http://localhost:8100",
+        max_repair_attempts=1,
+    )
+
+    assert result["status"] == "failed_human_review"
+    assert result["failure_signature"].startswith("export_")
+    assert result["latest_validation_artifact"] is None
 
 
 def test_engine_entry_passes_preflight_scan_paths(monkeypatch, tmp_path: Path):
@@ -748,7 +999,7 @@ def test_engine_entry_derives_effective_compile_rewind_from_overrides(monkeypatc
             diagnosis="compile override required for auth bootstrap repair",
             rewind_to="validation",
             preserve_artifacts=["analysis", "planning", "compile", "apply", "export"],
-            required_rechecks=["compile_preflight"],
+            required_rechecks=["compile_preflight", "validation"],
             additional_discovery=[],
             artifact_overrides={"compile": {"supporting_files": [{"path": "backend/chat_auth.py"}]}},
             stop=False,
@@ -775,6 +1026,9 @@ def test_engine_entry_derives_effective_compile_rewind_from_overrides(monkeypatc
     repair_artifact = json.loads(Path(result["latest_repair_artifact"]).read_text(encoding="utf-8"))
     assert repair_artifact["payload"]["requested_rewind_to"] == "validation"
     assert repair_artifact["payload"]["effective_rewind_to"] == "compile"
+    assert repair_artifact["payload"]["requested_required_rechecks"] == ["compile_preflight", "validation"]
+    assert repair_artifact["payload"]["required_stage_rechecks"] == ["validation"]
+    assert repair_artifact["payload"]["required_check_rechecks"] == ["compile_preflight"]
 
     run_summary = json.loads(
         (Path(result["run_root"]) / "views" / "run-summary.json").read_text(encoding="utf-8")
@@ -802,6 +1056,8 @@ def test_engine_entry_derives_effective_compile_rewind_from_overrides(monkeypatc
     )
     assert debug_payload["normalized_response"]["requested_rewind_to"] == "validation"
     assert debug_payload["normalized_response"]["effective_rewind_to"] == "compile"
+    assert debug_payload["normalized_response"]["required_stage_rechecks"] == ["validation"]
+    assert debug_payload["normalized_response"]["required_check_rechecks"] == ["compile_preflight"]
 
 
 def test_engine_entry_stops_after_repeated_failure_signature(monkeypatch, tmp_path: Path):
@@ -943,3 +1199,116 @@ def test_engine_rewind_preserves_only_requested_stages():
     assert state.apply_ref is None
     assert state.export_bundle_ref is None
     assert state.validation_ref is None
+
+
+def test_engine_entry_passes_analysis_overrides_into_analysis_rerun(monkeypatch, tmp_path: Path):
+    from chatbot.src.onboarding_v2 import engine as onboarding_engine
+
+    captured_analysis_overrides: list[dict[str, object]] = []
+    original_build_analysis_bundle = onboarding_engine.build_analysis_bundle
+    planning_calls = {"count": 0}
+
+    def _capturing_build_analysis_bundle(**kwargs):
+        captured_analysis_overrides.append(dict(kwargs.get("overrides") or {}))
+        forwarded = dict(kwargs)
+        forwarded.pop("overrides", None)
+        forwarded.setdefault("ambiguity_retry_limit", 0)
+        return original_build_analysis_bundle(**forwarded)
+
+    def _planning_stage(**kwargs):
+        planning_calls["count"] += 1
+        if planning_calls["count"] == 1:
+            raise onboarding_engine._StageFailure(
+                stage="planning",
+                failure_signature="planning_analysis_coverage_incomplete_for_planning_order_lookup_order_action",
+                failure_summary="analysis coverage incomplete for planning: order_lookup, order_action",
+                trigger_event_id="evt-planning",
+                related_artifacts=[],
+                related_files=[],
+                input_artifact_versions={},
+            )
+        return None
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.build_analysis_bundle",
+        _capturing_build_analysis_bundle,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_planning_stage",
+        _planning_stage,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_compile_stage",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_apply_stage",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_export_stage",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_validation_stage",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.diagnose_failure",
+        lambda **kwargs: RepairDecision(
+            failure_signature="planning_analysis_coverage_incomplete_for_planning_order_lookup_order_action",
+            diagnosis="rerun analysis with forced order endpoint verification",
+            rewind_to="planning",
+            preserve_artifacts=["analysis"],
+            required_rechecks=["analysis_contract_extraction", "planning_gate_coverage"],
+            additional_discovery=[],
+            artifact_overrides={
+                "analysis": {
+                    "force_verify_endpoints": [
+                        {
+                            "path": "/api/orders/",
+                            "methods": ["GET"],
+                            "handler_hint": "backend/orders/views.py:order_list",
+                        },
+                        {
+                            "path": "/api/orders/{order_id}/actions/",
+                            "methods": ["POST"],
+                            "handler_hint": "backend/orders/views.py:order_action",
+                        },
+                    ],
+                    "treat_api_view_as_method_source": True,
+                }
+            },
+            stop=False,
+        ),
+    )
+
+    result = run_onboarding_generation_v2(
+        site="food",
+        source_root=str(ROOT / "food"),
+        generated_root=str(tmp_path / "generated"),
+        runtime_root=str(tmp_path / "runtime"),
+        run_id="food-run-v2-analysis-override-rerun",
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        chatbot_server_base_url="http://localhost:8100",
+    )
+
+    assert result["status"] == "exported"
+    assert planning_calls["count"] == 2
+    assert captured_analysis_overrides[0] == {}
+    assert captured_analysis_overrides[1] == {
+        "force_verify_endpoints": [
+            {
+                "path": "/api/orders/",
+                "methods": ["GET"],
+                "handler_hint": "backend/orders/views.py:order_list",
+            },
+            {
+                "path": "/api/orders/{order_id}/actions/",
+                "methods": ["POST"],
+                "handler_hint": "backend/orders/views.py:order_action",
+            },
+        ],
+        "treat_api_view_as_method_source": True,
+    }

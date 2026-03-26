@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import ast
+import json
 import os
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -121,14 +124,30 @@ def build_backend_runtime_plan(
     backend_root = _resolve_backend_root(workspace)
     framework = snapshot.repo_profile.backend_framework
     python_executable = prep_result.python_executable or sys.executable
-    readiness_url = "http://127.0.0.1:8000" + plan.backend_wiring.chat_auth_contract_path
     environment = {"PYTHONUNBUFFERED": "1"}
+    listen_port = _allocate_free_listen_port()
+    launcher_mode: str | None = None
+    launcher_metadata_path: str | None = None
 
     if framework == "django":
-        command = [python_executable, "manage.py", "runserver", "127.0.0.1:8000"]
+        command = [python_executable, "manage.py", "runserver", f"127.0.0.1:{listen_port}"]
     elif framework == "flask":
         entrypoint = _choose_backend_entrypoint(snapshot=snapshot, backend_root=backend_root, defaults=("app.py", "run.py"))
-        command = [python_executable, entrypoint]
+        launcher_path, metadata_path = _write_flask_validation_launcher(
+            backend_root=backend_root,
+            support_root=_resolve_validation_support_root(workspace),
+            entrypoint=entrypoint,
+            listen_port=listen_port,
+        )
+        launcher_mode = "flask_validation_launcher"
+        launcher_metadata_path = str(metadata_path)
+        environment.update(
+            {
+                "ONBOARDING_VALIDATION": "1",
+                "ONBOARDING_VALIDATION_SKIP_DB_INIT": "1",
+            }
+        )
+        command = [python_executable, str(launcher_path)]
     elif framework == "fastapi":
         entrypoint = _choose_backend_entrypoint(snapshot=snapshot, backend_root=backend_root, defaults=("main.py", "app.py"))
         module_name = _module_name_from_path(Path(entrypoint))
@@ -140,18 +159,22 @@ def build_backend_runtime_plan(
             "--host",
             "127.0.0.1",
             "--port",
-            "8000",
+            str(listen_port),
         ]
     else:
-        command = [python_executable, "manage.py", "runserver", "127.0.0.1:8000"]
+        command = [python_executable, "manage.py", "runserver", f"127.0.0.1:{listen_port}"]
 
+    readiness_url = f"http://127.0.0.1:{listen_port}" + plan.backend_wiring.chat_auth_contract_path
     return BackendRuntimePlan(
         framework=framework,
         backend_root=str(backend_root),
         command=command,
         readiness_url=readiness_url,
+        listen_port=listen_port,
         environment=environment,
         python_executable=str(python_executable),
+        launcher_mode=launcher_mode,
+        launcher_metadata_path=launcher_metadata_path,
     )
 
 
@@ -167,6 +190,7 @@ def launch_backend_runtime(plan: BackendRuntimePlan) -> BackendRuntimeState:
         text=True,
     )
     readiness = _probe_http_ready(plan.readiness_url)
+    launcher_metadata = _read_launcher_metadata(plan.launcher_metadata_path)
     if readiness.get("passed"):
         return BackendRuntimeState(
             framework=plan.framework,
@@ -174,6 +198,9 @@ def launch_backend_runtime(plan: BackendRuntimePlan) -> BackendRuntimeState:
             pid=process.pid,
             command=list(plan.command),
             readiness_url=plan.readiness_url,
+            listen_port=plan.listen_port,
+            launcher_mode=str(launcher_metadata.get("launcher_mode") or plan.launcher_mode or ""),
+            startup_hooks_skipped=list(launcher_metadata.get("startup_hooks_skipped") or []),
             readiness=readiness,
             related_files=_default_related_files(plan.framework),
             process_handle=process,
@@ -187,6 +214,9 @@ def launch_backend_runtime(plan: BackendRuntimePlan) -> BackendRuntimeState:
         pid=process.pid,
         command=list(plan.command),
         readiness_url=plan.readiness_url,
+        listen_port=plan.listen_port,
+        launcher_mode=str(launcher_metadata.get("launcher_mode") or plan.launcher_mode or ""),
+        startup_hooks_skipped=list(launcher_metadata.get("startup_hooks_skipped") or []),
         readiness=readiness,
         failure_summary=str(readiness.get("error") or "backend readiness probe failed"),
         stdout=stdout,
@@ -221,6 +251,181 @@ def _venv_python(venv_path: Path) -> Path:
     if os.name == "nt":
         return venv_path / "Scripts" / "python.exe"
     return venv_path / "bin" / "python"
+
+
+def _allocate_free_listen_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return int(sock.getsockname()[1])
+
+
+def _detect_flask_runtime_port(entrypoint_path: Path) -> int | None:
+    try:
+        module = ast.parse(entrypoint_path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return None
+
+    resolved_names: dict[str, int] = {}
+    for node in module.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            resolved = _resolve_port_value(node.value, resolved_names)
+            if resolved is not None:
+                resolved_names[node.targets[0].id] = resolved
+
+    for node in ast.walk(module):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "run":
+            continue
+        for keyword in node.keywords:
+            if keyword.arg != "port":
+                continue
+            resolved = _resolve_port_value(keyword.value, resolved_names)
+            if resolved is not None:
+                return resolved
+    return None
+
+
+def _write_flask_validation_launcher(
+    *,
+    backend_root: Path,
+    support_root: Path,
+    entrypoint: str,
+    listen_port: int,
+) -> tuple[Path, Path]:
+    support_root.mkdir(parents=True, exist_ok=True)
+    launcher_path = support_root / "flask_validation_launcher.py"
+    metadata_path = support_root / "flask_validation_launcher_metadata.json"
+    script = f"""from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import sys
+from pathlib import Path
+
+BACKEND_ROOT = Path({str(backend_root)!r})
+ENTRYPOINT_PATH = BACKEND_ROOT / {entrypoint!r}
+LISTEN_PORT = {listen_port}
+METADATA_PATH = Path({str(metadata_path)!r})
+
+os.environ.setdefault("ONBOARDING_VALIDATION", "1")
+os.environ.setdefault("ONBOARDING_VALIDATION_SKIP_DB_INIT", "1")
+sys.path.insert(0, str(BACKEND_ROOT))
+
+
+def _noop(*args, **kwargs):
+    return None
+
+
+def _write_metadata(*, startup_hooks_skipped):
+    METADATA_PATH.write_text(
+        json.dumps(
+            {{
+                "launcher_mode": "flask_validation_launcher",
+                "startup_hooks_skipped": list(startup_hooks_skipped),
+                "listen_port": LISTEN_PORT,
+                "entrypoint": str(ENTRYPOINT_PATH),
+            }},
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+spec = importlib.util.spec_from_file_location(
+    "onboarding_validation_backend_entrypoint",
+    ENTRYPOINT_PATH,
+)
+if spec is None or spec.loader is None:
+    raise RuntimeError(f"unable to load Flask entrypoint: {{ENTRYPOINT_PATH}}")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+startup_hooks_skipped = []
+if os.environ.get("ONBOARDING_VALIDATION_SKIP_DB_INIT") == "1":
+    for hook_name in ("init_db_with_retry", "init_db"):
+        candidate = getattr(module, hook_name, None)
+        if callable(candidate):
+            setattr(module, hook_name, _noop)
+            startup_hooks_skipped.append(hook_name)
+
+_write_metadata(startup_hooks_skipped=startup_hooks_skipped)
+
+create_app = getattr(module, "create_app", None)
+if callable(create_app):
+    app = create_app()
+else:
+    app = getattr(module, "app", None)
+
+if app is None:
+    raise RuntimeError("Flask entrypoint did not expose app or create_app")
+
+app.run(host="127.0.0.1", port=LISTEN_PORT, debug=False, use_reloader=False)
+"""
+    launcher_path.write_text(script, encoding="utf-8")
+    return launcher_path, metadata_path
+
+
+def _read_launcher_metadata(path: str | None) -> dict[str, object]:
+    if not path:
+        return {}
+    metadata_path = Path(path)
+    if not metadata_path.exists():
+        return {}
+    try:
+        return json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _resolve_port_value(node: ast.AST, resolved_names: dict[str, int]) -> int | None:
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, int):
+            return node.value
+        if isinstance(node.value, str) and node.value.isdigit():
+            return int(node.value)
+        return None
+
+    if isinstance(node, ast.Name):
+        return resolved_names.get(node.id)
+
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Name) and node.func.id == "int" and node.args:
+            return _resolve_port_value(node.args[0], resolved_names)
+        if _is_os_environ_get_call(node) or _is_os_getenv_call(node):
+            if len(node.args) >= 2:
+                return _resolve_port_value(node.args[1], resolved_names)
+            for keyword in node.keywords:
+                if keyword.arg == "default":
+                    return _resolve_port_value(keyword.value, resolved_names)
+        return None
+
+    return None
+
+
+def _is_os_environ_get_call(node: ast.Call) -> bool:
+    func = node.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "get"
+        and isinstance(func.value, ast.Attribute)
+        and func.value.attr == "environ"
+        and isinstance(func.value.value, ast.Name)
+        and func.value.value.id == "os"
+    )
+
+
+def _is_os_getenv_call(node: ast.Call) -> bool:
+    func = node.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "getenv"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "os"
+    )
 
 
 def _create_venv(python_executable: str, venv_path: Path) -> BackendRuntimeCommandResult:

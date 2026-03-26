@@ -16,6 +16,12 @@ from typing import cast
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import ValidationError
 
+from chatbot.src.capability_profiles import (
+    ORDER_CS_ONLY_PROFILE,
+    ORDER_CS_ONLY_UNSUPPORTED_MESSAGE,
+    normalize_capability_profile,
+    split_tasks_for_profile,
+)
 from chatbot.src.graph.state import GlobalAgentState
 from chatbot.src.schemas.planner import PlannerOutput, TaskIntent
 from chatbot.src.graph.llm_providers import make_chat_llm, resolve_llm_runtime_policy
@@ -138,7 +144,7 @@ def planner_node(state: GlobalAgentState) -> dict:
     latest_user_message = _get_last_user_message(state.get("messages", []))
     heuristic_pending = _match_high_precision_intent(latest_user_message)
     if heuristic_pending:
-        return {"pending_tasks": heuristic_pending}
+        return _apply_capability_profile(state, heuristic_pending)
 
     llm = make_chat_llm(
         provider=runtime_policy.provider,
@@ -156,7 +162,7 @@ def planner_node(state: GlobalAgentState) -> dict:
     else:
         pending = _invoke_label_text_planner(llm, input_messages)
 
-    return {"pending_tasks": pending}
+    return _apply_capability_profile(state, pending)
 
 
 # ── 라우팅 조건 함수 ──────────────────────────────────────
@@ -200,6 +206,12 @@ def _build_planner_messages(
         brand_store_label=brand_profile.store_label,
         brand_display_name=brand_profile.display_name,
     ) + summary_prefix
+    if normalize_capability_profile(state.get("capability_profile")) == ORDER_CS_ONLY_PROFILE:
+        system_content += (
+            "\n\n[기능 제한]\n"
+            "현재 런타임은 주문 조회, 배송 조회, 취소, 환불, 교환과 관련된 문의만 지원합니다.\n"
+            "상품 추천, 리뷰 작성, 중고 등록, 상품권 등록 의도는 계획에서 제외하세요."
+        )
     if include_label_text_contract:
         system_content += f"\n\n{PLANNER_LABEL_TEXT_OUTPUT_CONTRACT}"
 
@@ -258,6 +270,28 @@ def _matches_discovery_rule(message: str) -> bool:
         ("옷" in message and any(token in message for token in ("추천", "코디", "기본템", "입을까")))
         or ("신뢰감" in message and any(token in message for token in ("줄 수 있", "주고 싶")))
     )
+
+
+def _apply_capability_profile(state: GlobalAgentState, pending_tasks: list[str]) -> dict:
+    allowed_tasks, disallowed_tasks = split_tasks_for_profile(
+        pending_tasks,
+        capability_profile=state.get("capability_profile"),
+    )
+    if not disallowed_tasks:
+        return {"pending_tasks": allowed_tasks}
+
+    response: dict = {
+        "completed_tasks": [TaskIntent.GENERAL_CHAT],
+        "agent_results": {
+            TaskIntent.GENERAL_CHAT: ORDER_CS_ONLY_UNSUPPORTED_MESSAGE,
+        },
+    }
+    filtered_pending = [task for task in allowed_tasks if task != TaskIntent.GENERAL_CHAT]
+    if filtered_pending:
+        response["pending_tasks"] = filtered_pending
+    else:
+        response["pending_tasks"] = [TaskIntent.GENERAL_CHAT]
+    return response
 
 
 def _invoke_schema_planner(llm, input_messages: list) -> list[str]:
