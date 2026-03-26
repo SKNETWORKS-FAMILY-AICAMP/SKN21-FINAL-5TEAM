@@ -3,7 +3,7 @@ import os
 import sys
 
 # 프로젝트 루트 경로 설정
-project_root = Path(__file__).resolve().parents[3]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
