@@ -75,7 +75,11 @@ class BackendRuntimePrepResult(BaseModel):
     create_venv: BackendRuntimeCommandResult | None = None
     install: BackendRuntimeCommandResult | None = None
     migrate: BackendRuntimeCommandResult | None = None
+    reset: BackendRuntimeCommandResult | None = None
     seed: BackendRuntimeCommandResult | None = None
+    seed_source_path: str | None = None
+    reset_source_path: str | None = None
+    fixture_manifest: dict[str, Any] = Field(default_factory=dict)
     related_files: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -136,10 +140,42 @@ class WidgetOrderE2EResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ConversationScenarioResult(BaseModel):
+    scenario_id: str
+    mode: str
+    conversation_id: str
+    deterministic_passed: bool
+    llm_passed: bool | None = None
+    final_verdict: str
+    transcript_path: str | None = None
+    trace_path: str | None = None
+    sampled_or_fixture_order_id: str | None = None
+    sampled_or_fixture_option_id: str | None = None
+    deterministic_failures: list[str] = Field(default_factory=list)
+    expected_tool_names: list[str] = Field(default_factory=list)
+    observed_tool_names: list[str] = Field(default_factory=list)
+    llm_judgement: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ConversationValidationResult(BaseModel):
+    passed: bool
+    failure_summary: str | None = None
+    fixture_manifest: dict[str, Any] = Field(default_factory=dict)
+    scenarios: list[ConversationScenarioResult] = Field(default_factory=list)
+    transcript_contents: dict[str, str] = Field(default_factory=dict)
+    trace_contents: dict[str, str] = Field(default_factory=dict)
+    related_files: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ValidationCheck(BaseModel):
     name: str
     passed: bool
     summary: str
+    blocking: bool = True
     details: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
@@ -149,6 +185,7 @@ class ValidationBundle(BaseModel):
     stage: str = "validation"
     passed: bool
     checks: list[ValidationCheck] = Field(default_factory=list)
+    advisory_failures: list[str] = Field(default_factory=list)
     failure_signature: str | None = None
     failure_summary: str | None = None
     related_files: list[str] = Field(default_factory=list)

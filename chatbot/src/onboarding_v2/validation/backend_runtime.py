@@ -75,13 +75,58 @@ def prepare_backend_runtime(
             create_venv=create_venv,
             install=install,
             migrate=migrate,
+            fixture_manifest=_build_fixture_manifest(
+                available=False,
+                seed_source={},
+                reason=migrate.stderr or migrate.stdout or "backend migrate failed",
+            ),
             related_files=_default_related_files(framework),
         )
 
-    seed = _run_optional_seed(
+    reset_path = _discover_reset_script(workspace=workspace, backend_root=backend_root)
+    seed_path = _discover_seed_script(workspace=workspace, backend_root=backend_root)
+    reset = _run_optional_script(
+        name="reset",
+        script_path=reset_path,
         framework=framework,
         backend_root=backend_root,
         python_executable=python_executable,
+        missing_stdout="reset script not found; skipped reset",
+    )
+    if not reset.passed:
+        return BackendRuntimePrepResult(
+            framework=framework,
+            passed=False,
+            failure_summary=reset.stderr or reset.stdout or "backend reset failed",
+            backend_root=str(backend_root),
+            venv_path=str(venv_path),
+            python_executable=str(python_executable),
+            create_venv=create_venv,
+            install=install,
+            migrate=migrate,
+            reset=reset,
+            seed_source_path=str(seed_path) if seed_path is not None else None,
+            reset_source_path=str(reset_path) if reset_path is not None else None,
+            fixture_manifest=_build_fixture_manifest(
+                available=False,
+                seed_source=_build_seed_source(
+                    workspace=workspace,
+                    reset_path=reset_path,
+                    seed_path=seed_path,
+                    python_executable=python_executable,
+                ),
+                reason=reset.stderr or reset.stdout or "backend reset failed",
+            ),
+            related_files=_default_related_files(framework),
+        )
+
+    seed = _run_optional_script(
+        name="seed",
+        script_path=seed_path,
+        framework=framework,
+        backend_root=backend_root,
+        python_executable=python_executable,
+        missing_stdout="seed script not found; skipped seed",
     )
     if not seed.passed:
         return BackendRuntimePrepResult(
@@ -94,9 +139,33 @@ def prepare_backend_runtime(
             create_venv=create_venv,
             install=install,
             migrate=migrate,
+            reset=reset,
             seed=seed,
+            seed_source_path=str(seed_path) if seed_path is not None else None,
+            reset_source_path=str(reset_path) if reset_path is not None else None,
+            fixture_manifest=_build_fixture_manifest(
+                available=False,
+                seed_source=_build_seed_source(
+                    workspace=workspace,
+                    reset_path=reset_path,
+                    seed_path=seed_path,
+                    python_executable=python_executable,
+                ),
+                reason=seed.stderr or seed.stdout or "backend seed failed",
+            ),
             related_files=_default_related_files(framework),
         )
+
+    fixture_manifest = _build_fixture_manifest(
+        available=seed_path is not None and not seed.skipped,
+        seed_source=_build_seed_source(
+            workspace=workspace,
+            reset_path=reset_path,
+            seed_path=seed_path,
+            python_executable=python_executable,
+        ),
+        reason=None if seed_path is not None and not seed.skipped else "fixture_unavailable",
+    )
 
     return BackendRuntimePrepResult(
         framework=framework,
@@ -108,7 +177,11 @@ def prepare_backend_runtime(
         create_venv=create_venv,
         install=install,
         migrate=migrate,
+        reset=reset,
         seed=seed,
+        seed_source_path=str(seed_path) if seed_path is not None else None,
+        reset_source_path=str(reset_path) if reset_path is not None else None,
+        fixture_manifest=fixture_manifest,
         related_files=_default_related_files(framework),
     )
 
@@ -124,7 +197,7 @@ def build_backend_runtime_plan(
     backend_root = _resolve_backend_root(workspace)
     framework = snapshot.repo_profile.backend_framework
     python_executable = prep_result.python_executable or sys.executable
-    environment = {"PYTHONUNBUFFERED": "1"}
+    environment = {"PYTHONUNBUFFERED": "1", "ONBOARDING_VALIDATION": "1"}
     listen_port = _allocate_free_listen_port()
     launcher_mode: str | None = None
     launcher_metadata_path: str | None = None
@@ -143,7 +216,6 @@ def build_backend_runtime_plan(
         launcher_metadata_path = str(metadata_path)
         environment.update(
             {
-                "ONBOARDING_VALIDATION": "1",
                 "ONBOARDING_VALIDATION_SKIP_DB_INIT": "1",
             }
         )
@@ -164,7 +236,9 @@ def build_backend_runtime_plan(
     else:
         command = [python_executable, "manage.py", "runserver", f"127.0.0.1:{listen_port}"]
 
-    readiness_url = f"http://127.0.0.1:{listen_port}" + plan.backend_wiring.chat_auth_contract_path
+    readiness_url = (
+        f"http://127.0.0.1:{listen_port}" + plan.host_backend.chat_auth_contract_path
+    )
     return BackendRuntimePlan(
         framework=framework,
         backend_root=str(backend_root),
@@ -494,35 +568,94 @@ def _run_django_migrate(*, framework: str, backend_root: Path, python_executable
     )
 
 
-def _run_optional_seed(*, framework: str, backend_root: Path, python_executable: Path) -> BackendRuntimeCommandResult:
-    if framework != "django":
+def _run_optional_script(
+    *,
+    name: str,
+    script_path: Path | None,
+    framework: str,
+    backend_root: Path,
+    python_executable: Path,
+    missing_stdout: str,
+) -> BackendRuntimeCommandResult:
+    del framework
+    if script_path is None:
         return BackendRuntimeCommandResult(
-            name="seed",
+            name=name,
             command=[],
             cwd=str(backend_root),
             returncode=0,
-            stdout="seed skipped",
-            stderr="",
-            passed=True,
-            skipped=True,
-        )
-    seed_path = backend_root / "seed" / "seed.py"
-    if not seed_path.exists():
-        return BackendRuntimeCommandResult(
-            name="seed",
-            command=[],
-            cwd=str(backend_root),
-            returncode=0,
-            stdout="seed.py not found; skipped seed",
+            stdout=missing_stdout,
             stderr="",
             passed=True,
             skipped=True,
         )
     return _run_command(
-        name="seed",
-        command=[str(python_executable), str(seed_path)],
+        name=name,
+        command=[str(python_executable), str(script_path)],
         cwd=backend_root,
     )
+
+
+def _discover_seed_script(*, workspace: Path, backend_root: Path) -> Path | None:
+    candidates = [
+        backend_root / "seed" / "seed.py",
+        backend_root / "scripts" / "seed.py",
+        workspace / "scripts" / "seed.py",
+    ]
+    return _first_existing_path(candidates)
+
+
+def _discover_reset_script(*, workspace: Path, backend_root: Path) -> Path | None:
+    candidates = [
+        backend_root / "seed" / "reset.py",
+        backend_root / "scripts" / "reset_db.py",
+        workspace / "scripts" / "reset_db.py",
+    ]
+    return _first_existing_path(candidates)
+
+
+def _first_existing_path(candidates: list[Path]) -> Path | None:
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _build_seed_source(
+    *,
+    workspace: Path,
+    reset_path: Path | None,
+    seed_path: Path | None,
+    python_executable: Path,
+) -> dict[str, object]:
+    source: dict[str, object] = {
+        "workspace": str(workspace),
+        "python_executable": str(python_executable),
+    }
+    if seed_path is not None:
+        source["seed_path"] = str(seed_path)
+        source["seed_command"] = [str(python_executable), str(seed_path)]
+    if reset_path is not None:
+        source["reset_path"] = str(reset_path)
+        source["reset_command"] = [str(python_executable), str(reset_path)]
+    return source
+
+
+def _build_fixture_manifest(
+    *,
+    available: bool,
+    seed_source: dict[str, object],
+    reason: str | None,
+) -> dict[str, object]:
+    manifest: dict[str, object] = {
+        "available": available,
+        "auth": {},
+        "orders": {},
+        "seed_source": seed_source,
+    }
+    if reason:
+        manifest["reason"] = reason
+    return manifest
 
 
 def _run_command(*, name: str, command: list[str], cwd: Path) -> BackendRuntimeCommandResult:

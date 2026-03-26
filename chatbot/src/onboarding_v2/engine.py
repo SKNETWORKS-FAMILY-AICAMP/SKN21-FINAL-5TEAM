@@ -77,6 +77,9 @@ class _RunState:
     host_auth_ref: ArtifactRef | None = None
     chatbot_adapter_auth_ref: ArtifactRef | None = None
     widget_order_ref: ArtifactRef | None = None
+    fixture_manifest_ref: ArtifactRef | None = None
+    conversation_validation_ref: ArtifactRef | None = None
+    conversation_transcript_refs: list[ArtifactRef] = field(default_factory=list)
     validation_ref: ArtifactRef | None = None
     latest_repair_ref: ArtifactRef | None = None
     latest_failure_signature: str | None = None
@@ -1615,6 +1618,46 @@ def run_validation_stage(
         ),
         attempt=attempt,
     )
+    fixture_manifest_ref = artifact_store.write_json_artifact(
+        stage="validation",
+        artifact_type="validation-fixture-manifest",
+        payload=dict(validation_run.conversation_validation.fixture_manifest or {}),
+        producer="validator",
+        input_artifact_refs=[prep_ref, host_auth_ref, chatbot_adapter_auth_ref],
+        event_ref=validation_started.event_id,
+        status="completed",
+        attempt=attempt,
+    )
+    conversation_transcript_refs: list[ArtifactRef] = []
+    for scenario_id, content in sorted(
+        validation_run.conversation_validation.transcript_contents.items()
+    ):
+        transcript_ref = artifact_store.write_text_artifact(
+            stage="validation",
+            artifact_type="conversation-transcript",
+            content=content,
+            suffix=f"-{scenario_id}.json",
+        )
+        conversation_transcript_refs.append(transcript_ref)
+    conversation_validation_ref = artifact_store.write_json_artifact(
+        stage="validation",
+        artifact_type="conversation-validation",
+        payload=validation_run.conversation_validation.model_dump(mode="json"),
+        producer="validator",
+        input_artifact_refs=[
+            state_ref,
+            chatbot_runtime_boot_ref,
+            widget_bundle_fetch_ref,
+            host_auth_ref,
+            chatbot_adapter_auth_ref,
+            widget_order_ref,
+            fixture_manifest_ref,
+            *conversation_transcript_refs,
+        ],
+        event_ref=validation_started.event_id,
+        status="completed" if validation_run.conversation_validation.passed else "failed",
+        attempt=attempt,
+    )
     validation_bundle = validation_run.bundle
     validation_ref = artifact_store.write_json_artifact(
         stage="validation",
@@ -1635,6 +1678,9 @@ def run_validation_stage(
             host_auth_ref,
             chatbot_adapter_auth_ref,
             widget_order_ref,
+            fixture_manifest_ref,
+            conversation_validation_ref,
+            *conversation_transcript_refs,
         ],
         event_ref=validation_started.event_id,
         status="completed" if validation_bundle.passed else "failed",
@@ -1668,6 +1714,9 @@ def run_validation_stage(
         state.host_auth_ref = host_auth_ref
         state.chatbot_adapter_auth_ref = chatbot_adapter_auth_ref
         state.widget_order_ref = widget_order_ref
+        state.fixture_manifest_ref = fixture_manifest_ref
+        state.conversation_validation_ref = conversation_validation_ref
+        state.conversation_transcript_refs = conversation_transcript_refs
         state.validation_ref = validation_ref
         raise _StageFailure(
             stage="validation",
@@ -1691,6 +1740,9 @@ def run_validation_stage(
                 host_auth_ref,
                 chatbot_adapter_auth_ref,
                 widget_order_ref,
+                fixture_manifest_ref,
+                conversation_validation_ref,
+                *conversation_transcript_refs,
                 validation_ref,
             ],
             related_files=validation_bundle.related_files,
@@ -1723,6 +1775,9 @@ def run_validation_stage(
     state.host_auth_ref = host_auth_ref
     state.chatbot_adapter_auth_ref = chatbot_adapter_auth_ref
     state.widget_order_ref = widget_order_ref
+    state.fixture_manifest_ref = fixture_manifest_ref
+    state.conversation_validation_ref = conversation_validation_ref
+    state.conversation_transcript_refs = conversation_transcript_refs
     state.validation_ref = validation_ref
     state.latest_failure_signature = None
     _mark_required_rechecks_satisfied(
@@ -1925,6 +1980,9 @@ def _clear_from_stage(state: _RunState, stage: str) -> None:
         state.host_auth_ref = None
         state.chatbot_adapter_auth_ref = None
         state.widget_order_ref = None
+        state.fixture_manifest_ref = None
+        state.conversation_validation_ref = None
+        state.conversation_transcript_refs = []
         state.validation_ref = None
 
 
@@ -1970,6 +2028,9 @@ def _clear_from_stage_exact(state: _RunState, stage: str) -> None:
         state.host_auth_ref = None
         state.chatbot_adapter_auth_ref = None
         state.widget_order_ref = None
+        state.fixture_manifest_ref = None
+        state.conversation_validation_ref = None
+        state.conversation_transcript_refs = []
         state.validation_ref = None
         return
 

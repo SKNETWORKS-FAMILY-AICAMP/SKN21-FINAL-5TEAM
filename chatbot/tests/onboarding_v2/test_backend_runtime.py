@@ -15,7 +15,8 @@ from chatbot.src.onboarding_v2.models.planning import (
     IntegrationPlan,
 )
 from chatbot.src.onboarding_v2.models.validation import BackendRuntimePrepResult
-from chatbot.src.onboarding_v2.validation.backend_runtime import build_backend_runtime_plan
+from chatbot.src.onboarding_v2.validation import backend_runtime as backend_runtime_module
+from chatbot.src.onboarding_v2.validation.backend_runtime import build_backend_runtime_plan, prepare_backend_runtime
 
 
 def _snapshot(*, backend_framework: str, backend_entrypoints: list[str] | None = None) -> AnalysisSnapshot:
@@ -203,3 +204,77 @@ def test_build_backend_runtime_plan_for_fastapi(tmp_path: Path):
         str(runtime_plan.listen_port),
     ]
     assert runtime_plan.readiness_url == f"http://127.0.0.1:{runtime_plan.listen_port}/api/chat/auth-token"
+
+
+def test_prepare_backend_runtime_discovers_reset_and_seed_scripts(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    backend_root = workspace / "backend"
+    seed_root = backend_root / "seed"
+    seed_root.mkdir(parents=True)
+    (backend_root / "manage.py").write_text("print('django')\n", encoding="utf-8")
+    (seed_root / "reset.py").write_text("print('reset')\n", encoding="utf-8")
+    (seed_root / "seed.py").write_text("print('seed')\n", encoding="utf-8")
+
+    def _ok_command(*, name: str, command: list[str], cwd: Path):
+        return backend_runtime_module.BackendRuntimeCommandResult(
+            name=name,
+            command=command,
+            cwd=str(cwd),
+            returncode=0,
+            stdout=f"{name} ok",
+            stderr="",
+            passed=True,
+        )
+
+    monkeypatch.setattr(backend_runtime_module, "_create_venv", lambda *args, **kwargs: _ok_command(name="create_venv", command=["python", "-m", "venv"], cwd=tmp_path))
+    monkeypatch.setattr(backend_runtime_module, "_install_backend_requirements", lambda **kwargs: _ok_command(name="install", command=["pip", "install"], cwd=backend_root))
+    monkeypatch.setattr(backend_runtime_module, "_run_django_migrate", lambda **kwargs: _ok_command(name="migrate", command=["manage.py", "migrate"], cwd=backend_root))
+    monkeypatch.setattr(backend_runtime_module, "_run_command", _ok_command)
+
+    prep = prepare_backend_runtime(
+        workspace=workspace,
+        snapshot=_snapshot(backend_framework="django"),
+    )
+
+    assert prep.passed is True
+    assert prep.reset is not None
+    assert prep.seed is not None
+    assert prep.reset.command[-1].endswith("backend/seed/reset.py")
+    assert prep.seed.command[-1].endswith("backend/seed/seed.py")
+    assert prep.reset_source_path.endswith("backend/seed/reset.py")
+    assert prep.seed_source_path.endswith("backend/seed/seed.py")
+    assert prep.fixture_manifest["seed_source"]["seed_path"].endswith("backend/seed/seed.py")
+    assert prep.fixture_manifest["seed_source"]["reset_path"].endswith("backend/seed/reset.py")
+
+
+def test_prepare_backend_runtime_keeps_fixture_manifest_metadata_when_seed_missing(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    backend_root = workspace / "backend"
+    backend_root.mkdir(parents=True)
+    (backend_root / "manage.py").write_text("print('django')\n", encoding="utf-8")
+
+    def _ok_command(*, name: str, command: list[str], cwd: Path):
+        return backend_runtime_module.BackendRuntimeCommandResult(
+            name=name,
+            command=command,
+            cwd=str(cwd),
+            returncode=0,
+            stdout=f"{name} ok",
+            stderr="",
+            passed=True,
+        )
+
+    monkeypatch.setattr(backend_runtime_module, "_create_venv", lambda *args, **kwargs: _ok_command(name="create_venv", command=["python", "-m", "venv"], cwd=tmp_path))
+    monkeypatch.setattr(backend_runtime_module, "_install_backend_requirements", lambda **kwargs: _ok_command(name="install", command=["pip", "install"], cwd=backend_root))
+    monkeypatch.setattr(backend_runtime_module, "_run_django_migrate", lambda **kwargs: _ok_command(name="migrate", command=["manage.py", "migrate"], cwd=backend_root))
+
+    prep = prepare_backend_runtime(
+        workspace=workspace,
+        snapshot=_snapshot(backend_framework="django"),
+    )
+
+    assert prep.passed is True
+    assert prep.seed is not None
+    assert prep.seed.skipped is True
+    assert prep.fixture_manifest["available"] is False
+    assert prep.fixture_manifest["reason"] == "fixture_unavailable"

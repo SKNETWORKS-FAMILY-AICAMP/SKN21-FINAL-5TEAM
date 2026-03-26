@@ -16,6 +16,9 @@ from chatbot.src.onboarding_v2.models.validation import BackendRuntimePlan, Back
 from chatbot.src.onboarding_v2.planning import build_planning_bundle
 from chatbot.src.onboarding_v2.storage import ArtifactStore
 from chatbot.src.onboarding_v2.validation.runner import (
+    ConversationScenarioResult,
+    ConversationValidationResult,
+    _finalize_conversation_scenario_result,
     _evaluate_widget_order_flow_report,
     _enforce_required_rechecks,
     _runtime_base_url,
@@ -203,6 +206,7 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
         "host_auth_bootstrap",
         "chatbot_adapter_auth",
         "widget_order_e2e",
+        "conversation_validation",
         "replay_apply",
         "replay_validation",
     ]
@@ -251,6 +255,165 @@ def test_validation_runner_requires_requested_rechecks():
                 {"name": "widget_order_e2e", "passed": True},
             ],
         )
+
+
+def test_validation_runner_records_advisory_conversation_failures(monkeypatch, tmp_path: Path):
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
+        readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
+        listen_port=8000,
+    )
+    runtime_state = BackendRuntimeState(
+        framework="django",
+        passed=True,
+        pid=1234,
+        command=runtime_plan.command,
+        readiness_url=runtime_plan.readiness_url,
+        listen_port=8000,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.prepare_backend_runtime",
+        lambda **kwargs: BackendRuntimePrepResult(
+            framework="django",
+            passed=True,
+            fixture_manifest={"available": True},
+        ),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.build_backend_runtime_plan",
+        lambda **kwargs: runtime_plan,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
+        lambda plan: runtime_state,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
+        lambda state: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget bundle fetch passed",
+            "target_url": "http://localhost:8100/widget.js",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "host auth bootstrap passed",
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "session-token",
+                "user": {"id": "7"},
+            },
+            "session_cookies": {"sessionid": "cookie-123"},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot adapter auth passed",
+            "validated_user": {"id": "7", "siteId": "food"},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_order_e2e",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget order e2e passed",
+            "covered_flows": ["list_orders", "get_order_status", "cancel", "refund", "exchange"],
+            "flow_reports": {},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_conversation_runtime",
+        lambda **kwargs: ConversationValidationResult(
+            passed=False,
+            failure_summary="conversation validation advisory failure",
+            fixture_manifest={"available": True},
+            scenarios=[
+                ConversationScenarioResult(
+                    scenario_id="authenticated_list_orders",
+                    mode="read_only",
+                    conversation_id="conv-1",
+                    deterministic_passed=False,
+                    llm_passed=None,
+                    final_verdict="fail",
+                    transcript_path="/tmp/transcript.json",
+                    trace_path="/tmp/trace.jsonl",
+                )
+            ],
+            transcript_contents={"authenticated_list_orders": "{}"},
+        ),
+    )
+    runtime_context = _build_food_runtime_artifacts(tmp_path)
+
+    bundle = run_validation(
+        run_root=runtime_context["generated_root"],
+        host_runtime_workspace=runtime_context["apply_result"].host_workspace_path,
+        chatbot_runtime_workspace=runtime_context["apply_result"].chatbot_workspace_path,
+        snapshot=runtime_context["snapshot"],
+        plan=runtime_context["plan"],
+        replay_result=runtime_context["replay_result"],
+        artifact_refs=runtime_context["artifact_refs"],
+    )
+
+    assert bundle.passed is True
+    conversation_check = next(check for check in bundle.checks if check.name == "conversation_validation")
+    assert conversation_check.passed is False
+    assert conversation_check.blocking is False
+    assert "conversation_validation" in bundle.advisory_failures
+
+
+def test_conversation_validation_skips_llm_judge_after_deterministic_failure(monkeypatch):
+    called = {"judge": False}
+
+    def _fake_judge(**kwargs):
+        called["judge"] = True
+        return {"overall_pass": True}
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner._run_conversation_llm_judge",
+        _fake_judge,
+    )
+
+    result = _finalize_conversation_scenario_result(
+        scenario_id="cancel_order",
+        mode="mutating",
+        prompt="cancel order",
+        final_answer="",
+        transcript_path="/tmp/transcript.json",
+        trace_path="/tmp/trace.jsonl",
+        expected_tool_names=["cancel"],
+        observed_tool_names=[],
+        deterministic_failures=["missing expected tool"],
+        sampled_order_id="ORD-1",
+        sampled_option_id=None,
+    )
+
+    assert result.deterministic_passed is False
+    assert result.llm_passed is None
+    assert result.final_verdict == "fail"
+    assert called["judge"] is False
 
 
 def test_validate_host_auth_bootstrap_uses_runtime_plan_listen_port(monkeypatch, tmp_path: Path):
@@ -308,6 +471,7 @@ def test_validate_host_auth_bootstrap_uses_runtime_plan_listen_port(monkeypatch,
     )
 
     assert result["passed"] is True
+    assert result["bootstrap_mode"] == "real_host_session"
     assert captured_urls == [
         f"http://127.0.0.1:8123{plan.host_backend.login_endpoint}",
         "http://127.0.0.1:8123/api/chat/auth-token",
@@ -376,6 +540,7 @@ def test_validate_host_auth_bootstrap_uses_planned_login_endpoint(monkeypatch, t
     )
 
     assert result["passed"] is True
+    assert result["bootstrap_mode"] == "real_host_session"
     assert plan.host_backend.login_endpoint == "/api/auth/login"
     assert captured_urls == [
         "http://127.0.0.1:8124/api/auth/login",
@@ -383,7 +548,9 @@ def test_validate_host_auth_bootstrap_uses_planned_login_endpoint(monkeypatch, t
     ]
 
 
-def test_validate_host_auth_bootstrap_fails_closed_without_planned_login_endpoint(tmp_path: Path):
+def test_validate_host_auth_bootstrap_uses_validation_bridge_without_planned_login_endpoint(
+    monkeypatch, tmp_path: Path
+):
     analysis_bundle = build_analysis_bundle(site="food", source_root=ROOT / "food")
     planning_bundle = build_planning_bundle(
         snapshot=analysis_bundle.snapshot,
@@ -405,6 +572,41 @@ def test_validate_host_auth_bootstrap_fails_closed_without_planned_login_endpoin
         listen_port=8125,
     )
 
+    class _Response:
+        def __init__(self, status_code: int, payload: dict[str, object], text: str):
+            self.status_code = status_code
+            self._payload = payload
+            self.text = text
+
+        def json(self):
+            return self._payload
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, json=None):
+            del json
+            assert url == "http://127.0.0.1:8125/api/chat/auth-token"
+            return _Response(
+                200,
+                {
+                    "authenticated": True,
+                    "site_id": "food",
+                    "access_token": "validation-food",
+                    "user": {"id": "validation-user"},
+                },
+                '{"authenticated": true}',
+            )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.httpx.Client",
+        lambda **kwargs: _Client(),
+    )
+
     result = validate_host_auth_bootstrap(
         run_root=tmp_path,
         host_runtime_workspace=tmp_path,
@@ -413,11 +615,90 @@ def test_validate_host_auth_bootstrap_fails_closed_without_planned_login_endpoin
         plan=plan,
     )
 
-    assert result["passed"] is False
-    assert result["failure_summary"] == "host auth bootstrap missing planned login endpoint"
+    assert result["passed"] is True
+    assert result["bootstrap_mode"] == "validation_bridge"
+    assert result["failure_origin"] == "login"
     assert result["login_url"] is None
+    assert result["login_response_text"] == "planned login endpoint unavailable"
     assert result["bootstrap_url"] == "http://127.0.0.1:8125/api/chat/auth-token"
     assert result["auth_handler_source"] == plan.host_backend.auth_handler_source
+
+
+def test_validate_host_auth_bootstrap_falls_back_to_validation_bridge_when_login_fails(
+    monkeypatch, tmp_path: Path
+):
+    captured_urls: list[str] = []
+
+    class _Response:
+        def __init__(self, status_code: int, payload: dict[str, object], text: str):
+            self.status_code = status_code
+            self._payload = payload
+            self.text = text
+
+        def json(self):
+            return self._payload
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, json=None):
+            del json
+            captured_urls.append(url)
+            if url.endswith("/api/auth/login"):
+                return _Response(500, {}, "oracle unavailable")
+            return _Response(
+                200,
+                {
+                    "authenticated": True,
+                    "site_id": "bilyeo",
+                    "access_token": "validation-bilyeo",
+                    "user": {"id": "validation-user", "email": "test1@example.com"},
+                },
+                '{"authenticated": true}',
+            )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.httpx.Client",
+        lambda **kwargs: _Client(),
+    )
+    analysis_bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+        strict_coverage=True,
+    )
+    runtime_plan = BackendRuntimePlan(
+        framework="flask",
+        backend_root=str(tmp_path / "backend"),
+        command=["python", "app.py"],
+        readiness_url="http://127.0.0.1:8126/api/chat/auth-token",
+        listen_port=8126,
+    )
+
+    result = validate_host_auth_bootstrap(
+        run_root=tmp_path,
+        host_runtime_workspace=tmp_path,
+        runtime_plan=runtime_plan,
+        snapshot=analysis_bundle.snapshot,
+        plan=planning_bundle.integration_plan,
+    )
+
+    assert result["passed"] is True
+    assert result["bootstrap_mode"] == "validation_bridge"
+    assert result["failure_origin"] == "login"
+    assert result["login_status"] == 500
+    assert result["bootstrap_status"] == 200
+    assert result["login_response_text"] == "oracle unavailable"
+    assert result["bootstrap_response_text"] == '{"authenticated": true}'
+    assert captured_urls == [
+        "http://127.0.0.1:8126/api/auth/login",
+        "http://127.0.0.1:8126/api/chat/auth-token",
+    ]
 
 
 def test_runtime_base_url_uses_custom_chat_auth_contract_path():
