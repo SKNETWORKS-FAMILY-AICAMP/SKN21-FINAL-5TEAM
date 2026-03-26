@@ -211,10 +211,27 @@ def _indent_register_line(register_line: str) -> str:
 
 def _build_blueprint_content(leaf_route: str, *, site_id: str) -> str:
     return (
+        "import json\n"
         "import os\n\n"
         "from flask import Blueprint, jsonify, request, session\n\n"
         'chat_auth_blueprint = Blueprint("chat_auth", __name__)\n\n'
         f'_SITE_ID = "{site_id}"\n\n'
+        "def _runtime_capability_payload():\n"
+        "    raw_corpora = os.environ.get(\"ONBOARDING_ENABLED_RETRIEVAL_CORPORA\", \"[]\")\n"
+        "    raw_features = os.environ.get(\"ONBOARDING_WIDGET_FEATURES\", \"{}\")\n"
+        "    try:\n"
+        "        corpora = json.loads(raw_corpora)\n"
+        "    except Exception:\n"
+        "        corpora = []\n"
+        "    try:\n"
+        "        features = json.loads(raw_features)\n"
+        "    except Exception:\n"
+        "        features = {}\n"
+        "    return {\n"
+        '        "capability_profile": os.environ.get("ONBOARDING_CAPABILITY_PROFILE", "order_cs_only"),\n'
+        '        "enabled_retrieval_corpora": corpora if isinstance(corpora, list) else [],\n'
+        '        "widget_features": features if isinstance(features, dict) else {},\n'
+        "    }\n\n"
         "def _validation_payload():\n"
         "    email = os.environ.get(\"ONBOARDING_VALIDATION_EMAIL\", \"test1@example.com\")\n"
         "    name = os.environ.get(\"ONBOARDING_VALIDATION_NAME\", f\"{_SITE_ID} validation user\")\n"
@@ -223,6 +240,7 @@ def _build_blueprint_content(leaf_route: str, *, site_id: str) -> str:
         f'        "site_id": "{site_id}",\n'
         f'        "access_token": "validation-{site_id}",\n'
         '        "user": {"id": "validation-user", "email": email, "name": name},\n'
+        "        **_runtime_capability_payload(),\n"
         "    }\n\n"
         "def _session_payload():\n"
         "    token = (\n"
@@ -241,6 +259,7 @@ def _build_blueprint_content(leaf_route: str, *, site_id: str) -> str:
         f'        "site_id": "{site_id}",\n'
         '        "access_token": str(token),\n'
         '        "user": {"id": str(user_id), "email": user_email, "name": user_name},\n'
+        "        **_runtime_capability_payload(),\n"
         "    }\n\n"
         f'@chat_auth_blueprint.route("{leaf_route}", methods=["GET", "POST"])\n'
         "def chat_auth_token():\n"
@@ -248,6 +267,6 @@ def _build_blueprint_content(leaf_route: str, *, site_id: str) -> str:
         "        return jsonify(_validation_payload())\n"
         "    payload = _session_payload()\n"
         "    if payload is None:\n"
-        f'        return jsonify({{"authenticated": False, "site_id": "{site_id}", "access_token": "", "user": None}})\n'
+        f'        return jsonify({{"authenticated": False, "site_id": "{site_id}", "access_token": "", "user": None, **_runtime_capability_payload()}})\n'
         "    return jsonify(payload)\n"
     )

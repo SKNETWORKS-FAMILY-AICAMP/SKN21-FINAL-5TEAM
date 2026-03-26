@@ -122,10 +122,27 @@ def _build_django_chat_auth_module(*, auth_source: str, site_id: str) -> str:
         source_module = source_module.removeprefix("backend.")
     return (
         "from __future__ import annotations\n\n"
+        "import json\n"
         "import os\n\n"
         "from django.http import JsonResponse\n"
         "from django.views.decorators.csrf import csrf_exempt\n\n"
         f"from {source_module} import _build_user_payload, _find_active_session\n\n\n"
+        "def _runtime_capability_payload():\n"
+        '    raw_corpora = os.environ.get("ONBOARDING_ENABLED_RETRIEVAL_CORPORA", "[]")\n'
+        '    raw_features = os.environ.get("ONBOARDING_WIDGET_FEATURES", "{}")\n'
+        "    try:\n"
+        "        corpora = json.loads(raw_corpora)\n"
+        "    except Exception:\n"
+        "        corpora = []\n"
+        "    try:\n"
+        "        features = json.loads(raw_features)\n"
+        "    except Exception:\n"
+        "        features = {}\n"
+        "    return {\n"
+        '        "capability_profile": os.environ.get("ONBOARDING_CAPABILITY_PROFILE", "order_cs_only"),\n'
+        '        "enabled_retrieval_corpora": corpora if isinstance(corpora, list) else [],\n'
+        '        "widget_features": features if isinstance(features, dict) else {},\n'
+        "    }\n\n"
         "@csrf_exempt\n"
         "def chat_auth_token(request):\n"
         '    """Generated onboarding bridge endpoint."""\n'
@@ -138,6 +155,7 @@ def _build_django_chat_auth_module(*, auth_source: str, site_id: str) -> str:
         f'                "site_id": "{site_id}",\n'
         f'                "access_token": "validation-{site_id}",\n'
         '                "user": {"id": "validation-user", "email": email, "name": name},\n'
+        "                **_runtime_capability_payload(),\n"
         "            },\n"
         "            status=200,\n"
         "        )\n"
@@ -149,6 +167,7 @@ def _build_django_chat_auth_module(*, auth_source: str, site_id: str) -> str:
         f'                "site_id": "{site_id}",\n'
         '                "access_token": "",\n'
         '                "user": None,\n'
+        '                **_runtime_capability_payload(),\n'
         '            },\n'
         "            status=200,\n"
         "        )\n"
@@ -159,6 +178,7 @@ def _build_django_chat_auth_module(*, auth_source: str, site_id: str) -> str:
         f'            "site_id": "{site_id}",\n'
         '            "access_token": access_token,\n'
         '            "user": _build_user_payload(session.user),\n'
+        "            **_runtime_capability_payload(),\n"
         "        },\n"
         "        status=200,\n"
         "    )\n"

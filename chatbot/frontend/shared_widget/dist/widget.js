@@ -23615,16 +23615,20 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
         authenticated: false,
         siteId: String(payload.site_id ?? ""),
         accessToken: String(payload.access_token ?? ""),
+        userId: String(payload.user_id ?? payload.user?.id ?? ""),
         site_id: String(payload.site_id ?? ""),
-        access_token: String(payload.access_token ?? "")
+        access_token: String(payload.access_token ?? ""),
+        user_id: String(payload.user_id ?? payload.user?.id ?? "")
       };
     }
     return {
       authenticated: true,
       siteId: String(payload.site_id ?? ""),
       accessToken: String(payload.access_token ?? ""),
+      userId: String(payload.user_id ?? payload.user?.id ?? ""),
       site_id: String(payload.site_id ?? ""),
-      access_token: String(payload.access_token ?? "")
+      access_token: String(payload.access_token ?? ""),
+      user_id: String(payload.user_id ?? payload.user?.id ?? "")
     };
   }
   async function bootstrapSharedChatAuth(host, fetchImpl) {
@@ -23645,6 +23649,7 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
         model: args.model ?? void 0,
         site_id: args.bootstrap.site_id,
         access_token: args.bootstrap.access_token,
+        user_id: args.bootstrap.user_id,
         capability_profile: args.capabilityProfile ?? args.host.capabilityProfile ?? void 0,
         enabled_retrieval_corpora: args.enabledRetrievalCorpora ?? args.host.enabledRetrievalCorpora ?? void 0,
         widget_features: args.widgetFeatures ?? args.host.widgetFeatures ?? void 0
@@ -34177,8 +34182,8 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
   }) {
     const effectiveHost = host ?? SHARED_WIDGET_HOST;
     const effectiveCapabilities = capabilities ?? ORDER_CS_ONLY_CAPABILITIES;
-    const capabilityProfile = effectiveCapabilities === "full" ? "full" : "order_cs_only";
-    const imageUploadEnabled = effectiveCapabilities === "full";
+    const capabilityProfile = effectiveHost.capabilityProfile ?? (effectiveCapabilities === "full" ? "full" : "order_cs_only");
+    const imageUploadEnabled = typeof effectiveHost.widgetFeatures?.imageUpload === "boolean" ? Boolean(effectiveHost.widgetFeatures?.imageUpload) : effectiveCapabilities === "full";
     const [open, setOpen] = (0, import_react7.useState)(false);
     const [input, setInput] = (0, import_react7.useState)("");
     const [messages, setMessages] = (0, import_react7.useState)([INITIAL_BOT_MESSAGE]);
@@ -35185,8 +35190,17 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
       "auth-bootstrap-path": element3.getAttribute("auth-bootstrap-path"),
       "widget-bundle-path": element3.getAttribute("widget-bundle-path"),
       "mount-mode": element3.getAttribute("mount-mode"),
-      capabilities: element3.getAttribute("capabilities")
+      capabilities: element3.getAttribute("capabilities"),
+      "capability-profile": element3.getAttribute("capability-profile"),
+      "enabled-retrieval-corpora": element3.getAttribute("enabled-retrieval-corpora")
     };
+  }
+  function parseEnabledRetrievalCorpora(value) {
+    const normalized = normalizeString2(value);
+    if (!normalized) {
+      return void 0;
+    }
+    return normalized.split(",").map((item) => item.trim()).filter(Boolean);
   }
   function readGlobalContract() {
     const globalContract = globalThis.__ORDER_CS_WIDGET_HOST_CONTRACT__ ?? {};
@@ -35203,7 +35217,10 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
       widgetElementTag: normalizeString2(
         globalContract.widgetElementTag ?? DEFAULT_SHARED_WIDGET_HOST_CONTRACT2.widgetElementTag
       ),
-      mountMode: DEFAULT_SHARED_WIDGET_HOST_CONTRACT2.mountMode
+      mountMode: DEFAULT_SHARED_WIDGET_HOST_CONTRACT2.mountMode,
+      capabilityProfile: normalizeString2(globalContract.capabilityProfile),
+      enabledRetrievalCorpora: Array.isArray(globalContract.enabledRetrievalCorpora) ? globalContract.enabledRetrievalCorpora.map((item) => String(item).trim()).filter(Boolean) : void 0,
+      widgetFeatures: globalContract.widgetFeatures && typeof globalContract.widgetFeatures === "object" ? { imageUpload: Boolean(globalContract.widgetFeatures.imageUpload) } : void 0
     };
   }
   function resolveOrderCsWidgetHostContract(attributeOverrides = {}) {
@@ -35220,7 +35237,12 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
       ),
       // The custom element tag is fixed at registration time.
       widgetElementTag: ORDER_CS_WIDGET_TAG,
-      mountMode: contract.mountMode
+      mountMode: contract.mountMode,
+      capabilityProfile: normalizeString2(
+        attributeOverrides["capability-profile"] ?? contract.capabilityProfile
+      ),
+      enabledRetrievalCorpora: parseEnabledRetrievalCorpora(attributeOverrides["enabled-retrieval-corpora"]) ?? contract.enabledRetrievalCorpora,
+      widgetFeatures: contract.widgetFeatures
     };
   }
   function toHostedWidgetConfig(contract) {
@@ -35228,7 +35250,10 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
       authBootstrapPath: contract.authBootstrapPath,
       chatbotApiBase: contract.chatbotServerBaseUrl,
       chatPath: "/api/chat",
-      streamPath: "/api/v1/chat/stream"
+      streamPath: "/api/v1/chat/stream",
+      capabilityProfile: contract.capabilityProfile,
+      enabledRetrievalCorpora: contract.enabledRetrievalCorpora,
+      widgetFeatures: contract.widgetFeatures
     };
   }
   function resolveHostedWidgetCapabilities(attributeOverrides = {}) {

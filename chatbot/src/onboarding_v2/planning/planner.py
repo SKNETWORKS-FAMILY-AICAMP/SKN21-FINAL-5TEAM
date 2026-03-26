@@ -1062,11 +1062,16 @@ def _build_retrieval_index_plan(
     corpus_specs = {
         "faq": ("qa_level", rag_sources.faq, ["배송은 얼마나 걸리나요?"], "faq_source_scan"),
         "policy": ("heading_sections", rag_sources.policy, ["환불 규정"], "policy_source_scan"),
-        "discovery_image": ("entity_level", rag_sources.discovery_image, ["검은색 자켓"], "discovery_image_scan"),
+        "discovery_image": ("entity_level", rag_sources.discovery_image, ["검은색 자켓"], "public_url_fetch"),
     }
     for corpus, (chunking_strategy, records, smoke_queries, default_loader) in corpus_specs.items():
         if not records:
             continue
+        loader_strategy = _resolve_loader_strategy(
+            corpus=corpus,
+            records=records,
+            default_loader=default_loader,
+        )
         corpora.append(
             RagCorpusPlan(
                 corpus=corpus,
@@ -1077,10 +1082,35 @@ def _build_retrieval_index_plan(
                 sources=[record.path for record in records],
                 smoke_queries=smoke_queries,
                 minimum_expected_documents=1,
-                loader_strategy=str(records[0].details.get("loader_strategy") or default_loader),
+                loader_strategy=loader_strategy,
             )
         )
     return RetrievalIndexPlan(site_id=site_id, site_slug=site_slug, corpora=corpora)
+
+
+def _resolve_loader_strategy(
+    *,
+    corpus: str,
+    records: list[Any],
+    default_loader: str,
+) -> str:
+    if corpus != "discovery_image":
+        return default_loader
+
+    discovered: list[str] = []
+    for record in records:
+        details = getattr(record, "details", {}) or {}
+        candidates = details.get("loader_candidates") or []
+        if isinstance(candidates, list):
+            discovered.extend(str(item).strip() for item in candidates if str(item).strip())
+        strategy = str(details.get("loader_strategy") or "").strip()
+        if strategy:
+            discovered.append(strategy)
+
+    for candidate in ("public_url_fetch", "signed_url_resolver", "bucket_list_and_fetch"):
+        if candidate in discovered:
+            return candidate
+    return default_loader
 
 
 def _build_capability_upgrade(

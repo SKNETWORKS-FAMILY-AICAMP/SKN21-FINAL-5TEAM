@@ -1241,11 +1241,10 @@ def _discover_rag_sources(
                 )
             )
         if _is_discovery_image_source(lowered, content_lower):
-            details = {}
-            if "r2_" in content_lower or "cloudflare" in content_lower:
-                details = {"loader_strategy": "remote_object_storage"}
-            elif "image_url" in content_lower or "thumbnail" in content_lower:
-                details = {"loader_strategy": "remote_image_url_fetch"}
+            details = _build_discovery_image_source_details(
+                path=relative,
+                content=content,
+            )
             discovery_image_sources.append(
                 RagSourceRecord(
                     path=relative,
@@ -1312,6 +1311,50 @@ def _is_discovery_image_source(path: str, content: str) -> bool:
         return False
     image_tokens = ("image_url", "thumbnail", "image", "img", "cloudflare", "r2_bucket", "r2_", "s3", "media/")
     return any(token in path or token in content for token in image_tokens)
+
+
+def _build_discovery_image_source_details(*, path: str, content: str) -> dict[str, Any]:
+    lowered = content.lower()
+    access_mode = "unknown"
+    loader_candidates: list[str] = []
+    source_surface = "file"
+    image_field = "image_url" if "image_url" in lowered else ("thumbnail" if "thumbnail" in lowered else "")
+
+    if any(token in lowered for token in ("image_url", "thumbnail", "https://", "http://", "cdn.")):
+        access_mode = "public_url"
+        loader_candidates.append("public_url_fetch")
+    if any(token in lowered for token in ("presign", "presigned", "signed url")):
+        access_mode = "signed_url"
+        loader_candidates.append("signed_url_resolver")
+    if any(token in lowered for token in ("r2_", "cloudflare", "s3", "bucket", "put_object", "list_objects_v2")):
+        if access_mode == "unknown":
+            access_mode = "bucket_sdk"
+        loader_candidates.append("bucket_list_and_fetch")
+
+    if "select " in lowered or "insert into " in lowered:
+        source_surface = "db_table"
+    elif "fetch(" in lowered or "/api/products" in lowered:
+        source_surface = "api_response"
+    elif "crawl" in lowered or "scrap" in lowered or "urllib.request" in lowered:
+        source_surface = "crawler_output"
+
+    sample_host = ""
+    url_match = re.search(r"https?://([^/\"'\s]+)", content)
+    if url_match:
+        sample_host = url_match.group(1).strip().lower()
+
+    ordered_candidates: list[str] = []
+    for candidate in ("public_url_fetch", "signed_url_resolver", "bucket_list_and_fetch"):
+        if candidate in loader_candidates and candidate not in ordered_candidates:
+            ordered_candidates.append(candidate)
+
+    return {
+        "image_field": image_field,
+        "source_surface": source_surface,
+        "loader_candidates": ordered_candidates,
+        "sample_host": sample_host,
+        "access_mode": access_mode,
+    }
 
 
 def _resolve_endpoint_path(

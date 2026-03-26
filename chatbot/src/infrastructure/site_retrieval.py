@@ -42,6 +42,40 @@ def resolve_site_collections(site_id: str | None) -> SiteCollections:
     )
 
 
+def resolve_runtime_retrieval_capabilities(site_id: str | None) -> tuple[str, list[str], dict[str, bool]]:
+    enabled: list[str] = []
+    widget_features = {"image_upload": False}
+    collections = resolve_site_collections(site_id)
+
+    try:
+        from chatbot.src.infrastructure.qdrant import get_qdrant_client
+
+        client = get_qdrant_client()
+        for corpus, collection_name in (
+            ("faq", collections.faq),
+            ("policy", collections.policy),
+            ("discovery_image", collections.discovery_image),
+        ):
+            try:
+                exists = False
+                if hasattr(client, "collection_exists"):
+                    exists = bool(client.collection_exists(collection_name))
+                if not exists:
+                    client.get_collection(collection_name=collection_name)
+                    exists = True
+                if exists:
+                    enabled.append(corpus)
+            except Exception:
+                continue
+    except Exception:
+        enabled = []
+
+    if "discovery_image" in enabled:
+        widget_features["image_upload"] = True
+    capability_profile = "order_cs_plus_retrieval" if enabled else "order_cs_only"
+    return capability_profile, enabled, widget_features
+
+
 def get_current_runtime_site_id() -> str | None:
     return _CURRENT_RUNTIME_SITE_ID.get()
 

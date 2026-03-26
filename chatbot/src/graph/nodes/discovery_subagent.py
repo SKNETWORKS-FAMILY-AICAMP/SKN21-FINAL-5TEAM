@@ -28,6 +28,7 @@ from langgraph.prebuilt import create_react_agent
 
 from chatbot.src.graph.brand_profiles import resolve_brand_profile
 from chatbot.src.graph.state import GlobalAgentState
+from chatbot.src.infrastructure.site_retrieval import use_runtime_site_id
 from chatbot.src.schemas.planner import TaskIntent
 from chatbot.src.graph.llm_providers import make_chat_llm
 from chatbot.src.tools.recommendation_tools import (
@@ -210,7 +211,9 @@ def _text_search_pipeline(
 ) -> dict:
     """텍스트 기반 상품 검색: ReAct 에이전트로 도구 선택."""
     latest_query = _extract_latest_user_query(state.get("messages", []))
-    direct_result = _run_direct_text_search(latest_query)
+    site_id = (state.get("user_info") or {}).get("site_id")
+    with use_runtime_site_id(site_id):
+        direct_result = _run_direct_text_search(latest_query)
     if direct_result is not None:
         retrieved_products = direct_result.get("products", [])
         answer_text = _build_direct_search_answer(latest_query, retrieved_products)
@@ -250,7 +253,8 @@ def _text_search_pipeline(
         ),
     )
 
-    result = agent.invoke({"messages": state["messages"]})
+    with use_runtime_site_id(site_id):
+        result = agent.invoke({"messages": state["messages"]})
     result_messages = result.get("messages", [])
 
     # 검색 결과 추출 → search_context 업데이트
@@ -296,6 +300,7 @@ def _image_search_pipeline(
             "agent_results": {**state.get("agent_results", {}), task: content},
         }
 
+    site_id = (state.get("user_info") or {}).get("site_id")
     query_text = str(state.get("search_context", {}).get("search_query") or "").strip()
     if not query_text:
         query_text = _extract_latest_user_query(state.get("messages", []))
@@ -327,7 +332,8 @@ def _image_search_pipeline(
         }
         if top_k is not None:
             search_args["top_k"] = top_k
-        image_result = search_by_image.invoke(search_args)
+        with use_runtime_site_id(site_id):
+            image_result = search_by_image.invoke(search_args)
 
         if isinstance(image_result, dict) and image_result.get("error"):
             raise RuntimeError(str(image_result["error"]))
@@ -389,11 +395,12 @@ def _image_search_pipeline(
 
     # ── Step 2. Retrieve: 설명 텍스트로 벡터 검색 ──────────
     requested_top_k = top_k if top_k is not None else 5
-    retrieval_result = search_by_text_clip.invoke({
-        "query": image_description,
-        "top_k": requested_top_k,
-        "search_mode": "similar",
-    })
+    with use_runtime_site_id(site_id):
+        retrieval_result = search_by_text_clip.invoke({
+            "query": image_description,
+            "top_k": requested_top_k,
+            "search_mode": "similar",
+        })
 
     retrieved_products = retrieval_result.get("products", []) if isinstance(retrieval_result, dict) else []
     found_count = len(retrieved_products)

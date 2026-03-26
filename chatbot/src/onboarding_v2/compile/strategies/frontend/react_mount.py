@@ -20,6 +20,9 @@ def compile_react_mount_bundle(
         original.splitlines(keepends=True),
         chatbot_server_base_url_expression=plan.chatbot_server_base_url_expression,
         auth_bootstrap_path=plan.auth_bootstrap_path,
+        capability_profile=plan.capability_profile,
+        enabled_retrieval_corpora=plan.enabled_retrieval_corpora,
+        widget_features=plan.widget_features,
     )
     return FrontendMountBundle(
         bundle_id="frontend:mount",
@@ -41,6 +44,9 @@ def _build_react_mount_updated_lines(
     *,
     chatbot_server_base_url_expression: str,
     auth_bootstrap_path: str,
+    capability_profile: str,
+    enabled_retrieval_corpora: list[str],
+    widget_features: dict[str, object],
 ) -> list[str]:
     updated_lines = list(source_lines)
     current = "".join(updated_lines)
@@ -50,6 +56,9 @@ def _build_react_mount_updated_lines(
             _build_shared_widget_bootstrap_lines(
                 chatbot_server_base_url_expression=chatbot_server_base_url_expression,
                 auth_bootstrap_path=auth_bootstrap_path,
+                capability_profile=capability_profile,
+                enabled_retrieval_corpora=enabled_retrieval_corpora,
+                widget_features=widget_features,
             ),
         )
     widget_line = "      <order-cs-widget />\n"
@@ -66,14 +75,26 @@ def _build_shared_widget_bootstrap_lines(
     *,
     chatbot_server_base_url_expression: str,
     auth_bootstrap_path: str,
+    capability_profile: str,
+    enabled_retrieval_corpora: list[str],
+    widget_features: dict[str, object],
 ) -> list[str]:
-    return [
+    lines = [
         "const ORDER_CS_WIDGET_HOST_CONTRACT = {\n",
         f"  chatbotServerBaseUrl: {chatbot_server_base_url_expression},\n",
         f'  authBootstrapPath: "{auth_bootstrap_path}",\n',
         '  widgetBundlePath: "/widget.js",\n',
         '  widgetElementTag: "order-cs-widget",\n',
         '  mountMode: "floating_launcher",\n',
+    ]
+    if capability_profile and capability_profile != "order_cs_only":
+        lines.append(f'  capabilityProfile: "{capability_profile}",\n')
+    if enabled_retrieval_corpora:
+        corpora_json = "[" + ", ".join(f'"{item}"' for item in enabled_retrieval_corpora) + "]"
+        lines.append(f"  enabledRetrievalCorpora: {corpora_json},\n")
+    if widget_features.get("image_upload"):
+        lines.append('  widgetFeatures: { imageUpload: true },\n')
+    lines.extend([
         "};\n",
         "\n",
         'if (typeof globalThis === "object") {\n',
@@ -88,7 +109,8 @@ def _build_shared_widget_bootstrap_lines(
         "  document.head.appendChild(orderCsWidgetScript);\n",
         "}\n",
         "\n",
-    ]
+    ])
+    return lines
 
 
 def _insert_lines_after_import_block(source_lines: list[str], insertion_lines: list[str]) -> list[str]:

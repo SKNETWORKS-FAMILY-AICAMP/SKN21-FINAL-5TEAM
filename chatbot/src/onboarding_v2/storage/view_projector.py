@@ -24,6 +24,9 @@ class ViewProjector:
         latest_rewind_to: str | None = None,
         repair_attempt_count: int = 0,
         stopped_for_review: bool = False,
+        retrieval_status: dict[str, dict[str, object]] | None = None,
+        final_capability_profile: str | None = None,
+        enabled_retrieval_corpora: list[str] | None = None,
     ) -> RunSummaryView:
         stages: list[StageLatestView] = []
         for stage, stage_dir in STAGE_DIRECTORY_MAP.items():
@@ -49,6 +52,9 @@ class ViewProjector:
             repair_attempt_count=repair_attempt_count,
             stopped_for_review=stopped_for_review,
             latest_event_id=latest_event_id,
+            retrieval_status=dict(retrieval_status or {}),
+            final_capability_profile=final_capability_profile,
+            enabled_retrieval_corpora=list(enabled_retrieval_corpora or []),
             stages=stages,
         )
         self._write_json_view(
@@ -62,6 +68,9 @@ class ViewProjector:
                 "site": site,
                 "status": status,
                 "latest_event_id": latest_event_id,
+                "retrieval_status": dict(retrieval_status or {}),
+                "final_capability_profile": final_capability_profile,
+                "enabled_retrieval_corpora": list(enabled_retrieval_corpora or []),
                 "stages": [stage.model_dump(mode="json") for stage in stages],
             },
         )

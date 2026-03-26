@@ -29,10 +29,27 @@ def compile_fastapi_backend_bundle(
                 path=plan.generated_handler_path,
                 reason="generated fastapi chat auth router",
                 content=(
+                    "import json\n"
                     "import os\n\n"
                     "from fastapi import APIRouter, Request\n\n"
                     "router = APIRouter()\n\n"
                     f'_SITE_ID = "{plan.site_id}"\n\n'
+                    "def _runtime_capability_payload():\n"
+                    '    raw_corpora = os.environ.get("ONBOARDING_ENABLED_RETRIEVAL_CORPORA", "[]")\n'
+                    '    raw_features = os.environ.get("ONBOARDING_WIDGET_FEATURES", "{}")\n'
+                    "    try:\n"
+                    "        corpora = json.loads(raw_corpora)\n"
+                    "    except Exception:\n"
+                    "        corpora = []\n"
+                    "    try:\n"
+                    "        features = json.loads(raw_features)\n"
+                    "    except Exception:\n"
+                    "        features = {}\n"
+                    "    return {\n"
+                    '        "capability_profile": os.environ.get("ONBOARDING_CAPABILITY_PROFILE", "order_cs_only"),\n'
+                    '        "enabled_retrieval_corpora": corpora if isinstance(corpora, list) else [],\n'
+                    '        "widget_features": features if isinstance(features, dict) else {},\n'
+                    "    }\n\n"
                     '@router.api_route("/api/chat/auth-token", methods=["GET", "POST"])\n'
                     "def chat_auth_token(request: Request):\n"
                     '    if os.environ.get("ONBOARDING_VALIDATION") == "1":\n'
@@ -43,18 +60,20 @@ def compile_fastapi_backend_bundle(
                     '            "site_id": _SITE_ID,\n'
                     '            "access_token": f"validation-{_SITE_ID}",\n'
                     '            "user": {"id": "validation-user", "email": email, "name": name},\n'
+                    "            **_runtime_capability_payload(),\n"
                     "        }\n"
                     '    token = request.cookies.get("access_token") or ""\n'
                     '    auth_header = request.headers.get("authorization", "")\n'
                     '    if not token and auth_header.lower().startswith("bearer "):\n'
                     '        token = auth_header[7:].strip()\n'
                     '    if not token:\n'
-                    '        return {"authenticated": False, "site_id": _SITE_ID, "access_token": "", "user": None}\n'
+                    '        return {"authenticated": False, "site_id": _SITE_ID, "access_token": "", "user": None, **_runtime_capability_payload()}\n'
                     "    return {\n"
                     '        "authenticated": True,\n'
                     '        "site_id": _SITE_ID,\n'
                     '        "access_token": token,\n'
                     '        "user": {"id": request.cookies.get("user_id") or "session-user"},\n'
+                    "        **_runtime_capability_payload(),\n"
                     "    }\n"
                 ),
             )

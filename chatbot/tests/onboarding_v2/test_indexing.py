@@ -32,6 +32,9 @@ def test_build_indexing_plan_uses_site_scoped_aliases():
                 kind="crawl_script",
                 corpus="discovery_image",
                 reason="remote image data",
+                details={
+                    "loader_candidates": ["public_url_fetch", "bucket_list_and_fetch"],
+                },
             )
         ],
     )
@@ -45,6 +48,8 @@ def test_build_indexing_plan_uses_site_scoped_aliases():
         "site_demo-shop__discovery_image",
     }
     assert all(item.build_collection.endswith("__run_run-123") for item in plan.corpora)
+    discovery_plan = next(item for item in plan.corpora if item.corpus == "discovery_image")
+    assert discovery_plan.loader_strategy == "public_url_fetch"
 
 
 def test_chunk_faq_source_emits_one_chunk_per_qa_pair(tmp_path: Path):

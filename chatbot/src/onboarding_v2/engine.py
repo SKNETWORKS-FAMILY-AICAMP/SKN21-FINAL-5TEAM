@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from concurrent.futures import ThreadPoolExecutor
 
 from chatbot.src.onboarding_v2.analysis import build_analysis_bundle
 from chatbot.src.onboarding_v2.apply import apply_edit_program
@@ -12,6 +13,7 @@ from chatbot.src.onboarding_v2.compile.preflight import (
     run_chatbot_compile_preflight,
 )
 from chatbot.src.onboarding_v2.export import export_and_replay
+from chatbot.src.onboarding_v2.indexing import execute_indexing_plan
 from chatbot.src.onboarding_v2.models import (
     AnalysisBundle,
     AnalysisSnapshot,
@@ -80,6 +82,11 @@ class _RunState:
     fixture_manifest_ref: ArtifactRef | None = None
     conversation_validation_ref: ArtifactRef | None = None
     conversation_transcript_refs: list[ArtifactRef] = field(default_factory=list)
+    retrieval_source_manifest_ref: ArtifactRef | None = None
+    indexing_plan_ref: ArtifactRef | None = None
+    indexing_result_ref: ArtifactRef | None = None
+    retrieval_smoke_ref: ArtifactRef | None = None
+    indexing_result: dict[str, Any] | None = None
     validation_ref: ArtifactRef | None = None
     latest_repair_ref: ArtifactRef | None = None
     latest_failure_signature: str | None = None
@@ -472,6 +479,13 @@ def run_onboarding_generation_v2(
         latest_rewind_to=state.latest_rewind_to,
         repair_attempt_count=state.repair_attempt_count,
         stopped_for_review=final_status == "failed_human_review",
+        retrieval_status=dict((state.indexing_result or {}).get("corpora") or {}),
+        final_capability_profile=(
+            None if state.plan is None else state.plan.host_backend.capability_profile
+        ),
+        enabled_retrieval_corpora=(
+            [] if state.plan is None else list(state.plan.host_backend.enabled_retrieval_corpora)
+        ),
     )
     return {
         "engine": "v2",
@@ -501,6 +515,7 @@ def run_onboarding_generation_v2(
         "latest_apply_artifact": _artifact_abspath(run_root, state.apply_ref),
         "latest_validation_artifact": _artifact_abspath(run_root, state.validation_ref),
         "latest_export_artifact": _artifact_abspath(run_root, state.export_bundle_ref),
+        "latest_indexing_artifact": _artifact_abspath(run_root, state.indexing_result_ref),
         "latest_llm_usage_artifact": _artifact_abspath(run_root, llm_usage_ref),
         "approved_patch_path": _artifact_abspath(run_root, state.patch_ref),
         "chatbot_approved_patch_path": _artifact_abspath(
@@ -539,53 +554,73 @@ def _run_from_stage(
     analysis_llm_builder: Any | None,
     planning_llm_builder: Any | None,
 ) -> None:
-    stage_order = ["analysis", "planning", "compile", "apply", "export", "validation"]
-    start_index = stage_order.index(start_stage)
-    for stage in stage_order[start_index:]:
-        if stage == "analysis":
-            run_analysis_stage(
-                site=site,
-                source_root=source_root,
-                run_id=run_id,
-                state=state,
-                event_store=event_store,
-                artifact_store=artifact_store,
-                attempt=attempt,
-                overrides=analysis_overrides,
-                debug_store=debug_store,
-                usage_store=usage_store,
-                llm_provider=analysis_llm_provider,
-                llm_model=analysis_llm_model,
-                llm_builder=analysis_llm_builder,
-            )
-            analysis_overrides.clear()
-        elif stage == "planning":
-            run_planning_stage(
-                run_id=run_id,
-                chatbot_server_base_url=chatbot_server_base_url,
-                state=state,
-                event_store=event_store,
-                artifact_store=artifact_store,
-                attempt=attempt,
-                overrides=planning_overrides,
-                debug_store=debug_store,
-                usage_store=usage_store,
-                llm_provider=planning_llm_provider,
-                llm_model=planning_llm_model,
-                llm_builder=planning_llm_builder,
-            )
-            planning_overrides.clear()
-        elif stage == "compile":
-            run_compile_stage(
-                source_root=source_root,
-                chatbot_source_root=chatbot_source_root,
-                run_id=run_id,
-                state=state,
-                event_store=event_store,
-                artifact_store=artifact_store,
-                attempt=attempt,
-            )
-        elif stage == "apply":
+    if start_stage == "analysis":
+        run_analysis_stage(
+            site=site,
+            source_root=source_root,
+            run_id=run_id,
+            state=state,
+            event_store=event_store,
+            artifact_store=artifact_store,
+            attempt=attempt,
+            overrides=analysis_overrides,
+            debug_store=debug_store,
+            usage_store=usage_store,
+            llm_provider=analysis_llm_provider,
+            llm_model=analysis_llm_model,
+            llm_builder=analysis_llm_builder,
+        )
+        analysis_overrides.clear()
+        start_stage = "planning"
+
+    if start_stage == "planning":
+        run_planning_stage(
+            run_id=run_id,
+            chatbot_server_base_url=chatbot_server_base_url,
+            state=state,
+            event_store=event_store,
+            artifact_store=artifact_store,
+            attempt=attempt,
+            overrides=planning_overrides,
+            debug_store=debug_store,
+            usage_store=usage_store,
+            llm_provider=planning_llm_provider,
+            llm_model=planning_llm_model,
+            llm_builder=planning_llm_builder,
+        )
+        planning_overrides.clear()
+        start_stage = "compile"
+
+    if start_stage in {"compile", "apply", "export"}:
+        _run_parallel_execution_lanes(
+            start_stage=start_stage,
+            source_root=source_root,
+            chatbot_source_root=chatbot_source_root,
+            runtime_root=runtime_root,
+            run_root=run_root,
+            site=site,
+            run_id=run_id,
+            state=state,
+            event_store=event_store,
+            artifact_store=artifact_store,
+            attempt=attempt,
+        )
+        start_stage = "validation"
+
+    if start_stage == "indexing":
+        run_indexing_stage(
+            site=site,
+            source_root=source_root,
+            run_id=run_id,
+            state=state,
+            event_store=event_store,
+            artifact_store=artifact_store,
+            attempt=attempt,
+        )
+        start_stage = "validation"
+
+    if start_stage == "validation":
+        if state.apply_result is None or state.apply_ref is None:
             run_apply_stage(
                 source_root=source_root,
                 chatbot_source_root=chatbot_source_root,
@@ -597,7 +632,7 @@ def _run_from_stage(
                 artifact_store=artifact_store,
                 attempt=attempt,
             )
-        elif stage == "export":
+        if state.replay_result is None or state.replay_ref is None:
             run_export_stage(
                 source_root=source_root,
                 chatbot_source_root=chatbot_source_root,
@@ -610,41 +645,29 @@ def _run_from_stage(
                 artifact_store=artifact_store,
                 attempt=attempt,
             )
-        elif stage == "validation":
-            if state.apply_result is None or state.apply_ref is None:
-                run_apply_stage(
-                    source_root=source_root,
-                    chatbot_source_root=chatbot_source_root,
-                    runtime_root=runtime_root,
-                    site=site,
-                    run_id=run_id,
-                    state=state,
-                    event_store=event_store,
-                    artifact_store=artifact_store,
-                    attempt=attempt,
-                )
-            if state.replay_result is None or state.replay_ref is None:
-                run_export_stage(
-                    source_root=source_root,
-                    chatbot_source_root=chatbot_source_root,
-                    runtime_root=runtime_root,
-                    run_root=run_root,
-                    site=site,
-                    run_id=run_id,
-                    state=state,
-                    event_store=event_store,
-                    artifact_store=artifact_store,
-                    attempt=attempt,
-                )
-            run_validation_stage(
-                run_root=run_root,
+        if (
+            state.indexing_result is None
+            and state.plan is not None
+            and state.plan_ref is not None
+        ):
+            run_indexing_stage(
+                site=site,
+                source_root=source_root,
                 run_id=run_id,
                 state=state,
                 event_store=event_store,
                 artifact_store=artifact_store,
-                onboarding_credentials=onboarding_credentials,
                 attempt=attempt,
             )
+        run_validation_stage(
+            run_root=run_root,
+            run_id=run_id,
+            state=state,
+            event_store=event_store,
+            artifact_store=artifact_store,
+            onboarding_credentials=onboarding_credentials,
+            attempt=attempt,
+        )
 
 
 def run_analysis_stage(
@@ -1259,6 +1282,233 @@ def run_export_stage(
         )
 
 
+def _run_parallel_execution_lanes(
+    *,
+    start_stage: str,
+    source_root: str,
+    chatbot_source_root: str,
+    runtime_root: str,
+    run_root: Path,
+    site: str,
+    run_id: str,
+    state: _RunState,
+    event_store: EventStore,
+    artifact_store: ArtifactStore,
+    attempt: int,
+) -> None:
+    indexing_future = None
+    executor = None
+    retrieval_plan = None if state.plan is None else state.plan.retrieval_index_plan
+    should_run_indexing = (
+        retrieval_plan is not None
+        and bool(retrieval_plan.corpora)
+        and state.indexing_result is None
+        and start_stage in {"compile", "apply", "export"}
+    )
+
+    if should_run_indexing:
+        executor = ThreadPoolExecutor(max_workers=1)
+        indexing_future = executor.submit(
+            execute_indexing_plan,
+            plan=retrieval_plan,
+            root=source_root,
+        )
+
+    try:
+        if start_stage == "compile":
+            run_compile_stage(
+                source_root=source_root,
+                chatbot_source_root=chatbot_source_root,
+                run_id=run_id,
+                state=state,
+                event_store=event_store,
+                artifact_store=artifact_store,
+                attempt=attempt,
+            )
+            start_stage = "apply"
+
+        if start_stage == "apply":
+            run_apply_stage(
+                source_root=source_root,
+                chatbot_source_root=chatbot_source_root,
+                runtime_root=runtime_root,
+                site=site,
+                run_id=run_id,
+                state=state,
+                event_store=event_store,
+                artifact_store=artifact_store,
+                attempt=attempt,
+            )
+            start_stage = "export"
+
+        if start_stage == "export":
+            run_export_stage(
+                source_root=source_root,
+                chatbot_source_root=chatbot_source_root,
+                runtime_root=runtime_root,
+                run_root=run_root,
+                site=site,
+                run_id=run_id,
+                state=state,
+                event_store=event_store,
+                artifact_store=artifact_store,
+                attempt=attempt,
+            )
+
+        if should_run_indexing:
+            indexing_result = (
+                {"site_id": site, "site_slug": site, "corpora": {}}
+                if indexing_future is None
+                else indexing_future.result()
+            )
+            run_indexing_stage(
+                site=site,
+                source_root=source_root,
+                run_id=run_id,
+                state=state,
+                event_store=event_store,
+                artifact_store=artifact_store,
+                attempt=attempt,
+                precomputed_result=indexing_result,
+            )
+    finally:
+        if executor is not None:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+
+def run_indexing_stage(
+    *,
+    site: str,
+    source_root: str,
+    run_id: str,
+    state: _RunState,
+    event_store: EventStore,
+    artifact_store: ArtifactStore,
+    attempt: int,
+    precomputed_result: dict[str, Any] | None = None,
+) -> None:
+    if state.analysis_bundle is None or state.plan is None or state.plan_ref is None:
+        raise ValueError("analysis bundle and plan are required before indexing")
+    retrieval_plan = state.plan.retrieval_index_plan
+    started = event_store.write_event(
+        run_id=run_id,
+        stage="indexing",
+        phase="start",
+        event_type="stage_started",
+        summary="indexing started",
+        input_refs=[ref for ref in [state.analysis_bundle_ref, state.plan_ref] if ref is not None],
+        attempt=attempt,
+    )
+    if retrieval_plan is None or not retrieval_plan.corpora:
+        empty_result = {"site_id": site, "site_slug": site, "corpora": {}}
+        state.indexing_result = empty_result
+        state.plan = _apply_indexing_result_to_plan(plan=state.plan, indexing_result=empty_result)
+        _mark_required_stage_rechecks_satisfied(state=state, satisfied=["indexing"])
+        event_store.write_event(
+            run_id=run_id,
+            stage="indexing",
+            phase="finish",
+            event_type="stage_completed",
+            summary="indexing skipped because no retrieval corpora were planned",
+            attempt=attempt,
+        )
+        return
+
+    for corpus_plan in retrieval_plan.corpora:
+        event_store.write_event(
+            run_id=run_id,
+            stage="indexing",
+            phase="worker_start",
+            event_type="retrieval_worker_started",
+            summary=f"{corpus_plan.corpus} retrieval worker started",
+            details={"corpus": corpus_plan.corpus, "loader_strategy": corpus_plan.loader_strategy},
+            attempt=attempt,
+        )
+
+    indexing_result = precomputed_result or execute_indexing_plan(plan=retrieval_plan, root=source_root)
+    retrieval_status = dict(indexing_result.get("corpora") or {})
+    smoke_payload = _build_retrieval_smoke_payload(retrieval_plan=retrieval_plan, indexing_result=indexing_result)
+
+    retrieval_source_manifest_ref = artifact_store.write_json_artifact(
+        stage="indexing",
+        artifact_type="retrieval-source-manifest",
+        payload=state.analysis_bundle.rag_sources.model_dump(mode="json"),
+        producer="indexer",
+        input_artifact_refs=[ref for ref in [state.analysis_bundle_ref] if ref is not None],
+        event_ref=started.event_id,
+        attempt=attempt,
+    )
+    indexing_plan_ref = artifact_store.write_json_artifact(
+        stage="indexing",
+        artifact_type="indexing-plan",
+        payload=retrieval_plan.model_dump(mode="json"),
+        producer="indexer",
+        input_artifact_refs=[ref for ref in [state.plan_ref] if ref is not None],
+        event_ref=started.event_id,
+        attempt=attempt,
+    )
+    indexing_result_ref = artifact_store.write_json_artifact(
+        stage="indexing",
+        artifact_type="indexing-result",
+        payload=indexing_result,
+        producer="indexer",
+        input_artifact_refs=[retrieval_source_manifest_ref, indexing_plan_ref],
+        event_ref=started.event_id,
+        attempt=attempt,
+        status="completed",
+    )
+    retrieval_smoke_ref = artifact_store.write_json_artifact(
+        stage="indexing",
+        artifact_type="retrieval-smoke",
+        payload=smoke_payload,
+        producer="indexer",
+        input_artifact_refs=[indexing_result_ref],
+        event_ref=started.event_id,
+        attempt=attempt,
+        status="completed" if smoke_payload.get("passed", False) else "failed",
+    )
+
+    for corpus_plan in retrieval_plan.corpora:
+        corpus_payload = dict(retrieval_status.get(corpus_plan.corpus) or {})
+        status = str(corpus_payload.get("status") or "failed")
+        if status == "completed":
+            event_type = "retrieval_worker_completed"
+            summary = f"{corpus_plan.corpus} retrieval worker completed"
+        elif status == "aborted_by_host_failure":
+            event_type = "retrieval_worker_cancelled"
+            summary = f"{corpus_plan.corpus} retrieval worker cancelled"
+        else:
+            event_type = "retrieval_worker_failed"
+            summary = f"{corpus_plan.corpus} retrieval worker failed"
+        event_store.write_event(
+            run_id=run_id,
+            stage="indexing",
+            phase="worker_finish",
+            event_type=event_type,
+            summary=summary,
+            details={"corpus": corpus_plan.corpus, **corpus_payload},
+            artifact_refs=[indexing_result_ref],
+            attempt=attempt,
+        )
+
+    state.indexing_result = indexing_result
+    state.retrieval_source_manifest_ref = retrieval_source_manifest_ref
+    state.indexing_plan_ref = indexing_plan_ref
+    state.indexing_result_ref = indexing_result_ref
+    state.retrieval_smoke_ref = retrieval_smoke_ref
+    state.plan = _apply_indexing_result_to_plan(plan=state.plan, indexing_result=indexing_result)
+    _mark_required_stage_rechecks_satisfied(state=state, satisfied=["indexing"])
+    event_store.write_event(
+        run_id=run_id,
+        stage="indexing",
+        phase="finish",
+        event_type="stage_completed",
+        summary="indexing completed",
+        artifact_refs=[retrieval_source_manifest_ref, indexing_plan_ref, indexing_result_ref, retrieval_smoke_ref],
+        attempt=attempt,
+    )
+
+
 def run_compile_preflight_stage(
     *,
     run_id: str,
@@ -1449,6 +1699,11 @@ def run_validation_stage(
             state.chatbot_compile_ref,
             state.apply_ref,
             state.replay_ref,
+            *(
+                []
+                if state.indexing_result_ref is None
+                else [state.indexing_result_ref]
+            ),
         ],
         attempt=attempt,
     )
@@ -1486,11 +1741,13 @@ def run_validation_stage(
             "compile_chatbot": state.chatbot_compile_ref,
             "apply": state.apply_ref,
             "replay": state.replay_ref,
+            "indexing": state.indexing_result_ref,
         },
         onboarding_credentials=onboarding_credentials,
         required_rechecks=list(state.pending_required_rechecks),
         event_callback=_validation_event_callback,
         live_logs_root=validation_live_logs_root,
+        retrieval_status=state.indexing_result,
     )
     prep_ref = artifact_store.write_json_artifact(
         stage="validation",
@@ -1690,6 +1947,7 @@ def run_validation_stage(
             state.chatbot_compile_ref,
             state.apply_ref,
             state.replay_ref,
+            *([state.indexing_result_ref] if state.indexing_result_ref is not None else []),
             prep_ref,
             state_ref,
             chatbot_runtime_boot_ref,
@@ -1721,6 +1979,7 @@ def run_validation_stage(
                 state.chatbot_compile_ref,
                 state.apply_ref,
                 state.replay_ref,
+                *([state.indexing_result_ref] if state.indexing_result_ref is not None else []),
             ],
             failure_signature=validation_bundle.failure_signature,
             attempt=attempt,
@@ -1753,6 +2012,7 @@ def run_validation_stage(
                 state.chatbot_compile_ref,
                 state.apply_ref,
                 state.replay_ref,
+                *([state.indexing_result_ref] if state.indexing_result_ref is not None else []),
                 prep_ref,
                 state_ref,
                 widget_bundle_fetch_ref,
@@ -1783,6 +2043,7 @@ def run_validation_stage(
             state.chatbot_compile_ref,
             state.apply_ref,
             state.replay_ref,
+            *([state.indexing_result_ref] if state.indexing_result_ref is not None else []),
         ],
         attempt=attempt,
     )
@@ -1827,9 +2088,85 @@ def _artifact_versions(state: _RunState) -> dict[str, int]:
         "compile_preflight": state.compile_preflight_ref,
         "apply": state.apply_ref,
         "export": state.export_bundle_ref,
+        "indexing": state.indexing_result_ref,
         "validation": state.validation_ref,
     }
     return {stage: ref.version for stage, ref in mapping.items() if ref is not None}
+
+
+def _successful_retrieval_corpora(indexing_result: dict[str, Any] | None) -> list[str]:
+    corpora = dict((indexing_result or {}).get("corpora") or {})
+    successful: list[str] = []
+    for corpus, payload in corpora.items():
+        details = dict(payload or {})
+        if str(details.get("status") or "") == "completed" and bool(details.get("enabled", True)):
+            if bool(details.get("smoke_passed", True)):
+                successful.append(str(corpus))
+    return successful
+
+
+def _apply_indexing_result_to_plan(
+    *,
+    plan: IntegrationPlan,
+    indexing_result: dict[str, Any] | None,
+) -> IntegrationPlan:
+    enabled_corpora = _successful_retrieval_corpora(indexing_result)
+    capability_profile = "order_cs_plus_retrieval" if enabled_corpora else "order_cs_only"
+    widget_features = {"image_upload": "discovery_image" in enabled_corpora}
+    return plan.model_copy(
+        update={
+            "host_backend": plan.host_backend.model_copy(
+                update={
+                    "capability_profile": capability_profile,
+                    "enabled_retrieval_corpora": enabled_corpora,
+                    "widget_features": widget_features,
+                }
+            ),
+            "host_frontend": plan.host_frontend.model_copy(
+                update={
+                    "capability_profile": capability_profile,
+                    "enabled_retrieval_corpora": enabled_corpora,
+                    "widget_features": widget_features,
+                }
+            ),
+            "capability_upgrade": {
+                "capability_profile": capability_profile,
+                "enabled_retrieval_corpora": enabled_corpora,
+                "widget_features": widget_features,
+            },
+        }
+    )
+
+
+def _build_retrieval_smoke_payload(
+    *,
+    retrieval_plan: Any,
+    indexing_result: dict[str, Any],
+) -> dict[str, Any]:
+    status_map = dict(indexing_result.get("corpora") or {})
+    results: list[dict[str, Any]] = []
+    passed = True
+    for corpus_plan in retrieval_plan.corpora:
+        payload = dict(status_map.get(corpus_plan.corpus) or {})
+        corpus_passed = (
+            str(payload.get("status") or "") == "completed"
+            and int(payload.get("documents_indexed") or 0) >= int(corpus_plan.minimum_expected_documents)
+        )
+        if not corpus_passed:
+            passed = False
+        results.append(
+            {
+                "corpus": corpus_plan.corpus,
+                "passed": corpus_passed,
+                "summary": (
+                    f"{corpus_plan.corpus} retrieval smoke passed"
+                    if corpus_passed
+                    else f"{corpus_plan.corpus} retrieval smoke failed"
+                ),
+                "details": payload,
+            }
+        )
+    return {"passed": passed, "results": results}
 
 
 def _write_llm_usage_summary_artifact(
@@ -1883,7 +2220,7 @@ def _derive_effective_rewind_to(decision: RepairDecision) -> str:
     return decision.rewind_to
 
 
-_STAGE_RECHECK_NAMES = ("analysis", "planning", "compile", "apply", "export", "validation")
+_STAGE_RECHECK_NAMES = ("analysis", "planning", "compile", "apply", "export", "indexing", "validation")
 _CHECK_RECHECK_NAMES = (
     "compile_preflight",
     "backend_runtime_prep",
@@ -1893,6 +2230,9 @@ _CHECK_RECHECK_NAMES = (
     "host_auth_bootstrap",
     "chatbot_adapter_auth",
     "widget_order_e2e",
+    "retrieval_faq",
+    "retrieval_policy",
+    "retrieval_discovery_image",
     "replay_apply",
     "replay_validation",
 )
@@ -1988,6 +2328,14 @@ def _clear_from_stage(state: _RunState, stage: str) -> None:
         state.replay_result = None
         state.replay_ref = None
         state.export_bundle_ref = None
+        _clear_from_stage(state, "indexing")
+        return
+    if stage == "indexing":
+        state.retrieval_source_manifest_ref = None
+        state.indexing_plan_ref = None
+        state.indexing_result_ref = None
+        state.retrieval_smoke_ref = None
+        state.indexing_result = None
         _clear_from_stage(state, "validation")
         return
     if stage == "validation":
@@ -2038,6 +2386,13 @@ def _clear_from_stage_exact(state: _RunState, stage: str) -> None:
         state.replay_ref = None
         state.export_bundle_ref = None
         return
+    if stage == "indexing":
+        state.retrieval_source_manifest_ref = None
+        state.indexing_plan_ref = None
+        state.indexing_result_ref = None
+        state.retrieval_smoke_ref = None
+        state.indexing_result = None
+        return
     if stage == "validation":
         state.validation_run = None
         state.prep_ref = None
@@ -2055,7 +2410,7 @@ def _clear_from_stage_exact(state: _RunState, stage: str) -> None:
 
 
 def _stage_order() -> list[str]:
-    return ["analysis", "planning", "compile", "apply", "export", "validation"]
+    return ["analysis", "planning", "compile", "apply", "export", "indexing", "validation"]
 
 
 def _stages_from(stage: str) -> list[str]:

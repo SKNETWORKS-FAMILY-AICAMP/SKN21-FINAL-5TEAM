@@ -148,6 +148,7 @@ def run_validation(
     required_rechecks: list[str] | None = None,
     event_callback: Any | None = None,
     live_logs_root: str | Path | None = None,
+    retrieval_status: dict[str, Any] | None = None,
 ) -> ValidationBundle:
     return run_validation_cycle(
         run_root=run_root,
@@ -161,6 +162,7 @@ def run_validation(
         required_rechecks=required_rechecks,
         event_callback=event_callback,
         live_logs_root=live_logs_root,
+        retrieval_status=retrieval_status,
     ).bundle
 
 
@@ -177,6 +179,7 @@ def run_validation_cycle(
     required_rechecks: list[str] | None = None,
     event_callback: Any | None = None,
     live_logs_root: str | Path | None = None,
+    retrieval_status: dict[str, Any] | None = None,
 ) -> ValidationRunResult:
     run_root = Path(run_root)
     host_runtime_workspace = Path(host_runtime_workspace)
@@ -378,6 +381,10 @@ def run_validation_cycle(
             summary=widget_order_e2e.failure_summary,
             details=widget_order_e2e.model_dump(mode="json"),
         ),
+        *_build_retrieval_validation_checks(
+            plan=plan,
+            retrieval_status=retrieval_status,
+        ),
         ValidationCheck(
             name="conversation_validation",
             passed=conversation_validation.passed,
@@ -456,6 +463,44 @@ def run_validation_cycle(
         widget_order_e2e=widget_order_e2e,
         conversation_validation=conversation_validation,
     )
+
+
+def _build_retrieval_validation_checks(
+    *,
+    plan: IntegrationPlan,
+    retrieval_status: dict[str, Any] | None,
+) -> list[ValidationCheck]:
+    if retrieval_status is None:
+        return []
+    status_map = dict((retrieval_status or {}).get("corpora") or {})
+    checks: list[ValidationCheck] = []
+    corpus_plans = [] if plan.retrieval_index_plan is None else list(plan.retrieval_index_plan.corpora)
+    for corpus_plan in corpus_plans:
+        payload = dict(status_map.get(corpus_plan.corpus) or {})
+        passed = (
+            str(payload.get("status") or "") == "completed"
+            and bool(payload.get("smoke_passed", True))
+            and int(payload.get("documents_indexed") or 0) >= int(corpus_plan.minimum_expected_documents)
+        )
+        summary = (
+            f"{corpus_plan.corpus} retrieval ready"
+            if passed
+            else f"{corpus_plan.corpus} retrieval unavailable"
+        )
+        checks.append(
+            ValidationCheck(
+                name=f"retrieval_{corpus_plan.corpus}",
+                passed=passed,
+                summary=summary,
+                blocking=False,
+                details={
+                    "collection_alias": corpus_plan.collection_alias,
+                    "minimum_expected_documents": corpus_plan.minimum_expected_documents,
+                    **payload,
+                },
+            )
+        )
+    return checks
 
 
 def validate_host_auth_bootstrap(
@@ -1222,7 +1267,9 @@ def _build_runtime_fixture_manifest(
     auth.setdefault("password", credentials.get("password"))
     manifest["auth"] = auth
     manifest["site_id"] = plan.chatbot_bridge.site_key
-    manifest["capability_profile"] = "order_cs_only"
+    manifest["capability_profile"] = str(plan.host_frontend.capability_profile or "order_cs_only")
+    manifest["enabled_retrieval_corpora"] = list(plan.host_frontend.enabled_retrieval_corpora or [])
+    manifest["widget_features"] = dict(plan.host_frontend.widget_features or {})
     manifest["access_token"] = str((bootstrap_result.get("bootstrap_payload") or {}).get("access_token") or "")
     manifest["bootstrap_payload"] = dict(bootstrap_result.get("bootstrap_payload") or {})
     manifest["session_cookies"] = dict(bootstrap_result.get("session_cookies") or {})

@@ -35,6 +35,7 @@ from chatbot.src.adapters import setup as adapter_setup
 from chatbot.src.adapters.schema import AuthenticatedContext
 from chatbot.src.graph.llm_providers import resolve_llm_runtime_policy
 from chatbot.src.infrastructure.conversation_logger import SessionConversationLogger
+from chatbot.src.infrastructure.site_retrieval import resolve_runtime_retrieval_capabilities
 from chatbot.src.schemas.chat import ChatRequest
 
 class OrjsonResponse(JSONResponse):
@@ -477,6 +478,16 @@ def _build_current_state(
         or previous_state.get("widget_features")
         or {}
     )
+    if effective_site_id and not effective_enabled_retrieval_corpora and not effective_widget_features:
+        (
+            derived_capability_profile,
+            derived_enabled_corpora,
+            derived_widget_features,
+        ) = resolve_runtime_retrieval_capabilities(effective_site_id)
+        if not effective_capability_profile:
+            effective_capability_profile = derived_capability_profile
+        effective_enabled_retrieval_corpora = list(derived_enabled_corpora)
+        effective_widget_features = dict(derived_widget_features)
     turn_defaults = {
         "pending_tasks": [],
         "completed_tasks": [],

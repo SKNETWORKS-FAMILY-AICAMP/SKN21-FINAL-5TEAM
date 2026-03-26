@@ -4,6 +4,8 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
+import re
+from urllib.parse import urlparse
 
 from chatbot.src.onboarding_v2.models.analysis import RagSources
 from chatbot.src.onboarding_v2.models.planning import RagCorpusPlan, RetrievalIndexPlan
@@ -20,11 +22,16 @@ def build_indexing_plan(*, site: str, run_id: str, rag_sources: RagSources) -> R
     specs = {
         "faq": ("qa_level", rag_sources.faq, ["배송은 얼마나 걸리나요?"], "faq_source_scan"),
         "policy": ("heading_sections", rag_sources.policy, ["환불 규정"], "policy_source_scan"),
-        "discovery_image": ("entity_level", rag_sources.discovery_image, ["검은색 자켓"], "discovery_image_scan"),
+        "discovery_image": ("entity_level", rag_sources.discovery_image, ["검은색 자켓"], "public_url_fetch"),
     }
     for corpus, (chunking_strategy, records, smoke_queries, loader_strategy) in specs.items():
         if not records:
             continue
+        resolved_loader_strategy = _resolve_loader_strategy(
+            corpus=corpus,
+            records=records,
+            default_loader=loader_strategy,
+        )
         corpora.append(
             RagCorpusPlan(
                 corpus=corpus,
@@ -35,10 +42,34 @@ def build_indexing_plan(*, site: str, run_id: str, rag_sources: RagSources) -> R
                 sources=[record.path for record in records],
                 smoke_queries=list(smoke_queries),
                 minimum_expected_documents=1,
-                loader_strategy=str(records[0].details.get("loader_strategy") or loader_strategy),
+                loader_strategy=resolved_loader_strategy,
             )
         )
     return RetrievalIndexPlan(site_id=site, site_slug=site_slug, corpora=corpora)
+
+
+def _resolve_loader_strategy(
+    *,
+    corpus: str,
+    records: list[Any],
+    default_loader: str,
+) -> str:
+    if corpus != "discovery_image":
+        return default_loader
+    discovered: list[str] = []
+    for record in records:
+        details = getattr(record, "details", {}) or {}
+        for candidate in list(details.get("loader_candidates") or []):
+            value = str(candidate).strip()
+            if value:
+                discovered.append(value)
+        explicit = str(details.get("loader_strategy") or "").strip()
+        if explicit:
+            discovered.append(explicit)
+    for candidate in ("public_url_fetch", "signed_url_resolver", "bucket_list_and_fetch"):
+        if candidate in discovered:
+            return candidate
+    return default_loader
 
 
 def chunk_faq_source(source_path: str | Path) -> list[dict[str, Any]]:
@@ -134,6 +165,22 @@ def _default_worker(*, corpus_plan: RagCorpusPlan, root: Path) -> dict[str, Any]
             "documents_indexed": 0,
             "reason": "no_accessible_sources",
         }
+    if corpus_plan.corpus == "discovery_image":
+        discovered_urls = _discover_public_image_urls(root=root, source_paths=available)
+        indexed = len(discovered_urls)
+        status = "completed" if indexed >= 1 else "failed"
+        failure_warning = [] if indexed else ["no_reachable_public_image_urls"]
+        return {
+            "status": status,
+            "enabled": indexed >= 1,
+            "documents_indexed": indexed,
+            "collection_alias": corpus_plan.collection_alias,
+            "build_collection": corpus_plan.build_collection,
+            "loader_strategy": corpus_plan.loader_strategy,
+            "discovered_urls": len(discovered_urls),
+            "warning_codes": failure_warning,
+            "smoke_passed": indexed >= max(1, corpus_plan.minimum_expected_documents),
+        }
     return {
         "status": "completed",
         "enabled": True,
@@ -142,3 +189,26 @@ def _default_worker(*, corpus_plan: RagCorpusPlan, root: Path) -> dict[str, Any]
         "build_collection": corpus_plan.build_collection,
         "loader_strategy": corpus_plan.loader_strategy,
     }
+
+
+def _discover_public_image_urls(*, root: Path, source_paths: list[str]) -> list[str]:
+    urls: list[str] = []
+    pattern = re.compile(r"https?://[^\s\"')]+", re.IGNORECASE)
+    for source_path in source_paths:
+        path = root / source_path
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for match in pattern.findall(text):
+            parsed = urlparse(match)
+            if parsed.scheme in {"http", "https"} and parsed.netloc:
+                urls.append(match.strip())
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for url in urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        deduped.append(url)
+    return deduped

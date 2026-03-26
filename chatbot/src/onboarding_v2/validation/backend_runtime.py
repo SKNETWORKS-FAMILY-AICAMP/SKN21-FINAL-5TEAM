@@ -353,6 +353,17 @@ def build_backend_runtime_plan(
     framework = snapshot.repo_profile.backend_framework
     python_executable = prep_result.python_executable or sys.executable
     environment = {"PYTHONUNBUFFERED": "1", "ONBOARDING_VALIDATION": "1"}
+    environment["ONBOARDING_CAPABILITY_PROFILE"] = str(
+        plan.host_backend.capability_profile or "order_cs_only"
+    )
+    environment["ONBOARDING_ENABLED_RETRIEVAL_CORPORA"] = json.dumps(
+        list(plan.host_backend.enabled_retrieval_corpora or []),
+        ensure_ascii=False,
+    )
+    environment["ONBOARDING_WIDGET_FEATURES"] = json.dumps(
+        dict(plan.host_backend.widget_features or {}),
+        ensure_ascii=False,
+    )
     listen_port = _allocate_free_listen_port()
     launcher_mode: str | None = None
     launcher_metadata_path: str | None = None

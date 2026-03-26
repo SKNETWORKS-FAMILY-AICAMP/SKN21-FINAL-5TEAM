@@ -640,8 +640,13 @@ export default function ChatbotFab({
 }) {
   const effectiveHost = host ?? SHARED_WIDGET_HOST;
   const effectiveCapabilities = capabilities ?? ORDER_CS_ONLY_CAPABILITIES;
-  const capabilityProfile = effectiveCapabilities === 'full' ? 'full' : 'order_cs_only';
-  const imageUploadEnabled = effectiveCapabilities === 'full';
+  const capabilityProfile =
+    effectiveHost.capabilityProfile ??
+    (effectiveCapabilities === 'full' ? 'full' : 'order_cs_only');
+  const imageUploadEnabled =
+    typeof effectiveHost.widgetFeatures?.imageUpload === 'boolean'
+      ? Boolean(effectiveHost.widgetFeatures?.imageUpload)
+      : effectiveCapabilities === 'full';
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMsg[]>([INITIAL_BOT_MESSAGE]);
@@ -883,6 +888,8 @@ export default function ChatbotFab({
           bootstrap,
           fetchImpl: sharedFetch,
           capabilityProfile,
+          enabledRetrievalCorpora: effectiveHost.enabledRetrievalCorpora,
+          widgetFeatures: effectiveHost.widgetFeatures,
         },
         {
           onStatusChange: (status) => {

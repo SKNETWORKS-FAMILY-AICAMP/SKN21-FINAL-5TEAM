@@ -306,9 +306,14 @@ def test_analyzer_discovers_rag_sources_without_manifest(tmp_path: Path):
     assert any(source.path.endswith("faq_seed.json") for source in bundle.rag_sources.faq)
     assert any(source.path.endswith("returns.md") for source in bundle.rag_sources.policy)
     assert any(source.path.endswith("product_crawling.py") for source in bundle.rag_sources.discovery_image)
-    assert any("seed" in claim.identifier.lower() for claim in rejected)
-    assert "verified order lookup target missing" not in ambiguities
-    assert "verified order action target missing" not in ambiguities
+
+    image_source = next(
+        source for source in bundle.rag_sources.discovery_image if source.path.endswith("product_crawling.py")
+    )
+    assert image_source.details["loader_candidates"][0] == "public_url_fetch"
+    assert image_source.details["access_mode"] == "public_url"
+    assert "verified order lookup target missing" in bundle.unresolved_ambiguities
+    assert "verified order action target missing" in bundle.unresolved_ambiguities
 
 
 def test_build_analysis_bundle_merges_llm_contracts_with_deterministic_fallback(monkeypatch):
