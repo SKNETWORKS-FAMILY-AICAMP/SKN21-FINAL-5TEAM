@@ -679,7 +679,36 @@ async def chat_streaming_endpoint(
 
             stream_input: dict | Command
             if pending_interrupt:
-                if not request.resume_payload:
+                if request.resume_payload:
+                    # UI 선택(옵션 클릭 등) → interrupt resume
+                    stream_input = Command(resume=request.resume_payload)
+                elif request.message and request.message.strip():
+                    # 사용자가 새 텍스트를 입력함 → interrupt 무시, 새 요청으로 처리
+                    previous_state.pop("pending_interrupt", None)
+                    previous_state.pop("awaiting_interrupt", None)
+                    # order_context의 awaiting_resume_for도 정리
+                    oc = previous_state.get("order_context")
+                    if isinstance(oc, dict):
+                        oc.pop("awaiting_resume_for", None)
+                        oc["action_status"] = "ready"
+                    current_state = _build_current_state(
+                        request=request,
+                        current_user=current_user,
+                        previous_state=previous_state,
+                        provider=provider,
+                        model=model,
+                        conversation_id=conversation_id,
+                        turn_id=turn_id,
+                        access_token=(
+                            request.access_token
+                            or http_request.cookies.get("access_token")
+                            or http_request.cookies.get("session_token")
+                        ),
+                        site_id=resolved_adapter.site_id,
+                    )
+                    stream_input = current_state
+                else:
+                    # resume_payload도 없고 텍스트도 없음 → 기존 interrupt UI 재표시
                     first_payload = (
                         pending_interrupt[0]
                         if isinstance(pending_interrupt, list) and pending_interrupt
@@ -716,8 +745,6 @@ async def chat_streaming_endpoint(
                     )
                     yield _to_sse({"type": "done"})
                     return
-
-                stream_input = Command(resume=request.resume_payload)
             else:
                 current_state = _build_current_state(
                     request=request,
