@@ -30,7 +30,7 @@ def prepare_backend_runtime(
     snapshot: AnalysisSnapshot,
     live_logs_root: str | Path | None = None,
     event_callback: ValidationEventCallback | None = None,
-    heartbeat_interval_s: float = 15.0,
+    heartbeat_interval_s: float = 5.0,
 ) -> BackendRuntimePrepResult:
     workspace = Path(workspace).resolve()
     backend_root = _resolve_backend_root(workspace)
@@ -792,7 +792,7 @@ def _create_venv(
     venv_path: Path,
     *,
     log_path: Path | None = None,
-    heartbeat_interval_s: float = 15.0,
+    heartbeat_interval_s: float = 5.0,
     progress_callback: ValidationEventCallback | None = None,
 ) -> BackendRuntimeCommandResult:
     if _venv_python(venv_path).exists():
@@ -835,7 +835,7 @@ def _install_backend_requirements(
     backend_root: Path,
     python_executable: Path,
     log_path: Path | None = None,
-    heartbeat_interval_s: float = 15.0,
+    heartbeat_interval_s: float = 5.0,
     progress_callback: ValidationEventCallback | None = None,
 ) -> BackendRuntimeCommandResult:
     requirements_path = backend_root / "requirements.txt"
@@ -873,7 +873,7 @@ def _run_django_migrate(
     python_executable: Path,
     env: dict[str, str] | None = None,
     log_path: Path | None = None,
-    heartbeat_interval_s: float = 15.0,
+    heartbeat_interval_s: float = 5.0,
     progress_callback: ValidationEventCallback | None = None,
 ) -> BackendRuntimeCommandResult:
     if framework != "django" or not (backend_root / "manage.py").exists():
@@ -906,7 +906,7 @@ def _run_optional_script(
     env: dict[str, str] | None,
     missing_stdout: str,
     log_path: Path | None = None,
-    heartbeat_interval_s: float = 15.0,
+    heartbeat_interval_s: float = 5.0,
     progress_callback: ValidationEventCallback | None = None,
 ) -> BackendRuntimeCommandResult:
     del framework
@@ -1152,7 +1152,7 @@ def _run_command(
     cwd: Path,
     env: dict[str, str] | None = None,
     log_path: Path | None = None,
-    heartbeat_interval_s: float = 15.0,
+    heartbeat_interval_s: float = 5.0,
     progress_callback: ValidationEventCallback | None = None,
     stdin_text: str | None = None,
 ) -> BackendRuntimeCommandResult:

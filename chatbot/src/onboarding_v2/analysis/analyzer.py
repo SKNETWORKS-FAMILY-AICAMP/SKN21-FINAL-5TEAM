@@ -8,6 +8,7 @@ from typing import Any, Callable, Iterable
 from pydantic import BaseModel, ConfigDict, Field
 
 from chatbot.src.onboarding.onboarding_ignore import OnboardingIgnoreMatcher
+from chatbot.src.onboarding_v2.eventing import EventCallback, run_with_heartbeat
 from chatbot.src.onboarding_v2.llm_runtime import invoke_structured_stage
 from chatbot.src.onboarding_v2.models.analysis import (
     AmbiguitySnapshot,
@@ -120,12 +121,34 @@ def build_analysis_bundle(
     ambiguity_retry_limit: int = 1,
     overrides: dict[str, Any] | None = None,
     artifact_refs: list[ArtifactRef] | None = None,
+    event_callback: EventCallback | None = None,
+    heartbeat_interval_s: float = 5.0,
 ) -> AnalysisBundle:
     root = _resolve_root(source_root)
     analysis_overrides = _normalize_analysis_overrides(overrides)
     workspace_profile = _build_workspace_profile(root=root)
     framework_profile = _build_framework_profile(root=root)
-    candidate_set = _harvest_candidates(root=root, framework_profile=framework_profile)
+    candidate_set = run_with_heartbeat(
+        lambda: _harvest_candidates(root=root, framework_profile=framework_profile),
+        event_callback=event_callback,
+        phase="candidate_harvest",
+        started_event_type="analysis_candidate_harvest_started",
+        started_summary="analysis candidate harvest started",
+        progress_event_type="analysis_candidate_harvest_progress",
+        progress_summary="analysis candidate harvest still running",
+        completed_event_type="analysis_candidate_harvest_completed",
+        completed_summary="analysis candidate harvest completed",
+        failed_event_type="analysis_candidate_harvest_failed",
+        failed_summary="analysis candidate harvest failed",
+        heartbeat_interval_s=heartbeat_interval_s,
+        started_details={"root": str(root), "status": "running"},
+        progress_details_factory=lambda _elapsed_ms: {"root": str(root), "status": "running"},
+        completed_details_factory=lambda result, _elapsed_ms: {
+            "root": str(root),
+            "candidate_count": _count_candidate_paths(result),
+        },
+        failed_details_factory=lambda exc, _elapsed_ms: {"root": str(root), "error": str(exc)},
+    )
     analysis_tool_runtime = build_analysis_tool_runtime(
         root=root,
         workspace_profile=workspace_profile,
@@ -155,6 +178,8 @@ def build_analysis_bundle(
         llm_builder=llm_builder,
         artifact_refs=artifact_refs,
         tool_runtime=analysis_tool_runtime,
+        event_callback=event_callback,
+        heartbeat_interval_s=heartbeat_interval_s,
     )
 
     final_retrieval_plan = _merge_retrieval_plan_with_candidates(
@@ -192,6 +217,8 @@ def build_analysis_bundle(
             llm_builder=llm_builder,
             artifact_refs=artifact_refs,
             tool_runtime=analysis_tool_runtime,
+            event_callback=event_callback,
+            heartbeat_interval_s=heartbeat_interval_s,
         )
         read_queue = _sanitize_read_queue(
             read_queue=read_queue_response.read_queue,
@@ -221,6 +248,8 @@ def build_analysis_bundle(
             llm_builder=llm_builder,
             artifact_refs=artifact_refs,
             tool_runtime=analysis_tool_runtime,
+            event_callback=event_callback,
+            heartbeat_interval_s=heartbeat_interval_s,
         )
         evidence_packets = _sanitize_evidence_packets(
             packets=evidence_response.evidence_packets,
@@ -254,6 +283,8 @@ def build_analysis_bundle(
             llm_builder=llm_builder,
             artifact_refs=artifact_refs,
             tool_runtime=analysis_tool_runtime,
+            event_callback=event_callback,
+            heartbeat_interval_s=heartbeat_interval_s,
         )
         extracted_contracts = _merge_extracted_contract_sets(
             primary=extracted_contracts,
@@ -266,12 +297,32 @@ def build_analysis_bundle(
             overrides=analysis_overrides,
         )
 
-        verified_contracts, rejected_claims, unresolved_ambiguities = _verify_contracts(
-            root=root,
-            framework_profile=framework_profile,
-            candidate_set=current_candidate_set,
-            contracts=extracted_contracts,
-            overrides=analysis_overrides,
+        verified_contracts, rejected_claims, unresolved_ambiguities = run_with_heartbeat(
+            lambda: _verify_contracts(
+                root=root,
+                framework_profile=framework_profile,
+                candidate_set=current_candidate_set,
+                contracts=extracted_contracts,
+                overrides=analysis_overrides,
+            ),
+            event_callback=event_callback,
+            phase="contract_verification",
+            started_event_type="analysis_contract_verification_started",
+            started_summary="analysis contract verification started",
+            progress_event_type="analysis_contract_verification_progress",
+            progress_summary="analysis contract verification still running",
+            completed_event_type="analysis_contract_verification_completed",
+            completed_summary="analysis contract verification completed",
+            failed_event_type="analysis_contract_verification_failed",
+            failed_summary="analysis contract verification failed",
+            heartbeat_interval_s=heartbeat_interval_s,
+            started_details={"status": "running"},
+            progress_details_factory=lambda _elapsed_ms: {"status": "running"},
+            completed_details_factory=lambda result, _elapsed_ms: {
+                "verified_endpoint_count": len(result[0].api_endpoints),
+                "unresolved_ambiguity_count": len(result[2]),
+            },
+            failed_details_factory=lambda exc, _elapsed_ms: {"error": str(exc)},
         )
         if _analysis_coverage_satisfied(
             verified_contracts=verified_contracts,
@@ -331,6 +382,8 @@ def build_analysis_snapshot(
     usage_store: LlmUsageStore | None = None,
     attempt: int = 1,
     overrides: dict[str, Any] | None = None,
+    event_callback: EventCallback | None = None,
+    heartbeat_interval_s: float = 5.0,
 ) -> AnalysisSnapshot:
     return build_analysis_bundle(
         site=site,
@@ -342,7 +395,16 @@ def build_analysis_snapshot(
         usage_store=usage_store,
         attempt=attempt,
         overrides=overrides,
+        event_callback=event_callback,
+        heartbeat_interval_s=heartbeat_interval_s,
     ).snapshot
+
+
+def _count_candidate_paths(candidate_set: CandidateSet) -> int:
+    return sum(
+        len(getattr(candidate_set, field_name))
+        for field_name in type(candidate_set).model_fields
+    )
 
 
 def _resolve_root(source_root: str | Path) -> Path:

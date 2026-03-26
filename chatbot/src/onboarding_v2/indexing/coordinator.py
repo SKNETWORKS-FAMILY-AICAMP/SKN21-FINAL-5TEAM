@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from io import BytesIO
@@ -21,6 +22,7 @@ from chatbot.src.infrastructure.site_retrieval import (
     swap_alias,
     upsert_points,
 )
+from chatbot.src.onboarding_v2.eventing import EventCallback, ProgressHeartbeat, emit_stage_event
 from chatbot.src.onboarding_v2.models.analysis import AnalysisSnapshot, RagSources
 from chatbot.src.onboarding_v2.models.planning import IntegrationPlan, RagCorpusPlan, RetrievalIndexPlan
 from chatbot.src.onboarding_v2.validation.backend_runtime import (
@@ -59,18 +61,101 @@ class _IndexingError(RuntimeError):
 
 
 @dataclass(slots=True)
+class _WorkerEventSession:
+    corpus_plan: RagCorpusPlan
+    event_callback: EventCallback | None
+    heartbeat_interval_s: float
+    _lock: Lock = field(default_factory=Lock)
+    _progress: ProgressHeartbeat | None = None
+    _started: bool = False
+    _started_at: float = field(default_factory=time.monotonic)
+
+    def emit_started_if_needed(self) -> None:
+        if self.event_callback is None:
+            return
+        with self._lock:
+            if self._started:
+                return
+            self._started = True
+            self._started_at = time.monotonic()
+            emit_stage_event(
+                self.event_callback,
+                phase="worker_start",
+                event_type="retrieval_worker_started",
+                summary=f"{self.corpus_plan.corpus} retrieval worker started",
+                details=self._details(status="running", elapsed_ms=0),
+            )
+            self._progress = ProgressHeartbeat(
+                event_callback=self.event_callback,
+                phase="worker_progress",
+                event_type="retrieval_worker_progress",
+                summary=f"{self.corpus_plan.corpus} retrieval worker still running",
+                heartbeat_interval_s=self.heartbeat_interval_s,
+                details_factory=lambda _elapsed_ms: self._details(
+                    status="running",
+                    elapsed_ms=int((time.monotonic() - self._started_at) * 1000),
+                ),
+            ).start()
+
+    def emit_finished(self, result: dict[str, Any]) -> None:
+        self.stop_progress()
+        if self.event_callback is None:
+            return
+        status = str(result.get("status") or "failed")
+        if status == "completed":
+            event_type = "retrieval_worker_completed"
+            summary = f"{self.corpus_plan.corpus} retrieval worker completed"
+        elif status == "aborted_by_host_failure":
+            event_type = "retrieval_worker_cancelled"
+            summary = f"{self.corpus_plan.corpus} retrieval worker cancelled"
+        else:
+            event_type = "retrieval_worker_failed"
+            summary = f"{self.corpus_plan.corpus} retrieval worker failed"
+        details = self._details(
+            status=status,
+            elapsed_ms=int((time.monotonic() - self._started_at) * 1000),
+        )
+        details.update({key: value for key, value in result.items() if key not in {"collection_alias", "loader_strategy"}})
+        emit_stage_event(
+            self.event_callback,
+            phase="worker_finish",
+            event_type=event_type,
+            summary=summary,
+            details=details,
+        )
+
+    def stop_progress(self) -> None:
+        with self._lock:
+            if self._progress is not None:
+                self._progress.stop()
+                self._progress = None
+
+    def _details(self, *, status: str, elapsed_ms: int) -> dict[str, Any]:
+        return {
+            "corpus": self.corpus_plan.corpus,
+            "loader_strategy": self.corpus_plan.loader_strategy,
+            "collection_alias": self.corpus_plan.collection_alias,
+            "status": status,
+            "elapsed_ms": int(elapsed_ms),
+        }
+
+
+@dataclass(slots=True)
 class _SharedHostRuntime:
     host_context: HostExportContext | None
     cancel_event: Event | None
     live_logs_root: Path | None = None
+    event_callback: EventCallback | None = None
+    heartbeat_interval_s: float = 5.0
+    worker_sessions: dict[str, _WorkerEventSession] = field(default_factory=dict)
     _lock: Lock = field(default_factory=Lock)
     _prep_result: Any | None = None
     _runtime_plan: Any | None = None
     _runtime_state: Any | None = None
     _closed: bool = False
 
-    def ensure_prepared(self) -> tuple[Any, Path]:
-        host_context = self._wait_for_export_ready()
+    def ensure_prepared(self, *, corpus_plan: RagCorpusPlan | None = None) -> tuple[Any, Path]:
+        host_context = self._wait_for_export_ready(corpus_plan=corpus_plan)
         workspace = Path(host_context.host_runtime_workspace or "").resolve()
         backend_root = workspace / "backend" if (workspace / "backend").exists() else workspace
         if self._prep_result is None:
@@ -92,9 +177,12 @@ class _SharedHostRuntime:
             )
         return prep_result, backend_root
 
-    def ensure_runtime(self) -> tuple[Any, Any]:
-        prep_result, _backend_root = self.ensure_prepared()
-        host_context = self._wait_for_export_ready(require_integration_plan=True)
+    def ensure_runtime(self, *, corpus_plan: RagCorpusPlan | None = None) -> tuple[Any, Any]:
+        prep_result, _backend_root = self.ensure_prepared(corpus_plan=corpus_plan)
+        host_context = self._wait_for_export_ready(
+            require_integration_plan=True,
+            corpus_plan=corpus_plan,
+        )
         if self._runtime_state is None:
             with self._lock:
                 if self._runtime_state is None:
@@ -135,20 +223,56 @@ class _SharedHostRuntime:
             stop_backend_runtime(runtime_state)
             self._closed = True
 
-    def _wait_for_export_ready(self, *, require_integration_plan: bool = False) -> HostExportContext:
+    def _wait_for_export_ready(
+        self,
+        *,
+        require_integration_plan: bool = False,
+        corpus_plan: RagCorpusPlan | None = None,
+    ) -> HostExportContext:
         host_context = self.host_context
         if host_context is None:
             raise _IndexingError(
                 "missing_host_export_context",
                 warning_codes=["host_runtime_context_missing"],
             )
+        waiting_heartbeat: ProgressHeartbeat | None = None
+        if corpus_plan is not None and self.event_callback is not None and not host_context.export_ready.is_set():
+            emit_stage_event(
+                self.event_callback,
+                phase="worker_wait",
+                event_type="retrieval_worker_waiting_on_export",
+                summary=f"{corpus_plan.corpus} retrieval worker waiting on export",
+                details={
+                    "corpus": corpus_plan.corpus,
+                    "loader_strategy": corpus_plan.loader_strategy,
+                    "status": "waiting_on_export",
+                    "elapsed_ms": 0,
+                },
+            )
+            waiting_heartbeat = ProgressHeartbeat(
+                event_callback=self.event_callback,
+                phase="worker_wait",
+                event_type="retrieval_worker_waiting_on_export",
+                summary=f"{corpus_plan.corpus} retrieval worker waiting on export",
+                heartbeat_interval_s=self.heartbeat_interval_s,
+                details_factory=lambda elapsed_ms: {
+                    "corpus": corpus_plan.corpus,
+                    "loader_strategy": corpus_plan.loader_strategy,
+                    "status": "waiting_on_export",
+                    "elapsed_ms": elapsed_ms,
+                },
+            ).start()
         while not host_context.export_ready.is_set():
             if _cancelled(self.cancel_event) or host_context.host_failed.is_set():
+                if waiting_heartbeat is not None:
+                    waiting_heartbeat.stop()
                 raise _IndexingError(
                     "host export failed",
                     warning_codes=["host_lane_failed"],
                 )
             host_context.export_ready.wait(timeout=0.2)
+        if waiting_heartbeat is not None:
+            waiting_heartbeat.stop()
         if host_context.host_failed.is_set() or _cancelled(self.cancel_event):
             raise _IndexingError(
                 "host export failed",
@@ -164,7 +288,14 @@ class _SharedHostRuntime:
                 "host export context is incomplete",
                 warning_codes=["host_runtime_context_missing"],
             )
+        if corpus_plan is not None:
+            self._mark_worker_started(corpus_plan)
         return host_context
+
+    def _mark_worker_started(self, corpus_plan: RagCorpusPlan) -> None:
+        session = self.worker_sessions.get(corpus_plan.corpus)
+        if session is not None:
+            session.emit_started_if_needed()
 
 
 @dataclass(slots=True)
@@ -176,6 +307,10 @@ class _IndexingDeps:
     image_fetcher: Callable[[str], bytes] | None = None
     row_fetcher: Callable[..., list[dict[str, Any]]] | None = None
     shared_host_runtime: _SharedHostRuntime | None = None
+
+
+def _corpus_requires_host_export(corpus_plan: RagCorpusPlan) -> bool:
+    return str(corpus_plan.row_source_strategy or "").strip() in {"host_api_fetch", "host_python_fetch"}
 
 
 def _normalize_site_slug(site: str) -> str:
@@ -404,13 +539,26 @@ def execute_indexing_plan(
     row_fetcher: Callable[..., list[dict[str, Any]]] | None = None,
     worker: Any | None = None,
     live_logs_root: str | Path | None = None,
+    event_callback: EventCallback | None = None,
+    heartbeat_interval_s: float = 5.0,
 ) -> dict[str, Any]:
     base_root = Path(root)
     worker_fn = worker or _default_worker
+    worker_sessions = {
+        corpus.corpus: _WorkerEventSession(
+            corpus_plan=corpus,
+            event_callback=event_callback,
+            heartbeat_interval_s=heartbeat_interval_s,
+        )
+        for corpus in plan.corpora
+    }
     shared_host_runtime = _SharedHostRuntime(
         host_context=host_context,
         cancel_event=cancel_event,
         live_logs_root=Path(live_logs_root).resolve() if live_logs_root is not None else None,
+        event_callback=event_callback,
+        heartbeat_interval_s=heartbeat_interval_s,
+        worker_sessions=worker_sessions,
     )
     deps = _IndexingDeps(
         qdrant_client=qdrant_client,
@@ -422,22 +570,32 @@ def execute_indexing_plan(
         shared_host_runtime=shared_host_runtime,
     )
     results: dict[str, Any] = {}
+
+    def _run_worker(corpus_plan: RagCorpusPlan) -> dict[str, Any]:
+        session = worker_sessions[corpus_plan.corpus]
+        if not _corpus_requires_host_export(corpus_plan):
+            session.emit_started_if_needed()
+        return worker_fn(
+            corpus_plan=corpus_plan,
+            root=base_root,
+            cancel_event=cancel_event,
+            host_context=host_context,
+            deps=deps,
+            plan=plan,
+        )
+
     try:
         with ThreadPoolExecutor(max_workers=max(1, min(3, len(plan.corpora)))) as executor:
             future_map = {
                 executor.submit(
-                    worker_fn,
-                    corpus_plan=corpus,
-                    root=base_root,
-                    cancel_event=cancel_event,
-                    host_context=host_context,
-                    deps=deps,
-                    plan=plan,
+                    _run_worker,
+                    corpus,
                 ): corpus
                 for corpus in plan.corpora
             }
             for future in as_completed(future_map):
                 corpus_plan = future_map[future]
+                session = worker_sessions[corpus_plan.corpus]
                 try:
                     results[corpus_plan.corpus] = future.result()
                 except _IndexingError as exc:
@@ -455,7 +613,10 @@ def execute_indexing_plan(
                         warning_codes=["worker_exception"],
                         error=str(exc),
                     )
+                session.emit_finished(results[corpus_plan.corpus])
     finally:
+        for session in worker_sessions.values():
+            session.stop_progress()
         shared_host_runtime.close()
     return {
         "site_id": plan.site_id,
@@ -825,7 +986,7 @@ def _fetch_product_rows_from_host_api(
             "missing_host_runtime_session",
             warning_codes=["host_runtime_context_missing"],
         )
-    runtime_plan, _runtime_state = shared_host_runtime.ensure_runtime()
+    runtime_plan, _runtime_state = shared_host_runtime.ensure_runtime(corpus_plan=corpus_plan)
     try:
         base_url = f"http://127.0.0.1:{runtime_plan.listen_port}"
         return _paginate_product_rows(
@@ -854,7 +1015,7 @@ def _fetch_rows_from_host_python(
             "missing_host_runtime_session",
             warning_codes=["host_runtime_context_missing"],
         )
-    prep_result, backend_root = shared_host_runtime.ensure_prepared()
+    prep_result, backend_root = shared_host_runtime.ensure_prepared(corpus_plan=corpus_plan)
 
     module_name = str(corpus_plan.row_source_module or "").strip()
     callable_name = str(corpus_plan.row_source_callable or "").strip()

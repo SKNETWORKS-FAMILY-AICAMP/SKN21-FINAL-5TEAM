@@ -437,6 +437,124 @@ def test_engine_entry_scopes_tool_runtime_to_analysis_only(monkeypatch, tmp_path
     assert all(tool_runtime is None for tool_runtime in planning_tool_runtimes)
 
 
+def test_engine_entry_records_indexing_stage_start_before_export_completion(monkeypatch, tmp_path: Path):
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "host" / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
+        readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
+    )
+    runtime_state = BackendRuntimeState(
+        framework="django",
+        passed=True,
+        pid=1234,
+        command=runtime_plan.command,
+        readiness_url=runtime_plan.readiness_url,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.prepare_backend_runtime",
+        lambda **kwargs: BackendRuntimePrepResult(framework="django", passed=True),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.build_backend_runtime_plan",
+        lambda **kwargs: runtime_plan,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
+        lambda plan, **kwargs: runtime_state,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
+        lambda state: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "host auth bootstrap passed",
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "session-token",
+                "user": {"id": "7"},
+            },
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget bundle fetch passed",
+            "target_url": "http://localhost:8100/widget.js",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot adapter auth passed",
+            "validated_user": {"id": "7", "siteId": "food"},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_order_e2e",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget order e2e passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
+        lambda workspace, scan_paths=None: CompilePreflightResult(
+            passed=True,
+            failure_code=None,
+            failure_summary=None,
+            related_files=[],
+            details={"import_smoke": "passed"},
+        ),
+        raising=False,
+    )
+
+    result = run_onboarding_generation_v2(
+        site="food",
+        source_root=str(ROOT / "food"),
+        generated_root=str(tmp_path / "generated"),
+        runtime_root=str(tmp_path / "runtime"),
+        run_id="food-run-v2-indexing-order",
+        chatbot_server_base_url="http://localhost:8100",
+    )
+
+    assert result["status"] == "exported"
+    events = [
+        json.loads(line)
+        for line in (Path(result["run_root"]) / "events" / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    export_completed_index = next(
+        index
+        for index, event in enumerate(events)
+        if event["stage"] == "export" and event["event_type"] == "stage_completed"
+    )
+    indexing_started_index = next(
+        index
+        for index, event in enumerate(events)
+        if event["stage"] == "indexing" and event["event_type"] == "stage_started"
+    )
+
+    assert indexing_started_index < export_completed_index
+
+
 def test_engine_entry_passes_snapshot_roots_and_allowlists_to_export(monkeypatch, tmp_path: Path):
     runtime_plan = BackendRuntimePlan(
         framework="django",
@@ -872,7 +990,71 @@ def test_engine_reports_compile_stage_on_preflight_crash(monkeypatch, tmp_path: 
     assert result["latest_export_artifact"] is None
     assert result["latest_validation_artifact"] is None
     assert result["latest_compile_preflight_artifact"] is None
-    assert result["failure_signature"].startswith("chatbot_runtime_import")
+
+
+def test_engine_stops_at_compile_when_host_import_smoke_fails(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
+        lambda workspace, scan_paths=None: CompilePreflightResult(
+            passed=True,
+            failure_code=None,
+            failure_summary=None,
+            related_files=[],
+            details={"import_smoke": "passed"},
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_flask_host_import_smoke",
+        lambda host_workspace, entrypoint: CompilePreflightResult(
+            passed=False,
+            failure_code="host_backend_import_failed",
+            failure_summary="host backend import failed",
+            related_files=["app.py", "routes/order.py", "chat_auth.py"],
+            details={"framework": "flask", "entrypoint": entrypoint},
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.export_and_replay",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("export should not run")),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.diagnose_failure",
+        lambda **kwargs: RepairDecision(
+            failure_signature="host_backend_import_host_backend_import_failed",
+            diagnosis="stop on host import smoke failure",
+            rewind_to="compile",
+            preserve_artifacts=["analysis", "planning", "compile", "apply"],
+            required_rechecks=["compile_preflight"],
+            additional_discovery=[],
+            artifact_overrides={},
+            stop=True,
+            stop_reason="compile_preflight_failed",
+        ),
+    )
+
+    result = run_onboarding_generation_v2(
+        site="bilyeo",
+        source_root=str(ROOT / "bilyeo"),
+        generated_root=str(tmp_path / "generated"),
+        runtime_root=str(tmp_path / "runtime"),
+        run_id="bilyeo-run-v2-host-smoke-fail",
+        chatbot_server_base_url="http://localhost:8100",
+    )
+
+    assert result["status"] == "failed_human_review"
+    assert result["latest_export_artifact"] is None
+    assert result["latest_validation_artifact"] is None
+    assert result["latest_host_import_smoke_artifact"].endswith("host-import-smoke/v0001.json")
+    assert result["host_import_smoke_result"] == {
+        "passed": False,
+        "failure_code": "host_backend_import_failed",
+        "failure_summary": "host backend import failed",
+        "related_files": ["app.py", "routes/order.py", "chat_auth.py"],
+        "details": {"framework": "flask", "entrypoint": "app.py"},
+    }
+    assert result["failure_signature"].startswith("host_backend_import")
     assert result["repair_attempt_count"] == 1
 
 

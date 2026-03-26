@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -446,6 +447,49 @@ def test_analysis_tool_runtime_exposes_only_minimal_surface():
     read_tool = next(tool for tool in runtime.tools if tool.name == "read_analysis_path")
     result = read_tool.invoke({"path": "../secrets.py"})
     assert result["error"] == "path_not_allowed"
+
+
+def test_analyzer_emits_candidate_harvest_events_and_forwards_event_callback(monkeypatch):
+    original_harvest = analyzer_module._harvest_candidates
+    observed_calls: list[tuple[str, object, float | None]] = []
+    events: list[dict[str, object]] = []
+    callback = events.append
+
+    def _slow_harvest(**kwargs):
+        time.sleep(0.12)
+        return original_harvest(**kwargs)
+
+    def _fake_invoke_structured_stage(
+        *,
+        phase,
+        response_model,
+        fallback_payload,
+        event_callback=None,
+        heartbeat_interval_s=None,
+        **kwargs,
+    ):
+        del kwargs
+        observed_calls.append((phase, event_callback, heartbeat_interval_s))
+        return response_model.model_validate(fallback_payload)
+
+    monkeypatch.setattr(analyzer_module, "_harvest_candidates", _slow_harvest)
+    monkeypatch.setattr(analyzer_module, "invoke_structured_stage", _fake_invoke_structured_stage)
+
+    build_analysis_bundle(
+        site="food",
+        source_root=ROOT / "food",
+        ambiguity_retry_limit=0,
+        event_callback=callback,
+        heartbeat_interval_s=0.05,
+    )
+
+    event_types = [str(event["event_type"]) for event in events]
+    assert "analysis_candidate_harvest_started" in event_types
+    assert "analysis_candidate_harvest_progress" in event_types
+    assert "analysis_candidate_harvest_completed" in event_types
+    assert observed_calls
+    assert all(event_callback is callback for _phase, event_callback, _interval in observed_calls)
+    assert all(interval == 0.05 for _phase, _event_callback, interval in observed_calls)
 
 
 def test_sanitize_evidence_packets_dedupes_same_file_and_kind(tmp_path: Path):

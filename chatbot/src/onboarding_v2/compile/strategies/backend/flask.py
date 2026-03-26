@@ -13,6 +13,12 @@ from chatbot.src.onboarding_v2.models.planning import BackendWiringPlan
 _APP_ASSIGNMENT_PATTERN = re.compile(r"^\s*app\s*=\s*Flask\(")
 _REGISTER_BLUEPRINT_PATTERN = re.compile(r"^\s*app\.register_blueprint\(")
 _RETURN_APP_PATTERN = re.compile(r"^\s*return\s+app\s*$")
+_IMPORT_FROM_MODULE_PATTERN = re.compile(
+    r"^\s*from\s+(?P<module>[A-Za-z0-9_\.]+)\s+import\s+(?P<symbols>.+?)\s*$"
+)
+_REGISTER_BLUEPRINT_CAPTURE_PATTERN = re.compile(
+    r"^\s*app\.register_blueprint\(\s*(?P<symbol>[A-Za-z_][A-Za-z0-9_]*)\s*,\s*url_prefix\s*=\s*['\"](?P<prefix>[^'\"]+)['\"]\s*\)\s*$"
+)
 
 
 def compile_flask_backend_bundle(
@@ -34,18 +40,36 @@ def compile_flask_backend_bundle(
         generated_handler_path=plan.generated_handler_path,
         runtime_boundary=runtime_boundary,
     )
-    import_line = f"from {handler_module} import chat_auth_blueprint\n"
-    register_line = (
-        f'app.register_blueprint(chat_auth_blueprint, url_prefix="{blueprint_prefix}")\n'
+    existing_contract = _detect_existing_chat_auth_contract(
+        original=original,
+        handler_module=handler_module,
     )
-    updated = _inject_import_line(original=original, import_line=import_line)
-    updated = _inject_blueprint_registration(updated=updated, register_line=register_line)
+    if existing_contract is None:
+        export_symbol = "chat_auth_blueprint"
+        generated_leaf_route = leaf_route
+        import_line = f"from {handler_module} import {export_symbol}\n"
+        register_line = (
+            f'app.register_blueprint({export_symbol}, url_prefix="{blueprint_prefix}")\n'
+        )
+        updated = _inject_import_line(original=original, import_line=import_line)
+        updated = _inject_blueprint_registration(updated=updated, register_line=register_line)
+    else:
+        export_symbol = existing_contract["symbol"]
+        generated_leaf_route = _route_within_prefix(
+            contract_path=plan.chat_auth_contract_path,
+            prefix=existing_contract["prefix"],
+        )
+        updated = original
 
     supporting_file = SupportingArtifactBundle(
         bundle_id="supporting:chat-auth-blueprint",
         path=plan.generated_handler_path,
         reason="generated flask chat auth blueprint",
-        content=_build_blueprint_content(leaf_route, site_id=plan.site_id),
+        content=_build_blueprint_content(
+            generated_leaf_route,
+            site_id=plan.site_id,
+            export_symbol=export_symbol,
+        ),
     )
     return BackendWiringBundle(
         bundle_id="backend:flask-wiring",
@@ -60,7 +84,7 @@ def compile_flask_backend_bundle(
             )
         ],
         supporting_files=[supporting_file],
-        handler_reference=f"{handler_module}.chat_auth_blueprint",
+        handler_reference=f"{handler_module}.{export_symbol}",
     )
 
 
@@ -201,6 +225,51 @@ def _insert_registration_for_module(*, lines: list[str], register_line: str) -> 
     return "".join(lines)
 
 
+def _detect_existing_chat_auth_contract(*, original: str, handler_module: str) -> dict[str, str] | None:
+    imported_symbols: set[str] = set()
+    for line in original.splitlines():
+        match = _IMPORT_FROM_MODULE_PATTERN.match(line)
+        if match is None or match.group("module") != handler_module:
+            continue
+        for symbol in match.group("symbols").split(","):
+            name = symbol.strip().split(" as ", 1)[0].strip()
+            if name:
+                imported_symbols.add(name)
+    if not imported_symbols:
+        return None
+    for line in original.splitlines():
+        match = _REGISTER_BLUEPRINT_CAPTURE_PATTERN.match(line)
+        if match is None:
+            continue
+        symbol = match.group("symbol").strip()
+        if symbol in imported_symbols:
+            return {"symbol": symbol, "prefix": _normalize_prefix(match.group("prefix"))}
+    return None
+
+
+def _route_within_prefix(*, contract_path: str, prefix: str) -> str:
+    normalized_path = _normalize_prefix(contract_path)
+    normalized_prefix = _normalize_prefix(prefix)
+    if normalized_prefix == "/":
+        return normalized_path
+    prefix_with_slash = f"{normalized_prefix}/"
+    if normalized_path == normalized_prefix:
+        return "/"
+    if not normalized_path.startswith(prefix_with_slash):
+        raise ValueError(
+            "flask_existing_chat_auth_prefix_mismatch: existing blueprint prefix does not align with auth contract path"
+        )
+    return normalized_path[len(normalized_prefix) :]
+
+
+def _normalize_prefix(value: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+    normalized = normalized.rstrip("/")
+    return normalized or "/"
+
+
 def _indent_level(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
 
@@ -209,12 +278,12 @@ def _indent_register_line(register_line: str) -> str:
     return f"    {register_line}"
 
 
-def _build_blueprint_content(leaf_route: str, *, site_id: str) -> str:
+def _build_blueprint_content(leaf_route: str, *, site_id: str, export_symbol: str) -> str:
     return (
         "import json\n"
         "import os\n\n"
         "from flask import Blueprint, jsonify, request, session\n\n"
-        'chat_auth_blueprint = Blueprint("chat_auth", __name__)\n\n'
+        f'{export_symbol} = Blueprint("chat_auth", __name__)\n\n'
         f'_SITE_ID = "{site_id}"\n\n'
         "def _runtime_capability_payload():\n"
         "    raw_corpora = os.environ.get(\"ONBOARDING_ENABLED_RETRIEVAL_CORPORA\", \"[]\")\n"
@@ -261,7 +330,7 @@ def _build_blueprint_content(leaf_route: str, *, site_id: str) -> str:
         '        "user": {"id": str(user_id), "email": user_email, "name": user_name},\n'
         "        **_runtime_capability_payload(),\n"
         "    }\n\n"
-        f'@chat_auth_blueprint.route("{leaf_route}", methods=["GET", "POST"])\n'
+        f'@{export_symbol}.route("{leaf_route}", methods=["GET", "POST"])\n'
         "def chat_auth_token():\n"
         '    if os.environ.get("ONBOARDING_VALIDATION") == "1":\n'
         "        return jsonify(_validation_payload())\n"

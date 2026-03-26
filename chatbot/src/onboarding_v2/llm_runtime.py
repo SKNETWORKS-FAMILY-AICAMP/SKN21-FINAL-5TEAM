@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from typing import Any, Callable, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel
 
+from chatbot.src.onboarding_v2.eventing import EventCallback, ProgressHeartbeat, emit_stage_event
 from chatbot.src.onboarding_v2.models import ArtifactRef, DebugRecord
 from chatbot.src.onboarding_v2.stage_tools import StageToolRuntime
 from chatbot.src.onboarding_v2.storage import DebugStore, LlmUsageStore
@@ -32,6 +34,8 @@ def invoke_structured_stage(
     artifact_refs: list[ArtifactRef] | None = None,
     tool_runtime: StageToolRuntime | None = None,
     max_tool_rounds: int = 3,
+    event_callback: EventCallback | None = None,
+    heartbeat_interval_s: float = 5.0,
 ) -> ModelT:
     factory = llm_builder
     if factory is None:
@@ -39,11 +43,30 @@ def invoke_structured_stage(
 
         factory = make_chat_llm
 
+    started_at = time.monotonic()
     normalized: ModelT
     response_payload: dict[str, Any]
     parse_result: dict[str, Any]
     token_usage: dict[str, Any] = {}
     tool_trace: list[dict[str, Any]] = []
+    emit_stage_event(
+        event_callback,
+        phase=phase,
+        event_type="llm_phase_started",
+        summary=f"{phase} llm phase started",
+        details=_build_llm_event_details(
+            provider=provider,
+            model=model,
+            tool_round=0,
+            tool_call_count=0,
+            elapsed_ms=0,
+            parsed=False,
+            tool_name=None,
+            status="running",
+            tool_runtime=tool_runtime,
+        ),
+        source="llm",
+    )
     try:
         if llm_builder is None and not _llm_enabled_by_default(provider):
             raise RuntimeError(f"{provider} llm disabled for onboarding_v2 stage execution")
@@ -54,15 +77,69 @@ def invoke_structured_stage(
             payload=payload,
             tool_runtime=tool_runtime,
             max_tool_rounds=max_tool_rounds,
+            phase=phase,
+            provider=provider,
+            model=model,
+            event_callback=event_callback,
+            heartbeat_interval_s=heartbeat_interval_s,
+            started_at=started_at,
         )
         raw_content = _extract_response_content(response)
         response_payload = {"content": raw_content, "tool_trace": tool_trace}
         normalized = response_model.model_validate(_parse_json(raw_content))
         parse_result = {"status": "parsed", "owner": "llm"}
+        emit_stage_event(
+            event_callback,
+            phase=phase,
+            event_type="llm_phase_completed",
+            summary=f"{phase} llm phase completed",
+            details=_build_llm_event_details(
+                provider=provider,
+                model=model,
+                tool_round=len(tool_trace),
+                tool_call_count=len(tool_trace),
+                elapsed_ms=int((time.monotonic() - started_at) * 1000),
+                parsed=True,
+                tool_name=None,
+                status="completed",
+                tool_runtime=tool_runtime,
+            ),
+            source="llm",
+        )
     except Exception as exc:
         normalized = response_model.model_validate(fallback_payload)
         response_payload = {"error": str(exc), "tool_trace": tool_trace}
         parse_result = {"status": "fallback", "owner": "deterministic", "error": str(exc)}
+        failure_details = _build_llm_event_details(
+            provider=provider,
+            model=model,
+            tool_round=len(tool_trace),
+            tool_call_count=len(tool_trace),
+            elapsed_ms=int((time.monotonic() - started_at) * 1000),
+            parsed=False,
+            fallback_reason=str(exc),
+            tool_name=None,
+            status="failed",
+            tool_runtime=tool_runtime,
+        )
+        emit_stage_event(
+            event_callback,
+            phase=phase,
+            event_type="llm_phase_failed",
+            summary=f"{phase} llm phase failed",
+            details=failure_details,
+            source="llm",
+        )
+        fallback_details = dict(failure_details)
+        fallback_details["status"] = "fallback"
+        emit_stage_event(
+            event_callback,
+            phase=phase,
+            event_type="llm_phase_fallback",
+            summary=f"{phase} llm phase fell back",
+            details=fallback_details,
+            source="llm",
+        )
 
     if debug_store is not None:
         debug_store.write_record(
@@ -103,6 +180,12 @@ def _invoke_with_optional_tools(
     payload: dict[str, Any],
     tool_runtime: StageToolRuntime | None,
     max_tool_rounds: int,
+    phase: str,
+    provider: str,
+    model: str,
+    event_callback: EventCallback | None,
+    heartbeat_interval_s: float,
+    started_at: float,
 ) -> tuple[Any, list[dict[str, Any]], dict[str, Any]]:
     messages: list[Any] = [
         SystemMessage(content=system_prompt),
@@ -113,12 +196,36 @@ def _invoke_with_optional_tools(
 
     bound_llm = _bind_tools_if_supported(llm=llm, tool_runtime=tool_runtime)
     if bound_llm is None:
-        response = llm.invoke(messages)
+        response = _invoke_llm_once(
+            llm=llm,
+            messages=messages,
+            phase=phase,
+            provider=provider,
+            model=model,
+            event_callback=event_callback,
+            heartbeat_interval_s=heartbeat_interval_s,
+            started_at=started_at,
+            tool_round=0,
+            tool_call_count=len(tool_trace),
+            tool_runtime=tool_runtime,
+        )
         return response, tool_trace, _merge_token_usage(token_usage, _extract_token_usage(response))
 
     tool_rounds = 0
     while True:
-        response = bound_llm.invoke(messages)
+        response = _invoke_llm_once(
+            llm=bound_llm,
+            messages=messages,
+            phase=phase,
+            provider=provider,
+            model=model,
+            event_callback=event_callback,
+            heartbeat_interval_s=heartbeat_interval_s,
+            started_at=started_at,
+            tool_round=tool_rounds,
+            tool_call_count=len(tool_trace),
+            tool_runtime=tool_runtime,
+        )
         token_usage = _merge_token_usage(token_usage, _extract_token_usage(response))
         messages.append(response)
         tool_calls = _extract_tool_calls(response)
@@ -130,7 +237,93 @@ def _invoke_with_optional_tools(
             tool_message, trace_entry = _execute_tool_call(tool_runtime=tool_runtime, tool_call=tool_call)
             tool_trace.append(trace_entry)
             messages.append(tool_message)
+            emit_stage_event(
+                event_callback,
+                phase=phase,
+                event_type="llm_tool_called",
+                summary=f"{phase} llm tool called",
+                details=_build_llm_event_details(
+                    provider=provider,
+                    model=model,
+                    tool_round=tool_rounds + 1,
+                    tool_call_count=len(tool_trace),
+                    elapsed_ms=int((time.monotonic() - started_at) * 1000),
+                    parsed=False,
+                    tool_name=trace_entry["tool_name"],
+                    status=str(trace_entry["status"] or "success"),
+                    tool_runtime=tool_runtime,
+                ),
+                source="llm",
+            )
         tool_rounds += 1
+
+
+def _invoke_llm_once(
+    *,
+    llm: Any,
+    messages: list[Any],
+    phase: str,
+    provider: str,
+    model: str,
+    event_callback: EventCallback | None,
+    heartbeat_interval_s: float,
+    started_at: float,
+    tool_round: int,
+    tool_call_count: int,
+    tool_runtime: StageToolRuntime | None,
+) -> Any:
+    heartbeat = ProgressHeartbeat(
+        event_callback=event_callback,
+        phase=phase,
+        event_type="llm_phase_progress",
+        summary=f"{phase} llm phase still running",
+        heartbeat_interval_s=heartbeat_interval_s,
+        details_factory=lambda _elapsed_ms: _build_llm_event_details(
+            provider=provider,
+            model=model,
+            tool_round=tool_round,
+            tool_call_count=tool_call_count,
+            elapsed_ms=int((time.monotonic() - started_at) * 1000),
+            parsed=False,
+            tool_name=None,
+            status="running",
+            tool_runtime=tool_runtime,
+        ),
+        payload={"source": "llm"},
+    ).start()
+    try:
+        return llm.invoke(messages)
+    finally:
+        heartbeat.stop()
+
+
+def _build_llm_event_details(
+    *,
+    provider: str,
+    model: str,
+    tool_round: int,
+    tool_call_count: int,
+    elapsed_ms: int,
+    parsed: bool,
+    tool_name: str | None,
+    status: str,
+    tool_runtime: StageToolRuntime | None,
+    fallback_reason: str | None = None,
+) -> dict[str, Any]:
+    details = {
+        "provider": provider,
+        "model": model,
+        "tool_round": int(tool_round),
+        "tool_call_count": int(tool_call_count),
+        "parsed": bool(parsed),
+        "tool_name": tool_name,
+        "elapsed_ms": int(elapsed_ms),
+        "status": status,
+        "tool_runtime_enabled": bool(tool_runtime is not None and tool_runtime.tools),
+    }
+    if fallback_reason:
+        details["fallback_reason"] = fallback_reason
+    return details
 
 
 def _bind_tools_if_supported(*, llm: Any, tool_runtime: StageToolRuntime | None) -> Any | None:

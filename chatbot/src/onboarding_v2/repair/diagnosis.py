@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
+from chatbot.src.onboarding_v2.eventing import EventCallback
 from chatbot.src.onboarding_v2.models.common import DebugRecord
 from chatbot.src.onboarding_v2.models.repair import FailureBundle, RepairDecision
 from chatbot.src.onboarding_v2.llm_runtime import invoke_structured_stage
@@ -27,7 +28,7 @@ Rules:
 - additional_discovery must be an array of objects with keys path and reason.
 - artifact_overrides must be a JSON object.
 - If the failure can be retried without changing strategy, prefer validation.
-- Compile-stage failures that mention compile-preflight, banned imports, server_fastapi import failures, or chatbot_runtime_import* are import-graph defects. Prefer rewind_to=compile with required_rechecks including compile_preflight.
+- Compile-stage failures that mention compile-preflight, host-import-smoke, banned imports, server_fastapi import failures, chatbot_runtime_import*, or host_backend_import* are import-graph defects. Prefer rewind_to=compile with required_rechecks including compile_preflight.
 - If strategy or target changes are required, use planning or analysis.
 - If you cannot diagnose safely, set stop=true and stop_reason to a short machine-friendly reason.
 Do not include markdown."""
@@ -41,9 +42,13 @@ def _is_compile_import_graph_failure(failure_bundle: FailureBundle) -> bool:
         f"{failure_bundle.failure_signature}\n"
         f"{failure_bundle.failure_summary}"
     ).lower()
-    if "compile-preflight" in artifact_types:
+    if "compile-preflight" in artifact_types or "host-import-smoke" in artifact_types:
         return True
-    return "chatbot_runtime_import" in haystack or "banned import" in haystack
+    return (
+        "chatbot_runtime_import" in haystack
+        or "host_backend_import" in haystack
+        or "banned import" in haystack
+    )
 
 
 def _build_compile_import_graph_decision(failure_bundle: FailureBundle) -> RepairDecision:
@@ -113,6 +118,8 @@ def diagnose_failure(
     llm_model: str,
     debug_store: DebugStore,
     llm_factory: Callable[[], Any] | None = None,
+    event_callback: EventCallback | None = None,
+    heartbeat_interval_s: float = 5.0,
 ) -> RepairDecision:
     payload = {
         "failure_bundle": failure_bundle.model_dump(mode="json"),
@@ -190,4 +197,6 @@ def diagnose_failure(
         llm_builder=llm_builder,
         artifact_refs=failure_bundle.related_artifacts,
         tool_runtime=tool_runtime,
+        event_callback=event_callback,
+        heartbeat_interval_s=heartbeat_interval_s,
     )

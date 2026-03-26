@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
 from chatbot.src.onboarding_v2.analysis import build_analysis_bundle
 from chatbot.src.onboarding_v2.compile import compile_plan
+from chatbot.src.onboarding_v2.compile.preflight import run_flask_host_import_smoke
 from chatbot.src.onboarding_v2.compile.strategies.backend.django import compile_django_backend_bundle
 from chatbot.src.onboarding_v2.compile.strategies.backend.flask import compile_flask_backend_bundle
 from chatbot.src.onboarding_v2.models.planning import HostBackendPlan
@@ -277,6 +279,216 @@ def test_compile_flask_backend_bundle_generates_validation_aware_bridge_payload(
     assert '"site_id": "bilyeo"' in generated
     assert 'f"validation-bilyeo"' in generated or '"validation-bilyeo"' in generated
     assert '"id": "validation-user"' in generated
+
+
+def test_compile_flask_backend_bundle_preserves_existing_chat_auth_contract(tmp_path: Path):
+    app_path = tmp_path / "backend" / "app.py"
+    app_path.parent.mkdir(parents=True, exist_ok=True)
+    app_path.write_text(
+        "from flask import Flask\n"
+        "from chat_auth import chat_auth_bp\n\n"
+        "def create_app():\n"
+        "    app = Flask(__name__)\n"
+        '    app.register_blueprint(chat_auth_bp, url_prefix="/api")\n'
+        "    return app\n",
+        encoding="utf-8",
+    )
+
+    bundle = compile_flask_backend_bundle(
+        source_root=tmp_path,
+        plan=HostBackendPlan(
+            strategy="flask_app_register_blueprint",
+            route_target="backend/app.py",
+            import_target="backend/app.py",
+            login_endpoint="/api/auth/login",
+            auth_handler_source="backend/routes/auth.py",
+            generated_handler_path="backend/chat_auth.py",
+            chat_auth_contract_path="/api/chat/auth-token",
+            site_id="bilyeo",
+        ),
+    )
+
+    updated = bundle.operations[0].new
+    generated = bundle.supporting_files[0].content
+
+    assert "from chat_auth import chat_auth_bp\n" in updated
+    assert "from chat_auth import chat_auth_blueprint\n" not in updated
+    assert updated.count('app.register_blueprint(chat_auth_bp, url_prefix="/api")') == 1
+    assert 'app.register_blueprint(chat_auth_blueprint, url_prefix="/api/chat")' not in updated
+    assert 'chat_auth_bp = Blueprint("chat_auth", __name__)' in generated
+    assert '@chat_auth_bp.route("/chat/auth-token", methods=["GET", "POST"])' in generated
+
+
+def test_compile_flask_backend_bundle_preserved_contract_boots_without_import_error(tmp_path: Path):
+    backend_root = tmp_path / "backend"
+    app_path = backend_root / "app.py"
+    app_path.parent.mkdir(parents=True, exist_ok=True)
+    app_path.write_text(
+        "from flask import Flask\n"
+        "from chat_auth import chat_auth_bp\n\n"
+        "def create_app():\n"
+        "    app = Flask(__name__)\n"
+        '    app.register_blueprint(chat_auth_bp, url_prefix="/api")\n'
+        "    return app\n",
+        encoding="utf-8",
+    )
+
+    bundle = compile_flask_backend_bundle(
+        source_root=tmp_path,
+        plan=HostBackendPlan(
+            strategy="flask_app_register_blueprint",
+            route_target="backend/app.py",
+            import_target="backend/app.py",
+            login_endpoint="/api/auth/login",
+            auth_handler_source="backend/routes/auth.py",
+            generated_handler_path="backend/chat_auth.py",
+            chat_auth_contract_path="/api/chat/auth-token",
+            site_id="bilyeo",
+        ),
+    )
+
+    app_path.write_text(bundle.operations[0].new, encoding="utf-8")
+    for supporting_file in bundle.supporting_files:
+        target = tmp_path / supporting_file.path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(supporting_file.content, encoding="utf-8")
+
+    module_name = "compiled_flask_app_preserved_contract"
+    spec = importlib.util.spec_from_file_location(module_name, app_path)
+    assert spec is not None and spec.loader is not None
+    sys.path.insert(0, str(backend_root))
+    try:
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        app = module.create_app()
+    finally:
+        sys.path.pop(0)
+        sys.modules.pop(module_name, None)
+        sys.modules.pop("chat_auth", None)
+
+    rules = {rule.rule for rule in app.url_map.iter_rules()}
+    assert "/api/chat/auth-token" in rules
+
+
+def test_run_flask_host_import_smoke_passes_for_preserved_contract(tmp_path: Path):
+    backend_root = tmp_path / "backend"
+    routes_root = backend_root / "routes"
+    routes_root.mkdir(parents=True, exist_ok=True)
+    (backend_root / "flask.py").write_text(
+        "class Blueprint:\n"
+        "    def __init__(self, name, import_name):\n"
+        "        self.name = name\n"
+        "        self.import_name = import_name\n"
+        "        self._rules = []\n\n"
+        "    def route(self, rule, methods=None):\n"
+        "        def decorator(fn):\n"
+        "            self._rules.append(rule)\n"
+        "            return fn\n"
+        "        return decorator\n\n"
+        "class Flask:\n"
+        "    def __init__(self, import_name):\n"
+        "        self.import_name = import_name\n"
+        "        self.blueprints = []\n\n"
+        "    def register_blueprint(self, blueprint, url_prefix=None):\n"
+        "        self.blueprints.append((blueprint, url_prefix))\n",
+        encoding="utf-8",
+    )
+    (routes_root / "__init__.py").write_text("", encoding="utf-8")
+    (routes_root / "order.py").write_text(
+        "from flask import Blueprint\n"
+        "from chat_auth import get_authenticated_user\n\n"
+        "order_bp = Blueprint('order', __name__)\n\n"
+        "@order_bp.route('/orders')\n"
+        "def orders():\n"
+        "    return get_authenticated_user()\n",
+        encoding="utf-8",
+    )
+    (backend_root / "chat_auth.py").write_text(
+        "from flask import Blueprint\n\n"
+        "chat_auth_bp = Blueprint('chat_auth', __name__)\n\n"
+        "def get_authenticated_user():\n"
+        "    return {'id': 'validation-user'}\n\n"
+        "@chat_auth_bp.route('/chat/auth-token', methods=['GET', 'POST'])\n"
+        "def auth_token():\n"
+        "    return {'authenticated': True}\n",
+        encoding="utf-8",
+    )
+    (backend_root / "app.py").write_text(
+        "from flask import Flask\n"
+        "from chat_auth import chat_auth_bp\n"
+        "from routes.order import order_bp\n\n"
+        "def create_app():\n"
+        "    app = Flask(__name__)\n"
+        "    app.register_blueprint(chat_auth_bp, url_prefix='/api')\n"
+        "    app.register_blueprint(order_bp, url_prefix='/api')\n"
+        "    return app\n",
+        encoding="utf-8",
+    )
+
+    result = run_flask_host_import_smoke(
+        host_workspace=tmp_path,
+        entrypoint="app.py",
+    )
+
+    assert result.passed is True
+    assert result.failure_code is None
+    assert result.details["framework"] == "flask"
+
+
+def test_run_flask_host_import_smoke_reports_related_files_for_missing_chat_auth_helper(tmp_path: Path):
+    backend_root = tmp_path / "backend"
+    routes_root = backend_root / "routes"
+    routes_root.mkdir(parents=True, exist_ok=True)
+    (backend_root / "flask.py").write_text(
+        "class Blueprint:\n"
+        "    def __init__(self, name, import_name):\n"
+        "        self.name = name\n"
+        "        self.import_name = import_name\n\n"
+        "    def route(self, rule, methods=None):\n"
+        "        def decorator(fn):\n"
+        "            return fn\n"
+        "        return decorator\n\n"
+        "class Flask:\n"
+        "    def __init__(self, import_name):\n"
+        "        self.import_name = import_name\n\n"
+        "    def register_blueprint(self, blueprint, url_prefix=None):\n"
+        "        return None\n",
+        encoding="utf-8",
+    )
+    (routes_root / "__init__.py").write_text("", encoding="utf-8")
+    (routes_root / "order.py").write_text(
+        "from flask import Blueprint\n"
+        "from chat_auth import get_authenticated_user\n\n"
+        "order_bp = Blueprint('order', __name__)\n",
+        encoding="utf-8",
+    )
+    (backend_root / "chat_auth.py").write_text(
+        "from flask import Blueprint\n\n"
+        "chat_auth_bp = Blueprint('chat_auth', __name__)\n",
+        encoding="utf-8",
+    )
+    (backend_root / "app.py").write_text(
+        "from flask import Flask\n"
+        "from chat_auth import chat_auth_bp\n"
+        "from routes.order import order_bp\n\n"
+        "def create_app():\n"
+        "    app = Flask(__name__)\n"
+        "    app.register_blueprint(chat_auth_bp, url_prefix='/api')\n"
+        "    app.register_blueprint(order_bp, url_prefix='/api')\n"
+        "    return app\n",
+        encoding="utf-8",
+    )
+
+    result = run_flask_host_import_smoke(
+        host_workspace=tmp_path,
+        entrypoint="app.py",
+    )
+
+    assert result.passed is False
+    assert result.failure_code == "host_backend_import_failed"
+    assert "app.py" in result.related_files
+    assert "routes/order.py" in result.related_files
+    assert "chat_auth.py" in result.related_files
 
 
 def test_compile_flask_backend_bundle_computes_import_from_runtime_boundary(tmp_path: Path):

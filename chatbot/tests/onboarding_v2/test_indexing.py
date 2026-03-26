@@ -1,5 +1,7 @@
 import os
 import sys
+import threading
+import time
 from io import BytesIO
 from pathlib import Path
 from uuid import UUID
@@ -337,6 +339,159 @@ def test_execute_indexing_plan_can_ingest_faq_rows_via_host_python_fetch(tmp_pat
     assert captured["corpus_plan"].row_source_callable == "get_all_faq"
     for point in fake_client.upserts[0][1]:
         UUID(str(point.id))
+
+
+def test_execute_indexing_plan_emits_live_worker_progress_events(tmp_path: Path):
+    plan = RetrievalIndexPlan(
+        site_id="demo-shop",
+        site_slug="demo-shop",
+        corpora=[
+            RagCorpusPlan(
+                corpus="faq",
+                chunking_strategy="qa_level",
+                collection_alias="site_demo-shop__faq",
+                build_collection="site_demo-shop__faq__run_demo",
+                sources=["faq.json"],
+                smoke_queries=["배송"],
+                minimum_expected_documents=1,
+                loader_strategy="faq_source_scan",
+            )
+        ],
+    )
+    events: list[dict[str, object]] = []
+
+    def _slow_worker(**kwargs):
+        del kwargs
+        time.sleep(0.12)
+        return {
+            "status": "completed",
+            "enabled": True,
+            "documents_indexed": 1,
+            "collection_alias": "site_demo-shop__faq",
+            "build_collection": "site_demo-shop__faq__run_demo",
+            "loader_strategy": "faq_source_scan",
+            "warning_codes": [],
+            "alias_swapped": True,
+            "smoke_passed": True,
+        }
+
+    result = execute_indexing_plan(
+        plan=plan,
+        root=tmp_path,
+        worker=_slow_worker,
+        event_callback=events.append,
+        heartbeat_interval_s=0.05,
+    )
+
+    assert result["corpora"]["faq"]["status"] == "completed"
+    event_types = [str(event["event_type"]) for event in events]
+    assert "retrieval_worker_started" in event_types
+    assert "retrieval_worker_progress" in event_types
+    assert "retrieval_worker_completed" in event_types
+
+
+def test_execute_indexing_plan_emits_waiting_on_export_before_host_backed_worker_starts(
+    tmp_path: Path,
+    monkeypatch,
+):
+    source_path = tmp_path / "product_crawling.py"
+    source_path.write_text("IMAGE_URL = 'https://cdn.example.com/a.jpg'\n", encoding="utf-8")
+    plan = RetrievalIndexPlan(
+        site_id="demo-shop",
+        site_slug="demo-shop",
+        corpora=[
+            RagCorpusPlan(
+                corpus="discovery_image",
+                chunking_strategy="entity_level",
+                collection_alias="site_demo-shop__discovery_image",
+                build_collection="site_demo-shop__discovery_image__run_demo",
+                sources=["product_crawling.py"],
+                smoke_queries=["검은색 자켓"],
+                minimum_expected_documents=1,
+                loader_strategy="public_url_fetch",
+                row_source_strategy="host_api_fetch",
+                row_source_endpoint="/api/products",
+                row_id_field="product_id",
+                row_image_url_field="image_url",
+                pagination_strategy={
+                    "type": "page_number",
+                    "page_param": "page",
+                    "page_size_param": "page_size",
+                    "page_size": 100,
+                    "stop_on": "empty_or_repeated_ids",
+                },
+            )
+        ],
+    )
+    host_context = HostExportContext()
+    host_context.host_runtime_workspace = tmp_path
+    host_context.snapshot = object()
+    host_context.integration_plan = object()
+    fake_client = _FakeQdrantClient()
+    events: list[dict[str, object]] = []
+
+    class _Prep:
+        passed = True
+        failure_summary = None
+        python_executable = sys.executable
+
+    class _RuntimePlan:
+        listen_port = 8129
+
+    class _RuntimeState:
+        passed = True
+        failure_summary = None
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator.prepare_backend_runtime",
+        lambda **kwargs: _Prep(),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator.build_backend_runtime_plan",
+        lambda **kwargs: _RuntimePlan(),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator.launch_backend_runtime",
+        lambda *args, **kwargs: _RuntimeState(),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator.stop_backend_runtime",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator._paginate_product_rows",
+        lambda **kwargs: [
+            {"product_id": 101, "resolved_image_url": "https://cdn.example.com/ok.jpg", "name": "jacket"}
+        ],
+    )
+
+    def _release_export() -> None:
+        time.sleep(0.12)
+        host_context.export_ready.set()
+
+    release_thread = threading.Thread(target=_release_export, daemon=True)
+    release_thread.start()
+
+    result = execute_indexing_plan(
+        plan=plan,
+        root=tmp_path,
+        host_context=host_context,
+        qdrant_client=fake_client,
+        event_callback=events.append,
+        heartbeat_interval_s=0.05,
+        image_fetcher=lambda url: b"ok",
+        image_embedder=lambda payloads: [[0.1, 0.2] for _ in payloads],
+    )
+
+    release_thread.join(timeout=1)
+    assert result["corpora"]["discovery_image"]["status"] == "completed"
+    event_types = [str(event["event_type"]) for event in events]
+    assert "retrieval_worker_waiting_on_export" in event_types
+    assert "retrieval_worker_started" in event_types
+    assert "retrieval_worker_completed" in event_types
+    waiting_index = event_types.index("retrieval_worker_waiting_on_export")
+    started_index = event_types.index("retrieval_worker_started")
+    assert waiting_index < started_index
 
 
 def test_execute_indexing_plan_reuses_shared_host_runtime_for_host_backed_corpora(

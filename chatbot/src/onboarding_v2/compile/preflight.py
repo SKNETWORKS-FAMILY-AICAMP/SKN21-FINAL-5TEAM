@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from chatbot.src.onboarding_v2.validation.backend_runtime import (
+    _resolve_backend_root,
+    build_backend_subprocess_env,
+)
 
 
 class CompilePreflightResult(BaseModel):
@@ -31,6 +37,7 @@ _IGNORED_RUNTIME_DIR_NAMES = {
     "migrations",
     "__pycache__",
 }
+_HOST_IMPORT_LAUNCHER_NAME = ".onboarding_host_import_smoke.py"
 
 
 def run_chatbot_compile_preflight(
@@ -43,6 +50,94 @@ def run_chatbot_compile_preflight(
     if banned_scan is not None:
         return banned_scan
     return _run_server_fastapi_import_smoke(workspace)
+
+
+def run_flask_host_import_smoke(
+    host_workspace: Path,
+    *,
+    entrypoint: str,
+) -> CompilePreflightResult:
+    workspace = Path(host_workspace).resolve()
+    backend_root = _resolve_backend_root(workspace)
+    entrypoint_path = (backend_root / entrypoint).resolve()
+    if not entrypoint_path.exists():
+        return CompilePreflightResult(
+            passed=False,
+            failure_code="host_backend_import_failed",
+            failure_summary="host backend entrypoint missing",
+            related_files=[entrypoint],
+            details={
+                "framework": "flask",
+                "entrypoint": entrypoint,
+                "command": [],
+                "returncode": None,
+                "stdout": "",
+                "stderr": f"missing entrypoint: {entrypoint_path}",
+            },
+        )
+
+    launcher_path = backend_root / _HOST_IMPORT_LAUNCHER_NAME
+    launcher_path.write_text(
+        _build_flask_host_import_launcher(backend_root=backend_root, entrypoint=entrypoint),
+        encoding="utf-8",
+    )
+    command = [sys.executable, str(launcher_path)]
+    env = build_backend_subprocess_env(
+        backend_root=backend_root,
+        extra_env={
+            "ONBOARDING_VALIDATION": "1",
+            "ONBOARDING_VALIDATION_SKIP_DB_INIT": "1",
+        },
+    )
+    try:
+        result = subprocess.run(
+            command,
+            cwd=backend_root,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    finally:
+        try:
+            launcher_path.unlink()
+        except FileNotFoundError:
+            pass
+
+    if result.returncode == 0:
+        return CompilePreflightResult(
+            passed=True,
+            failure_summary=None,
+            related_files=[],
+            details={
+                "framework": "flask",
+                "entrypoint": entrypoint,
+                "command": command,
+                "returncode": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            },
+        )
+
+    related_files = _extract_backend_related_files(
+        text=f"{result.stdout}\n{result.stderr}",
+        backend_root=backend_root,
+        entrypoint=entrypoint,
+    )
+    return CompilePreflightResult(
+        passed=False,
+        failure_code="host_backend_import_failed",
+        failure_summary="host backend import failed",
+        related_files=related_files,
+        details={
+            "framework": "flask",
+            "entrypoint": entrypoint,
+            "command": command,
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        },
+    )
 
 
 def _scan_for_banned_imports(
@@ -209,3 +304,85 @@ def _run_server_fastapi_import_smoke(workspace: Path) -> CompilePreflightResult:
             "stderr": result.stderr,
         },
     )
+
+
+def _build_flask_host_import_launcher(*, backend_root: Path, entrypoint: str) -> str:
+    return f"""from __future__ import annotations
+
+import importlib.util
+import os
+import sys
+from pathlib import Path
+
+BACKEND_ROOT = Path({str(backend_root)!r})
+ENTRYPOINT_PATH = BACKEND_ROOT / {entrypoint!r}
+
+os.environ.setdefault("ONBOARDING_VALIDATION", "1")
+os.environ.setdefault("ONBOARDING_VALIDATION_SKIP_DB_INIT", "1")
+sys.path.insert(0, str(BACKEND_ROOT))
+
+
+def _noop(*args, **kwargs):
+    return None
+
+
+spec = importlib.util.spec_from_file_location(
+    "onboarding_compile_host_entrypoint",
+    ENTRYPOINT_PATH,
+)
+if spec is None or spec.loader is None:
+    raise RuntimeError(f"unable to load Flask entrypoint: {{ENTRYPOINT_PATH}}")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+if os.environ.get("ONBOARDING_VALIDATION_SKIP_DB_INIT") == "1":
+    for hook_name in ("init_db_with_retry", "init_db"):
+        candidate = getattr(module, hook_name, None)
+        if callable(candidate):
+            setattr(module, hook_name, _noop)
+
+create_app = getattr(module, "create_app", None)
+if callable(create_app):
+    app = create_app()
+else:
+    app = getattr(module, "app", None)
+
+if app is None:
+    raise RuntimeError("Flask entrypoint did not expose app or create_app")
+"""
+
+
+def _extract_backend_related_files(
+    *,
+    text: str,
+    backend_root: Path,
+    entrypoint: str,
+) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def _add(relative_path: str) -> None:
+        normalized = str(relative_path or "").strip()
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        ordered.append(normalized)
+
+    _add(entrypoint)
+    for match in re.finditer(r'File "([^"]+)"', text):
+        raw_path = match.group(1)
+        candidate = Path(raw_path)
+        if not candidate.is_absolute():
+            candidate = (backend_root / candidate).resolve()
+        try:
+            relative_path = candidate.relative_to(backend_root).as_posix()
+        except ValueError:
+            continue
+        if relative_path == _HOST_IMPORT_LAUNCHER_NAME:
+            continue
+        _add(relative_path)
+
+    chat_auth_path = backend_root / "chat_auth.py"
+    if "chat_auth.py" in text and chat_auth_path.exists():
+        _add("chat_auth.py")
+    return ordered

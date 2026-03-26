@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 from langchain_core.messages import AIMessage, ToolMessage
@@ -109,6 +110,55 @@ class _EndlessToolLlm:
                 }
             ],
         )
+
+
+class _SlowToolAwareLlm:
+    def __init__(self) -> None:
+        self._invocation_count = 0
+
+    def bind_tools(self, tools, **kwargs):
+        del kwargs
+        self.bound_tools = list(tools)
+        return self
+
+    def invoke(self, messages):
+        del messages
+        self._invocation_count += 1
+        time.sleep(0.12)
+        if self._invocation_count == 1:
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call-list",
+                        "name": "list_repair_paths",
+                        "args": {},
+                    }
+                ],
+                usage_metadata={"input_tokens": 10, "output_tokens": 2, "total_tokens": 12},
+            )
+        return AIMessage(
+            content=json.dumps(
+                {
+                    "failure_signature": "smoke_failed",
+                    "diagnosis": "tool-assisted diagnosis",
+                    "rewind_to": "validation",
+                    "preserve_artifacts": [],
+                    "required_rechecks": [],
+                    "additional_discovery": [],
+                    "artifact_overrides": {},
+                    "stop": False,
+                    "stop_reason": None,
+                }
+            ),
+            usage_metadata={"input_tokens": 7, "output_tokens": 5, "total_tokens": 12},
+        )
+
+
+class _BrokenLlm:
+    def invoke(self, messages):
+        del messages
+        raise RuntimeError("llm boom")
 
 
 def _tool_runtime() -> StageToolRuntime:
@@ -221,3 +271,74 @@ def test_invoke_structured_stage_falls_back_when_tool_round_limit_is_exceeded():
 
     assert result.failure_signature == "fallback"
     assert result.stop is True
+
+
+def test_invoke_structured_stage_emits_live_phase_events():
+    events: list[dict[str, object]] = []
+
+    result = invoke_structured_stage(
+        stage="repair",
+        phase="diagnosis",
+        provider="openai",
+        model="gpt-5-mini",
+        system_prompt="return JSON",
+        payload={"failure_signature": "smoke_failed"},
+        response_model=_RepairEnvelope,
+        fallback_payload={
+            "failure_signature": "fallback",
+            "diagnosis": "fallback",
+            "rewind_to": "validation",
+            "preserve_artifacts": [],
+            "required_rechecks": [],
+            "additional_discovery": [],
+            "artifact_overrides": {},
+            "stop": True,
+            "stop_reason": "fallback",
+        },
+        llm_builder=lambda provider, model, temperature: _SlowToolAwareLlm(),
+        tool_runtime=_tool_runtime(),
+        event_callback=events.append,
+        heartbeat_interval_s=0.05,
+    )
+
+    assert result.diagnosis == "tool-assisted diagnosis"
+    event_types = [str(event["event_type"]) for event in events]
+    assert "llm_phase_started" in event_types
+    assert "llm_phase_progress" in event_types
+    assert "llm_tool_called" in event_types
+    assert "llm_phase_completed" in event_types
+    tool_event = next(event for event in events if event["event_type"] == "llm_tool_called")
+    assert tool_event["details"]["tool_name"] == "list_repair_paths"
+
+
+def test_invoke_structured_stage_emits_failed_and_fallback_events_on_exception():
+    events: list[dict[str, object]] = []
+
+    result = invoke_structured_stage(
+        stage="repair",
+        phase="diagnosis",
+        provider="openai",
+        model="gpt-5-mini",
+        system_prompt="return JSON",
+        payload={"failure_signature": "smoke_failed"},
+        response_model=_RepairEnvelope,
+        fallback_payload={
+            "failure_signature": "fallback",
+            "diagnosis": "fallback",
+            "rewind_to": "validation",
+            "preserve_artifacts": [],
+            "required_rechecks": [],
+            "additional_discovery": [],
+            "artifact_overrides": {},
+            "stop": True,
+            "stop_reason": "fallback",
+        },
+        llm_builder=lambda provider, model, temperature: _BrokenLlm(),
+        event_callback=events.append,
+        heartbeat_interval_s=0.05,
+    )
+
+    assert result.failure_signature == "fallback"
+    event_types = [str(event["event_type"]) for event in events]
+    assert "llm_phase_failed" in event_types
+    assert "llm_phase_fallback" in event_types

@@ -336,6 +336,43 @@ def test_planner_combines_risk_and_repair_hint_llm_calls(monkeypatch):
     assert planning_bundle.repair_hints
 
 
+def test_planner_forwards_event_callback_to_all_llm_phases(monkeypatch):
+    analysis_bundle = build_analysis_bundle(site="food", source_root=ROOT / "food")
+    callback = lambda payload: payload
+    observed: list[tuple[str, object, float | None]] = []
+
+    def _fake_invoke_structured_stage(
+        *,
+        phase,
+        response_model,
+        fallback_payload,
+        event_callback=None,
+        heartbeat_interval_s=None,
+        **kwargs,
+    ):
+        del kwargs
+        observed.append((phase, event_callback, heartbeat_interval_s))
+        return response_model.model_validate(fallback_payload)
+
+    monkeypatch.setattr(planner_module, "invoke_structured_stage", _fake_invoke_structured_stage)
+
+    build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+        event_callback=callback,
+        heartbeat_interval_s=0.05,
+    )
+
+    assert [phase for phase, _event_callback, _interval in observed] == [
+        "strategy-synthesis",
+        "binding-selection",
+        "risk-and-repair",
+    ]
+    assert all(event_callback is callback for _phase, event_callback, _interval in observed)
+    assert all(interval == 0.05 for _phase, _event_callback, interval in observed)
+
+
 def test_planner_uses_snapshot_site_without_manifest(tmp_path: Path):
     source_root = tmp_path / "site"
     frontend_root = source_root / "frontend"

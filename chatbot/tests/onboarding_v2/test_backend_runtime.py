@@ -461,6 +461,81 @@ def test_prepare_backend_runtime_loads_workspace_dotenv_into_prep_script_env_wit
     assert prep.env_source["workspace_dotenv_path"].endswith("/workspace/.env")
 
 
+def test_prepare_backend_runtime_uses_five_second_default_heartbeats(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    backend_root = workspace / "backend"
+    scripts_root = workspace / "scripts"
+    backend_root.mkdir(parents=True)
+    scripts_root.mkdir(parents=True)
+    (backend_root / "manage.py").write_text("print('django')\n", encoding="utf-8")
+    (scripts_root / "reset_db.py").write_text("print('reset ok')\n", encoding="utf-8")
+    (scripts_root / "seed.py").write_text("print('seed ok')\n", encoding="utf-8")
+    observed: list[float] = []
+
+    def _ok_command(*, name: str, command: list[str], cwd: Path, log_path: Path | None = None, **kwargs):
+        observed.append(float(kwargs["heartbeat_interval_s"]))
+        return backend_runtime_module.BackendRuntimeCommandResult(
+            name=name,
+            command=command,
+            cwd=str(cwd),
+            returncode=0,
+            stdout=f"{name} ok",
+            stderr="",
+            passed=True,
+            log_path=str(log_path) if log_path is not None else None,
+        )
+
+    monkeypatch.setattr(
+        backend_runtime_module,
+        "_create_venv",
+        lambda *args, **kwargs: _ok_command(
+            name="create_venv",
+            command=["python", "-m", "venv"],
+            cwd=tmp_path,
+            **kwargs,
+        ),
+    )
+    monkeypatch.setattr(
+        backend_runtime_module,
+        "_install_backend_requirements",
+        lambda **kwargs: _ok_command(name="install", command=["pip", "install"], cwd=backend_root, **kwargs),
+    )
+    monkeypatch.setattr(
+        backend_runtime_module,
+        "_run_django_migrate",
+        lambda **kwargs: _ok_command(name="migrate", command=["manage.py", "migrate"], cwd=backend_root, **kwargs),
+    )
+    monkeypatch.setattr(
+        backend_runtime_module,
+        "_run_optional_script",
+        lambda *,
+        name,
+        script_path,
+        framework,
+        backend_root,
+        python_executable,
+        env,
+        missing_stdout,
+        log_path=None,
+        **kwargs: _ok_command(
+            name=name,
+            command=[str(python_executable), str(script_path)] if script_path is not None else [],
+            cwd=backend_root,
+            log_path=log_path,
+            **kwargs,
+        ),
+    )
+
+    prep = prepare_backend_runtime(
+        workspace=workspace,
+        snapshot=_snapshot(backend_framework="django"),
+    )
+
+    assert prep.passed is True
+    assert observed
+    assert all(interval == 5.0 for interval in observed)
+
+
 def test_create_venv_treats_file_exists_race_as_reused_venv(tmp_path: Path, monkeypatch):
     venv_path = tmp_path / "venv"
     python_path = venv_path / "bin" / "python"

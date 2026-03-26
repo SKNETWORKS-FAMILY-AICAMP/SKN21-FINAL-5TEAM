@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from chatbot.src.onboarding_v2.eventing import EventCallback
 from chatbot.src.onboarding_v2.llm_runtime import invoke_structured_stage
 from chatbot.src.onboarding_v2.models.analysis import (
     AnalysisBundle,
@@ -165,6 +166,8 @@ def build_planning_bundle(
     validation_capabilities: list[str] | None = None,
     strict_coverage: bool = True,
     artifact_refs: list[ArtifactRef] | None = None,
+    event_callback: EventCallback | None = None,
+    heartbeat_interval_s: float = 5.0,
 ) -> PlanningBundle:
     if analysis_bundle is None:
         raise ValueError("analysis_bundle is required for onboarding_v2 planning")
@@ -204,6 +207,8 @@ def build_planning_bundle(
         usage_store=usage_store,
         llm_builder=llm_builder,
         artifact_refs=artifact_refs,
+        event_callback=event_callback,
+        heartbeat_interval_s=heartbeat_interval_s,
     )
     strategy_candidates = _feasibility_filter(
         candidates=strategy_response.strategy_candidates or strategy_fallback,
@@ -238,6 +243,8 @@ def build_planning_bundle(
         usage_store=usage_store,
         llm_builder=llm_builder,
         artifact_refs=artifact_refs,
+        event_callback=event_callback,
+        heartbeat_interval_s=heartbeat_interval_s,
     )
     target_bindings = _sanitize_target_bindings(
         requested=binding_response.target_bindings,
@@ -290,6 +297,8 @@ def build_planning_bundle(
         usage_store=usage_store,
         llm_builder=llm_builder,
         artifact_refs=artifact_refs,
+        event_callback=event_callback,
+        heartbeat_interval_s=heartbeat_interval_s,
     )
     risk_register = _dedupe_risks(risk_and_repair_response.risk_register or risk_fallback)
     repair_hints = _dedupe_repair_hints(risk_and_repair_response.repair_hints or repair_fallback)
