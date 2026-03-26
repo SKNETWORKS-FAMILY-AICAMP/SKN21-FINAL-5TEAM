@@ -420,12 +420,12 @@ def _select_exchange_tool(state: GlobalAgentState):
     # 부정/취소 의도가 명확한 경우 단순 키워드 매칭 무시
     negative_keywords = ("안할게", "안할래", "안한다", "안바꿀", "안해", "싫어", "취소", "됐어", "괜찮아", "그냥입", "그냥쓸")
     if any(neg in normalized_text for neg in negative_keywords):
-        return register_exchange_request
+        return register_exchange_request, "exchange", False
 
     # "옵션 변경 말고 아예 환불" 등과 같이 키워드 자체를 부정하는 경우 교환으로 돌림 (이후 라우터에 의해 환불로 빠지거나 교환 유지)
     negative_context = ("옵션말고", "옵션아니", "변경말고", "변경아니", "옵션변경아닙")
     if any(neg in normalized_text for neg in negative_context):
-        return register_exchange_request
+        return register_exchange_request, "exchange", False
 
     # 명확한 옵션 변경 의도가 아닐 확률이 놓은 범용 단어("사이즈", "색상", "바꿔줘" 등) 제거 및 매칭 좁히기
     change_option_keywords = (
