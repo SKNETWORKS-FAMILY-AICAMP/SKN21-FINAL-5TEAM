@@ -266,6 +266,51 @@ def test_diagnose_failure_parses_v2_repair_decision(tmp_path: Path):
     assert decision.rewind_to == "validation"
 
 
+def test_diagnose_failure_prefers_validation_for_host_auth_bootstrap_failure(tmp_path: Path):
+    debug_store = DebugStore(tmp_path / "generated" / "bilyeo" / "bilyeo-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="validation",
+        failure_signature="host_auth_bootstrap_host_login_failed_with_status_500",
+        failure_summary="host login failed with status 500",
+        trigger_event_id="evt-host-auth",
+        related_artifacts=[
+            ArtifactRef(
+                stage="export",
+                artifact_type="host-approved.patch",
+                version=2,
+                path="v0002.patch",
+                content_hash="same-patch",
+            )
+        ],
+        related_files=["backend/routes/auth.py", "backend/chat_auth.py"],
+        related_file_samples=[],
+        input_artifact_versions={"validation": 2},
+        attempt_number=2,
+        repeat_count=1,
+    )
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
+        snapshot_payload={"repo_profile": {"site": "bilyeo"}},
+        planning_bundle_payload={},
+        plan_payload={},
+        edit_program_payload={},
+        validation_payload={"failure_signature": failure_bundle.failure_signature},
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+        llm_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("LLM should not be called for auth bootstrap heuristic")
+        ),
+    )
+
+    assert decision.stop is False
+    assert decision.rewind_to == "validation"
+    assert decision.required_rechecks == ["host_auth_bootstrap"]
+    assert "bootstrap" in decision.diagnosis.lower()
+
+
 def test_derive_effective_rewind_to_promotes_compile_override():
     decision = RepairDecision(
         failure_signature="host_auth_bootstrap_missing_site_id",

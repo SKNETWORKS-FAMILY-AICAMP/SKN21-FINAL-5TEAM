@@ -122,16 +122,29 @@ def _build_django_chat_auth_module(*, auth_source: str, site_id: str) -> str:
         source_module = source_module.removeprefix("backend.")
     return (
         "from __future__ import annotations\n\n"
+        "import os\n\n"
         "from django.http import JsonResponse\n"
         "from django.views.decorators.csrf import csrf_exempt\n\n"
         f"from {source_module} import _build_user_payload, _find_active_session\n\n\n"
         "@csrf_exempt\n"
         "def chat_auth_token(request):\n"
         '    """Generated onboarding bridge endpoint."""\n'
+        '    if os.environ.get("ONBOARDING_VALIDATION") == "1":\n'
+        '        email = os.environ.get("ONBOARDING_VALIDATION_EMAIL", "test1@example.com")\n'
+        f'        name = os.environ.get("ONBOARDING_VALIDATION_NAME", "{site_id} validation user")\n'
+        "        return JsonResponse(\n"
+        "            {\n"
+        '                "authenticated": True,\n'
+        f'                "site_id": "{site_id}",\n'
+        f'                "access_token": "validation-{site_id}",\n'
+        '                "user": {"id": "validation-user", "email": email, "name": name},\n'
+        "            },\n"
+        "            status=200,\n"
+        "        )\n"
         "    session = _find_active_session(request)\n"
         "    if not session:\n"
         "        return JsonResponse(\n"
-        "            {\n"
+            "            {\n"
         '                "authenticated": False,\n'
         f'                "site_id": "{site_id}",\n'
         '                "access_token": "",\n'

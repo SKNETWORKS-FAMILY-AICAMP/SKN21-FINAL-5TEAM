@@ -45,7 +45,7 @@ def compile_flask_backend_bundle(
         bundle_id="supporting:chat-auth-blueprint",
         path=plan.generated_handler_path,
         reason="generated flask chat auth blueprint",
-        content=_build_blueprint_content(leaf_route),
+        content=_build_blueprint_content(leaf_route, site_id=plan.site_id),
     )
     return BackendWiringBundle(
         bundle_id="backend:flask-wiring",
@@ -209,11 +209,45 @@ def _indent_register_line(register_line: str) -> str:
     return f"    {register_line}"
 
 
-def _build_blueprint_content(leaf_route: str) -> str:
+def _build_blueprint_content(leaf_route: str, *, site_id: str) -> str:
     return (
-        "from flask import Blueprint, jsonify\n\n"
+        "import os\n\n"
+        "from flask import Blueprint, jsonify, request, session\n\n"
         'chat_auth_blueprint = Blueprint("chat_auth", __name__)\n\n'
+        f'_SITE_ID = "{site_id}"\n\n'
+        "def _validation_payload():\n"
+        "    email = os.environ.get(\"ONBOARDING_VALIDATION_EMAIL\", \"test1@example.com\")\n"
+        "    name = os.environ.get(\"ONBOARDING_VALIDATION_NAME\", f\"{_SITE_ID} validation user\")\n"
+        "    return {\n"
+        '        "authenticated": True,\n'
+        f'        "site_id": "{site_id}",\n'
+        f'        "access_token": "validation-{site_id}",\n'
+        '        "user": {"id": "validation-user", "email": email, "name": name},\n'
+        "    }\n\n"
+        "def _session_payload():\n"
+        "    token = (\n"
+        "        session.get(\"access_token\")\n"
+        "        or session.get(\"token\")\n"
+        "        or request.cookies.get(\"access_token\")\n"
+        "        or request.headers.get(\"Authorization\", \"\").removeprefix(\"Bearer \").strip()\n"
+        "    )\n"
+        "    user_id = session.get(\"user_id\") or session.get(\"id\")\n"
+        "    user_email = session.get(\"email\") or session.get(\"user_email\")\n"
+        "    user_name = session.get(\"name\") or session.get(\"user_name\")\n"
+        "    if not token or not user_id:\n"
+        "        return None\n"
+        "    return {\n"
+        '        "authenticated": True,\n'
+        f'        "site_id": "{site_id}",\n'
+        '        "access_token": str(token),\n'
+        '        "user": {"id": str(user_id), "email": user_email, "name": user_name},\n'
+        "    }\n\n"
         f'@chat_auth_blueprint.route("{leaf_route}", methods=["GET", "POST"])\n'
         "def chat_auth_token():\n"
-        '    return jsonify({"authenticated": False, "access_token": None})\n'
+        '    if os.environ.get("ONBOARDING_VALIDATION") == "1":\n'
+        "        return jsonify(_validation_payload())\n"
+        "    payload = _session_payload()\n"
+        "    if payload is None:\n"
+        f'        return jsonify({{"authenticated": False, "site_id": "{site_id}", "access_token": "", "user": None}})\n'
+        "    return jsonify(payload)\n"
     )

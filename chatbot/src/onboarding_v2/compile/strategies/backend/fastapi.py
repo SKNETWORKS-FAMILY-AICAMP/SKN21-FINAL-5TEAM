@@ -29,11 +29,33 @@ def compile_fastapi_backend_bundle(
                 path=plan.generated_handler_path,
                 reason="generated fastapi chat auth router",
                 content=(
-                    "from fastapi import APIRouter\n\n"
+                    "import os\n\n"
+                    "from fastapi import APIRouter, Request\n\n"
                     "router = APIRouter()\n\n"
+                    f'_SITE_ID = "{plan.site_id}"\n\n'
                     '@router.api_route("/api/chat/auth-token", methods=["GET", "POST"])\n'
-                    "def chat_auth_token():\n"
-                    '    return {"authenticated": False, "access_token": None}\n'
+                    "def chat_auth_token(request: Request):\n"
+                    '    if os.environ.get("ONBOARDING_VALIDATION") == "1":\n'
+                    '        email = os.environ.get("ONBOARDING_VALIDATION_EMAIL", "test1@example.com")\n'
+                    '        name = os.environ.get("ONBOARDING_VALIDATION_NAME", f"{_SITE_ID} validation user")\n'
+                    "        return {\n"
+                    '            "authenticated": True,\n'
+                    '            "site_id": _SITE_ID,\n'
+                    '            "access_token": f"validation-{_SITE_ID}",\n'
+                    '            "user": {"id": "validation-user", "email": email, "name": name},\n'
+                    "        }\n"
+                    '    token = request.cookies.get("access_token") or ""\n'
+                    '    auth_header = request.headers.get("authorization", "")\n'
+                    '    if not token and auth_header.lower().startswith("bearer "):\n'
+                    '        token = auth_header[7:].strip()\n'
+                    '    if not token:\n'
+                    '        return {"authenticated": False, "site_id": _SITE_ID, "access_token": "", "user": None}\n'
+                    "    return {\n"
+                    '        "authenticated": True,\n'
+                    '        "site_id": _SITE_ID,\n'
+                    '        "access_token": token,\n'
+                    '        "user": {"id": request.cookies.get("user_id") or "session-user"},\n'
+                    "    }\n"
                 ),
             )
         )

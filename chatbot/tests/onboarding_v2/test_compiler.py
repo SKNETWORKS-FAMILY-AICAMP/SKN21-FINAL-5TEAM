@@ -201,6 +201,40 @@ def test_compile_flask_backend_bundle_inserts_factory_blueprint_registration(tmp
     )
 
 
+def test_compile_flask_backend_bundle_generates_validation_aware_bridge_payload(tmp_path: Path):
+    app_path = tmp_path / "backend" / "app.py"
+    app_path.parent.mkdir(parents=True, exist_ok=True)
+    app_path.write_text(
+        "from flask import Flask\n\n"
+        "def create_app():\n"
+        "    app = Flask(__name__)\n"
+        "    return app\n",
+        encoding="utf-8",
+    )
+
+    bundle = compile_flask_backend_bundle(
+        source_root=tmp_path,
+        plan=HostBackendPlan(
+            strategy="flask_app_register_blueprint",
+            route_target="backend/app.py",
+            import_target="backend/app.py",
+            login_endpoint="/api/auth/login",
+            auth_handler_source="backend/routes/auth.py",
+            generated_handler_path="backend/chat_auth.py",
+            chat_auth_contract_path="/api/chat/auth-token",
+            site_id="bilyeo",
+        ),
+    )
+
+    generated = bundle.supporting_files[0].content
+
+    assert "ONBOARDING_VALIDATION" in generated
+    assert '"authenticated": True' in generated or '"authenticated": true' in generated
+    assert '"site_id": "bilyeo"' in generated
+    assert 'f"validation-bilyeo"' in generated or '"validation-bilyeo"' in generated
+    assert '"id": "validation-user"' in generated
+
+
 def test_compile_flask_backend_bundle_computes_import_from_runtime_boundary(tmp_path: Path):
     app_path = tmp_path / "backend" / "api" / "app.py"
     app_path.parent.mkdir(parents=True, exist_ok=True)

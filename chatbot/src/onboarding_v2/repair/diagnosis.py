@@ -65,6 +65,43 @@ def _build_compile_import_graph_decision(failure_bundle: FailureBundle) -> Repai
     )
 
 
+def _is_host_auth_bootstrap_failure(failure_bundle: FailureBundle) -> bool:
+    if failure_bundle.failed_stage != "validation":
+        return False
+    haystack = (
+        f"{failure_bundle.failure_signature}\n"
+        f"{failure_bundle.failure_summary}"
+    ).lower()
+    tokens = (
+        "host_auth_bootstrap",
+        "host login failed",
+        "bootstrap contract",
+        "bootstrap missing",
+        "missing site_id",
+        "missing user.id",
+        "missing access_token",
+        "missing authenticated=true",
+    )
+    return any(token in haystack for token in tokens)
+
+
+def _build_host_auth_bootstrap_decision(failure_bundle: FailureBundle) -> RepairDecision:
+    return RepairDecision(
+        failure_signature=failure_bundle.failure_signature,
+        diagnosis=(
+            "host auth bootstrap contract/login failure detected during validation; "
+            "rerun validation and recheck host_auth_bootstrap before considering compile changes"
+        ),
+        rewind_to="validation",
+        preserve_artifacts=["analysis", "planning", "compile", "apply", "export"],
+        required_rechecks=["host_auth_bootstrap"],
+        additional_discovery=[],
+        artifact_overrides={},
+        stop=False,
+        stop_reason=None,
+    )
+
+
 def diagnose_failure(
     *,
     failure_bundle: FailureBundle,
@@ -96,6 +133,20 @@ def diagnose_failure(
                 stage="repair",
                 prompt=payload,
                 response={"heuristic": "compile_import_graph_failure"},
+                normalized_response=decision.model_dump(mode="json"),
+                parse_result={"status": "heuristic"},
+                artifact_refs=failure_bundle.related_artifacts,
+            ),
+        )
+        return decision
+    if _is_host_auth_bootstrap_failure(failure_bundle):
+        decision = _build_host_auth_bootstrap_decision(failure_bundle)
+        debug_store.write_record(
+            stage="repair",
+            record=DebugRecord(
+                stage="repair",
+                prompt=payload,
+                response={"heuristic": "host_auth_bootstrap_failure"},
                 normalized_response=decision.model_dump(mode="json"),
                 parse_result={"status": "heuristic"},
                 artifact_refs=failure_bundle.related_artifacts,
