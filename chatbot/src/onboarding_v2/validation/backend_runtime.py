@@ -815,6 +815,7 @@ def _run_optional_script(
         log_path=log_path,
         heartbeat_interval_s=heartbeat_interval_s,
         progress_callback=progress_callback,
+        stdin_text="y\n" if name == "reset" else None,
     )
 
 
@@ -1040,6 +1041,7 @@ def _run_command(
     log_path: Path | None = None,
     heartbeat_interval_s: float = 15.0,
     progress_callback: ValidationEventCallback | None = None,
+    stdin_text: str | None = None,
 ) -> BackendRuntimeCommandResult:
     resolved_log_path = log_path.resolve() if log_path is not None else None
     if resolved_log_path is not None:
@@ -1052,12 +1054,20 @@ def _run_command(
     process = subprocess.Popen(
         command,
         cwd=cwd,
-        stdin=subprocess.DEVNULL,
+        stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
     )
+    if stdin_text is not None and process.stdin is not None:
+        try:
+            process.stdin.write(stdin_text)
+            process.stdin.flush()
+        except BrokenPipeError:
+            pass
+        finally:
+            process.stdin.close()
 
     def _write_log(text: str) -> None:
         if resolved_log_path is None:
