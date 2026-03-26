@@ -279,6 +279,8 @@ class RagCorpusPlan(BaseModel):
     loader_strategy: str | None = None
     row_source_strategy: str | None = None
     row_source_endpoint: str | None = None
+    row_source_module: str | None = None
+    row_source_callable: str | None = None
     row_id_field: str | None = None
     row_image_url_field: str | None = None
     pagination_strategy: dict[str, Any] = Field(default_factory=dict)
@@ -293,6 +295,8 @@ class RagCorpusPlan(BaseModel):
         "loader_strategy",
         "row_source_strategy",
         "row_source_endpoint",
+        "row_source_module",
+        "row_source_callable",
         "row_id_field",
         "row_image_url_field",
         mode="before",

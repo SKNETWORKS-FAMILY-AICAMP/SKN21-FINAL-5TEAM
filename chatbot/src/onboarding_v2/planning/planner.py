@@ -1100,6 +1100,14 @@ def _build_rag_corpus_plan(
     loader_strategy: str,
     product_search_endpoint: str,
 ) -> RagCorpusPlan:
+    faq_row_source_strategy = None
+    faq_row_source_module = None
+    faq_row_source_callable = None
+    if corpus == "faq":
+        faq_row_source_strategy, faq_row_source_module, faq_row_source_callable = _resolve_faq_row_source(
+            records=records,
+        )
+
     if corpus != "discovery_image":
         return RagCorpusPlan(
             corpus=corpus,
@@ -1111,6 +1119,9 @@ def _build_rag_corpus_plan(
             smoke_queries=smoke_queries,
             minimum_expected_documents=1,
             loader_strategy=loader_strategy,
+            row_source_strategy=faq_row_source_strategy,
+            row_source_module=faq_row_source_module,
+            row_source_callable=faq_row_source_callable,
         )
 
     image_field = next(
@@ -1168,6 +1179,27 @@ def _resolve_loader_strategy(
         if candidate in discovered:
             return candidate
     return default_loader
+
+
+def _resolve_faq_row_source(
+    *,
+    records: list[Any],
+) -> tuple[str, str | None, str | None]:
+    for record in records:
+        details = getattr(record, "details", {}) or {}
+        strategy = str(details.get("row_source_strategy") or "").strip()
+        module_name = str(details.get("row_source_module") or "").strip()
+        callable_name = str(details.get("row_source_callable") or "").strip()
+        if strategy == "host_python_fetch":
+            return (
+                "host_python_fetch",
+                module_name or "models.faq",
+                callable_name or "get_all_faq",
+            )
+        normalized_path = str(getattr(record, "path", "") or "").replace("\\", "/").lower()
+        if normalized_path.endswith("backend/models/faq.py"):
+            return ("host_python_fetch", "models.faq", "get_all_faq")
+    return ("static_source_scan", None, None)
 
 
 def _build_capability_upgrade(

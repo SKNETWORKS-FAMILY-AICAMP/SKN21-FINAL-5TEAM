@@ -35,6 +35,7 @@ from chatbot.src.onboarding_v2.models.analysis import (
     WorkspaceProfile,
 )
 from chatbot.src.onboarding_v2.models.common import ArtifactRef, PathCandidate
+from chatbot.src.onboarding_v2.stage_tools import build_analysis_tool_runtime
 from chatbot.src.onboarding_v2.storage import DebugStore, LlmUsageStore
 
 _RETRIEVAL_PLAN_PROMPT = """You are the analyze retrieval planner for onboarding_v2.
@@ -124,6 +125,12 @@ def build_analysis_bundle(
     analysis_overrides = _normalize_analysis_overrides(overrides)
     workspace_profile = _build_workspace_profile(root=root)
     framework_profile = _build_framework_profile(root=root)
+    candidate_set = _harvest_candidates(root=root, framework_profile=framework_profile)
+    analysis_tool_runtime = build_analysis_tool_runtime(
+        root=root,
+        workspace_profile=workspace_profile,
+        candidate_set=candidate_set,
+    )
 
     retrieval_fallback = _build_retrieval_plan_fallback(
         workspace_profile=workspace_profile,
@@ -147,9 +154,9 @@ def build_analysis_bundle(
         usage_store=usage_store,
         llm_builder=llm_builder,
         artifact_refs=artifact_refs,
+        tool_runtime=analysis_tool_runtime,
     )
 
-    candidate_set = _harvest_candidates(root=root, framework_profile=framework_profile)
     final_retrieval_plan = _merge_retrieval_plan_with_candidates(
         retrieval_plan=retrieval_plan,
         candidate_set=candidate_set,
@@ -184,6 +191,7 @@ def build_analysis_bundle(
             usage_store=usage_store,
             llm_builder=llm_builder,
             artifact_refs=artifact_refs,
+            tool_runtime=analysis_tool_runtime,
         )
         read_queue = _sanitize_read_queue(
             read_queue=read_queue_response.read_queue,
@@ -212,6 +220,7 @@ def build_analysis_bundle(
             usage_store=usage_store,
             llm_builder=llm_builder,
             artifact_refs=artifact_refs,
+            tool_runtime=analysis_tool_runtime,
         )
         evidence_packets = _sanitize_evidence_packets(
             packets=evidence_response.evidence_packets,
@@ -244,6 +253,7 @@ def build_analysis_bundle(
             usage_store=usage_store,
             llm_builder=llm_builder,
             artifact_refs=artifact_refs,
+            tool_runtime=analysis_tool_runtime,
         )
         extracted_contracts = _merge_extracted_contract_sets(
             primary=extracted_contracts,
@@ -1833,7 +1843,7 @@ def _resolve_django_handler_methods(
 def _build_flask_route_catalog(*, root: Path, route_candidates: list[PathCandidate]) -> list[_EndpointCatalogRecord]:
     register_pattern = re.compile(r"register_blueprint\(\s*([a-zA-Z0-9_]+),\s*url_prefix=['\"]([^'\"]+)['\"]")
     route_pattern = re.compile(
-        r"@([a-zA-Z0-9_]+)\.route\(\s*['\"]([^'\"]+)['\"](?P<tail>.*?)\)",
+        r"@([a-zA-Z0-9_]+)\.route\(\s*['\"]([^'\"]*)['\"](?P<tail>.*?)\)",
         re.DOTALL,
     )
     methods_pattern = re.compile(r"methods\s*=\s*\[([^\]]+)\]")

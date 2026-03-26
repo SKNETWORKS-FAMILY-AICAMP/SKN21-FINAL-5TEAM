@@ -53,6 +53,15 @@ def test_analyzer_verifies_bilyeo_flask_routes_and_session_auth():
     assert login_record.details["source_kind"] == "server_route"
 
 
+def test_analyzer_discovers_bilyeo_product_list_route_from_empty_flask_decorator():
+    bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
+
+    verified_paths = {record.identifier for record in bundle.verified_contracts.api_endpoints}
+
+    assert "/api/products" in verified_paths
+    assert bundle.snapshot.domain_integration.product_search_endpoint == "/api/products"
+
+
 def test_analyzer_rejects_bilyeo_client_server_order_mismatch_but_keeps_server_verified():
     bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
 
@@ -390,6 +399,53 @@ def test_build_analysis_bundle_merges_llm_contracts_with_deterministic_fallback(
     assert "/api/orders/{order_id}/actions/" in {
         record.identifier for record in bundle.verified_contracts.api_endpoints
     }
+
+
+def test_build_analysis_bundle_passes_tool_runtime_to_all_analysis_phases(monkeypatch):
+    observed: list[tuple[str, object]] = []
+
+    def _fake_invoke_structured_stage(*, phase, response_model, fallback_payload, tool_runtime=None, **kwargs):
+        del kwargs
+        observed.append((phase, tool_runtime))
+        assert tool_runtime is not None
+        list_tool = next(tool for tool in tool_runtime.tools if tool.name == "list_analysis_paths")
+        route_inventory = list_tool.invoke({"category": "route_definitions"})
+        assert any(path.endswith("backend/foodshop/urls.py") for path in route_inventory["paths"])
+        return response_model.model_validate(fallback_payload)
+
+    monkeypatch.setattr(analyzer_module, "invoke_structured_stage", _fake_invoke_structured_stage)
+
+    bundle = build_analysis_bundle(
+        site="food",
+        source_root=ROOT / "food",
+        ambiguity_retry_limit=0,
+    )
+
+    assert bundle.snapshot.repo_profile.site == "food"
+    assert [phase for phase, _runtime in observed] == [
+        "retrieval-plan",
+        "read-queue-r0",
+        "evidence-reading-r0",
+        "contract-extraction-r0",
+    ]
+
+
+def test_analysis_tool_runtime_exposes_only_minimal_surface():
+    candidate_set = analyzer_module._harvest_candidates(
+        root=ROOT / "food",
+        framework_profile=analyzer_module._build_framework_profile(root=ROOT / "food"),
+    )
+    workspace_profile = analyzer_module._build_workspace_profile(root=ROOT / "food")
+    runtime = analyzer_module.build_analysis_tool_runtime(
+        root=ROOT / "food",
+        workspace_profile=workspace_profile,
+        candidate_set=candidate_set,
+    )
+
+    assert {tool.name for tool in runtime.tools} == {"list_analysis_paths", "read_analysis_path"}
+    read_tool = next(tool for tool in runtime.tools if tool.name == "read_analysis_path")
+    result = read_tool.invoke({"path": "../secrets.py"})
+    assert result["error"] == "path_not_allowed"
 
 
 def test_sanitize_evidence_packets_dedupes_same_file_and_kind(tmp_path: Path):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from io import BytesIO
@@ -9,7 +10,7 @@ from pathlib import Path
 from threading import Event
 from typing import Any, Callable, Iterable
 from urllib.parse import urljoin, urlparse
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid5
 
 import httpx
 from PIL import Image
@@ -23,6 +24,7 @@ from chatbot.src.infrastructure.site_retrieval import (
 from chatbot.src.onboarding_v2.models.analysis import AnalysisSnapshot, RagSources
 from chatbot.src.onboarding_v2.models.planning import IntegrationPlan, RagCorpusPlan, RetrievalIndexPlan
 from chatbot.src.onboarding_v2.validation.backend_runtime import (
+    build_backend_subprocess_env,
     build_backend_runtime_plan,
     launch_backend_runtime,
     prepare_backend_runtime,
@@ -92,6 +94,29 @@ def build_indexing_plan(
     return RetrievalIndexPlan(site_id=site, site_slug=site_slug, corpora=corpora)
 
 
+def _resolve_faq_row_source(
+    *,
+    records: list[Any],
+) -> tuple[str, str | None, str | None]:
+    for record in records:
+        details = getattr(record, "details", {}) or {}
+        strategy = str(details.get("row_source_strategy") or "").strip()
+        module_name = str(details.get("row_source_module") or "").strip()
+        callable_name = str(details.get("row_source_callable") or "").strip()
+        if strategy == "host_python_fetch":
+            return (
+                "host_python_fetch",
+                module_name or "models.faq",
+                callable_name or "get_all_faq",
+            )
+        normalized_path = str(getattr(record, "path", "") or "").replace("\\", "/").lower()
+        if normalized_path.endswith("backend/models/faq.py"):
+            return ("host_python_fetch", "models.faq", "get_all_faq")
+        if normalized_path.endswith((".json", ".csv", ".md", ".txt")):
+            return ("static_source_scan", None, None)
+    return ("static_source_scan", None, None)
+
+
 def _build_rag_corpus_plan(
     *,
     corpus: str,
@@ -103,6 +128,13 @@ def _build_rag_corpus_plan(
     loader_strategy: str,
     product_search_endpoint: str,
 ) -> RagCorpusPlan:
+    faq_row_source_strategy = None
+    faq_row_source_module = None
+    faq_row_source_callable = None
+    if corpus == "faq":
+        faq_row_source_strategy, faq_row_source_module, faq_row_source_callable = _resolve_faq_row_source(
+            records=records,
+        )
     if corpus != "discovery_image":
         return RagCorpusPlan(
             corpus=corpus,
@@ -114,6 +146,9 @@ def _build_rag_corpus_plan(
             smoke_queries=smoke_queries,
             minimum_expected_documents=1,
             loader_strategy=loader_strategy,
+            row_source_strategy=faq_row_source_strategy,
+            row_source_module=faq_row_source_module,
+            row_source_callable=faq_row_source_callable,
         )
 
     image_field = next(
@@ -299,6 +334,14 @@ def _default_worker(
         return _cancelled_result()
 
     if corpus_plan.corpus == "faq":
+        if str(corpus_plan.row_source_strategy or "").strip() == "host_python_fetch":
+            return _ingest_faq_host_python_corpus(
+                corpus_plan=corpus_plan,
+                site_id=plan.site_id,
+                cancel_event=cancel_event,
+                host_context=host_context,
+                deps=deps,
+            )
         return _ingest_text_corpus(
             corpus_plan=corpus_plan,
             root=root,
@@ -326,6 +369,77 @@ def _default_worker(
         cancel_event=cancel_event,
         host_context=host_context,
         deps=deps,
+    )
+
+
+def _ingest_faq_host_python_corpus(
+    *,
+    corpus_plan: RagCorpusPlan,
+    site_id: str,
+    cancel_event: Event | None,
+    host_context: HostExportContext | None,
+    deps: _IndexingDeps,
+) -> dict[str, Any]:
+    if _cancelled(cancel_event):
+        return _cancelled_result()
+
+    rows = _fetch_rows(
+        corpus_plan=corpus_plan,
+        host_context=host_context,
+        cancel_event=cancel_event,
+        deps=deps,
+    )
+    if _cancelled(cancel_event):
+        return _cancelled_result()
+    chunks = _build_faq_chunks_from_rows(rows)
+    if not chunks:
+        return _failure_result(
+            corpus_plan=corpus_plan,
+            reason="no_indexable_chunks",
+            warning_codes=["host_python_fetch_failed"],
+        )
+
+    texts = [str(chunk.get("text") or "").strip() for chunk in chunks]
+    dense_vectors = deps.dense_embedder(texts)
+    sparse_vectors = _maybe_embed_sparse(texts, deps=deps)
+    client = _get_qdrant_client(deps)
+    vector_size = len(dense_vectors[0]) if dense_vectors else 1024
+    ensure_build_collection(
+        collection_name=corpus_plan.build_collection,
+        corpus=corpus_plan.corpus,
+        vector_size=vector_size,
+        client=client,
+    )
+
+    points: list[models.PointStruct] = []
+    for index, chunk in enumerate(chunks):
+        vector_payload: dict[str, Any] = {"": dense_vectors[index]}
+        if sparse_vectors is not None:
+            vector_payload["text-sparse"] = sparse_vectors[index]
+        logical_id = str(chunk.get("chunk_id") or index)
+        points.append(
+            models.PointStruct(
+                id=_build_point_id(site_id=site_id, corpus=corpus_plan.corpus, logical_id=logical_id),
+                vector=vector_payload,
+                payload=_build_faq_payload(chunk, site_id),
+            )
+        )
+    upsert_points(
+        collection_name=corpus_plan.build_collection,
+        points=points,
+        client=client,
+    )
+    swap_alias(
+        alias_name=corpus_plan.collection_alias,
+        build_collection=corpus_plan.build_collection,
+        client=client,
+    )
+    documents_indexed = len(points)
+    return _success_result(
+        corpus_plan=corpus_plan,
+        documents_indexed=documents_indexed,
+        warning_codes=[],
+        smoke_passed=documents_indexed >= max(1, corpus_plan.minimum_expected_documents),
     )
 
 
@@ -381,9 +495,10 @@ def _ingest_text_corpus(
         vector_payload: dict[str, Any] = {"": dense_vectors[index]}
         if sparse_vectors is not None:
             vector_payload["text-sparse"] = sparse_vectors[index]
+        logical_id = str(chunk.get("chunk_id") or index)
         points.append(
             models.PointStruct(
-                id=f"{site_id}:{corpus_plan.corpus}:{chunk.get('chunk_id') or index}",
+                id=_build_point_id(site_id=site_id, corpus=corpus_plan.corpus, logical_id=logical_id),
                 vector=vector_payload,
                 payload=payload_builder(chunk, site_id),
             )
@@ -495,7 +610,11 @@ def _ingest_discovery_image_corpus(
         }
         points.append(
             models.PointStruct(
-                id=f"{site_id}:discovery_image:{row['product_id']}:{index}",
+                id=_build_point_id(
+                    site_id=site_id,
+                    corpus="discovery_image",
+                    logical_id=f"{row['product_id']}:{index}",
+                ),
                 vector={"": vectors[index]},
                 payload=payload,
             )
@@ -526,12 +645,26 @@ def _fetch_rows(
     cancel_event: Event | None,
     deps: _IndexingDeps,
 ) -> list[dict[str, Any]]:
-    fetcher = deps.row_fetcher or _fetch_product_rows_from_host_api
-    return fetcher(
-        corpus_plan=corpus_plan,
-        host_context=host_context,
-        cancel_event=cancel_event,
-    )
+    if deps.row_fetcher is not None:
+        return deps.row_fetcher(
+            corpus_plan=corpus_plan,
+            host_context=host_context,
+            cancel_event=cancel_event,
+        )
+    strategy = str(corpus_plan.row_source_strategy or "").strip()
+    if strategy == "host_api_fetch":
+        return _fetch_product_rows_from_host_api(
+            corpus_plan=corpus_plan,
+            host_context=host_context,
+            cancel_event=cancel_event,
+        )
+    if strategy == "host_python_fetch":
+        return _fetch_rows_from_host_python(
+            corpus_plan=corpus_plan,
+            host_context=host_context,
+            cancel_event=cancel_event,
+        )
+    return []
 
 
 def _fetch_product_rows_from_host_api(
@@ -581,6 +714,64 @@ def _fetch_product_rows_from_host_api(
         )
     finally:
         stop_backend_runtime(runtime_state)
+
+
+def _fetch_rows_from_host_python(
+    *,
+    corpus_plan: RagCorpusPlan,
+    host_context: HostExportContext | None,
+    cancel_event: Event | None,
+) -> list[dict[str, Any]]:
+    if host_context is None:
+        raise RuntimeError("missing_host_export_context")
+    while not host_context.export_ready.is_set():
+        if _cancelled(cancel_event) or host_context.host_failed.is_set():
+            return []
+        host_context.export_ready.wait(timeout=0.2)
+    if host_context.host_failed.is_set() or _cancelled(cancel_event):
+        return []
+    if host_context.host_runtime_workspace is None or host_context.snapshot is None:
+        raise RuntimeError("host export context is incomplete")
+
+    prep_result = prepare_backend_runtime(
+        workspace=host_context.host_runtime_workspace,
+        snapshot=host_context.snapshot,
+    )
+    if not prep_result.passed:
+        raise RuntimeError(prep_result.failure_summary or "backend runtime prep failed")
+
+    module_name = str(corpus_plan.row_source_module or "").strip()
+    callable_name = str(corpus_plan.row_source_callable or "").strip()
+    if not module_name or not callable_name:
+        raise RuntimeError("host python fetch contract is incomplete")
+
+    workspace = Path(host_context.host_runtime_workspace).resolve()
+    backend_root = workspace / "backend" if (workspace / "backend").exists() else workspace
+    script = (
+        "import importlib, json, sys; "
+        f"sys.path.insert(0, {str(backend_root)!r}); "
+        f"module = importlib.import_module({module_name!r}); "
+        f"callable_obj = getattr(module, {callable_name!r}); "
+        "rows = callable_obj(); "
+        "print(json.dumps(rows, ensure_ascii=False))"
+    )
+    result = subprocess.run(
+        [str(prep_result.python_executable or ""), "-c", script],
+        cwd=backend_root,
+        env=build_backend_subprocess_env(backend_root=backend_root),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout or "host python fetch failed").strip())
+    try:
+        payload = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("host python fetch returned invalid json") from exc
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    return []
 
 
 def _paginate_product_rows(
@@ -692,6 +883,7 @@ def _ensure_resolved_image_rows(
 
 def _build_faq_payload(chunk: dict[str, Any], site_id: str) -> dict[str, Any]:
     payload = {
+        "chunk_id": str(chunk.get("chunk_id") or "").strip(),
         "question": str(chunk.get("question") or "").strip(),
         "answer": str(chunk.get("answer") or "").strip(),
         "text": str(chunk.get("text") or "").strip(),
@@ -708,6 +900,7 @@ def _build_faq_payload(chunk: dict[str, Any], site_id: str) -> dict[str, Any]:
 
 def _build_policy_payload(chunk: dict[str, Any], site_id: str) -> dict[str, Any]:
     return {
+        "chunk_id": str(chunk.get("chunk_id") or "").strip(),
         "text": str(chunk.get("text") or "").strip(),
         "clause_title": str(chunk.get("heading") or "").strip() or "document",
         "source_path": str(chunk.get("source_path") or "").strip(),
@@ -715,6 +908,31 @@ def _build_policy_payload(chunk: dict[str, Any], site_id: str) -> dict[str, Any]
         "corpus": "policy",
         "category": str(chunk.get("heading") or "").strip() or "document",
     }
+
+
+def _build_faq_chunks_from_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    chunks: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        question = str(row.get("question") or "").strip()
+        answer = str(row.get("answer") or "").strip()
+        if not question or not answer:
+            continue
+        category = str(row.get("category") or row.get("main_category") or "").strip()
+        chunks.append(
+            {
+                "chunk_id": str(row.get("faq_id") or row.get("chunk_id") or f"faq-{index:04d}"),
+                "question": question,
+                "answer": answer,
+                "text": f"질문: {question}\n답변: {answer}",
+                "main_category": category,
+                "source_path": str(row.get("source_path") or "").strip(),
+            }
+        )
+    return chunks
+
+
+def _build_point_id(*, site_id: str, corpus: str, logical_id: str) -> str:
+    return str(uuid5(NAMESPACE_URL, f"{site_id}:{corpus}:{logical_id}"))
 
 
 def _maybe_embed_sparse(

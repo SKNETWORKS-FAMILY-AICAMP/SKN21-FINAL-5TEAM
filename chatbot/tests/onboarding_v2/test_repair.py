@@ -16,6 +16,7 @@ from chatbot.src.onboarding_v2.engine import (
 )
 from chatbot.src.onboarding_v2.repair import diagnose_failure, synthesize_failure
 from chatbot.src.onboarding_v2.repair.synthesis import collect_file_samples
+from chatbot.src.onboarding_v2.stage_tools import build_repair_tool_runtime
 from chatbot.src.onboarding_v2.storage import DebugStore
 
 
@@ -309,6 +310,82 @@ def test_diagnose_failure_prefers_validation_for_host_auth_bootstrap_failure(tmp
     assert decision.rewind_to == "validation"
     assert decision.required_rechecks == ["host_auth_bootstrap"]
     assert "bootstrap" in decision.diagnosis.lower()
+
+
+def test_diagnose_failure_routes_non_heuristic_cases_through_shared_llm_runtime(tmp_path: Path, monkeypatch):
+    debug_store = DebugStore(tmp_path / "generated" / "food" / "food-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="validation",
+        failure_signature="smoke_failed",
+        failure_summary="step login returned 500",
+        trigger_event_id="evt-shared-runtime",
+        related_artifacts=[],
+        related_files=["backend/app.py"],
+        related_file_samples=[],
+        input_artifact_versions={"validation": 1},
+        attempt_number=1,
+        repeat_count=1,
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_invoke_structured_stage(**kwargs):
+        captured.update(kwargs)
+        return RepairDecision(
+            failure_signature="smoke_failed",
+            diagnosis="shared runtime",
+            rewind_to="validation",
+            preserve_artifacts=[],
+            required_rechecks=[],
+            additional_discovery=[],
+            artifact_overrides={},
+            stop=False,
+            stop_reason=None,
+        )
+
+    monkeypatch.setattr("chatbot.src.onboarding_v2.repair.diagnosis.invoke_structured_stage", _fake_invoke_structured_stage)
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={"read_queue": [{"path": "backend/routes/auth.py"}]},
+        snapshot_payload={"repo_profile": {"site": "food"}},
+        planning_bundle_payload={},
+        plan_payload={},
+        edit_program_payload={},
+        validation_payload={"passed": False},
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+    )
+
+    assert decision.diagnosis == "shared runtime"
+    tool_runtime = captured["tool_runtime"]
+    assert tool_runtime.stage == "repair"
+    assert "backend/app.py" in tool_runtime.allowed_paths
+    assert "backend/routes/auth.py" in tool_runtime.allowed_paths
+
+
+def test_read_repair_path_rejects_paths_outside_allowlist():
+    runtime = build_repair_tool_runtime(
+        root=ROOT,
+        failure_bundle=FailureBundle(
+            failed_stage="validation",
+            failure_signature="smoke_failed",
+            failure_summary="step login returned 500",
+            trigger_event_id="evt-read-repair",
+            related_artifacts=[],
+            related_files=["backend/app.py"],
+            related_file_samples=[],
+            input_artifact_versions={"validation": 1},
+            attempt_number=1,
+            repeat_count=1,
+        ),
+        analysis_bundle_payload={"read_queue": [{"path": "backend/routes/auth.py"}]},
+    )
+
+    read_tool = next(tool for tool in runtime.tools if tool.name == "read_repair_path")
+    result = read_tool.invoke({"path": "../secrets.py"})
+
+    assert result["error"] == "path_not_allowed"
 
 
 def test_derive_effective_rewind_to_promotes_compile_override():

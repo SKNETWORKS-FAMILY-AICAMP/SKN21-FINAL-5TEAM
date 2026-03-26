@@ -83,6 +83,7 @@ class BackendRuntimePrepResult(BaseModel):
     seed_source_path: str | None = None
     reset_source_path: str | None = None
     fixture_manifest: dict[str, Any] = Field(default_factory=dict)
+    env_source: dict[str, Any] = Field(default_factory=dict)
     live_log_paths: dict[str, str] = Field(default_factory=dict)
     related_files: list[str] = Field(default_factory=list)
 

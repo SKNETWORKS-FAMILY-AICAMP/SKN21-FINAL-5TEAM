@@ -490,3 +490,50 @@ def test_planner_builds_site_scoped_retrieval_index_plan_and_capability_upgrade(
     assert planning_bundle.integration_plan.capability_upgrade["capability_profile"] == "order_cs_plus_retrieval"
     assert planning_bundle.integration_plan.host_frontend.widget_features["image_upload"] is False
     assert planning_bundle.integration_plan.host_frontend.enabled_retrieval_corpora == []
+
+
+def test_planner_uses_host_python_fetch_for_db_backed_faq_sources():
+    retrieval_index_plan = planner_module._build_retrieval_index_plan(
+        site_id="bilyeo",
+        rag_sources=RagSources(
+            faq=[
+                RagSourceRecord(
+                    path="backend/models/faq.py",
+                    kind="code_file",
+                    corpus="faq",
+                    reason="db-backed faq model",
+                    details={"source_surface": "db_table"},
+                )
+            ]
+        ),
+        run_id="runtime",
+        product_search_endpoint="/api/products",
+    )
+
+    faq_plan = next(item for item in retrieval_index_plan.corpora if item.corpus == "faq")
+    assert faq_plan.row_source_strategy == "host_python_fetch"
+    assert faq_plan.row_source_module == "models.faq"
+    assert faq_plan.row_source_callable == "get_all_faq"
+
+
+def test_planner_keeps_static_source_scan_for_materialized_faq_files():
+    retrieval_index_plan = planner_module._build_retrieval_index_plan(
+        site_id="demo",
+        rag_sources=RagSources(
+            faq=[
+                RagSourceRecord(
+                    path="scripts/faq_seed.json",
+                    kind="json_file",
+                    corpus="faq",
+                    reason="materialized faq export",
+                )
+            ]
+        ),
+        run_id="runtime",
+        product_search_endpoint="/api/products",
+    )
+
+    faq_plan = next(item for item in retrieval_index_plan.corpora if item.corpus == "faq")
+    assert faq_plan.row_source_strategy == "static_source_scan"
+    assert faq_plan.row_source_module is None
+    assert faq_plan.row_source_callable is None

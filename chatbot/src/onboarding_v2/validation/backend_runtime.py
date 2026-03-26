@@ -34,6 +34,7 @@ def prepare_backend_runtime(
 ) -> BackendRuntimePrepResult:
     workspace = Path(workspace).resolve()
     backend_root = _resolve_backend_root(workspace)
+    backend_env_defaults, env_source = _load_backend_env_defaults(backend_root)
     framework = snapshot.repo_profile.backend_framework
     runtime_root = _resolve_validation_support_root(workspace)
     live_logs_root_path = (
@@ -76,6 +77,7 @@ def prepare_backend_runtime(
             venv_path=str(venv_path),
             python_executable=str(python_executable),
             create_venv=create_venv,
+            env_source=env_source,
             live_log_paths=live_log_paths,
             related_files=_default_related_files(framework),
         )
@@ -127,6 +129,7 @@ def prepare_backend_runtime(
             python_executable=str(python_executable),
             create_venv=create_venv,
             install=install,
+            env_source=env_source,
             live_log_paths=live_log_paths,
             related_files=_default_related_files(framework),
         )
@@ -139,6 +142,10 @@ def prepare_backend_runtime(
             framework=framework,
             backend_root=backend_root,
             python_executable=python_executable,
+            env=build_backend_subprocess_env(
+                backend_root=backend_root,
+                dotenv_defaults=backend_env_defaults,
+            ),
             log_path=log_path,
             heartbeat_interval_s=heartbeat_interval_s,
             progress_callback=_step_progress_emitter(
@@ -164,6 +171,7 @@ def prepare_backend_runtime(
             create_venv=create_venv,
             install=install,
             migrate=migrate,
+            env_source=env_source,
             live_log_paths=live_log_paths,
             fixture_manifest=_build_fixture_manifest(
                 available=False,
@@ -186,6 +194,10 @@ def prepare_backend_runtime(
             framework=framework,
             backend_root=backend_root,
             python_executable=python_executable,
+            env=build_backend_subprocess_env(
+                backend_root=backend_root,
+                dotenv_defaults=backend_env_defaults,
+            ),
             missing_stdout="reset script not found; skipped reset",
             log_path=log_path,
             heartbeat_interval_s=heartbeat_interval_s,
@@ -213,6 +225,7 @@ def prepare_backend_runtime(
             install=install,
             migrate=migrate,
             reset=reset,
+            env_source=env_source,
             live_log_paths=live_log_paths,
             seed_source_path=str(seed_path) if seed_path is not None else None,
             reset_source_path=str(reset_path) if reset_path is not None else None,
@@ -240,6 +253,10 @@ def prepare_backend_runtime(
             framework=framework,
             backend_root=backend_root,
             python_executable=python_executable,
+            env=build_backend_subprocess_env(
+                backend_root=backend_root,
+                dotenv_defaults=backend_env_defaults,
+            ),
             missing_stdout="seed script not found; skipped seed",
             log_path=log_path,
             heartbeat_interval_s=heartbeat_interval_s,
@@ -268,6 +285,7 @@ def prepare_backend_runtime(
             migrate=migrate,
             reset=reset,
             seed=seed,
+            env_source=env_source,
             live_log_paths=live_log_paths,
             seed_source_path=str(seed_path) if seed_path is not None else None,
             reset_source_path=str(reset_path) if reset_path is not None else None,
@@ -336,6 +354,7 @@ def prepare_backend_runtime(
         seed_source_path=str(seed_path) if seed_path is not None else None,
         reset_source_path=str(reset_path) if reset_path is not None else None,
         fixture_manifest=fixture_manifest,
+        env_source=env_source,
         live_log_paths=live_log_paths,
         related_files=_default_related_files(framework),
     )
@@ -423,8 +442,10 @@ def launch_backend_runtime(
     *,
     log_path: str | Path | None = None,
 ) -> BackendRuntimeState:
-    environment = os.environ.copy()
-    environment.update(plan.environment)
+    environment = build_backend_subprocess_env(
+        backend_root=plan.backend_root,
+        extra_env=plan.environment,
+    )
     launcher_log_path = Path(log_path).resolve() if log_path is not None else None
     popen_kwargs: dict[str, Any] = {
         "cwd": plan.backend_root,
@@ -512,6 +533,77 @@ def _resolve_validation_support_root(workspace: Path) -> Path:
     if host_root.name == "workspace":
         return host_root.parent / "validation-support" / "host-backend"
     return host_root / "validation-support" / "host-backend"
+
+
+def build_backend_subprocess_env(
+    *,
+    backend_root: str | Path,
+    extra_env: dict[str, str] | None = None,
+    dotenv_defaults: dict[str, str] | None = None,
+) -> dict[str, str]:
+    backend_root_path = Path(backend_root).resolve()
+    defaults = dict(dotenv_defaults or _load_backend_env_defaults(backend_root_path)[0])
+    environment = {str(key): str(value) for key, value in os.environ.items()}
+    for key, value in defaults.items():
+        normalized_key = str(key)
+        if normalized_key in environment:
+            continue
+        environment[normalized_key] = str(value)
+    if extra_env:
+        environment.update(
+            {
+                str(key): str(value)
+                for key, value in extra_env.items()
+                if value is not None
+            }
+        )
+    return environment
+
+
+def _load_backend_env_defaults(backend_root: Path) -> tuple[dict[str, str], dict[str, Any]]:
+    workspace_root = backend_root.parent if backend_root.name == "backend" else backend_root
+    env_source: dict[str, Any] = {
+        "loaded_workspace_dotenv": False,
+        "workspace_dotenv_path": None,
+        "loaded_backend_dotenv": False,
+        "backend_dotenv_path": None,
+    }
+    defaults: dict[str, str] = {}
+    for label, path in (
+        ("workspace", workspace_root / ".env"),
+        ("backend", backend_root / ".env"),
+    ):
+        if not path.exists():
+            continue
+        defaults.update(_parse_dotenv_file(path))
+        env_source[f"loaded_{label}_dotenv"] = True
+        env_source[f"{label}_dotenv_path"] = str(path)
+    return defaults, env_source
+
+
+def _parse_dotenv_file(path: Path) -> dict[str, str]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[key] = value
+    return values
 
 
 def _venv_python(venv_path: Path) -> Path:
@@ -712,7 +804,7 @@ def _create_venv(
             skipped_reason="existing venv reused",
             log_path=log_path,
         )
-    return _run_command(
+    result = _run_command(
         name="create_venv",
         command=[python_executable, "-m", "venv", str(venv_path)],
         cwd=venv_path.parent,
@@ -720,6 +812,22 @@ def _create_venv(
         heartbeat_interval_s=heartbeat_interval_s,
         progress_callback=progress_callback,
     )
+    if result.passed:
+        return result
+    stderr_text = str(result.stderr or "").lower()
+    if (
+        _venv_python(venv_path).exists()
+        and "file exists" in stderr_text
+    ):
+        return _skipped_command_result(
+            name="create_venv",
+            command=[python_executable, "-m", "venv", str(venv_path)],
+            cwd=venv_path.parent,
+            stdout="existing venv reused",
+            skipped_reason="existing venv reused",
+            log_path=log_path,
+        )
+    return result
 
 
 def _install_backend_requirements(
@@ -763,6 +871,7 @@ def _run_django_migrate(
     framework: str,
     backend_root: Path,
     python_executable: Path,
+    env: dict[str, str] | None = None,
     log_path: Path | None = None,
     heartbeat_interval_s: float = 15.0,
     progress_callback: ValidationEventCallback | None = None,
@@ -780,6 +889,7 @@ def _run_django_migrate(
         name="migrate",
         command=[str(python_executable), "manage.py", "migrate", "--noinput"],
         cwd=backend_root,
+        env=env,
         log_path=log_path,
         heartbeat_interval_s=heartbeat_interval_s,
         progress_callback=progress_callback,
@@ -793,6 +903,7 @@ def _run_optional_script(
     framework: str,
     backend_root: Path,
     python_executable: Path,
+    env: dict[str, str] | None,
     missing_stdout: str,
     log_path: Path | None = None,
     heartbeat_interval_s: float = 15.0,
@@ -812,6 +923,7 @@ def _run_optional_script(
         name=name,
         command=[str(python_executable), str(script_path)],
         cwd=backend_root,
+        env=env,
         log_path=log_path,
         heartbeat_interval_s=heartbeat_interval_s,
         progress_callback=progress_callback,
@@ -1038,6 +1150,7 @@ def _run_command(
     name: str,
     command: list[str],
     cwd: Path,
+    env: dict[str, str] | None = None,
     log_path: Path | None = None,
     heartbeat_interval_s: float = 15.0,
     progress_callback: ValidationEventCallback | None = None,
@@ -1054,6 +1167,7 @@ def _run_command(
     process = subprocess.Popen(
         command,
         cwd=cwd,
+        env=dict(env or os.environ),
         stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

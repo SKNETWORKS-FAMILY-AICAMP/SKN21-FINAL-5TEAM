@@ -21,6 +21,7 @@ from chatbot.src.onboarding_v2.validation.runner import (
     _finalize_conversation_scenario_result,
     _evaluate_widget_order_flow_report,
     _enforce_required_rechecks,
+    _run_conversation_llm_judge,
     _runtime_base_url,
     run_validation,
     validate_host_auth_bootstrap,
@@ -415,6 +416,34 @@ def test_conversation_validation_skips_llm_judge_after_deterministic_failure(mon
     assert result.llm_passed is None
     assert result.final_verdict == "fail"
     assert called["judge"] is False
+
+
+def test_conversation_llm_judge_keeps_tool_runtime_disabled(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def _fake_invoke_structured_stage(*, response_model, fallback_payload, tool_runtime=None, **kwargs):
+        del kwargs
+        captured["tool_runtime"] = tool_runtime
+        return response_model.model_validate(fallback_payload)
+
+    monkeypatch.setenv("ONBOARDING_V2_ENABLE_LLM", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.invoke_structured_stage",
+        _fake_invoke_structured_stage,
+    )
+
+    result = _run_conversation_llm_judge(
+        prompt="show my order",
+        final_answer="Here is your order.",
+        expected_tool_names=["lookup_order"],
+        observed_tool_names=["lookup_order"],
+        transcript_path="/tmp/transcript.json",
+        trace_path="/tmp/trace.jsonl",
+    )
+
+    assert captured["tool_runtime"] is None
+    assert result["overall_pass"] is True
 
 
 def test_validate_host_auth_bootstrap_uses_runtime_plan_listen_port(monkeypatch, tmp_path: Path):

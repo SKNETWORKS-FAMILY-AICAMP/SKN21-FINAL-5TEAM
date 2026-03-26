@@ -312,6 +312,131 @@ def test_engine_entry_writes_llm_usage_summary_artifact(monkeypatch, tmp_path: P
     assert usage_artifact["payload"]["calls"]
 
 
+def test_engine_entry_scopes_tool_runtime_to_analysis_only(monkeypatch, tmp_path: Path):
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "host" / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
+        readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
+    )
+    runtime_state = BackendRuntimeState(
+        framework="django",
+        passed=True,
+        pid=1234,
+        command=runtime_plan.command,
+        readiness_url=runtime_plan.readiness_url,
+    )
+    observed: list[tuple[str, str, object]] = []
+
+    def _fake_invoke_structured_stage(
+        *,
+        stage,
+        phase,
+        response_model,
+        fallback_payload,
+        tool_runtime=None,
+        **kwargs,
+    ):
+        del kwargs
+        observed.append((stage, phase, tool_runtime))
+        return response_model.model_validate(fallback_payload)
+
+    monkeypatch.setattr(analyzer_module, "invoke_structured_stage", _fake_invoke_structured_stage)
+    monkeypatch.setattr(planner_module, "invoke_structured_stage", _fake_invoke_structured_stage)
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.prepare_backend_runtime",
+        lambda **kwargs: BackendRuntimePrepResult(framework="django", passed=True),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.build_backend_runtime_plan",
+        lambda **kwargs: runtime_plan,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
+        lambda plan, **kwargs: runtime_state,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
+        lambda state: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "host auth bootstrap passed",
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "session-token",
+                "user": {"id": "7"},
+            },
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget bundle fetch passed",
+            "target_url": "http://localhost:8100/widget.js",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot adapter auth passed",
+            "validated_user": {"id": "7", "siteId": "food"},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_order_e2e",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget order e2e passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.run_chatbot_compile_preflight",
+        lambda workspace, scan_paths=None: CompilePreflightResult(
+            passed=True,
+            failure_code=None,
+            failure_summary=None,
+            related_files=[],
+            details={"import_smoke": "passed"},
+        ),
+        raising=False,
+    )
+
+    result = run_onboarding_generation_v2(
+        site="food",
+        source_root=str(ROOT / "food"),
+        generated_root=str(tmp_path / "generated"),
+        runtime_root=str(tmp_path / "runtime"),
+        run_id="food-run-v2-tool-scope",
+        chatbot_server_base_url="http://localhost:8100",
+    )
+
+    assert result["status"] == "exported"
+    analysis_tool_runtimes = [tool_runtime for stage, _phase, tool_runtime in observed if stage == "analysis"]
+    planning_tool_runtimes = [tool_runtime for stage, _phase, tool_runtime in observed if stage == "planning"]
+    assert analysis_tool_runtimes
+    assert all(tool_runtime is not None for tool_runtime in analysis_tool_runtimes)
+    assert planning_tool_runtimes
+    assert all(tool_runtime is None for tool_runtime in planning_tool_runtimes)
+
+
 def test_engine_entry_passes_snapshot_roots_and_allowlists_to_export(monkeypatch, tmp_path: Path):
     runtime_plan = BackendRuntimePlan(
         framework="django",

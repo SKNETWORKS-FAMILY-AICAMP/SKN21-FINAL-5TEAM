@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from uuid import UUID
 
 from qdrant_client.http import models
 
@@ -209,6 +210,9 @@ def test_execute_indexing_plan_upserts_dense_and_sparse_text_corpora(tmp_path: P
         "site_demo-shop__faq__run_demo",
         "site_demo-shop__policy__run_demo",
     ]
+    for _collection, points in fake_client.upserts:
+        for point in points:
+            UUID(str(point.id))
 
 
 def test_execute_indexing_plan_discovery_image_uses_host_api_rows_and_allows_partial_success(tmp_path: Path):
@@ -265,3 +269,60 @@ def test_execute_indexing_plan_discovery_image_uses_host_api_rows_and_allows_par
     assert discovery["alias_swapped"] is True
     assert "image_fetch_failed" in discovery["warning_codes"]
     assert fake_client.aliases["site_demo-shop__discovery_image"] == "site_demo-shop__discovery_image__run_demo"
+    UUID(str(fake_client.upserts[0][1][0].id))
+
+
+def test_execute_indexing_plan_can_ingest_faq_rows_via_host_python_fetch(tmp_path: Path):
+    backend_model = tmp_path / "backend" / "models"
+    backend_model.mkdir(parents=True)
+    (backend_model / "faq.py").write_text("def get_all_faq():\n    return []\n", encoding="utf-8")
+
+    plan = RetrievalIndexPlan(
+        site_id="bilyeo",
+        site_slug="bilyeo",
+        corpora=[
+            RagCorpusPlan(
+                corpus="faq",
+                chunking_strategy="qa_level",
+                collection_alias="site_bilyeo__faq",
+                build_collection="site_bilyeo__faq__run_demo",
+                sources=["backend/models/faq.py"],
+                smoke_queries=["배송"],
+                minimum_expected_documents=1,
+                loader_strategy="faq_source_scan",
+                row_source_strategy="host_python_fetch",
+                row_source_module="models.faq",
+                row_source_callable="get_all_faq",
+            )
+        ],
+    )
+    fake_client = _FakeQdrantClient()
+    host_context = HostExportContext()
+    host_context.host_runtime_workspace = tmp_path
+    host_context.export_ready.set()
+    captured: dict[str, object] = {}
+
+    result = execute_indexing_plan(
+        plan=plan,
+        root=tmp_path,
+        host_context=host_context,
+        qdrant_client=fake_client,
+        dense_embedder=lambda texts: [[float(index + 1), float(index + 2)] for index, _ in enumerate(texts)],
+        sparse_embedder=lambda texts: [
+            models.SparseVector(indices=[0, 1], values=[1.0, float(len(text))])
+            for text in texts
+        ],
+        row_fetcher=lambda **kwargs: captured.update(kwargs) or [
+            {"faq_id": 1, "category": "배송", "question": "배송은 얼마나 걸리나요?", "answer": "2일"},
+            {"faq_id": 2, "category": "환불", "question": "환불은 언제 되나요?", "answer": "3일"},
+        ],
+    )
+
+    faq = result["corpora"]["faq"]
+    assert faq["status"] == "completed"
+    assert faq["documents_indexed"] == 2
+    assert faq["alias_swapped"] is True
+    assert captured["corpus_plan"].row_source_module == "models.faq"
+    assert captured["corpus_plan"].row_source_callable == "get_all_faq"
+    for point in fake_client.upserts[0][1]:
+        UUID(str(point.id))

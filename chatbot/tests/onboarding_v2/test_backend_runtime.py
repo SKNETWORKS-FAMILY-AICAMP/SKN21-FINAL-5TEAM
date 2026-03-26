@@ -408,6 +408,89 @@ def test_prepare_backend_runtime_runs_interactive_reset_script_non_interactively
     assert prep.seed.passed is True
 
 
+def test_prepare_backend_runtime_loads_workspace_dotenv_into_prep_script_env_without_overriding_process_env(
+    tmp_path: Path,
+    monkeypatch,
+):
+    workspace = tmp_path / "workspace"
+    backend_root = workspace / "backend"
+    scripts_root = workspace / "scripts"
+    backend_root.mkdir(parents=True)
+    scripts_root.mkdir(parents=True)
+    (backend_root / "manage.py").write_text("print('django')\n", encoding="utf-8")
+    (workspace / ".env").write_text(
+        "ORACLE_HOST=dotenv-host\nORACLE_SERVICE_NAME=freepdb1\nONLY_IN_DOTENV=1\n",
+        encoding="utf-8",
+    )
+    (scripts_root / "reset_db.py").write_text("print('reset ok')\n", encoding="utf-8")
+    (scripts_root / "seed.py").write_text("print('seed ok')\n", encoding="utf-8")
+    monkeypatch.setenv("ORACLE_HOST", "process-host")
+
+    captured_envs: dict[str, dict[str, str]] = {}
+
+    def _ok_command(*, name: str, command: list[str], cwd: Path, log_path: Path | None = None, env=None, **kwargs):
+        del kwargs
+        if name in {"reset", "seed"}:
+            captured_envs[name] = dict(env or {})
+        return backend_runtime_module.BackendRuntimeCommandResult(
+            name=name,
+            command=command,
+            cwd=str(cwd),
+            returncode=0,
+            stdout=f"{name} ok",
+            stderr="",
+            passed=True,
+            log_path=str(log_path) if log_path is not None else None,
+        )
+
+    monkeypatch.setattr(backend_runtime_module, "_create_venv", lambda *args, **kwargs: _ok_command(name="create_venv", command=["python", "-m", "venv"], cwd=tmp_path))
+    monkeypatch.setattr(backend_runtime_module, "_install_backend_requirements", lambda **kwargs: _ok_command(name="install", command=["pip", "install"], cwd=backend_root))
+    monkeypatch.setattr(backend_runtime_module, "_run_django_migrate", lambda **kwargs: _ok_command(name="migrate", command=["manage.py", "migrate"], cwd=backend_root))
+    monkeypatch.setattr(backend_runtime_module, "_run_command", _ok_command)
+
+    prep = prepare_backend_runtime(
+        workspace=workspace,
+        snapshot=_snapshot(backend_framework="django"),
+    )
+
+    assert prep.passed is True
+    assert captured_envs["reset"]["ORACLE_HOST"] == "process-host"
+    assert captured_envs["reset"]["ORACLE_SERVICE_NAME"] == "freepdb1"
+    assert captured_envs["seed"]["ONLY_IN_DOTENV"] == "1"
+    assert prep.env_source["loaded_workspace_dotenv"] is True
+    assert prep.env_source["workspace_dotenv_path"].endswith("/workspace/.env")
+
+
+def test_create_venv_treats_file_exists_race_as_reused_venv(tmp_path: Path, monkeypatch):
+    venv_path = tmp_path / "venv"
+    python_path = venv_path / "bin" / "python"
+
+    def _failed_run_command(**kwargs):
+        python_path.parent.mkdir(parents=True, exist_ok=True)
+        python_path.write_text("", encoding="utf-8")
+        return backend_runtime_module.BackendRuntimeCommandResult(
+            name="create_venv",
+            command=list(kwargs["command"]),
+            cwd=str(kwargs["cwd"]),
+            returncode=1,
+            stdout="",
+            stderr="Error: [Errno 17] File exists: 'site-packages'",
+            passed=False,
+            log_path=str(kwargs.get("log_path")) if kwargs.get("log_path") is not None else None,
+        )
+
+    monkeypatch.setattr(backend_runtime_module, "_run_command", _failed_run_command)
+
+    result = backend_runtime_module._create_venv(
+        sys.executable,
+        venv_path,
+    )
+
+    assert result.passed is True
+    assert result.skipped is True
+    assert result.skipped_reason == "existing venv reused"
+
+
 def test_prepare_backend_runtime_emits_step_events_and_records_skips(tmp_path: Path, monkeypatch):
     workspace = tmp_path / "workspace"
     backend_root = workspace / "backend"
