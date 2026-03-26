@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename);
 const distDir = path.join(__dirname, 'dist');
 const jsOutfile = path.join(distDir, 'widget.js');
 const cssOutfile = path.join(distDir, 'widget.css');
+const chatbotApiBaseUrl = process.env.NEXT_PUBLIC_CHATBOT_API_URL || 'http://localhost:8100';
 
 await mkdir(distDir, { recursive: true });
 
@@ -15,6 +16,9 @@ await build({
   absWorkingDir: __dirname,
   bundle: true,
   entryPoints: ['widget-entry.ts'],
+  define: {
+    'process.env.NEXT_PUBLIC_CHATBOT_API_URL': JSON.stringify(chatbotApiBaseUrl),
+  },
   format: 'iife',
   jsx: 'automatic',
   loader: {

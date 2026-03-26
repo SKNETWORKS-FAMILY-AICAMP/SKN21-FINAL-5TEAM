@@ -9,6 +9,10 @@ export type SharedWidgetHostConfig = {
   chatPath?: string;
   streamPath?: string;
   capabilityProfile?: string;
+  enabledRetrievalCorpora?: string[];
+  widgetFeatures?: {
+    imageUpload?: boolean;
+  };
 };
 
 export type SharedWidgetAuthResult = {
@@ -246,6 +250,8 @@ export async function sendSharedChatRequest(
     siteId: string;
     previousState?: Record<string, unknown> | null;
     capabilityProfile?: string | null;
+    enabledRetrievalCorpora?: string[];
+    widgetFeatures?: Record<string, unknown> | null;
   },
 ): Promise<SharedChatApiResponse> {
   const response = await fetchImpl(_resolveChatEndpoint(host), {
@@ -260,6 +266,9 @@ export async function sendSharedChatRequest(
       site_id: payload.siteId,
       access_token: payload.accessToken,
       capability_profile: payload.capabilityProfile ?? host.capabilityProfile ?? undefined,
+      enabled_retrieval_corpora:
+        payload.enabledRetrievalCorpora ?? host.enabledRetrievalCorpora ?? undefined,
+      widget_features: payload.widgetFeatures ?? host.widgetFeatures ?? undefined,
     }),
   });
 
@@ -330,6 +339,8 @@ export async function streamSharedChatResponse(
     bootstrap: SharedChatBootstrap;
     fetchImpl: FetchLike;
     capabilityProfile?: string | null;
+    enabledRetrievalCorpora?: string[];
+    widgetFeatures?: Record<string, unknown> | null;
   },
   callbacks: SharedChatStreamHandlers = {},
 ): Promise<{ state: Record<string, unknown> | null }> {
@@ -348,6 +359,9 @@ export async function streamSharedChatResponse(
       site_id: args.bootstrap.site_id,
       access_token: args.bootstrap.access_token,
       capability_profile: args.capabilityProfile ?? args.host.capabilityProfile ?? undefined,
+      enabled_retrieval_corpora:
+        args.enabledRetrievalCorpora ?? args.host.enabledRetrievalCorpora ?? undefined,
+      widget_features: args.widgetFeatures ?? args.host.widgetFeatures ?? undefined,
     }),
   });
 

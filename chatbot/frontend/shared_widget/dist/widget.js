@@ -23645,7 +23645,9 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
         model: args.model ?? void 0,
         site_id: args.bootstrap.site_id,
         access_token: args.bootstrap.access_token,
-        capability_profile: args.capabilityProfile ?? args.host.capabilityProfile ?? void 0
+        capability_profile: args.capabilityProfile ?? args.host.capabilityProfile ?? void 0,
+        enabled_retrieval_corpora: args.enabledRetrievalCorpora ?? args.host.enabledRetrievalCorpora ?? void 0,
+        widget_features: args.widgetFeatures ?? args.host.widgetFeatures ?? void 0
       })
     });
     if (!response.ok || !response.body?.getReader) {
@@ -33544,7 +33546,7 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
 
   // ReviewFormUI.tsx
   var import_jsx_runtime5 = __toESM(require_jsx_runtime());
-  var API_BASE_URL = process.env.NEXT_PUBLIC_CHATBOT_API_URL || "http://localhost:8100";
+  var API_BASE_URL = "http://localhost:8100";
   function ReviewFormUI({
     orderId,
     productId,
@@ -33860,7 +33862,7 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
     if (typeof source === "string") return source;
     return source._url ?? source.url ?? "";
   };
-  var API_BASE_URL2 = process.env.NEXT_PUBLIC_CHATBOT_API_URL || "http://localhost:8100";
+  var API_BASE_URL2 = "http://localhost:8100";
   var SHARED_WIDGET_HOST = {
     authBootstrapPath: `${API_BASE_URL2 || ""}/api/v1/chat/auth-token`,
     chatbotApiBase: API_BASE_URL2 || "",
