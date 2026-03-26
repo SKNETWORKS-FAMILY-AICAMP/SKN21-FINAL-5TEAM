@@ -246,6 +246,7 @@ class DomainIntegration(BaseModel):
     product_api_base_paths: list[str] = Field(default_factory=list)
     order_api_base_paths: list[str] = Field(default_factory=list)
     order_bridge_targets: list[PathCandidate] = Field(default_factory=list)
+    login_endpoint: str | None = None
     auth_validation_endpoint: str | None = None
     current_user_endpoint: str | None = None
     product_search_endpoint: str | None = None

@@ -58,6 +58,7 @@ def test_model_contracts_round_trip():
             strategy="django_project_urlconf_import_view",
             route_target="backend/foodshop/urls.py",
             import_target="backend/foodshop/urls.py",
+            login_endpoint="/api/users/login/",
             auth_handler_source="backend/users/views.py",
             generated_handler_path="backend/chat_auth.py",
             site_id="food",

@@ -27,6 +27,7 @@ class HostBackendPlan(BaseModel):
     strategy: str
     route_target: str
     import_target: str
+    login_endpoint: str
     order_lookup_target: str = "backend/orders/views.py"
     order_action_target: str = "backend/orders/views.py"
     exchange_strategy: str = "augment_existing_order_action_endpoint"
@@ -47,6 +48,7 @@ class HostBackendPlan(BaseModel):
         "strategy",
         "route_target",
         "import_target",
+        "login_endpoint",
         "order_lookup_target",
         "order_action_target",
         "exchange_strategy",

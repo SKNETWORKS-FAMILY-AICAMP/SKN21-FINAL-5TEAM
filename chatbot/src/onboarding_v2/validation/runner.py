@@ -177,6 +177,7 @@ def run_validation_cycle(
             )
             widget_order_e2e = validate_widget_order_e2e(
                 chatbot_runtime_workspace=chatbot_runtime_workspace,
+                runtime_plan=runtime_plan,
                 bootstrap_result=host_auth_bootstrap,
                 adapter_auth_result=chatbot_adapter_auth,
                 plan=plan,
@@ -338,8 +339,9 @@ def validate_host_auth_bootstrap(
     onboarding_credentials: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     del run_root, host_runtime_workspace, snapshot
-    base_url = runtime_plan.readiness_url.removesuffix(
-        plan.host_backend.chat_auth_contract_path
+    base_url = _runtime_base_url(
+        runtime_plan,
+        chat_auth_contract_path=plan.host_backend.chat_auth_contract_path,
     ).rstrip("/")
     credentials = {
         "email": "test1@example.com",
@@ -348,7 +350,19 @@ def validate_host_auth_bootstrap(
     credentials.update(
         {key: value for key, value in (onboarding_credentials or {}).items() if value}
     )
-    login_url = f"{base_url}/api/users/login/"
+    login_path = str(plan.host_backend.login_endpoint or "").strip()
+    if not login_path:
+        return {
+            "passed": False,
+            "failure_summary": "host auth bootstrap missing planned login endpoint",
+            "login_url": None,
+            "bootstrap_url": f"{base_url}{plan.host_backend.chat_auth_contract_path}",
+            "auth_handler_source": plan.host_backend.auth_handler_source,
+            "related_files": [plan.host_backend.auth_handler_source],
+        }
+    if not login_path.startswith("/"):
+        login_path = "/" + login_path
+    login_url = f"{base_url}{login_path}"
     bootstrap_url = f"{base_url}{plan.host_backend.chat_auth_contract_path}"
 
     with httpx.Client(follow_redirects=True, timeout=10.0) as client:
@@ -357,7 +371,11 @@ def validate_host_auth_bootstrap(
             return {
                 "passed": False,
                 "failure_summary": f"host login failed with status {login_response.status_code}",
-                "related_files": ["backend/users/views.py"],
+                "login_status": login_response.status_code,
+                "login_url": login_url,
+                "bootstrap_url": bootstrap_url,
+                "auth_handler_source": plan.host_backend.auth_handler_source,
+                "related_files": [plan.host_backend.auth_handler_source],
             }
         bootstrap_response = client.post(bootstrap_url)
         try:
@@ -386,6 +404,9 @@ def validate_host_auth_bootstrap(
         "bootstrap_payload": payload,
         "login_status": login_response.status_code,
         "bootstrap_status": bootstrap_response.status_code,
+        "login_url": login_url,
+        "bootstrap_url": bootstrap_url,
+        "auth_handler_source": plan.host_backend.auth_handler_source,
         "related_files": ["backend/chat_auth.py", plan.host_backend.route_target],
     }
 
@@ -416,7 +437,12 @@ def validate_chatbot_adapter_auth(
             client_module, f"Generated{_class_name(plan.chatbot_bridge.site_key)}Client"
         )
         adapter = adapter_class(
-            client=client_class(base_url=_runtime_base_url(runtime_plan))
+            client=client_class(
+                base_url=_runtime_base_url(
+                    runtime_plan,
+                    chat_auth_contract_path=plan.host_backend.chat_auth_contract_path,
+                )
+            )
         )
         try:
             validated_user = asyncio.run(
@@ -516,8 +542,9 @@ def validate_widget_bundle_fetch(
 ) -> dict[str, Any]:
     chatbot_base_url = str(plan.host_frontend.chatbot_server_base_url or "").strip().rstrip("/")
     widget_path = "/widget.js"
-    host_base_url = runtime_plan.readiness_url.removesuffix(
-        plan.host_backend.chat_auth_contract_path
+    host_base_url = _runtime_base_url(
+        runtime_plan,
+        chat_auth_contract_path=plan.host_backend.chat_auth_contract_path,
     ).rstrip("/")
 
     if not chatbot_base_url:
@@ -570,6 +597,7 @@ def validate_widget_bundle_fetch(
 def validate_widget_order_e2e(
     *,
     chatbot_runtime_workspace: Path,
+    runtime_plan: BackendRuntimePlan,
     bootstrap_result: dict[str, Any],
     adapter_auth_result: dict[str, Any],
     plan: IntegrationPlan,
@@ -590,28 +618,10 @@ def validate_widget_order_e2e(
 
     payload = dict(bootstrap_result.get("bootstrap_payload") or {})
     adapter = _load_generated_adapter(
-        chatbot_runtime_workspace=chatbot_runtime_workspace, plan=plan
-    )
-    flow_reports = _collect_widget_order_flow_report(
-        adapter=adapter,
-        adapter_auth_result=adapter_auth_result,
-        payload=payload,
+        chatbot_runtime_workspace=chatbot_runtime_workspace,
+        runtime_plan=runtime_plan,
         plan=plan,
-        server_fastapi=server_fastapi,
-        chat_endpoint=chat_endpoint,
     )
-    return _evaluate_widget_order_flow_report(plan=plan, flow_reports=flow_reports)
-
-
-def _collect_widget_order_flow_report(
-    *,
-    adapter: Any,
-    adapter_auth_result: dict[str, Any],
-    payload: dict[str, Any],
-    plan: IntegrationPlan,
-    server_fastapi: Any,
-    chat_endpoint: Any,
-) -> dict[str, dict[str, Any]]:
     auth_context = AuthenticatedContext(
         siteId=plan.chatbot_bridge.site_key,
         userId=str(
@@ -619,8 +629,45 @@ def _collect_widget_order_flow_report(
         ),
         accessToken=str(payload.get("access_token") or ""),
     )
+    try:
+        sample_context = _acquire_widget_order_sample(
+            adapter=adapter,
+            auth_context=auth_context,
+            plan=plan,
+        )
+    except Exception as exc:
+        return WidgetOrderE2EResult(
+            passed=False,
+            failure_summary=f"widget order sample acquisition failed: {exc}",
+            scenario_mode="sample_acquisition_failed",
+            related_files=_widget_order_related_files(plan),
+        )
+    flow_reports = _collect_widget_order_flow_report(
+        adapter=adapter,
+        auth_context=auth_context,
+        plan=plan,
+        sample_context=sample_context,
+        server_fastapi=server_fastapi,
+        chat_endpoint=chat_endpoint,
+    )
+    return _evaluate_widget_order_flow_report(
+        plan=plan,
+        flow_reports=flow_reports,
+        sample_context=sample_context,
+    )
+
+
+def _collect_widget_order_flow_report(
+    *,
+    adapter: Any,
+    auth_context: AuthenticatedContext,
+    plan: IntegrationPlan,
+    sample_context: dict[str, Any],
+    server_fastapi: Any,
+    chat_endpoint: Any,
+) -> dict[str, dict[str, Any]]:
     status_input = importlib.import_module("src.adapters.schema").GetOrderStatusInput(
-        orderId="1"
+        orderId=str(sample_context["sampled_order_id"])
     )
     flow_reports: dict[str, dict[str, Any]] = {}
     try:
@@ -649,14 +696,14 @@ def _collect_widget_order_flow_report(
             client=client,
             server_fastapi=server_fastapi,
             site_id=plan.chatbot_bridge.site_key,
-            access_token=str(payload.get("access_token") or ""),
+            access_token=str(auth_context.accessToken or ""),
             conversation_id="conv-widget-list-orders",
-            message="주문 목록 보여줘",
+            message="request_list_orders",
             step_specs=[
                 _widget_step(
                     "show_order_list",
-                    "최근 주문 목록입니다.",
-                    ui_data=[_sample_order_ui_item()],
+                    "request_list_orders",
+                    ui_data=[dict(sample_context["sampled_order_ui_item"])],
                     requires_selection=True,
                 )
             ],
@@ -666,83 +713,83 @@ def _collect_widget_order_flow_report(
             client=client,
             server_fastapi=server_fastapi,
             site_id=plan.chatbot_bridge.site_key,
-            access_token=str(payload.get("access_token") or ""),
+            access_token=str(auth_context.accessToken or ""),
             conversation_id="conv-widget-cancel",
-            message="주문 취소해줘",
+            message="request_cancel_order",
             step_specs=[
                 _widget_step(
                     "show_order_list",
-                    "취소할 주문을 선택해주세요.",
-                    ui_data=[_sample_order_ui_item()],
+                    "request_cancel_order",
+                    ui_data=[dict(sample_context["sampled_order_ui_item"])],
                     requires_selection=True,
                     prior_action="cancel",
                 ),
                 _widget_step(
                     "confirm_order_action",
-                    "주문 취소를 진행할까요?",
+                    "confirm_cancel_order",
                     action="cancel",
-                    order_id="1",
+                    order_id=str(sample_context["sampled_order_id"]),
                 ),
             ],
-            resume_payloads=[{"selected_order_ids": ["1"]}],
+            resume_payloads=[{"selected_order_ids": [str(sample_context["sampled_order_id"])]}],
         )
         flow_reports["refund"] = _exercise_widget_order_flow(
             client=client,
             server_fastapi=server_fastapi,
             site_id=plan.chatbot_bridge.site_key,
-            access_token=str(payload.get("access_token") or ""),
+            access_token=str(auth_context.accessToken or ""),
             conversation_id="conv-widget-refund",
-            message="환불해줘",
+            message="request_refund_order",
             step_specs=[
                 _widget_step(
                     "show_order_list",
-                    "환불할 주문을 선택해주세요.",
-                    ui_data=[_sample_order_ui_item()],
+                    "request_refund_order",
+                    ui_data=[dict(sample_context["sampled_order_ui_item"])],
                     requires_selection=True,
                     prior_action="refund",
                 ),
                 _widget_step(
                     "confirm_order_action",
-                    "환불을 진행할까요?",
+                    "confirm_refund_order",
                     action="refund",
-                    order_id="1",
+                    order_id=str(sample_context["sampled_order_id"]),
                 ),
             ],
-            resume_payloads=[{"selected_order_ids": ["1"]}],
+            resume_payloads=[{"selected_order_ids": [str(sample_context["sampled_order_id"])]}],
         )
         flow_reports["exchange"] = _exercise_widget_order_flow(
             client=client,
             server_fastapi=server_fastapi,
             site_id=plan.chatbot_bridge.site_key,
-            access_token=str(payload.get("access_token") or ""),
+            access_token=str(auth_context.accessToken or ""),
             conversation_id="conv-widget-exchange",
-            message="교환해줘",
+            message="request_exchange_order",
             step_specs=[
                 _widget_step(
                     "show_order_list",
-                    "교환할 주문을 선택해주세요.",
-                    ui_data=[_sample_order_ui_item()],
+                    "request_exchange_order",
+                    ui_data=[dict(sample_context["sampled_order_ui_item"])],
                     requires_selection=True,
                     prior_action="exchange",
                 ),
                 _widget_step(
                     "show_option_list",
-                    "교환할 옵션을 선택해주세요.",
+                    "request_exchange_option",
                     action="select_option",
-                    ui_data=[_sample_option_item("201"), _sample_option_item("202")],
+                    ui_data=_sample_option_items(str(sample_context["sampled_option_id"])),
                     prior_action="exchange",
                 ),
                 _widget_step(
                     "confirm_order_action",
-                    "교환을 진행할까요?",
+                    "confirm_exchange_order",
                     action="exchange",
-                    order_id="1",
-                    new_option_id="201",
+                    order_id=str(sample_context["sampled_order_id"]),
+                    new_option_id=str(sample_context["sampled_option_id"]),
                 ),
             ],
             resume_payloads=[
-                {"selected_order_ids": ["1"]},
-                {"new_option_id": "201"},
+                {"selected_order_ids": [str(sample_context["sampled_order_id"])]},
+                {"new_option_id": str(sample_context["sampled_option_id"])},
             ],
         )
     return flow_reports
@@ -752,7 +799,9 @@ def _evaluate_widget_order_flow_report(
     *,
     plan: IntegrationPlan,
     flow_reports: dict[str, dict[str, Any]],
+    sample_context: dict[str, Any] | None = None,
 ) -> WidgetOrderE2EResult:
+    sample_context = dict(sample_context or {})
     required_step_flows = [
         ("list_orders", ["show_order_list"]),
         ("cancel", ["show_order_list", "confirm_order_action"]),
@@ -769,6 +818,9 @@ def _evaluate_widget_order_flow_report(
                 failure_summary=f"{missing_step} missing",
                 covered_flows=covered_flows,
                 flow_reports=flow_reports,
+                sampled_order_id=_optional_text(sample_context.get("sampled_order_id")),
+                sampled_option_id=_optional_text(sample_context.get("sampled_option_id")),
+                scenario_mode=_optional_text(sample_context.get("scenario_mode")),
                 related_files=_widget_order_related_files(plan),
             )
         covered_flows.append(flow_name)
@@ -782,6 +834,9 @@ def _evaluate_widget_order_flow_report(
             ),
             covered_flows=covered_flows,
             flow_reports=flow_reports,
+            sampled_order_id=_optional_text(sample_context.get("sampled_order_id")),
+            sampled_option_id=_optional_text(sample_context.get("sampled_option_id")),
+            scenario_mode=_optional_text(sample_context.get("scenario_mode")),
             related_files=_widget_order_related_files(plan),
         )
     covered_flows.insert(1, "get_order_status")
@@ -791,8 +846,136 @@ def _evaluate_widget_order_flow_report(
         failure_summary="widget order e2e passed",
         covered_flows=covered_flows,
         flow_reports=flow_reports,
+        sampled_order_id=_optional_text(sample_context.get("sampled_order_id")),
+        sampled_option_id=_optional_text(sample_context.get("sampled_option_id")),
+        scenario_mode=_optional_text(sample_context.get("scenario_mode")),
         related_files=_widget_order_related_files(plan),
     )
+
+
+def _acquire_widget_order_sample(
+    *,
+    adapter: Any,
+    auth_context: AuthenticatedContext,
+    plan: IntegrationPlan,
+) -> dict[str, Any]:
+    list_orders = getattr(getattr(adapter, "client", None), "list_orders", None)
+    if not callable(list_orders):
+        raise RuntimeError("generated adapter client missing list_orders")
+    headers = _build_generated_auth_headers(adapter=adapter, auth_context=auth_context)
+    raw_orders = asyncio.run(list_orders(headers))
+    order_candidates = _extract_order_candidates(raw_orders)
+    if not order_candidates:
+        raise RuntimeError("generated adapter list_orders returned no orders")
+    raw_order = order_candidates[0]
+    sampled_order_id = _extract_order_id(raw_order)
+    if not sampled_order_id:
+        raise RuntimeError("generated adapter list_orders did not provide an order id")
+
+    status_input = importlib.import_module("src.adapters.schema").GetOrderStatusInput(
+        orderId=str(sampled_order_id)
+    )
+    order_status = asyncio.run(adapter.get_order_status(auth_context, status_input))
+
+    sampled_option_id = _extract_option_id(raw_order)
+    scenario_mode = "sampled_order_with_sampled_option"
+    if not sampled_option_id:
+        sampled_option_id = "synthetic-option-1"
+        scenario_mode = "sampled_order_with_synthetic_option"
+
+    return {
+        "sampled_order_id": str(sampled_order_id),
+        "sampled_option_id": str(sampled_option_id),
+        "sampled_order_ui_item": _build_sample_order_ui_item(order_status),
+        "scenario_mode": scenario_mode,
+    }
+
+
+def _build_generated_auth_headers(
+    *,
+    adapter: Any,
+    auth_context: AuthenticatedContext,
+) -> dict[str, str]:
+    adapter_module = str(adapter.__class__.__module__)
+    auth_module = importlib.import_module(adapter_module.rsplit(".", 1)[0] + ".auth")
+    return auth_module.build_generated_auth_headers(auth_context)
+
+
+def _extract_order_candidates(raw_orders: Any) -> list[dict[str, Any]]:
+    if isinstance(raw_orders, list):
+        return [item for item in raw_orders if isinstance(item, dict)]
+    if isinstance(raw_orders, dict):
+        for key in ("orders", "items", "results", "data"):
+            value = raw_orders.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        if any(key in raw_orders for key in ("id", "order_id", "orderId")):
+            return [raw_orders]
+    return []
+
+
+def _extract_order_id(raw_order: dict[str, Any]) -> str | None:
+    for key in ("order_id", "orderId", "id"):
+        value = raw_order.get(key)
+        if value not in (None, ""):
+            return str(value)
+    nested_order = raw_order.get("order")
+    if isinstance(nested_order, dict):
+        return _extract_order_id(nested_order)
+    return None
+
+
+def _extract_option_id(raw_order: dict[str, Any]) -> str | None:
+    candidates = [
+        raw_order.get("option_id"),
+        raw_order.get("optionId"),
+        raw_order.get("selected_option_id"),
+        raw_order.get("selectedOptionId"),
+        raw_order.get("variant_id"),
+        raw_order.get("variantId"),
+    ]
+    product = raw_order.get("product")
+    if isinstance(product, dict):
+        candidates.extend(
+            [
+                product.get("option_id"),
+                product.get("optionId"),
+                product.get("variant_id"),
+                product.get("variantId"),
+            ]
+        )
+    option = raw_order.get("option")
+    if isinstance(option, dict):
+        candidates.extend([option.get("id"), option.get("option_id")])
+    for value in candidates:
+        if value not in (None, ""):
+            return str(value)
+    return None
+
+
+def _build_sample_order_ui_item(order_status: Any) -> dict[str, Any]:
+    order = getattr(order_status, "order", None)
+    items = list(getattr(order, "items", None) or [])
+    first_item = items[0] if items else None
+    total_price = getattr(getattr(order, "totalPrice", None), "amount", None)
+    status = getattr(getattr(order, "status", None), "value", None) or getattr(order, "status", None)
+    return {
+        "order_id": str(getattr(order, "orderId", "") or ""),
+        "date": str(getattr(order, "orderedAt", "") or ""),
+        "status": str(status or ""),
+        "product_name": str(getattr(first_item, "productTitle", "") or ""),
+        "amount": total_price,
+    }
+
+
+def _sample_option_items(selected_option_id: str) -> list[dict[str, Any]]:
+    secondary_option_id = (
+        f"{selected_option_id}-alt" if selected_option_id != "synthetic-option-1" else "synthetic-option-2"
+    )
+    return [
+        _sample_option_item(str(selected_option_id)),
+        _sample_option_item(str(secondary_option_id)),
+    ]
 
 
 def _exercise_widget_order_flow(
@@ -816,7 +999,7 @@ def _exercise_widget_order_flow(
     ):
         for index, step_spec in enumerate(step_specs):
             request_payload: dict[str, Any] = {
-                "message": message if index == 0 else "계속",
+                "message": message if index == 0 else "resume_interrupt",
                 "site_id": site_id,
                 "access_token": access_token,
             }
@@ -915,20 +1098,10 @@ def _widget_step(
     return step
 
 
-def _sample_order_ui_item() -> dict[str, Any]:
-    return {
-        "order_id": "1",
-        "date": "2026-03-23",
-        "status": "paid",
-        "product_name": "테스트 상품",
-        "amount": 12000,
-    }
-
-
 def _sample_option_item(option_id: str) -> dict[str, Any]:
     return {
         "option_id": option_id,
-        "label": f"테스트 옵션 {option_id}",
+        "label": f"option-{option_id}",
         "in_stock": True,
     }
 
@@ -1061,15 +1234,33 @@ def _coerce_widget_order_e2e_result(
     return WidgetOrderE2EResult.model_validate(payload)
 
 
-def _runtime_base_url(runtime_plan: BackendRuntimePlan) -> str:
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _runtime_base_url(
+    runtime_plan: BackendRuntimePlan,
+    *,
+    chat_auth_contract_path: str = "/api/chat/auth-token",
+) -> str:
+    if runtime_plan.listen_port:
+        return f"http://127.0.0.1:{runtime_plan.listen_port}"
     readiness_url = runtime_plan.readiness_url
-    marker = "/api/chat/auth-token"
+    marker = str(chat_auth_contract_path or "").strip() or "/api/chat/auth-token"
     if readiness_url.endswith(marker):
         return readiness_url.removesuffix(marker)
     return readiness_url.rsplit("/", 1)[0]
 
 
-def _load_generated_adapter(*, chatbot_runtime_workspace: Path, plan: IntegrationPlan):
+def _load_generated_adapter(
+    *,
+    chatbot_runtime_workspace: Path,
+    runtime_plan: BackendRuntimePlan,
+    plan: IntegrationPlan,
+):
     module_prefix = f"src.adapters.generated.{plan.chatbot_bridge.site_key}"
     with _prepend_path(chatbot_runtime_workspace):
         _drop_import_cache(module_prefix)
@@ -1082,7 +1273,14 @@ def _load_generated_adapter(*, chatbot_runtime_workspace: Path, plan: Integratio
         client_class = getattr(
             client_module, f"Generated{_class_name(plan.chatbot_bridge.site_key)}Client"
         )
-        return adapter_class(client=client_class(base_url="http://127.0.0.1:8000"))
+        return adapter_class(
+            client=client_class(
+                base_url=_runtime_base_url(
+                    runtime_plan,
+                    chat_auth_contract_path=plan.host_backend.chat_auth_contract_path,
+                )
+            )
+        )
 
 
 def _drop_import_cache(module_prefix: str) -> None:

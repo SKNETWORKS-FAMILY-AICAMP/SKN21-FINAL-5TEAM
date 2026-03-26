@@ -103,6 +103,18 @@ Rules:
 - Use analysis for missing facts, planning for unsupported strategies/binding drift, validation for runtime mismatches.
 - Do not include markdown."""
 
+_RISK_AND_REPAIR_PROMPT = """You are the planning risk and repair analyzer for onboarding_v2.
+Return JSON with two keys:
+- risk_register: array of objects with code, summary, severity, owner, mitigations
+- repair_hints: array of objects with code, rewind_to, reason, trigger_conditions, owner
+
+Rules:
+- Mention only concrete failure modes supported by the analysis input.
+- Keep risks concise and actionable.
+- rewind_to must be one of analysis, planning, validation.
+- Use analysis for missing facts, planning for unsupported strategies/binding drift, validation for runtime mismatches.
+- Do not include markdown."""
+
 
 class _StrategyEnvelope(BaseModel):
     strategy_candidates: list[StrategyCandidate] = Field(default_factory=list)
@@ -123,6 +135,13 @@ class _RiskEnvelope(BaseModel):
 
 
 class _RepairEnvelope(BaseModel):
+    repair_hints: list[RepairHint] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class _RiskAndRepairEnvelope(BaseModel):
+    risk_register: list[PlanningRisk] = Field(default_factory=list)
     repair_hints: list[RepairHint] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -238,12 +257,17 @@ def build_planning_bundle(
         strategy_candidates=strategy_candidates,
         coverage_report=coverage_report,
     )
-    risk_response = invoke_structured_stage(
+    repair_fallback = _build_repair_hints_fallback(
+        coverage_report=coverage_report,
+        strategy_candidates=strategy_candidates,
+        target_bindings=target_bindings,
+    )
+    risk_and_repair_response = invoke_structured_stage(
         stage="planning",
-        phase="risk-register",
+        phase="risk-and-repair",
         provider=llm_provider,
         model=llm_model,
-        system_prompt=_RISK_PROMPT,
+        system_prompt=_RISK_AND_REPAIR_PROMPT,
         payload={
             "coverage_report": coverage_report.model_dump(mode="json"),
             "strategy_candidates": [item.model_dump(mode="json") for item in strategy_candidates],
@@ -253,9 +277,10 @@ def build_planning_bundle(
                 "unresolved_ambiguities": bundle.unresolved_ambiguities,
             },
         },
-        response_model=_RiskEnvelope,
+        response_model=_RiskAndRepairEnvelope,
         fallback_payload={
-            "risk_register": [item.model_dump(mode="json") for item in risk_fallback]
+            "risk_register": [item.model_dump(mode="json") for item in risk_fallback],
+            "repair_hints": [item.model_dump(mode="json") for item in repair_fallback],
         },
         attempt=attempt,
         debug_store=debug_store,
@@ -263,35 +288,8 @@ def build_planning_bundle(
         llm_builder=llm_builder,
         artifact_refs=artifact_refs,
     )
-    risk_register = _dedupe_risks(risk_response.risk_register or risk_fallback)
-
-    repair_fallback = _build_repair_hints_fallback(
-        coverage_report=coverage_report,
-        strategy_candidates=strategy_candidates,
-        target_bindings=target_bindings,
-    )
-    repair_response = invoke_structured_stage(
-        stage="planning",
-        phase="repair-hints",
-        provider=llm_provider,
-        model=llm_model,
-        system_prompt=_REPAIR_HINT_PROMPT,
-        payload={
-            "coverage_report": coverage_report.model_dump(mode="json"),
-            "strategy_candidates": [item.model_dump(mode="json") for item in strategy_candidates],
-            "target_bindings": [item.model_dump(mode="json") for item in target_bindings],
-        },
-        response_model=_RepairEnvelope,
-        fallback_payload={
-            "repair_hints": [item.model_dump(mode="json") for item in repair_fallback]
-        },
-        attempt=attempt,
-        debug_store=debug_store,
-        usage_store=usage_store,
-        llm_builder=llm_builder,
-        artifact_refs=artifact_refs,
-    )
-    repair_hints = _dedupe_repair_hints(repair_response.repair_hints or repair_fallback)
+    risk_register = _dedupe_risks(risk_and_repair_response.risk_register or risk_fallback)
+    repair_hints = _dedupe_repair_hints(risk_and_repair_response.repair_hints or repair_fallback)
 
     integration_plan = _derive_integration_plan(
         snapshot=snapshot,
@@ -821,7 +819,7 @@ def _derive_integration_plan(
 ) -> IntegrationPlan:
     del coverage_report
     binding_map = {binding.capability: binding for binding in target_bindings}
-    site_id = _load_required_site_id(Path(snapshot.repo_profile.source_root))
+    site_id = _resolve_site_id(snapshot)
     normalized_chatbot_server_base_url = str(chatbot_server_base_url or "").strip().rstrip("/")
     if not normalized_chatbot_server_base_url:
         raise ValueError("chatbot_server_base_url is required for V2 dual-patch planning")
@@ -849,6 +847,7 @@ def _derive_integration_plan(
             strategy=integration_strategy.backend_strategy,
             route_target=route_target,
             import_target=route_target,
+            login_endpoint=_derive_host_login_endpoint(analysis_bundle.snapshot.domain_integration),
             order_lookup_target=order_lookup_target,
             order_action_target=order_action_target,
             exchange_strategy=_choose_exchange_strategy(
@@ -1021,17 +1020,6 @@ def _choose_generated_handler_path(backend_framework: str) -> str | None:
     return None
 
 
-def _load_required_site_id(source_root: Path) -> str:
-    manifest_path = source_root / "site-manifest.json"
-    if not manifest_path.exists():
-        raise ValueError("site-manifest.json with site_id is required for V2 dual-patch planning")
-    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    site_id = str(payload.get("site_id") or "").strip()
-    if not site_id:
-        raise ValueError("site-manifest.json must declare a non-empty site_id")
-    return site_id
-
-
 def _normalize_site_key(site_id: str) -> str:
     cleaned = site_id.strip().lower().replace(" ", "_")
     return "".join(character if character.isalnum() or character in {"_", "-"} else "_" for character in cleaned)
@@ -1135,3 +1123,17 @@ def _derive_chatbot_bridge_contract(
             "new_option_id": "new_option_id",
         },
     }
+
+
+def _derive_host_login_endpoint(domain_integration: DomainIntegration) -> str:
+    login_endpoint = str(domain_integration.login_endpoint or "").strip()
+    if login_endpoint:
+        return login_endpoint
+    raise ValueError("missing verified host login endpoint for planning")
+
+
+def _resolve_site_id(snapshot: AnalysisSnapshot) -> str:
+    site_id = str(snapshot.repo_profile.site or "").strip()
+    if site_id:
+        return site_id
+    raise ValueError("analysis snapshot must provide a non-empty site id for planning")

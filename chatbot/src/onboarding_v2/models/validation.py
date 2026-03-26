@@ -40,6 +40,10 @@ class ReplayResult(BaseModel):
     host_baseline_root: str | None = None
     chatbot_baseline_root: str | None = None
     passed: bool
+    target_match_passed: bool = True
+    static_validation_passed: bool = True
+    mismatched_targets: list[str] = Field(default_factory=list)
+    static_validation_summary: str | None = None
     host_allowed_targets: list[str] = Field(default_factory=list)
     chatbot_allowed_targets: list[str] = Field(default_factory=list)
     applied_patch_artifacts: list[str] = Field(default_factory=list)
@@ -82,8 +86,11 @@ class BackendRuntimePlan(BaseModel):
     backend_root: str
     command: list[str]
     readiness_url: str
+    listen_port: int | None = None
     environment: dict[str, str] = Field(default_factory=dict)
     python_executable: str | None = None
+    launcher_mode: str | None = None
+    launcher_metadata_path: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -94,6 +101,9 @@ class BackendRuntimeState(BaseModel):
     pid: int | None = None
     command: list[str] = Field(default_factory=list)
     readiness_url: str | None = None
+    listen_port: int | None = None
+    launcher_mode: str | None = None
+    startup_hooks_skipped: list[str] = Field(default_factory=list)
     readiness: dict[str, Any] = Field(default_factory=dict)
     failure_summary: str | None = None
     stdout: str = ""
@@ -118,6 +128,9 @@ class WidgetOrderE2EResult(BaseModel):
     failure_summary: str
     covered_flows: list[str] = Field(default_factory=list)
     flow_reports: dict[str, Any] = Field(default_factory=dict)
+    sampled_order_id: str | None = None
+    sampled_option_id: str | None = None
+    scenario_mode: str | None = None
     related_files: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")

@@ -26,6 +26,7 @@ from chatbot.src.onboarding_v2.models.analysis import (
     VerifiedContracts,
     WorkspaceProfile,
 )
+from chatbot.src.onboarding_v2.planning import planner as planner_module
 from chatbot.src.onboarding_v2.planning import build_integration_plan, build_planning_bundle
 
 
@@ -99,6 +100,7 @@ def _analysis_bundle_from_snapshot(snapshot: AnalysisSnapshot) -> AnalysisBundle
             update={
                 "domain_integration": snapshot.domain_integration.model_copy(
                     update={
+                        "login_endpoint": getattr(snapshot.domain_integration, "login_endpoint", None),
                         "auth_validation_endpoint": snapshot.domain_integration.auth_validation_endpoint or "/api/users/me/",
                         "current_user_endpoint": snapshot.domain_integration.current_user_endpoint or "/api/users/me/",
                         "product_search_endpoint": snapshot.domain_integration.product_search_endpoint or "/api/products/",
@@ -125,6 +127,7 @@ def test_planner_selects_food_strategies():
     assert plan.host_backend.strategy == "django_project_urlconf_import_view"
     assert plan.host_backend.route_target == "backend/foodshop/urls.py"
     assert plan.host_backend.auth_handler_source == "backend/users/views.py"
+    assert plan.host_backend.login_endpoint == "/api/users/login/"
     assert plan.host_backend.site_id == "food"
     assert plan.host_backend.order_lookup_target == "backend/orders/views.py"
     assert plan.host_backend.order_action_target == "backend/orders/views.py"
@@ -185,6 +188,7 @@ def test_planner_ignores_invalid_order_bridge_candidates_and_falls_back():
         backend_seams=BackendSeams(),
         frontend_seams=FrontendSeams(),
         domain_integration=DomainIntegration(
+            login_endpoint="/api/users/login/",
             order_bridge_targets=[
                 PathCandidate(path="backend/foodshop/urls.py", reason="order bridge target candidate"),
                 PathCandidate(path="backend/orders/tests.py", reason="order bridge target candidate"),
@@ -215,6 +219,7 @@ def test_planner_prefers_valid_generic_order_seam_over_fallback():
         backend_seams=BackendSeams(),
         frontend_seams=FrontendSeams(),
         domain_integration=DomainIntegration(
+            login_endpoint="/api/users/login/",
             order_bridge_targets=[
                 PathCandidate(
                     path="backend/custom/orders.py",
@@ -246,6 +251,7 @@ def test_planner_can_split_lookup_and_action_targets_from_generic_candidates():
         backend_seams=BackendSeams(),
         frontend_seams=FrontendSeams(),
         domain_integration=DomainIntegration(
+            login_endpoint="/api/users/login/",
             order_bridge_targets=[
                 PathCandidate(
                     path="backend/orders/lookup.py",
@@ -299,3 +305,113 @@ def test_planner_accepts_bilyeo_strict_coverage_with_verified_flask_endpoints():
     assert plan.host_backend.order_lookup_target == "backend/routes/order.py"
     assert plan.host_backend.order_action_target == "backend/routes/order.py"
     assert plan.host_backend.auth_handler_source == "backend/routes/auth.py"
+    assert plan.host_backend.login_endpoint == "/api/auth/login"
+
+
+def test_planner_combines_risk_and_repair_hint_llm_calls(monkeypatch):
+    analysis_bundle = build_analysis_bundle(site="food", source_root=ROOT / "food")
+    phases: list[str] = []
+
+    def _fake_invoke_structured_stage(*, phase, response_model, fallback_payload, **kwargs):
+        del kwargs
+        phases.append(phase)
+        return response_model.model_validate(fallback_payload)
+
+    monkeypatch.setattr(planner_module, "invoke_structured_stage", _fake_invoke_structured_stage)
+
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+    )
+
+    assert "risk-and-repair" in phases
+    assert "risk-register" not in phases
+    assert "repair-hints" not in phases
+    assert planning_bundle.risk_register
+    assert planning_bundle.repair_hints
+
+
+def test_planner_uses_snapshot_site_without_manifest(tmp_path: Path):
+    source_root = tmp_path / "site"
+    frontend_root = source_root / "frontend"
+    frontend_root.mkdir(parents=True)
+    (frontend_root / "package.json").write_text(
+        '{"dependencies":{"react-scripts":"5.0.1"}}\n',
+        encoding="utf-8",
+    )
+    snapshot = AnalysisSnapshot(
+        repo_profile=RepoProfile(
+            site="demo-site",
+            source_root=str(source_root),
+            backend_framework="django",
+            frontend_framework="react",
+            auth_style="session_cookie",
+        ),
+        backend_seams=BackendSeams(
+            auth_source_candidates=[
+                PathCandidate(path="backend/users/views.py", reason="auth"),
+            ],
+            route_registration_points=[
+                PathCandidate(path="backend/config/urls.py", reason="route registration"),
+            ],
+        ),
+        frontend_seams=FrontendSeams(
+            app_shell_candidates=[
+                PathCandidate(path="frontend/src/App.js", reason="app shell"),
+            ],
+            api_client_candidates=[
+                PathCandidate(path="frontend/src/api/api.js", reason="api client"),
+            ],
+            widget_mount_candidates=[
+                PathCandidate(path="frontend/src/App.js", reason="widget mount"),
+            ],
+        ),
+        domain_integration=DomainIntegration(
+            login_endpoint="/api/auth/login",
+            auth_validation_endpoint="/api/auth/me",
+            current_user_endpoint="/api/auth/me",
+            product_search_endpoint="/api/products/",
+            order_list_endpoint="/api/orders/",
+            order_detail_endpoint="/api/orders/{order_id}/",
+            order_action_endpoint="/api/orders/{order_id}/actions/",
+            order_bridge_targets=[
+                PathCandidate(path="backend/orders/views.py", reason="order seam"),
+            ],
+        ),
+    )
+
+    plan = build_integration_plan(
+        snapshot,
+        analysis_bundle=_analysis_bundle_from_snapshot(snapshot),
+        chatbot_server_base_url="http://localhost:8100",
+    )
+
+    assert plan.host_backend.site_id == "demo-site"
+    assert plan.chatbot_bridge.site_key == "demo-site"
+
+
+def test_planner_fails_closed_when_login_endpoint_missing():
+    snapshot = AnalysisSnapshot(
+        repo_profile=RepoProfile(
+            site="food",
+            source_root=str(ROOT / "food"),
+            backend_framework="django",
+            frontend_framework="react",
+            auth_style="session_cookie",
+        ),
+        backend_seams=BackendSeams(),
+        frontend_seams=FrontendSeams(),
+        domain_integration=DomainIntegration(
+            order_bridge_targets=[
+                PathCandidate(path="backend/orders/views.py", reason="order bridge target candidate"),
+            ]
+        ),
+    )
+
+    with pytest.raises(ValueError, match="missing verified host login endpoint for planning"):
+        build_integration_plan(
+            snapshot,
+            analysis_bundle=_analysis_bundle_from_snapshot(snapshot),
+            chatbot_server_base_url="http://localhost:8100",
+        )

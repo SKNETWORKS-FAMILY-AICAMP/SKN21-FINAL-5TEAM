@@ -18,7 +18,9 @@ from chatbot.src.onboarding_v2.storage import ArtifactStore
 from chatbot.src.onboarding_v2.validation.runner import (
     _evaluate_widget_order_flow_report,
     _enforce_required_rechecks,
+    _runtime_base_url,
     run_validation,
+    validate_host_auth_bootstrap,
 )
 from chatbot.src.onboarding_v2.validation.signatures import build_failure_signature
 
@@ -251,6 +253,190 @@ def test_validation_runner_requires_requested_rechecks():
         )
 
 
+def test_validate_host_auth_bootstrap_uses_runtime_plan_listen_port(monkeypatch, tmp_path: Path):
+    captured_urls: list[str] = []
+
+    class _Response:
+        def __init__(self, status_code: int, payload: dict[str, object]):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, json=None):
+            del json
+            captured_urls.append(url)
+            if url.endswith("/api/users/login/"):
+                return _Response(200, {})
+            return _Response(
+                200,
+                {
+                    "authenticated": True,
+                    "site_id": "food",
+                    "access_token": "token",
+                    "user": {"id": "7"},
+                },
+            )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.httpx.Client",
+        lambda **kwargs: _Client(),
+    )
+    plan = _build_food_plan()
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8123"],
+        readiness_url="http://127.0.0.1:8123/api/chat/auth-token",
+        listen_port=8123,
+    )
+
+    result = validate_host_auth_bootstrap(
+        run_root=tmp_path,
+        host_runtime_workspace=tmp_path,
+        runtime_plan=runtime_plan,
+        snapshot=build_analysis_bundle(site="food", source_root=ROOT / "food").snapshot,
+        plan=plan,
+    )
+
+    assert result["passed"] is True
+    assert captured_urls == [
+        f"http://127.0.0.1:8123{plan.host_backend.login_endpoint}",
+        "http://127.0.0.1:8123/api/chat/auth-token",
+    ]
+
+
+def test_validate_host_auth_bootstrap_uses_planned_login_endpoint(monkeypatch, tmp_path: Path):
+    captured_urls: list[str] = []
+
+    class _Response:
+        def __init__(self, status_code: int, payload: dict[str, object]):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, json=None):
+            del json
+            captured_urls.append(url)
+            if url.endswith("/api/auth/login"):
+                return _Response(200, {})
+            return _Response(
+                200,
+                {
+                    "authenticated": True,
+                    "site_id": "bilyeo",
+                    "access_token": "token",
+                    "user": {"id": "7"},
+                },
+            )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.httpx.Client",
+        lambda **kwargs: _Client(),
+    )
+    analysis_bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+        strict_coverage=True,
+    )
+    plan = planning_bundle.integration_plan
+    runtime_plan = BackendRuntimePlan(
+        framework="flask",
+        backend_root=str(tmp_path / "backend"),
+        command=["python", "app.py"],
+        readiness_url="http://127.0.0.1:8124/api/chat/auth-token",
+        listen_port=8124,
+    )
+
+    result = validate_host_auth_bootstrap(
+        run_root=tmp_path,
+        host_runtime_workspace=tmp_path,
+        runtime_plan=runtime_plan,
+        snapshot=analysis_bundle.snapshot,
+        plan=plan,
+    )
+
+    assert result["passed"] is True
+    assert plan.host_backend.login_endpoint == "/api/auth/login"
+    assert captured_urls == [
+        "http://127.0.0.1:8124/api/auth/login",
+        "http://127.0.0.1:8124/api/chat/auth-token",
+    ]
+
+
+def test_validate_host_auth_bootstrap_fails_closed_without_planned_login_endpoint(tmp_path: Path):
+    analysis_bundle = build_analysis_bundle(site="food", source_root=ROOT / "food")
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+    )
+    plan = planning_bundle.integration_plan.model_copy(
+        update={
+            "host_backend": planning_bundle.integration_plan.host_backend.model_copy(
+                update={"login_endpoint": ""}
+            )
+        }
+    )
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8125"],
+        readiness_url="http://127.0.0.1:8125/api/chat/auth-token",
+        listen_port=8125,
+    )
+
+    result = validate_host_auth_bootstrap(
+        run_root=tmp_path,
+        host_runtime_workspace=tmp_path,
+        runtime_plan=runtime_plan,
+        snapshot=analysis_bundle.snapshot,
+        plan=plan,
+    )
+
+    assert result["passed"] is False
+    assert result["failure_summary"] == "host auth bootstrap missing planned login endpoint"
+    assert result["login_url"] is None
+    assert result["bootstrap_url"] == "http://127.0.0.1:8125/api/chat/auth-token"
+    assert result["auth_handler_source"] == plan.host_backend.auth_handler_source
+
+
+def test_runtime_base_url_uses_custom_chat_auth_contract_path():
+    runtime_plan = BackendRuntimePlan(
+        framework="flask",
+        backend_root="/tmp/backend",
+        command=["python", "app.py"],
+        readiness_url="http://127.0.0.1:9000/custom/auth/bootstrap",
+    )
+
+    assert (
+        _runtime_base_url(
+            runtime_plan,
+            chat_auth_contract_path="/custom/auth/bootstrap",
+        )
+        == "http://127.0.0.1:9000"
+    )
+
+
 def test_validation_runner_fails_when_chatbot_runtime_boot_fails(monkeypatch, tmp_path: Path):
     runtime_plan = BackendRuntimePlan(
         framework="django",
@@ -422,10 +608,18 @@ def test_widget_order_e2e_report_tracks_all_required_flows():
             "refund": {"steps": ["show_order_list", "confirm_order_action"], "fragments": ["refund-1", "refund-2"]},
             "exchange": {"steps": ["show_order_list", "show_option_list", "confirm_order_action"], "fragments": ["exchange-1", "exchange-2", "exchange-3"]},
         },
+        sample_context={
+            "sampled_order_id": "sample-order-1",
+            "sampled_option_id": "option-7",
+            "scenario_mode": "sampled_order_with_sampled_option",
+        },
     )
 
     assert result.passed is True
     assert result.covered_flows == ["list_orders", "get_order_status", "cancel", "refund", "exchange"]
+    assert result.sampled_order_id == "sample-order-1"
+    assert result.sampled_option_id == "option-7"
+    assert result.scenario_mode == "sampled_order_with_sampled_option"
 
 
 def test_widget_order_e2e_report_marks_missing_exchange_option_step_as_failure():
