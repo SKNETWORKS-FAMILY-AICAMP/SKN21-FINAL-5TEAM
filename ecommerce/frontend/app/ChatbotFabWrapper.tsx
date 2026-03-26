@@ -44,5 +44,5 @@ export default function ChatbotFabWrapper() {
     document.head.appendChild(widgetScript);
   }, []);
 
-  return <order-cs-widget />;
+  return <order-cs-widget capabilities="full" />;
 }
