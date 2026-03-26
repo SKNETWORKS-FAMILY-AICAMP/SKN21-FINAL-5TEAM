@@ -30,6 +30,31 @@ def _disable_onboarding_v2_llm(monkeypatch):
     monkeypatch.setenv("ONBOARDING_V2_ENABLE_LLM", "0")
 
 
+@pytest.fixture(autouse=True)
+def _stub_indexing_execution(monkeypatch):
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.engine.execute_indexing_plan",
+        lambda *, plan, **kwargs: {
+            "site_id": plan.site_id,
+            "site_slug": plan.site_slug,
+            "corpora": {
+                item.corpus: {
+                    "status": "failed",
+                    "enabled": False,
+                    "documents_indexed": 0,
+                    "collection_alias": item.collection_alias,
+                    "build_collection": item.build_collection,
+                    "loader_strategy": item.loader_strategy,
+                    "warning_codes": ["stubbed_for_engine_test"],
+                    "alias_swapped": False,
+                    "smoke_passed": False,
+                }
+                for item in plan.corpora
+            },
+        },
+    )
+
+
 def test_engine_entry_returns_v2_payload(monkeypatch, tmp_path: Path):
     runtime_plan = BackendRuntimePlan(
         framework="django",

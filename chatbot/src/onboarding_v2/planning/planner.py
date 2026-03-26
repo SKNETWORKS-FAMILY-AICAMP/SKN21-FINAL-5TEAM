@@ -297,6 +297,7 @@ def build_planning_bundle(
         site_id=_resolve_site_id(snapshot),
         rag_sources=bundle.rag_sources,
         run_id="runtime",
+        product_search_endpoint=str(snapshot.domain_integration.product_search_endpoint or ""),
     )
     capability_upgrade = _build_capability_upgrade(
         rag_sources=bundle.rag_sources,
@@ -1056,6 +1057,7 @@ def _build_retrieval_index_plan(
     site_id: str,
     rag_sources: RagSources,
     run_id: str,
+    product_search_endpoint: str,
 ) -> RetrievalIndexPlan:
     site_slug = _normalize_site_key(site_id)
     corpora: list[RagCorpusPlan] = []
@@ -1073,19 +1075,74 @@ def _build_retrieval_index_plan(
             default_loader=default_loader,
         )
         corpora.append(
-            RagCorpusPlan(
+            _build_rag_corpus_plan(
                 corpus=corpus,
-                enabled=True,
                 chunking_strategy=chunking_strategy,
                 collection_alias=f"site_{site_slug}__{corpus}",
                 build_collection=f"site_{site_slug}__{corpus}__run_{run_id}",
-                sources=[record.path for record in records],
+                records=records,
                 smoke_queries=smoke_queries,
-                minimum_expected_documents=1,
                 loader_strategy=loader_strategy,
+                product_search_endpoint=product_search_endpoint,
             )
         )
     return RetrievalIndexPlan(site_id=site_id, site_slug=site_slug, corpora=corpora)
+
+
+def _build_rag_corpus_plan(
+    *,
+    corpus: str,
+    chunking_strategy: str,
+    collection_alias: str,
+    build_collection: str,
+    records: list[Any],
+    smoke_queries: list[str],
+    loader_strategy: str,
+    product_search_endpoint: str,
+) -> RagCorpusPlan:
+    if corpus != "discovery_image":
+        return RagCorpusPlan(
+            corpus=corpus,
+            enabled=True,
+            chunking_strategy=chunking_strategy,
+            collection_alias=collection_alias,
+            build_collection=build_collection,
+            sources=[record.path for record in records],
+            smoke_queries=smoke_queries,
+            minimum_expected_documents=1,
+            loader_strategy=loader_strategy,
+        )
+
+    image_field = next(
+        (
+            str((getattr(record, "details", {}) or {}).get("image_field") or "").strip()
+            for record in records
+            if str((getattr(record, "details", {}) or {}).get("image_field") or "").strip()
+        ),
+        "image_url",
+    )
+    return RagCorpusPlan(
+        corpus=corpus,
+        enabled=True,
+        chunking_strategy=chunking_strategy,
+        collection_alias=collection_alias,
+        build_collection=build_collection,
+        sources=[record.path for record in records],
+        smoke_queries=smoke_queries,
+        minimum_expected_documents=1,
+        loader_strategy=loader_strategy,
+        row_source_strategy="host_api_fetch",
+        row_source_endpoint=product_search_endpoint,
+        row_id_field="product_id",
+        row_image_url_field=image_field or "image_url",
+        pagination_strategy={
+            "type": "page_number",
+            "page_param": "page",
+            "page_size_param": "page_size",
+            "page_size": 100,
+            "stop_on": "empty_or_repeated_ids",
+        },
+    )
 
 
 def _resolve_loader_strategy(

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Event as ThreadingEvent
 from typing import Any
-from concurrent.futures import ThreadPoolExecutor
 
 from chatbot.src.onboarding_v2.analysis import build_analysis_bundle
 from chatbot.src.onboarding_v2.apply import apply_edit_program
@@ -13,7 +14,7 @@ from chatbot.src.onboarding_v2.compile.preflight import (
     run_chatbot_compile_preflight,
 )
 from chatbot.src.onboarding_v2.export import export_and_replay
-from chatbot.src.onboarding_v2.indexing import execute_indexing_plan
+from chatbot.src.onboarding_v2.indexing import HostExportContext, execute_indexing_plan
 from chatbot.src.onboarding_v2.models import (
     AnalysisBundle,
     AnalysisSnapshot,
@@ -1298,6 +1299,8 @@ def _run_parallel_execution_lanes(
 ) -> None:
     indexing_future = None
     executor = None
+    indexing_cancel_event = None
+    host_context = None
     retrieval_plan = None if state.plan is None else state.plan.retrieval_index_plan
     should_run_indexing = (
         retrieval_plan is not None
@@ -1307,11 +1310,15 @@ def _run_parallel_execution_lanes(
     )
 
     if should_run_indexing:
+        indexing_cancel_event = ThreadingEvent()
+        host_context = _build_host_export_context(state=state)
         executor = ThreadPoolExecutor(max_workers=1)
         indexing_future = executor.submit(
             execute_indexing_plan,
             plan=retrieval_plan,
             root=source_root,
+            cancel_event=indexing_cancel_event,
+            host_context=host_context,
         )
 
     try:
@@ -1354,6 +1361,8 @@ def _run_parallel_execution_lanes(
                 artifact_store=artifact_store,
                 attempt=attempt,
             )
+            if host_context is not None:
+                _mark_host_export_ready(host_context=host_context, state=state)
 
         if should_run_indexing:
             indexing_result = (
@@ -1371,6 +1380,20 @@ def _run_parallel_execution_lanes(
                 attempt=attempt,
                 precomputed_result=indexing_result,
             )
+    except Exception:
+        if indexing_cancel_event is not None:
+            indexing_cancel_event.set()
+        if host_context is not None:
+            host_context.host_failed.set()
+            host_context.export_ready.set()
+        if indexing_future is not None:
+            try:
+                indexing_future.result(timeout=2)
+            except TimeoutError:
+                pass
+            except Exception:
+                pass
+        raise
     finally:
         if executor is not None:
             executor.shutdown(wait=False, cancel_futures=True)
@@ -1425,7 +1448,11 @@ def run_indexing_stage(
             attempt=attempt,
         )
 
-    indexing_result = precomputed_result or execute_indexing_plan(plan=retrieval_plan, root=source_root)
+    indexing_result = precomputed_result or execute_indexing_plan(
+        plan=retrieval_plan,
+        root=source_root,
+        host_context=_build_host_export_context(state=state, export_ready=True),
+    )
     retrieval_status = dict(indexing_result.get("corpora") or {})
     smoke_payload = _build_retrieval_smoke_payload(retrieval_plan=retrieval_plan, indexing_result=indexing_result)
 
@@ -1507,6 +1534,33 @@ def run_indexing_stage(
         artifact_refs=[retrieval_source_manifest_ref, indexing_plan_ref, indexing_result_ref, retrieval_smoke_ref],
         attempt=attempt,
     )
+
+
+def _build_host_export_context(
+    *,
+    state: _RunState,
+    export_ready: bool = False,
+) -> HostExportContext:
+    context = HostExportContext(
+        host_runtime_workspace=(
+            None
+            if state.apply_result is None
+            else Path(state.apply_result.host_workspace_path)
+        ),
+        snapshot=state.snapshot,
+        integration_plan=state.plan,
+    )
+    if export_ready and context.host_runtime_workspace is not None:
+        context.export_ready.set()
+    return context
+
+
+def _mark_host_export_ready(*, host_context: HostExportContext, state: _RunState) -> None:
+    if state.apply_result is not None:
+        host_context.host_runtime_workspace = Path(state.apply_result.host_workspace_path)
+    host_context.snapshot = state.snapshot
+    host_context.integration_plan = state.plan
+    host_context.export_ready.set()
 
 
 def run_compile_preflight_stage(

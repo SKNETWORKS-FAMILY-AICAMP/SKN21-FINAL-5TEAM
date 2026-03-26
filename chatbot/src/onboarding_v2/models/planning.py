@@ -277,6 +277,11 @@ class RagCorpusPlan(BaseModel):
     smoke_queries: list[str] = Field(default_factory=list)
     minimum_expected_documents: int = 1
     loader_strategy: str | None = None
+    row_source_strategy: str | None = None
+    row_source_endpoint: str | None = None
+    row_id_field: str | None = None
+    row_image_url_field: str | None = None
+    pagination_strategy: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -286,6 +291,10 @@ class RagCorpusPlan(BaseModel):
         "collection_alias",
         "build_collection",
         "loader_strategy",
+        "row_source_strategy",
+        "row_source_endpoint",
+        "row_id_field",
+        "row_image_url_field",
         mode="before",
     )
     @classmethod

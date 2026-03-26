@@ -475,6 +475,18 @@ def test_planner_builds_site_scoped_retrieval_index_plan_and_capability_upgrade(
         "site_bilyeo__discovery_image",
     }
     assert all("__run_runtime" in item.build_collection for item in retrieval_index_plan.corpora)
+    discovery_plan = next(item for item in retrieval_index_plan.corpora if item.corpus == "discovery_image")
+    assert discovery_plan.row_source_strategy == "host_api_fetch"
+    assert discovery_plan.row_source_endpoint == planning_bundle.integration_plan.chatbot_bridge.product_search_endpoint
+    assert discovery_plan.row_id_field == "product_id"
+    assert discovery_plan.row_image_url_field == "image_url"
+    assert discovery_plan.pagination_strategy == {
+        "type": "page_number",
+        "page_param": "page",
+        "page_size_param": "page_size",
+        "page_size": 100,
+        "stop_on": "empty_or_repeated_ids",
+    }
     assert planning_bundle.integration_plan.capability_upgrade["capability_profile"] == "order_cs_plus_retrieval"
     assert planning_bundle.integration_plan.host_frontend.widget_features["image_upload"] is False
     assert planning_bundle.integration_plan.host_frontend.enabled_retrieval_corpora == []
