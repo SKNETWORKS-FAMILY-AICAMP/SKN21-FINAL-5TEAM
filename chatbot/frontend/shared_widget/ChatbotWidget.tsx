@@ -19,6 +19,7 @@ export type SharedWidgetAuthResult = {
   authenticated: boolean;
   siteId: string;
   accessToken: string;
+  userId: string;
 };
 
 export type SharedWidgetCapability =
@@ -52,6 +53,7 @@ export type SharedChatApiResponse = {
 export type SharedChatBootstrap = SharedWidgetAuthResult & {
   site_id: string;
   access_token: string;
+  user_id: string;
 };
 
 export type SharedChatStreamHandlers = {
@@ -220,8 +222,10 @@ export async function bootstrapSharedWidgetAuth(
       authenticated: false,
       siteId: String(payload.site_id ?? ''),
       accessToken: String(payload.access_token ?? ''),
+      userId: String(payload.user_id ?? payload.user?.id ?? ""),
       site_id: String(payload.site_id ?? ''),
       access_token: String(payload.access_token ?? ''),
+      user_id: String(payload.user_id ?? payload.user?.id ?? ""),
     };
   }
 
@@ -229,8 +233,10 @@ export async function bootstrapSharedWidgetAuth(
     authenticated: true,
     siteId: String(payload.site_id ?? ''),
     accessToken: String(payload.access_token ?? ''),
+    userId: String(payload.user_id ?? payload.user?.id ?? ""),
     site_id: String(payload.site_id ?? ''),
     access_token: String(payload.access_token ?? ''),
+    user_id: String(payload.user_id ?? payload.user?.id ?? ""),
   };
 }
 
@@ -248,6 +254,7 @@ export async function sendSharedChatRequest(
     message: string;
     accessToken: string;
     siteId: string;
+    userId: string;
     previousState?: Record<string, unknown> | null;
     capabilityProfile?: string | null;
     enabledRetrievalCorpora?: string[];
@@ -265,6 +272,7 @@ export async function sendSharedChatRequest(
       previous_state: payload.previousState ?? null,
       site_id: payload.siteId,
       access_token: payload.accessToken,
+      user_id: payload.userId,
       capability_profile: payload.capabilityProfile ?? host.capabilityProfile ?? undefined,
       enabled_retrieval_corpora:
         payload.enabledRetrievalCorpora ?? host.enabledRetrievalCorpora ?? undefined,
@@ -358,6 +366,7 @@ export async function streamSharedChatResponse(
       model: args.model ?? undefined,
       site_id: args.bootstrap.site_id,
       access_token: args.bootstrap.access_token,
+      user_id: args.bootstrap.user_id,
       capability_profile: args.capabilityProfile ?? args.host.capabilityProfile ?? undefined,
       enabled_retrieval_corpora:
         args.enabledRetrievalCorpora ?? args.host.enabledRetrievalCorpora ?? undefined,

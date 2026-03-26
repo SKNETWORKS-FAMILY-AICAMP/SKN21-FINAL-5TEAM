@@ -561,6 +561,11 @@ async def _resolve_authenticated_current_user(
         or http_request.cookies.get("access_token")
         or http_request.cookies.get("session_token")
     )
+    effective_user_id = (
+        request.user_id
+        or previous_user_info.get("id")
+        or previous_user_info.get("user_id")
+    )
 
     if not effective_site_id or not effective_access_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -570,7 +575,7 @@ async def _resolve_authenticated_current_user(
         validated_user = await resolved_adapter.validate_auth(
             AuthenticatedContext(
                 siteId=resolved_adapter.site_id,
-                userId=str(previous_user_info.get("id") or "__bridge__"),
+                userId=str(effective_user_id or "__bridge__"),
                 accessToken=str(effective_access_token),
             )
         )
