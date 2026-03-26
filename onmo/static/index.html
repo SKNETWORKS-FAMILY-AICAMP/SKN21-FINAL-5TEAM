@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ONMO</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <main class="frame">
+        <aside class="panel outline-panel">
+          <p class="box-label">outline</p>
+          <div id="run-meta" class="run-meta empty-state">온보딩 실행을 기다리고 있습니다.</div>
+          <div id="stage-timeline" class="stage-menu"></div>
+        </aside>
+
+        <section class="main-panel">
+          <section class="panel site-panel">
+            <p class="box-label">site</p>
+            <div class="site-row">
+              <form id="start-form" class="launch-form">
+                <select id="site" name="site" required></select>
+                <button class="launch-button" type="submit" id="launch-button">실행</button>
+              </form>
+              <div class="hero-status">
+                <span class="status-dot"></span>
+                <strong id="hero-status-text">대기 중</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel stage-panel">
+            <div class="stage-top">
+              <div>
+                <p class="box-label">stage</p>
+                <h2 id="detail-title">Analysis</h2>
+              </div>
+              <span id="detail-status" class="status-badge neutral">Waiting</span>
+            </div>
+            <p id="detail-description" class="detail-description">
+              저장소 구조를 읽고 어떤 연결점과 계약을 찾아냈는지 보여주는 단계입니다.
+            </p>
+            <div id="stage-detail" class="stage-detail empty-state">
+              실행을 시작하면 이 영역에 단계별 요약과 검증 결과가 표시됩니다.
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
