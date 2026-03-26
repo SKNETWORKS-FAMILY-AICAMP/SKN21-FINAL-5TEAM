@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
-from threading import Event
+from threading import Event, Lock
 from typing import Any, Callable, Iterable
 from urllib.parse import urljoin, urlparse
 from uuid import NAMESPACE_URL, uuid5
@@ -42,6 +42,131 @@ class HostExportContext:
     host_failed: Event = field(default_factory=Event)
 
 
+class _IndexingError(RuntimeError):
+    def __init__(
+        self,
+        reason: str,
+        *,
+        warning_codes: list[str] | None = None,
+        error: str | None = None,
+        log_paths: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(error or reason)
+        self.reason = reason
+        self.warning_codes = list(warning_codes or [])
+        self.error = str(error or reason)
+        self.log_paths = dict(log_paths or {})
+
+
+@dataclass(slots=True)
+class _SharedHostRuntime:
+    host_context: HostExportContext | None
+    cancel_event: Event | None
+    live_logs_root: Path | None = None
+    _lock: Lock = field(default_factory=Lock)
+    _prep_result: Any | None = None
+    _runtime_plan: Any | None = None
+    _runtime_state: Any | None = None
+    _closed: bool = False
+
+    def ensure_prepared(self) -> tuple[Any, Path]:
+        host_context = self._wait_for_export_ready()
+        workspace = Path(host_context.host_runtime_workspace or "").resolve()
+        backend_root = workspace / "backend" if (workspace / "backend").exists() else workspace
+        if self._prep_result is None:
+            with self._lock:
+                if self._prep_result is None:
+                    prep_logs_root = self.live_logs_root / "host-prep" if self.live_logs_root is not None else None
+                    self._prep_result = prepare_backend_runtime(
+                        workspace=workspace,
+                        snapshot=host_context.snapshot,
+                        live_logs_root=prep_logs_root,
+                    )
+        prep_result = self._prep_result
+        if not getattr(prep_result, "passed", False):
+            raise _IndexingError(
+                "backend runtime prep failed",
+                warning_codes=["host_runtime_prep_failed"],
+                error=str(getattr(prep_result, "failure_summary", "") or "backend runtime prep failed"),
+                log_paths=dict(getattr(prep_result, "live_log_paths", {}) or {}),
+            )
+        return prep_result, backend_root
+
+    def ensure_runtime(self) -> tuple[Any, Any]:
+        prep_result, _backend_root = self.ensure_prepared()
+        host_context = self._wait_for_export_ready(require_integration_plan=True)
+        if self._runtime_state is None:
+            with self._lock:
+                if self._runtime_state is None:
+                    self._runtime_plan = build_backend_runtime_plan(
+                        workspace=host_context.host_runtime_workspace,
+                        snapshot=host_context.snapshot,
+                        plan=host_context.integration_plan,
+                        prep_result=prep_result,
+                    )
+                    runtime_log_path = (
+                        self.live_logs_root / "host-runtime.log" if self.live_logs_root is not None else None
+                    )
+                    self._runtime_state = launch_backend_runtime(
+                        self._runtime_plan,
+                        log_path=runtime_log_path,
+                    )
+        runtime_state = self._runtime_state
+        if not getattr(runtime_state, "passed", False):
+            log_paths: dict[str, str] = {}
+            launcher_log_path = str(getattr(runtime_state, "launcher_log_path", "") or "").strip()
+            if launcher_log_path:
+                log_paths["launcher"] = launcher_log_path
+            raise _IndexingError(
+                "backend runtime boot failed",
+                warning_codes=["host_runtime_boot_failed"],
+                error=str(getattr(runtime_state, "failure_summary", "") or "backend runtime boot failed"),
+                log_paths=log_paths,
+            )
+        return self._runtime_plan, runtime_state
+
+    def close(self) -> None:
+        runtime_state = self._runtime_state
+        if runtime_state is None:
+            return
+        with self._lock:
+            if self._closed:
+                return
+            stop_backend_runtime(runtime_state)
+            self._closed = True
+
+    def _wait_for_export_ready(self, *, require_integration_plan: bool = False) -> HostExportContext:
+        host_context = self.host_context
+        if host_context is None:
+            raise _IndexingError(
+                "missing_host_export_context",
+                warning_codes=["host_runtime_context_missing"],
+            )
+        while not host_context.export_ready.is_set():
+            if _cancelled(self.cancel_event) or host_context.host_failed.is_set():
+                raise _IndexingError(
+                    "host export failed",
+                    warning_codes=["host_lane_failed"],
+                )
+            host_context.export_ready.wait(timeout=0.2)
+        if host_context.host_failed.is_set() or _cancelled(self.cancel_event):
+            raise _IndexingError(
+                "host export failed",
+                warning_codes=["host_lane_failed"],
+            )
+        if host_context.host_runtime_workspace is None or host_context.snapshot is None:
+            raise _IndexingError(
+                "host export context is incomplete",
+                warning_codes=["host_runtime_context_missing"],
+            )
+        if require_integration_plan and host_context.integration_plan is None:
+            raise _IndexingError(
+                "host export context is incomplete",
+                warning_codes=["host_runtime_context_missing"],
+            )
+        return host_context
+
+
 @dataclass(slots=True)
 class _IndexingDeps:
     qdrant_client: object | None = None
@@ -50,6 +175,7 @@ class _IndexingDeps:
     image_embedder: Callable[[list[bytes]], list[list[float]]] | None = None
     image_fetcher: Callable[[str], bytes] | None = None
     row_fetcher: Callable[..., list[dict[str, Any]]] | None = None
+    shared_host_runtime: _SharedHostRuntime | None = None
 
 
 def _normalize_site_slug(site: str) -> str:
@@ -277,9 +403,15 @@ def execute_indexing_plan(
     image_fetcher: Callable[[str], bytes] | None = None,
     row_fetcher: Callable[..., list[dict[str, Any]]] | None = None,
     worker: Any | None = None,
+    live_logs_root: str | Path | None = None,
 ) -> dict[str, Any]:
     base_root = Path(root)
     worker_fn = worker or _default_worker
+    shared_host_runtime = _SharedHostRuntime(
+        host_context=host_context,
+        cancel_event=cancel_event,
+        live_logs_root=Path(live_logs_root).resolve() if live_logs_root is not None else None,
+    )
     deps = _IndexingDeps(
         qdrant_client=qdrant_client,
         dense_embedder=dense_embedder,
@@ -287,33 +419,44 @@ def execute_indexing_plan(
         image_embedder=image_embedder,
         image_fetcher=image_fetcher,
         row_fetcher=row_fetcher,
+        shared_host_runtime=shared_host_runtime,
     )
     results: dict[str, Any] = {}
-    with ThreadPoolExecutor(max_workers=max(1, min(3, len(plan.corpora)))) as executor:
-        future_map = {
-            executor.submit(
-                worker_fn,
-                corpus_plan=corpus,
-                root=base_root,
-                cancel_event=cancel_event,
-                host_context=host_context,
-                deps=deps,
-                plan=plan,
-            ): corpus.corpus
-            for corpus in plan.corpora
-        }
-        for future in as_completed(future_map):
-            corpus = future_map[future]
-            try:
-                results[corpus] = future.result()
-            except Exception as exc:
-                results[corpus] = {
-                    "status": "failed",
-                    "enabled": False,
-                    "documents_indexed": 0,
-                    "warning_codes": ["worker_exception"],
-                    "error": str(exc),
-                }
+    try:
+        with ThreadPoolExecutor(max_workers=max(1, min(3, len(plan.corpora)))) as executor:
+            future_map = {
+                executor.submit(
+                    worker_fn,
+                    corpus_plan=corpus,
+                    root=base_root,
+                    cancel_event=cancel_event,
+                    host_context=host_context,
+                    deps=deps,
+                    plan=plan,
+                ): corpus
+                for corpus in plan.corpora
+            }
+            for future in as_completed(future_map):
+                corpus_plan = future_map[future]
+                try:
+                    results[corpus_plan.corpus] = future.result()
+                except _IndexingError as exc:
+                    results[corpus_plan.corpus] = _failure_result(
+                        corpus_plan=corpus_plan,
+                        reason=exc.reason,
+                        warning_codes=exc.warning_codes,
+                        error=exc.error,
+                        log_paths=exc.log_paths,
+                    )
+                except Exception as exc:
+                    results[corpus_plan.corpus] = _failure_result(
+                        corpus_plan=corpus_plan,
+                        reason="worker_exception",
+                        warning_codes=["worker_exception"],
+                        error=str(exc),
+                    )
+    finally:
+        shared_host_runtime.close()
     return {
         "site_id": plan.site_id,
         "site_slug": plan.site_slug,
@@ -657,12 +800,14 @@ def _fetch_rows(
             corpus_plan=corpus_plan,
             host_context=host_context,
             cancel_event=cancel_event,
+            deps=deps,
         )
     if strategy == "host_python_fetch":
         return _fetch_rows_from_host_python(
             corpus_plan=corpus_plan,
             host_context=host_context,
             cancel_event=cancel_event,
+            deps=deps,
         )
     return []
 
@@ -672,39 +817,15 @@ def _fetch_product_rows_from_host_api(
     corpus_plan: RagCorpusPlan,
     host_context: HostExportContext | None,
     cancel_event: Event | None,
+    deps: _IndexingDeps,
 ) -> list[dict[str, Any]]:
-    if host_context is None:
-        raise RuntimeError("missing_host_export_context")
-    while not host_context.export_ready.is_set():
-        if _cancelled(cancel_event) or host_context.host_failed.is_set():
-            return []
-        host_context.export_ready.wait(timeout=0.2)
-    if host_context.host_failed.is_set() or _cancelled(cancel_event):
-        return []
-    if (
-        host_context.host_runtime_workspace is None
-        or host_context.snapshot is None
-        or host_context.integration_plan is None
-    ):
-        raise RuntimeError("host export context is incomplete")
-
-    prep_result = prepare_backend_runtime(
-        workspace=host_context.host_runtime_workspace,
-        snapshot=host_context.snapshot,
-    )
-    if not prep_result.passed:
-        raise RuntimeError(prep_result.failure_summary or "backend runtime prep failed")
-
-    runtime_plan = build_backend_runtime_plan(
-        workspace=host_context.host_runtime_workspace,
-        snapshot=host_context.snapshot,
-        plan=host_context.integration_plan,
-        prep_result=prep_result,
-    )
-    runtime_state = launch_backend_runtime(runtime_plan)
-    if not runtime_state.passed:
-        raise RuntimeError(runtime_state.failure_summary or "backend runtime launch failed")
-
+    shared_host_runtime = deps.shared_host_runtime
+    if shared_host_runtime is None:
+        raise _IndexingError(
+            "missing_host_runtime_session",
+            warning_codes=["host_runtime_context_missing"],
+        )
+    runtime_plan, _runtime_state = shared_host_runtime.ensure_runtime()
     try:
         base_url = f"http://127.0.0.1:{runtime_plan.listen_port}"
         return _paginate_product_rows(
@@ -712,8 +833,12 @@ def _fetch_product_rows_from_host_api(
             corpus_plan=corpus_plan,
             cancel_event=cancel_event,
         )
-    finally:
-        stop_backend_runtime(runtime_state)
+    except httpx.HTTPError as exc:
+        raise _IndexingError(
+            "row source fetch failed",
+            warning_codes=["row_source_fetch_failed"],
+            error=str(exc),
+        ) from exc
 
 
 def _fetch_rows_from_host_python(
@@ -721,39 +846,53 @@ def _fetch_rows_from_host_python(
     corpus_plan: RagCorpusPlan,
     host_context: HostExportContext | None,
     cancel_event: Event | None,
+    deps: _IndexingDeps,
 ) -> list[dict[str, Any]]:
-    if host_context is None:
-        raise RuntimeError("missing_host_export_context")
-    while not host_context.export_ready.is_set():
-        if _cancelled(cancel_event) or host_context.host_failed.is_set():
-            return []
-        host_context.export_ready.wait(timeout=0.2)
-    if host_context.host_failed.is_set() or _cancelled(cancel_event):
-        return []
-    if host_context.host_runtime_workspace is None or host_context.snapshot is None:
-        raise RuntimeError("host export context is incomplete")
-
-    prep_result = prepare_backend_runtime(
-        workspace=host_context.host_runtime_workspace,
-        snapshot=host_context.snapshot,
-    )
-    if not prep_result.passed:
-        raise RuntimeError(prep_result.failure_summary or "backend runtime prep failed")
+    shared_host_runtime = deps.shared_host_runtime
+    if shared_host_runtime is None:
+        raise _IndexingError(
+            "missing_host_runtime_session",
+            warning_codes=["host_runtime_context_missing"],
+        )
+    prep_result, backend_root = shared_host_runtime.ensure_prepared()
 
     module_name = str(corpus_plan.row_source_module or "").strip()
     callable_name = str(corpus_plan.row_source_callable or "").strip()
     if not module_name or not callable_name:
-        raise RuntimeError("host python fetch contract is incomplete")
-
-    workspace = Path(host_context.host_runtime_workspace).resolve()
-    backend_root = workspace / "backend" if (workspace / "backend").exists() else workspace
-    script = (
-        "import importlib, json, sys; "
-        f"sys.path.insert(0, {str(backend_root)!r}); "
-        f"module = importlib.import_module({module_name!r}); "
-        f"callable_obj = getattr(module, {callable_name!r}); "
-        "rows = callable_obj(); "
-        "print(json.dumps(rows, ensure_ascii=False))"
+        raise _IndexingError(
+            "host python fetch contract is incomplete",
+            warning_codes=["host_python_fetch_failed"],
+        )
+    script = "\n".join(
+        [
+            "import importlib, json, sys",
+            f"sys.path.insert(0, {str(backend_root)!r})",
+            "try:",
+            "    import oracledb",
+            "    defaults = getattr(oracledb, 'defaults', None)",
+            "    if defaults is not None:",
+            "        defaults.fetch_lobs = False",
+            "except Exception:",
+            "    pass",
+            "def _json_default(obj):",
+            "    reader = getattr(obj, 'read', None)",
+            "    if callable(reader):",
+            "        try:",
+            "            return reader()",
+            "        except Exception:",
+            "            pass",
+            "    isoformat = getattr(obj, 'isoformat', None)",
+            "    if callable(isoformat):",
+            "        try:",
+            "            return isoformat()",
+            "        except Exception:",
+            "            pass",
+            "    return str(obj)",
+            f"module = importlib.import_module({module_name!r})",
+            f"callable_obj = getattr(module, {callable_name!r})",
+            "rows = callable_obj()",
+            "print(json.dumps(rows, ensure_ascii=False, default=_json_default))",
+        ]
     )
     result = subprocess.run(
         [str(prep_result.python_executable or ""), "-c", script],
@@ -764,11 +903,19 @@ def _fetch_rows_from_host_python(
         check=False,
     )
     if result.returncode != 0:
-        raise RuntimeError((result.stderr or result.stdout or "host python fetch failed").strip())
+        raise _IndexingError(
+            "host python fetch failed",
+            warning_codes=["host_python_fetch_failed", "row_source_fetch_failed"],
+            error=(result.stderr or result.stdout or "host python fetch failed").strip(),
+        )
     try:
         payload = json.loads(result.stdout or "[]")
     except json.JSONDecodeError as exc:
-        raise RuntimeError("host python fetch returned invalid json") from exc
+        raise _IndexingError(
+            "host python fetch returned invalid json",
+            warning_codes=["host_python_fetch_failed"],
+            error="host python fetch returned invalid json",
+        ) from exc
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)]
     return []
@@ -971,7 +1118,13 @@ def _embed_image_bytes_batch(images: list[bytes]) -> list[list[float]]:
     inputs = processor(images=pil_images, return_tensors="pt", padding=True)  # type: ignore[call-arg]
     inputs = {key: value.to(device) for key, value in inputs.items()}
     with torch.no_grad():
-        features = model.get_image_features(**inputs)
+        output = model.get_image_features(**inputs)
+    if isinstance(output, torch.Tensor):
+        features = output
+    elif hasattr(output, "pooler_output"):
+        features = output.pooler_output
+    else:
+        raise AttributeError("unexpected output from CLIP.get_image_features")
     normalized = features / features.norm(dim=-1, keepdim=True)
     return normalized.cpu().to(torch.float32).tolist()
 
@@ -1011,6 +1164,8 @@ def _failure_result(
     corpus_plan: RagCorpusPlan,
     reason: str,
     warning_codes: list[str] | None = None,
+    error: str | None = None,
+    log_paths: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     return {
         "status": "failed",
@@ -1021,6 +1176,8 @@ def _failure_result(
         "loader_strategy": corpus_plan.loader_strategy,
         "warning_codes": list(warning_codes or []),
         "reason": reason,
+        "error": error,
+        "log_paths": dict(log_paths or {}),
         "alias_swapped": False,
         "smoke_passed": False,
     }

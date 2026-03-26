@@ -1,9 +1,12 @@
 import os
 import sys
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID
 
+import pytest
 from qdrant_client.http import models
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
@@ -16,6 +19,12 @@ from chatbot.src.onboarding_v2.indexing import (
     chunk_faq_source,
     chunk_policy_source,
     execute_indexing_plan,
+)
+from chatbot.src.onboarding_v2.indexing.coordinator import (
+    _IndexingDeps,
+    _SharedHostRuntime,
+    _embed_image_bytes_batch,
+    _fetch_rows_from_host_python,
 )
 from chatbot.src.onboarding_v2.models.analysis import RagSourceRecord, RagSources
 from chatbot.src.onboarding_v2.models.planning import RagCorpusPlan, RetrievalIndexPlan
@@ -206,7 +215,7 @@ def test_execute_indexing_plan_upserts_dense_and_sparse_text_corpora(tmp_path: P
         "site_demo-shop__faq": "site_demo-shop__faq__run_demo",
         "site_demo-shop__policy": "site_demo-shop__policy__run_demo",
     }
-    assert [collection for collection, _ in fake_client.upserts] == [
+    assert sorted(collection for collection, _ in fake_client.upserts) == [
         "site_demo-shop__faq__run_demo",
         "site_demo-shop__policy__run_demo",
     ]
@@ -247,6 +256,7 @@ def test_execute_indexing_plan_discovery_image_uses_host_api_rows_and_allows_par
     )
     host_context = HostExportContext()
     host_context.host_runtime_workspace = tmp_path
+    host_context.snapshot = object()
     host_context.export_ready.set()
     fake_client = _FakeQdrantClient()
 
@@ -299,6 +309,7 @@ def test_execute_indexing_plan_can_ingest_faq_rows_via_host_python_fetch(tmp_pat
     fake_client = _FakeQdrantClient()
     host_context = HostExportContext()
     host_context.host_runtime_workspace = tmp_path
+    host_context.snapshot = object()
     host_context.export_ready.set()
     captured: dict[str, object] = {}
 
@@ -326,3 +337,298 @@ def test_execute_indexing_plan_can_ingest_faq_rows_via_host_python_fetch(tmp_pat
     assert captured["corpus_plan"].row_source_callable == "get_all_faq"
     for point in fake_client.upserts[0][1]:
         UUID(str(point.id))
+
+
+def test_execute_indexing_plan_reuses_shared_host_runtime_for_host_backed_corpora(
+    tmp_path: Path, monkeypatch
+):
+    backend_model = tmp_path / "backend" / "models"
+    backend_model.mkdir(parents=True)
+    (backend_model / "faq.py").write_text("def get_all_faq():\n    return []\n", encoding="utf-8")
+
+    plan = RetrievalIndexPlan(
+        site_id="bilyeo",
+        site_slug="bilyeo",
+        corpora=[
+            RagCorpusPlan(
+                corpus="faq",
+                chunking_strategy="qa_level",
+                collection_alias="site_bilyeo__faq",
+                build_collection="site_bilyeo__faq__run_demo",
+                sources=["backend/models/faq.py"],
+                smoke_queries=["배송"],
+                minimum_expected_documents=1,
+                loader_strategy="faq_source_scan",
+                row_source_strategy="host_python_fetch",
+                row_source_module="models.faq",
+                row_source_callable="get_all_faq",
+            ),
+            RagCorpusPlan(
+                corpus="discovery_image",
+                chunking_strategy="entity_level",
+                collection_alias="site_bilyeo__discovery_image",
+                build_collection="site_bilyeo__discovery_image__run_demo",
+                sources=["backend/routes/product.py"],
+                smoke_queries=["검은색 자켓"],
+                minimum_expected_documents=1,
+                loader_strategy="public_url_fetch",
+                row_source_strategy="host_api_fetch",
+                row_source_endpoint="/api/products",
+                row_id_field="product_id",
+                row_image_url_field="image_url",
+                pagination_strategy={
+                    "type": "page_number",
+                    "page_param": "page",
+                    "page_size_param": "page_size",
+                    "page_size": 100,
+                    "stop_on": "empty_or_repeated_ids",
+                },
+            ),
+        ],
+    )
+    host_context = HostExportContext()
+    host_context.host_runtime_workspace = tmp_path
+    host_context.snapshot = object()
+    host_context.integration_plan = object()
+    host_context.export_ready.set()
+    fake_client = _FakeQdrantClient()
+    calls = {"prepare": 0, "build": 0, "launch": 0, "stop": 0}
+
+    class _Prep:
+        passed = True
+        failure_summary = None
+        python_executable = sys.executable
+
+    class _RuntimePlan:
+        listen_port = 8129
+
+    class _RuntimeState:
+        passed = True
+        failure_summary = None
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator.prepare_backend_runtime",
+        lambda **kwargs: calls.__setitem__("prepare", calls["prepare"] + 1) or _Prep(),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator.build_backend_runtime_plan",
+        lambda **kwargs: calls.__setitem__("build", calls["build"] + 1) or _RuntimePlan(),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator.launch_backend_runtime",
+        lambda *args, **kwargs: calls.__setitem__("launch", calls["launch"] + 1) or _RuntimeState(),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator.stop_backend_runtime",
+        lambda *args, **kwargs: calls.__setitem__("stop", calls["stop"] + 1) or None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator._paginate_product_rows",
+        lambda **kwargs: [
+            {"product_id": 101, "resolved_image_url": "https://cdn.example.com/ok.jpg", "name": "jacket"}
+        ],
+    )
+
+    class _CompletedProcess:
+        returncode = 0
+        stdout = (
+            '[{"faq_id": 1, "category": "배송", "question": "배송은 얼마나 걸리나요?", "answer": "2일"}]'
+        )
+        stderr = ""
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator.subprocess.run",
+        lambda *args, **kwargs: _CompletedProcess(),
+    )
+
+    result = execute_indexing_plan(
+        plan=plan,
+        root=tmp_path,
+        host_context=host_context,
+        qdrant_client=fake_client,
+        dense_embedder=lambda texts: [[float(index + 1), float(index + 2)] for index, _ in enumerate(texts)],
+        sparse_embedder=lambda texts: [
+            models.SparseVector(indices=[0, 1], values=[1.0, float(len(text))])
+            for text in texts
+        ],
+        image_embedder=lambda payloads: [[0.1, 0.2] for _ in payloads],
+        image_fetcher=lambda url: b"ok",
+    )
+
+    assert result["corpora"]["faq"]["status"] == "completed"
+    assert result["corpora"]["discovery_image"]["status"] == "completed"
+    assert calls == {"prepare": 1, "build": 1, "launch": 1, "stop": 1}
+
+
+def test_execute_indexing_plan_marks_shared_host_runtime_failures_explicitly(tmp_path: Path, monkeypatch):
+    backend_model = tmp_path / "backend" / "models"
+    backend_model.mkdir(parents=True)
+    (backend_model / "faq.py").write_text("def get_all_faq():\n    return []\n", encoding="utf-8")
+
+    plan = RetrievalIndexPlan(
+        site_id="bilyeo",
+        site_slug="bilyeo",
+        corpora=[
+            RagCorpusPlan(
+                corpus="faq",
+                chunking_strategy="qa_level",
+                collection_alias="site_bilyeo__faq",
+                build_collection="site_bilyeo__faq__run_demo",
+                sources=["backend/models/faq.py"],
+                smoke_queries=["배송"],
+                minimum_expected_documents=1,
+                loader_strategy="faq_source_scan",
+                row_source_strategy="host_python_fetch",
+                row_source_module="models.faq",
+                row_source_callable="get_all_faq",
+            ),
+            RagCorpusPlan(
+                corpus="discovery_image",
+                chunking_strategy="entity_level",
+                collection_alias="site_bilyeo__discovery_image",
+                build_collection="site_bilyeo__discovery_image__run_demo",
+                sources=["backend/routes/product.py"],
+                smoke_queries=["검은색 자켓"],
+                minimum_expected_documents=1,
+                loader_strategy="public_url_fetch",
+                row_source_strategy="host_api_fetch",
+                row_source_endpoint="/api/products",
+                row_id_field="product_id",
+                row_image_url_field="image_url",
+            ),
+        ],
+    )
+    host_context = HostExportContext()
+    host_context.host_runtime_workspace = tmp_path
+    host_context.snapshot = object()
+    host_context.integration_plan = object()
+    host_context.export_ready.set()
+
+    class _Prep:
+        passed = False
+        failure_summary = "oracle unavailable"
+        python_executable = sys.executable
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator.prepare_backend_runtime",
+        lambda **kwargs: _Prep(),
+    )
+
+    result = execute_indexing_plan(
+        plan=plan,
+        root=tmp_path,
+        host_context=host_context,
+        qdrant_client=_FakeQdrantClient(),
+    )
+
+    assert result["corpora"]["faq"]["status"] == "failed"
+    assert "host_runtime_prep_failed" in result["corpora"]["faq"]["warning_codes"]
+    assert result["corpora"]["discovery_image"]["status"] == "failed"
+    assert "host_runtime_prep_failed" in result["corpora"]["discovery_image"]["warning_codes"]
+
+
+def test_fetch_rows_from_host_python_serializes_lob_like_values(tmp_path: Path, monkeypatch):
+    backend_model = tmp_path / "backend" / "models"
+    backend_model.mkdir(parents=True)
+    (backend_model / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "backend" / "oracledb.py").write_text(
+        "class _Defaults:\n"
+        "    fetch_lobs = True\n\n"
+        "defaults = _Defaults()\n",
+        encoding="utf-8",
+    )
+    (backend_model / "faq.py").write_text(
+        "import oracledb\n\n"
+        "class FakeLob:\n"
+        "    def __init__(self, value):\n"
+        "        self._value = value\n"
+        "    def read(self):\n"
+        "        return self._value\n\n"
+        "def get_all_faq():\n"
+        "    answer = '2일' if getattr(oracledb.defaults, 'fetch_lobs', None) is False else FakeLob('2일')\n"
+        "    return [{\"faq_id\": 1, \"category\": \"배송\", \"question\": \"배송은 얼마나 걸리나요?\", \"answer\": answer}] \n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator.prepare_backend_runtime",
+        lambda **kwargs: type(
+            "PrepResult",
+            (),
+            {
+                "passed": True,
+                "failure_summary": None,
+                "python_executable": sys.executable,
+            },
+        )(),
+    )
+
+    host_context = HostExportContext()
+    host_context.host_runtime_workspace = tmp_path
+    host_context.snapshot = object()
+    host_context.export_ready.set()
+
+    rows = _fetch_rows_from_host_python(
+        corpus_plan=RagCorpusPlan(
+            corpus="faq",
+            chunking_strategy="qa_level",
+            collection_alias="site_bilyeo__faq",
+            build_collection="site_bilyeo__faq__run_demo",
+            sources=["backend/models/faq.py"],
+            smoke_queries=["배송"],
+            minimum_expected_documents=1,
+            loader_strategy="faq_source_scan",
+            row_source_strategy="host_python_fetch",
+            row_source_module="models.faq",
+            row_source_callable="get_all_faq",
+        ),
+        host_context=host_context,
+        cancel_event=None,
+        deps=_IndexingDeps(
+            shared_host_runtime=_SharedHostRuntime(host_context=host_context, cancel_event=None)
+        ),
+    )
+
+    assert rows == [
+        {
+            "faq_id": 1,
+            "category": "배송",
+            "question": "배송은 얼마나 걸리나요?",
+            "answer": "2일",
+        }
+    ]
+
+
+def test_embed_image_bytes_batch_accepts_pooler_output(monkeypatch):
+    import torch
+
+    class _FakeProcessor:
+        def __call__(self, *, images, return_tensors, padding):
+            del images, return_tensors, padding
+            return {"pixel_values": torch.ones((1, 3, 2, 2), dtype=torch.float32)}
+
+    class _FakeOutput:
+        def __init__(self):
+            self.pooler_output = torch.tensor([[3.0, 4.0]], dtype=torch.float32)
+
+    class _FakeModel:
+        def get_image_features(self, **kwargs):
+            del kwargs
+            return _FakeOutput()
+
+    monkeypatch.setattr(
+        "chatbot.src.tools.image_search_tools._resolve_device",
+        lambda: torch.device("cpu"),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.tools.image_search_tools._get_clip_resources",
+        lambda device: (_FakeProcessor(), _FakeModel()),
+    )
+
+    image = Image.new("RGB", (1, 1), color="white")
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+
+    vectors = _embed_image_bytes_batch([buffer.getvalue()])
+
+    assert vectors == [pytest.approx([0.6, 0.8], rel=1e-5)]

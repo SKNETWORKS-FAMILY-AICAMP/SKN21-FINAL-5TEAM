@@ -1013,7 +1013,16 @@ def validate_conversation_runtime(
         )
 
     passed = all(result.final_verdict == "pass" for result in results)
+    failure_categories = sorted(
+        {
+            str(result.failure_category).strip()
+            for result in results
+            if str(result.failure_category or "").strip()
+        }
+    )
     failure_summary = None if passed else "one or more conversation scenarios failed"
+    if failure_summary and failure_categories:
+        failure_summary = f"{failure_summary}: {', '.join(failure_categories)}"
     return ConversationValidationResult(
         passed=passed,
         failure_summary=failure_summary,
@@ -1131,6 +1140,7 @@ async def _run_authenticated_conversation_scenario(
         "mode": scenario["mode"],
         "prompt": scenario["prompt"],
         "status_code": response["status_code"],
+        "response_text": response.get("response_text"),
         "raw_events": response["raw_events"],
         "final_answer": response["final_answer"],
         "metadata_state": response["metadata_state"],
@@ -1183,25 +1193,30 @@ async def _stream_chat_request(
         timeout=30.0,
     ) as client:
         async with client.stream("POST", "/api/v1/chat/stream", json=payload) as response:
-            raw_events = await _collect_sse_events(response)
+            raw_events, response_text = await _collect_sse_events(response)
 
     return _extract_stream_outcome(
         status_code=response.status_code,
         raw_events=raw_events,
         conversation_id=conversation_id,
+        response_text=response_text,
     )
 
 
-async def _collect_sse_events(response: httpx.Response) -> list[dict[str, Any]]:
+async def _collect_sse_events(response: httpx.Response) -> tuple[list[dict[str, Any]], str]:
     events: list[dict[str, Any]] = []
+    raw_lines: list[str] = []
     async for line in response.aiter_lines():
-        if not line or not line.startswith("data: "):
+        if not line:
+            continue
+        raw_lines.append(line)
+        if not line.startswith("data: "):
             continue
         try:
             events.append(json.loads(line[len("data: ") :]))
         except json.JSONDecodeError:
             events.append({"type": "unparsed", "raw": line[len("data: ") :]})
-    return events
+    return events, "\n".join(raw_lines)
 
 
 def _extract_stream_outcome(
@@ -1209,6 +1224,7 @@ def _extract_stream_outcome(
     status_code: int,
     raw_events: list[dict[str, Any]],
     conversation_id: str,
+    response_text: str = "",
 ) -> dict[str, Any]:
     final_answer_parts: list[str] = []
     metadata_state: dict[str, Any] | None = None
@@ -1237,6 +1253,7 @@ def _extract_stream_outcome(
     return {
         "status_code": status_code,
         "raw_events": raw_events,
+        "response_text": response_text,
         "final_answer": final_answer,
         "metadata_state": metadata_state,
         "ui_interrupts": ui_interrupts,
@@ -1403,7 +1420,15 @@ def _evaluate_conversation_deterministic_failures(
     observed_tool_names: list[str],
 ) -> list[str]:
     failures: list[str] = []
+    response_text = str(response.get("response_text") or "").strip().lower()
     if response["status_code"] != 200:
+        if response["status_code"] == 401:
+            if "adapter" in response_text and ("찾을 수 없습니다" in response_text or "not_found" in response_text):
+                failures.append("adapter_resolution_failed")
+            else:
+                failures.append("auth_gate_failed")
+        else:
+            failures.append("scenario_logic_failed")
         failures.append(f"unexpected status {response['status_code']}")
     if response["error_events"]:
         failures.append("chat stream emitted error event")
@@ -1414,6 +1439,7 @@ def _evaluate_conversation_deterministic_failures(
     expected_tool_names = list(scenario.get("expected_tool_names") or [])
     for tool_name in expected_tool_names:
         if tool_name not in observed_tool_names:
+            failures.append("tool_expectation_failed")
             failures.append(f"missing expected tool {tool_name}")
     expected_order_id = _optional_text(scenario.get("sampled_order_id"))
     if expected_order_id and scenario["mode"] in {"mutating", "read_only"}:
@@ -1426,6 +1452,21 @@ def _evaluate_conversation_deterministic_failures(
         if expected_option_id not in serialized:
             failures.append(f"missing expected option id {expected_option_id}")
     return failures
+
+
+def _classify_conversation_failure(deterministic_failures: list[str]) -> str | None:
+    categories = (
+        "auth_gate_failed",
+        "adapter_resolution_failed",
+        "tool_expectation_failed",
+        "scenario_logic_failed",
+    )
+    for category in categories:
+        if category in deterministic_failures:
+            return category
+    if deterministic_failures:
+        return "scenario_logic_failed"
+    return None
 
 
 def _finalize_conversation_scenario_result(
@@ -1447,6 +1488,7 @@ def _finalize_conversation_scenario_result(
     llm_judgement: dict[str, Any] = {}
     llm_passed: bool | None = None
     final_verdict = "fail"
+    failure_category = _classify_conversation_failure(deterministic_failures)
     if deterministic_passed:
         llm_judgement = _run_conversation_llm_judge(
             prompt=prompt,
@@ -1465,6 +1507,7 @@ def _finalize_conversation_scenario_result(
         deterministic_passed=deterministic_passed,
         llm_passed=llm_passed,
         final_verdict=final_verdict,
+        failure_category=failure_category,
         transcript_path=transcript_path,
         trace_path=trace_path,
         sampled_or_fixture_order_id=sampled_order_id,

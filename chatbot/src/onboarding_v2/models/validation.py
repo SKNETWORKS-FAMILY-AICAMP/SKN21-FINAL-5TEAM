@@ -154,6 +154,7 @@ class ConversationScenarioResult(BaseModel):
     deterministic_passed: bool
     llm_passed: bool | None = None
     final_verdict: str
+    failure_category: str | None = None
     transcript_path: str | None = None
     trace_path: str | None = None
     log_path: str | None = None

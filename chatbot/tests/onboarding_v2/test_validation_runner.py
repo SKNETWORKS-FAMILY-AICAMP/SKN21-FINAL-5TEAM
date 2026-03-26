@@ -18,6 +18,7 @@ from chatbot.src.onboarding_v2.storage import ArtifactStore
 from chatbot.src.onboarding_v2.validation.runner import (
     ConversationScenarioResult,
     ConversationValidationResult,
+    _evaluate_conversation_deterministic_failures,
     _finalize_conversation_scenario_result,
     _evaluate_widget_order_flow_report,
     _enforce_required_rechecks,
@@ -823,6 +824,43 @@ def test_validate_host_auth_bootstrap_falls_back_to_validation_bridge_when_login
         "http://127.0.0.1:8126/api/auth/login",
         "http://127.0.0.1:8126/api/chat/auth-token",
     ]
+
+
+def test_authenticated_conversation_401_is_classified_as_auth_gate_failure():
+    failures = _evaluate_conversation_deterministic_failures(
+        scenario={"scenario_id": "authenticated_list_orders", "mode": "read_only", "expected_tool_names": []},
+        response={
+            "status_code": 401,
+            "error_events": [],
+            "metadata_state": {},
+            "final_answer": "",
+            "ui_interrupts": [],
+        },
+        observed_tool_names=[],
+    )
+
+    assert "auth_gate_failed" in failures
+
+
+def test_finalize_conversation_scenario_result_records_failure_category():
+    result = _finalize_conversation_scenario_result(
+        scenario_id="authenticated_list_orders",
+        mode="read_only",
+        prompt="orders",
+        final_answer="",
+        transcript_path="/tmp/transcript.json",
+        trace_path="/tmp/trace.jsonl",
+        expected_tool_names=[],
+        observed_tool_names=[],
+        deterministic_failures=["auth_gate_failed", "unexpected status 401"],
+        sampled_order_id=None,
+        sampled_option_id=None,
+        conversation_id="conv-auth",
+    )
+
+    assert result.deterministic_passed is False
+    assert result.final_verdict == "fail"
+    assert result.failure_category == "auth_gate_failed"
 
 
 def test_runtime_base_url_uses_custom_chat_auth_contract_path():

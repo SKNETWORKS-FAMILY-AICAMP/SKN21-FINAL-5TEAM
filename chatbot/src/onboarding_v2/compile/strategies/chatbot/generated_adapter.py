@@ -97,15 +97,16 @@ def _ensure_generated_adapter_registration(content: str, *, plan: ChatbotBridgeP
             "    ecommerce_adapter = SiteCAdapter(client=ecommerce_client)\n"
             + "".join(init_block),
         )
-    if register_line in updated and f"generated_{plan.site_key}_adapter" not in updated:
+    generated_register_entry = f"        generated_{plan.site_key}_adapter,\n"
+    if register_line in updated and generated_register_entry not in updated:
         updated = updated.replace(
             register_line,
             "    AdapterRegistry.register_many([\n"
             "        food_adapter,\n"
             "        bilyeo_adapter,\n"
             "        ecommerce_adapter,\n"
-            f"        generated_{plan.site_key}_adapter,\n"
-            "    ])\n",
+            + generated_register_entry
+            + "    ])\n",
         )
     return updated
 
@@ -168,7 +169,7 @@ def _build_generated_client(*, plan: ChatbotBridgePlan) -> str:
         '            path = path.replace("{order_id}", str(order_id))\n'
         "        return path\n\n"
         "    async def validate_session(self, headers: Dict[str, str]) -> Any:\n"
-        f'        return await self._request("GET", "{plan.current_user_endpoint}", headers=headers)\n\n'
+        f'        return await self._request("GET", "{plan.auth_validation_endpoint}", headers=headers)\n\n'
         "    async def search_products(self, filter_input: ProductSearchFilter, headers: Dict[str, str]) -> Any:\n"
         "        params = {}\n"
         "        if filter_input.query:\n"

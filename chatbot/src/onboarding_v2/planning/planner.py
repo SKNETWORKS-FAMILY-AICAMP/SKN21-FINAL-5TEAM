@@ -1264,12 +1264,15 @@ def _derive_chatbot_bridge_contract(
     domain_integration: DomainIntegration,
     site_id: str,
 ) -> dict[str, Any]:
+    login_endpoint = str(domain_integration.login_endpoint or "").strip()
     auth_validation_endpoint = str(
         domain_integration.auth_validation_endpoint or domain_integration.current_user_endpoint or ""
     ).strip()
-    current_user_endpoint = str(
-        domain_integration.current_user_endpoint or auth_validation_endpoint
-    ).strip()
+    if not auth_validation_endpoint or auth_validation_endpoint == login_endpoint:
+        auth_validation_endpoint = "/api/chat/auth-token"
+    current_user_endpoint = str(domain_integration.current_user_endpoint or "").strip()
+    if not current_user_endpoint or current_user_endpoint == login_endpoint:
+        current_user_endpoint = auth_validation_endpoint
     product_search_endpoint = str(domain_integration.product_search_endpoint or "").strip()
     order_list_endpoint = str(domain_integration.order_list_endpoint or "").strip()
     order_detail_endpoint = str(domain_integration.order_detail_endpoint or "").strip()

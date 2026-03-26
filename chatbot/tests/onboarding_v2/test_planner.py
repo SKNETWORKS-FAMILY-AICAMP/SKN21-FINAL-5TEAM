@@ -308,6 +308,8 @@ def test_planner_accepts_bilyeo_strict_coverage_with_verified_flask_endpoints():
     assert plan.host_backend.order_action_target == "backend/routes/order.py"
     assert plan.host_backend.auth_handler_source == "backend/routes/auth.py"
     assert plan.host_backend.login_endpoint == "/api/auth/login"
+    assert plan.chatbot_bridge.auth_validation_endpoint == "/api/chat/auth-token"
+    assert plan.chatbot_bridge.current_user_endpoint == "/api/chat/auth-token"
 
 
 def test_planner_combines_risk_and_repair_hint_llm_calls(monkeypatch):

@@ -1452,6 +1452,7 @@ def run_indexing_stage(
         plan=retrieval_plan,
         root=source_root,
         host_context=_build_host_export_context(state=state, export_ready=True),
+        live_logs_root=run_root / "artifacts" / "06-indexing" / "live-logs",
     )
     retrieval_status = dict(indexing_result.get("corpora") or {})
     smoke_payload = _build_retrieval_smoke_payload(retrieval_plan=retrieval_plan, indexing_result=indexing_result)

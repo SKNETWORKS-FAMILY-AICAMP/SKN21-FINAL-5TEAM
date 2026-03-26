@@ -89,6 +89,50 @@ def test_compiler_builds_complete_food_program():
     ]
 
 
+def test_compiler_uses_chat_auth_bridge_for_bilyeo_session_validation():
+    analysis_bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+        strict_coverage=True,
+    )
+    program = compile_plan(
+        analysis_bundle=analysis_bundle,
+        planning_bundle=planning_bundle,
+        source_root=ROOT / "bilyeo",
+    )
+
+    generated_client = next(
+        bundle.content
+        for bundle in program.chatbot_program.supporting_artifact_bundles
+        if bundle.path == "src/adapters/generated/bilyeo/client.py"
+    )
+
+    assert 'return await self._request("GET", "/api/chat/auth-token", headers=headers)' in generated_client
+
+
+def test_compiler_registers_generated_adapter_in_setup_bundle():
+    analysis_bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+        strict_coverage=True,
+    )
+    program = compile_plan(
+        analysis_bundle=analysis_bundle,
+        planning_bundle=planning_bundle,
+        source_root=ROOT / "bilyeo",
+    )
+
+    setup_operation = program.chatbot_program.bridge_bundles[0].operations[0]
+
+    assert "generated_bilyeo_adapter = GeneratedBilyeoAdapter" in setup_operation.new
+    assert "AdapterRegistry.register_many([" in setup_operation.new
+    assert "generated_bilyeo_adapter," in setup_operation.new
+
+
 def test_compiler_tolerates_multiline_models_import_and_next_def_boundary(tmp_path: Path):
     route_path = tmp_path / "backend" / "project" / "urls.py"
     route_path.parent.mkdir(parents=True, exist_ok=True)
