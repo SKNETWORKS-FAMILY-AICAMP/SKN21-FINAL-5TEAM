@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 DEFAULT_ORDER_TOOLS = [
     "list_orders",
@@ -11,6 +11,15 @@ DEFAULT_ORDER_TOOLS = [
     "refund",
     "exchange",
 ]
+READ_ONLY_ORDER_TOOLS = [
+    "list_orders",
+    "get_order_status",
+]
+DEFAULT_REQUEST_FIELD_MAPPINGS = {
+    "action": "action",
+    "reason": "reason",
+    "new_option_id": "new_option_id",
+}
 
 
 def _normalize_text(value: Any) -> str:
@@ -21,6 +30,15 @@ def _normalize_optional_text(value: Any) -> str | None:
     if value is None:
         return None
     return str(value).strip()
+
+
+def _normalize_auth_transport(value: Any) -> str | None:
+    normalized = _normalize_optional_text(value)
+    if normalized is None:
+        return None
+    if normalized == "session_token_cookie":
+        return "session_cookie"
+    return normalized
 
 
 class HostBackendPlan(BaseModel):
@@ -104,6 +122,183 @@ class HostFrontendPlan(BaseModel):
         return _normalize_optional_text(value)
 
 
+class ResolvedAuthContract(BaseModel):
+    transport: str = "session_cookie"
+    session_cookie_name: str | None = None
+    csrf_cookie_name: str | None = None
+    csrf_header_name: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator(
+        "transport",
+        "session_cookie_name",
+        "csrf_cookie_name",
+        "csrf_header_name",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_contract_fields(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = _normalize_optional_text(value)
+            if normalized in {"session_token_cookie", "session_cookie"}:
+                return "session_cookie"
+            return normalized
+        return _normalize_optional_text(value)
+
+    @model_validator(mode="after")
+    def _normalize_transport_shape(self) -> "ResolvedAuthContract":
+        if self.transport == "bearer_token":
+            self.session_cookie_name = None
+            self.csrf_cookie_name = None
+            self.csrf_header_name = None
+        elif self.transport == "session_cookie":
+            self.csrf_cookie_name = None
+            self.csrf_header_name = None
+        return self
+
+
+class ResolvedRequestFieldContract(BaseModel):
+    action: str = "action"
+    reason: str = "reason"
+    new_option_id: str = "new_option_id"
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("action", "reason", "new_option_id", mode="before")
+    @classmethod
+    def _normalize_fields(cls, value: Any) -> str | None:
+        return _normalize_optional_text(value)
+
+
+class ResolvedResponseContract(BaseModel):
+    user_profile: str = "wrapped_user"
+    product_profile: str = "list_items_named_price"
+    order_profile: str = "rest_detail_wrapped_order"
+    delivery_profile: str = "rest_detail_wrapped_order"
+    order_status_profile: str = "english_tokens"
+    delivery_status_profile: str = "english_tokens"
+    order_identifier_mode: str = "direct_order_id"
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator(
+        "user_profile",
+        "product_profile",
+        "order_profile",
+        "delivery_profile",
+        "order_status_profile",
+        "delivery_status_profile",
+        "order_identifier_mode",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_fields(cls, value: Any) -> str | None:
+        return _normalize_optional_text(value)
+
+    @model_validator(mode="after")
+    def _hydrate_profiles(self) -> "ResolvedResponseContract":
+        if self.order_profile == "orders_collection_scan":
+            self.user_profile = self.user_profile or "orders_collection_user_id"
+            self.product_profile = self.product_profile or "products_wrapper_collection"
+            self.delivery_profile = self.delivery_profile or "orders_collection_scan"
+            self.order_status_profile = self.order_status_profile or "korean_labels"
+            self.delivery_status_profile = self.delivery_status_profile or "korean_labels"
+            self.order_identifier_mode = self.order_identifier_mode or "direct_order_id"
+            return self
+        if self.order_profile == "user_scoped_order_service":
+            self.user_profile = self.user_profile or "direct_user_session"
+            self.product_profile = self.product_profile or "catalog_items_keyword_results"
+            self.delivery_profile = self.delivery_profile or "shipping_tracking_record"
+            self.order_status_profile = self.order_status_profile or "service_tokens"
+            self.delivery_status_profile = self.delivery_status_profile or "service_tokens"
+            self.order_identifier_mode = (
+                self.order_identifier_mode or "order_number_with_internal_resolution"
+            )
+            return self
+        self.user_profile = self.user_profile or "wrapped_user"
+        self.product_profile = self.product_profile or "list_items_named_price"
+        self.delivery_profile = self.delivery_profile or "rest_detail_wrapped_order"
+        self.order_status_profile = self.order_status_profile or "english_tokens"
+        self.delivery_status_profile = self.delivery_status_profile or "english_tokens"
+        self.order_identifier_mode = self.order_identifier_mode or "direct_order_id"
+        return self
+
+
+class ResolvedOrderActionContract(BaseModel):
+    submission_mode: str = "single_endpoint_json_body"
+    supported_actions: list[str] = Field(default_factory=lambda: list(DEFAULT_ORDER_TOOLS))
+    request_fields: ResolvedRequestFieldContract = Field(
+        default_factory=ResolvedRequestFieldContract
+    )
+    reason_transport: str | None = None
+    new_option_transport: str | None = None
+    result_profile: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator(
+        "submission_mode",
+        "reason_transport",
+        "new_option_transport",
+        "result_profile",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_fields(cls, value: Any) -> str | None:
+        return _normalize_optional_text(value)
+
+    @field_validator("supported_actions", mode="before")
+    @classmethod
+    def _normalize_supported_actions(cls, value: Any) -> list[str]:
+        if value is None:
+            return list(DEFAULT_ORDER_TOOLS)
+        return [str(item).strip() for item in list(value) if str(item).strip()]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _hydrate_request_fields(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        raw_fields = payload.get("request_fields")
+        if raw_fields is None:
+            raw_fields = dict(payload.get("request_field_mappings") or {})
+        payload["request_fields"] = (
+            raw_fields
+            if isinstance(raw_fields, ResolvedRequestFieldContract)
+            else ResolvedRequestFieldContract.model_validate(raw_fields or {})
+        )
+        return payload
+
+    @model_validator(mode="after")
+    def _hydrate_shape(self) -> "ResolvedOrderActionContract":
+        if self.submission_mode == "read_only":
+            self.supported_actions = [
+                action
+                for action in self.supported_actions
+                if action in READ_ONLY_ORDER_TOOLS
+            ] or list(READ_ONLY_ORDER_TOOLS)
+            self.reason_transport = "unsupported"
+            self.new_option_transport = "unsupported"
+            self.result_profile = self.result_profile or "not_supported"
+            return self
+        if self.submission_mode == "per_action_query_endpoint":
+            self.reason_transport = self.reason_transport or "query_param"
+            self.new_option_transport = (
+                self.new_option_transport
+                or ("query_param" if "exchange" in self.supported_actions else "unsupported")
+            )
+            self.result_profile = self.result_profile or "requested_message"
+            return self
+        self.reason_transport = self.reason_transport or "json_body"
+        self.new_option_transport = self.new_option_transport or "json_body"
+        self.result_profile = self.result_profile or "accepted_message"
+        return self
+
+
 class ChatbotBridgePlan(BaseModel):
     site_key: str
     adapter_package: str
@@ -116,19 +311,89 @@ class ChatbotBridgePlan(BaseModel):
     order_detail_endpoint: str
     order_action_endpoint: str
     order_action_endpoints: dict[str, str] = Field(default_factory=dict)
-    auth_transport: str = "session_token_cookie"
-    response_mapping_profile: str = "site_a"
-    request_field_mappings: dict[str, str] = Field(
-        default_factory=lambda: {
-            "action": "action",
-            "reason": "reason",
-            "new_option_id": "new_option_id",
-        }
+    auth_contract: ResolvedAuthContract = Field(default_factory=ResolvedAuthContract)
+    response_contract: ResolvedResponseContract = Field(
+        default_factory=ResolvedResponseContract
     )
+    order_action_contract: ResolvedOrderActionContract = Field(
+        default_factory=ResolvedOrderActionContract
+    )
+    auth_transport: str = "session_cookie"
+    session_cookie_name: str | None = None
+    csrf_cookie_name: str | None = None
+    csrf_header_name: str | None = None
+    response_mapping_profile: str = "rest_detail_wrapped_order"
+    request_field_mappings: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_REQUEST_FIELD_MAPPINGS))
     supported_tools: list[str] = Field(default_factory=lambda: list(DEFAULT_ORDER_TOOLS))
     runtime_base_url: str | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _hydrate_auth_contract(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        raw_contract = payload.get("auth_contract")
+        if raw_contract is None:
+            raw_contract = {
+                key: item
+                for key, item in {
+                    "transport": payload.get("auth_transport"),
+                    "session_cookie_name": payload.get("session_cookie_name"),
+                    "csrf_cookie_name": payload.get("csrf_cookie_name"),
+                    "csrf_header_name": payload.get("csrf_header_name"),
+                }.items()
+                if item is not None
+            }
+        contract = raw_contract if isinstance(raw_contract, ResolvedAuthContract) else ResolvedAuthContract.model_validate(raw_contract)
+        payload["auth_contract"] = contract
+        payload["auth_transport"] = contract.transport
+        payload["session_cookie_name"] = contract.session_cookie_name
+        payload["csrf_cookie_name"] = contract.csrf_cookie_name
+        payload["csrf_header_name"] = contract.csrf_header_name
+        raw_response_contract = payload.get("response_contract")
+        if raw_response_contract is None:
+            raw_response_contract = {}
+            if payload.get("response_mapping_profile") is not None:
+                raw_response_contract["order_profile"] = payload.get(
+                    "response_mapping_profile"
+                )
+        response_contract = (
+            raw_response_contract
+            if isinstance(raw_response_contract, ResolvedResponseContract)
+            else ResolvedResponseContract.model_validate(raw_response_contract or {})
+        )
+        payload["response_contract"] = response_contract
+        payload["response_mapping_profile"] = response_contract.order_profile
+
+        raw_order_action_contract = payload.get("order_action_contract")
+        if raw_order_action_contract is None:
+            raw_order_action_contract = {
+                "submission_mode": _derive_legacy_submission_mode(
+                    payload.get("supported_tools")
+                ),
+            }
+            if payload.get("supported_tools") is not None:
+                raw_order_action_contract["supported_actions"] = payload.get(
+                    "supported_tools"
+                )
+            if payload.get("request_field_mappings") is not None:
+                raw_order_action_contract["request_fields"] = payload.get(
+                    "request_field_mappings"
+                )
+        order_action_contract = (
+            raw_order_action_contract
+            if isinstance(raw_order_action_contract, ResolvedOrderActionContract)
+            else ResolvedOrderActionContract.model_validate(raw_order_action_contract or {})
+        )
+        payload["order_action_contract"] = order_action_contract
+        payload["request_field_mappings"] = (
+            order_action_contract.request_fields.model_dump(mode="json")
+        )
+        payload["supported_tools"] = list(order_action_contract.supported_actions)
+        return payload
 
     @field_validator(
         "site_key",
@@ -142,9 +407,11 @@ class ChatbotBridgePlan(BaseModel):
         "order_detail_endpoint",
         "order_action_endpoint",
         "supported_tools",
-        "auth_transport",
         "response_mapping_profile",
         "runtime_base_url",
+        "session_cookie_name",
+        "csrf_cookie_name",
+        "csrf_header_name",
         mode="before",
     )
     @classmethod
@@ -154,6 +421,22 @@ class ChatbotBridgePlan(BaseModel):
         if isinstance(value, list):
             return [str(item).strip() for item in value]
         return _normalize_text(value)
+
+    @field_validator("auth_transport", mode="before")
+    @classmethod
+    def _normalize_auth_transport(cls, value: Any) -> str | None:
+        return _normalize_auth_transport(value)
+
+
+def _derive_legacy_submission_mode(supported_tools: Any) -> str:
+    normalized_tools = [
+        str(item).strip() for item in list(supported_tools or []) if str(item).strip()
+    ]
+    if normalized_tools and not any(
+        action in normalized_tools for action in ("cancel", "refund", "exchange")
+    ):
+        return "read_only"
+    return "single_endpoint_json_body"
 
 
 class IntegrationStrategy(BaseModel):
@@ -277,6 +560,13 @@ class RagCorpusPlan(BaseModel):
     smoke_queries: list[str] = Field(default_factory=list)
     minimum_expected_documents: int = 1
     loader_strategy: str | None = None
+    row_source_strategy: str | None = None
+    row_source_endpoint: str | None = None
+    row_source_module: str | None = None
+    row_source_callable: str | None = None
+    row_id_field: str | None = None
+    row_image_url_field: str | None = None
+    pagination_strategy: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -286,6 +576,12 @@ class RagCorpusPlan(BaseModel):
         "collection_alias",
         "build_collection",
         "loader_strategy",
+        "row_source_strategy",
+        "row_source_endpoint",
+        "row_source_module",
+        "row_source_callable",
+        "row_id_field",
+        "row_image_url_field",
         mode="before",
     )
     @classmethod

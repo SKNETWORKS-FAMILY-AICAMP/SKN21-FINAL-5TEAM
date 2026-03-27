@@ -19,6 +19,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from chatbot.src.graph.brand_profiles import resolve_brand_profile
 from chatbot.src.graph.state import GlobalAgentState
 from chatbot.src.graph.llm_providers import make_chat_llm
+from chatbot.src.infrastructure.site_retrieval import use_runtime_site_id
 from chatbot.src.tools.retrieval_tools import search_knowledge_base
 
 # ── 프롬프트 ──────────────────────────────────────────────
@@ -118,13 +119,14 @@ def run_policy_rag_pipeline(
     documents: list[str] = []
     used_fallback = False
 
-    for index, payload in enumerate(retrieval_attempts):
-        current_result = search_knowledge_base.invoke(payload)
-        retrieval_results.append(current_result)
+    with use_runtime_site_id(site_id):
+        for index, payload in enumerate(retrieval_attempts):
+            current_result = search_knowledge_base.invoke(payload)
+            retrieval_results.append(current_result)
 
-        current_documents = current_result.get("documents", [])
-        if current_documents and not documents:
-            used_fallback = index > 0
+            current_documents = current_result.get("documents", [])
+            if current_documents and not documents:
+                used_fallback = index > 0
 
     retrieval_result = _merge_retrieval_results(retrieval_results)
     documents = retrieval_result.get("documents", [])

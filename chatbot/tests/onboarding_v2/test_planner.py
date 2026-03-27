@@ -156,8 +156,21 @@ def test_planner_selects_food_strategies():
     assert plan.chatbot_bridge.order_list_endpoint == "/api/orders/"
     assert plan.chatbot_bridge.order_detail_endpoint == "/api/orders/{order_id}/"
     assert plan.chatbot_bridge.order_action_endpoint == "/api/orders/{order_id}/actions/"
-    assert plan.chatbot_bridge.auth_transport == "session_token_cookie"
-    assert plan.chatbot_bridge.response_mapping_profile == "site_a"
+    assert plan.chatbot_bridge.auth_transport == "session_cookie"
+    assert plan.chatbot_bridge.session_cookie_name == "session_token"
+    assert plan.chatbot_bridge.csrf_cookie_name is None
+    assert plan.chatbot_bridge.csrf_header_name is None
+    assert plan.chatbot_bridge.auth_contract.transport == "session_cookie"
+    assert plan.chatbot_bridge.auth_contract.session_cookie_name == "session_token"
+    assert plan.chatbot_bridge.response_contract.order_profile == "rest_detail_wrapped_order"
+    assert plan.chatbot_bridge.response_contract.order_status_profile == "english_tokens"
+    assert plan.chatbot_bridge.order_action_contract.submission_mode == "single_endpoint_json_body"
+    assert plan.chatbot_bridge.order_action_contract.request_fields.model_dump(mode="json") == {
+        "action": "action",
+        "reason": "reason",
+        "new_option_id": "new_option_id",
+    }
+    assert plan.chatbot_bridge.response_mapping_profile == "rest_detail_wrapped_order"
     assert plan.chatbot_bridge.request_field_mappings == {
         "action": "action",
         "reason": "reason",
@@ -308,6 +321,94 @@ def test_planner_accepts_bilyeo_strict_coverage_with_verified_flask_endpoints():
     assert plan.host_backend.order_action_target == "backend/routes/order.py"
     assert plan.host_backend.auth_handler_source == "backend/routes/auth.py"
     assert plan.host_backend.login_endpoint == "/api/auth/login"
+    assert plan.chatbot_bridge.auth_validation_endpoint == "/api/chat/auth-token"
+    assert plan.chatbot_bridge.current_user_endpoint == "/api/chat/auth-token"
+    assert plan.chatbot_bridge.auth_transport == "bearer_token"
+    assert plan.chatbot_bridge.response_contract.order_profile == "orders_collection_scan"
+    assert plan.chatbot_bridge.order_action_contract.submission_mode == "read_only"
+    assert plan.chatbot_bridge.order_action_contract.supported_actions == [
+        "list_orders",
+        "get_order_status",
+    ]
+
+
+def test_planner_infers_user_scoped_order_service_contract():
+    contract = planner_module._derive_chatbot_bridge_contract(
+        domain_integration=DomainIntegration(
+            auth_validation_endpoint="/users/me/",
+            current_user_endpoint="/users/me/",
+            product_search_endpoint="/products/new",
+            order_list_endpoint="/orders/{user_id}/orders",
+            order_detail_endpoint="/orders/{user_id}/orders/{order_id}",
+            order_action_endpoint="/orders/{user_id}/orders/{order_id}/cancel",
+            order_action_endpoints={
+                "cancel": "/orders/{user_id}/orders/{order_id}/cancel",
+                "refund": "/orders/{user_id}/orders/{order_id}/refund",
+            },
+        ),
+        site_id="site-c-like",
+        source_root=ROOT,
+        backend_framework="fastapi",
+        auth_handler_source="backend/users/views.py",
+        auth_style_hint="session_cookie",
+    )
+
+    response_contract = contract["response_contract"]
+    order_action_contract = contract["order_action_contract"]
+
+    assert response_contract.order_profile == "user_scoped_order_service"
+    assert response_contract.order_identifier_mode == "order_number_with_internal_resolution"
+    assert order_action_contract.submission_mode == "per_action_query_endpoint"
+    assert order_action_contract.supported_actions == [
+        "list_orders",
+        "get_order_status",
+        "cancel",
+        "refund",
+    ]
+
+
+def test_planner_infers_cookie_plus_csrf_transport_from_auth_source(tmp_path: Path):
+    auth_source = tmp_path / "backend" / "users" / "views.py"
+    auth_source.parent.mkdir(parents=True, exist_ok=True)
+    auth_source.write_text(
+        "from django.http import JsonResponse\n\n"
+        'SESSION_COOKIE_NAME = "sessionid"\n'
+        'CSRF_COOKIE_NAME = "csrftoken"\n'
+        'CSRF_HEADER_NAME = "X-CSRFToken"\n\n'
+        "def login(request):\n"
+        '    token = request.COOKIES.get(CSRF_COOKIE_NAME) or request.META.get("HTTP_X_CSRFTOKEN")\n'
+        '    session_id = request.COOKIES.get(SESSION_COOKIE_NAME)\n'
+        "    response = JsonResponse({'ok': True})\n"
+        "    if token and session_id:\n"
+        "        return response\n"
+        '    response.set_cookie(SESSION_COOKIE_NAME, "session-1")\n'
+        '    response.set_cookie(CSRF_COOKIE_NAME, "csrf-1")\n'
+        "    return response\n",
+        encoding="utf-8",
+    )
+
+    contract = planner_module._derive_chatbot_bridge_contract(
+        domain_integration=DomainIntegration(
+            auth_validation_endpoint="/api/users/me/",
+            current_user_endpoint="/api/users/me/",
+            product_search_endpoint="/api/products/",
+            order_list_endpoint="/api/orders/",
+            order_detail_endpoint="/api/orders/{order_id}/",
+            order_action_endpoint="/api/orders/{order_id}/actions/",
+        ),
+        site_id="csrf-shop",
+        source_root=tmp_path,
+        backend_framework="django",
+        auth_handler_source="backend/users/views.py",
+        auth_style_hint="cookie_plus_csrf",
+    )
+
+    auth_contract = contract["auth_contract"]
+
+    assert auth_contract.transport == "cookie_plus_csrf"
+    assert auth_contract.session_cookie_name == "sessionid"
+    assert auth_contract.csrf_cookie_name == "csrftoken"
+    assert auth_contract.csrf_header_name == "X-CSRFToken"
 
 
 def test_planner_combines_risk_and_repair_hint_llm_calls(monkeypatch):
@@ -332,6 +433,43 @@ def test_planner_combines_risk_and_repair_hint_llm_calls(monkeypatch):
     assert "repair-hints" not in phases
     assert planning_bundle.risk_register
     assert planning_bundle.repair_hints
+
+
+def test_planner_forwards_event_callback_to_all_llm_phases(monkeypatch):
+    analysis_bundle = build_analysis_bundle(site="food", source_root=ROOT / "food")
+    callback = lambda payload: payload
+    observed: list[tuple[str, object, float | None]] = []
+
+    def _fake_invoke_structured_stage(
+        *,
+        phase,
+        response_model,
+        fallback_payload,
+        event_callback=None,
+        heartbeat_interval_s=None,
+        **kwargs,
+    ):
+        del kwargs
+        observed.append((phase, event_callback, heartbeat_interval_s))
+        return response_model.model_validate(fallback_payload)
+
+    monkeypatch.setattr(planner_module, "invoke_structured_stage", _fake_invoke_structured_stage)
+
+    build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+        event_callback=callback,
+        heartbeat_interval_s=0.05,
+    )
+
+    assert [phase for phase, _event_callback, _interval in observed] == [
+        "strategy-synthesis",
+        "binding-selection",
+        "risk-and-repair",
+    ]
+    assert all(event_callback is callback for _phase, event_callback, _interval in observed)
+    assert all(interval == 0.05 for _phase, _event_callback, interval in observed)
 
 
 def test_planner_uses_snapshot_site_without_manifest(tmp_path: Path):
@@ -475,6 +613,67 @@ def test_planner_builds_site_scoped_retrieval_index_plan_and_capability_upgrade(
         "site_bilyeo__discovery_image",
     }
     assert all("__run_runtime" in item.build_collection for item in retrieval_index_plan.corpora)
+    discovery_plan = next(item for item in retrieval_index_plan.corpora if item.corpus == "discovery_image")
+    assert discovery_plan.row_source_strategy == "host_api_fetch"
+    assert discovery_plan.row_source_endpoint == planning_bundle.integration_plan.chatbot_bridge.product_search_endpoint
+    assert discovery_plan.row_id_field == "product_id"
+    assert discovery_plan.row_image_url_field == "image_url"
+    assert discovery_plan.pagination_strategy == {
+        "type": "page_number",
+        "page_param": "page",
+        "page_size_param": "page_size",
+        "page_size": 100,
+        "stop_on": "empty_or_repeated_ids",
+    }
     assert planning_bundle.integration_plan.capability_upgrade["capability_profile"] == "order_cs_plus_retrieval"
+    assert planning_bundle.integration_plan.host_backend.capability_profile == "order_cs_only"
+    assert planning_bundle.integration_plan.host_frontend.capability_profile == "order_cs_only"
     assert planning_bundle.integration_plan.host_frontend.widget_features["image_upload"] is False
     assert planning_bundle.integration_plan.host_frontend.enabled_retrieval_corpora == []
+
+
+def test_planner_uses_host_python_fetch_for_db_backed_faq_sources():
+    retrieval_index_plan = planner_module._build_retrieval_index_plan(
+        site_id="bilyeo",
+        rag_sources=RagSources(
+            faq=[
+                RagSourceRecord(
+                    path="backend/models/faq.py",
+                    kind="code_file",
+                    corpus="faq",
+                    reason="db-backed faq model",
+                    details={"source_surface": "db_table"},
+                )
+            ]
+        ),
+        run_id="runtime",
+        product_search_endpoint="/api/products",
+    )
+
+    faq_plan = next(item for item in retrieval_index_plan.corpora if item.corpus == "faq")
+    assert faq_plan.row_source_strategy == "host_python_fetch"
+    assert faq_plan.row_source_module == "models.faq"
+    assert faq_plan.row_source_callable == "get_all_faq"
+
+
+def test_planner_keeps_static_source_scan_for_materialized_faq_files():
+    retrieval_index_plan = planner_module._build_retrieval_index_plan(
+        site_id="demo",
+        rag_sources=RagSources(
+            faq=[
+                RagSourceRecord(
+                    path="scripts/faq_seed.json",
+                    kind="json_file",
+                    corpus="faq",
+                    reason="materialized faq export",
+                )
+            ]
+        ),
+        run_id="runtime",
+        product_search_endpoint="/api/products",
+    )
+
+    faq_plan = next(item for item in retrieval_index_plan.corpora if item.corpus == "faq")
+    assert faq_plan.row_source_strategy == "static_source_scan"
+    assert faq_plan.row_source_module is None
+    assert faq_plan.row_source_callable is None

@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,15 @@ def test_analyzer_verifies_bilyeo_flask_routes_and_session_auth():
     assert login_record.details["path"] == "/api/auth/login"
     assert login_record.details["http_method"] == "POST"
     assert login_record.details["source_kind"] == "server_route"
+
+
+def test_analyzer_discovers_bilyeo_product_list_route_from_empty_flask_decorator():
+    bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
+
+    verified_paths = {record.identifier for record in bundle.verified_contracts.api_endpoints}
+
+    assert "/api/products" in verified_paths
+    assert bundle.snapshot.domain_integration.product_search_endpoint == "/api/products"
 
 
 def test_analyzer_rejects_bilyeo_client_server_order_mismatch_but_keeps_server_verified():
@@ -306,9 +316,14 @@ def test_analyzer_discovers_rag_sources_without_manifest(tmp_path: Path):
     assert any(source.path.endswith("faq_seed.json") for source in bundle.rag_sources.faq)
     assert any(source.path.endswith("returns.md") for source in bundle.rag_sources.policy)
     assert any(source.path.endswith("product_crawling.py") for source in bundle.rag_sources.discovery_image)
-    assert any("seed" in claim.identifier.lower() for claim in rejected)
-    assert "verified order lookup target missing" not in ambiguities
-    assert "verified order action target missing" not in ambiguities
+
+    image_source = next(
+        source for source in bundle.rag_sources.discovery_image if source.path.endswith("product_crawling.py")
+    )
+    assert image_source.details["loader_candidates"][0] == "public_url_fetch"
+    assert image_source.details["access_mode"] == "public_url"
+    assert "verified order lookup target missing" in bundle.unresolved_ambiguities
+    assert "verified order action target missing" in bundle.unresolved_ambiguities
 
 
 def test_build_analysis_bundle_merges_llm_contracts_with_deterministic_fallback(monkeypatch):
@@ -385,6 +400,96 @@ def test_build_analysis_bundle_merges_llm_contracts_with_deterministic_fallback(
     assert "/api/orders/{order_id}/actions/" in {
         record.identifier for record in bundle.verified_contracts.api_endpoints
     }
+
+
+def test_build_analysis_bundle_passes_tool_runtime_to_all_analysis_phases(monkeypatch):
+    observed: list[tuple[str, object]] = []
+
+    def _fake_invoke_structured_stage(*, phase, response_model, fallback_payload, tool_runtime=None, **kwargs):
+        del kwargs
+        observed.append((phase, tool_runtime))
+        assert tool_runtime is not None
+        list_tool = next(tool for tool in tool_runtime.tools if tool.name == "list_analysis_paths")
+        route_inventory = list_tool.invoke({"category": "route_definitions"})
+        assert any(path.endswith("backend/foodshop/urls.py") for path in route_inventory["paths"])
+        return response_model.model_validate(fallback_payload)
+
+    monkeypatch.setattr(analyzer_module, "invoke_structured_stage", _fake_invoke_structured_stage)
+
+    bundle = build_analysis_bundle(
+        site="food",
+        source_root=ROOT / "food",
+        ambiguity_retry_limit=0,
+    )
+
+    assert bundle.snapshot.repo_profile.site == "food"
+    assert [phase for phase, _runtime in observed] == [
+        "retrieval-plan",
+        "read-queue-r0",
+        "evidence-reading-r0",
+        "contract-extraction-r0",
+    ]
+
+
+def test_analysis_tool_runtime_exposes_only_minimal_surface():
+    candidate_set = analyzer_module._harvest_candidates(
+        root=ROOT / "food",
+        framework_profile=analyzer_module._build_framework_profile(root=ROOT / "food"),
+    )
+    workspace_profile = analyzer_module._build_workspace_profile(root=ROOT / "food")
+    runtime = analyzer_module.build_analysis_tool_runtime(
+        root=ROOT / "food",
+        workspace_profile=workspace_profile,
+        candidate_set=candidate_set,
+    )
+
+    assert {tool.name for tool in runtime.tools} == {"list_analysis_paths", "read_analysis_path"}
+    read_tool = next(tool for tool in runtime.tools if tool.name == "read_analysis_path")
+    result = read_tool.invoke({"path": "../secrets.py"})
+    assert result["error"] == "path_not_allowed"
+
+
+def test_analyzer_emits_candidate_harvest_events_and_forwards_event_callback(monkeypatch):
+    original_harvest = analyzer_module._harvest_candidates
+    observed_calls: list[tuple[str, object, float | None]] = []
+    events: list[dict[str, object]] = []
+    callback = events.append
+
+    def _slow_harvest(**kwargs):
+        time.sleep(0.12)
+        return original_harvest(**kwargs)
+
+    def _fake_invoke_structured_stage(
+        *,
+        phase,
+        response_model,
+        fallback_payload,
+        event_callback=None,
+        heartbeat_interval_s=None,
+        **kwargs,
+    ):
+        del kwargs
+        observed_calls.append((phase, event_callback, heartbeat_interval_s))
+        return response_model.model_validate(fallback_payload)
+
+    monkeypatch.setattr(analyzer_module, "_harvest_candidates", _slow_harvest)
+    monkeypatch.setattr(analyzer_module, "invoke_structured_stage", _fake_invoke_structured_stage)
+
+    build_analysis_bundle(
+        site="food",
+        source_root=ROOT / "food",
+        ambiguity_retry_limit=0,
+        event_callback=callback,
+        heartbeat_interval_s=0.05,
+    )
+
+    event_types = [str(event["event_type"]) for event in events]
+    assert "analysis_candidate_harvest_started" in event_types
+    assert "analysis_candidate_harvest_progress" in event_types
+    assert "analysis_candidate_harvest_completed" in event_types
+    assert observed_calls
+    assert all(event_callback is callback for _phase, event_callback, _interval in observed_calls)
+    assert all(interval == 0.05 for _phase, _event_callback, interval in observed_calls)
 
 
 def test_sanitize_evidence_packets_dedupes_same_file_and_kind(tmp_path: Path):

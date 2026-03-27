@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     EMBEDDING_DIM: int = 1024
 
     # Qdrant
-    QDRANT_URL: str
-    QDRANT_API_KEY: str
+    QDRANT_URL: str = ""
+    QDRANT_API_KEY: str = ""
 
     # Langfuse (nodes_v3 observability)
     LANGFUSE_SECRET_KEY: str = ""

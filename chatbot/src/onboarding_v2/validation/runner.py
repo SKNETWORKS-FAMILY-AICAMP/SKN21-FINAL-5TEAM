@@ -19,6 +19,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from pydantic import BaseModel, ConfigDict, Field
 
 from chatbot.src.adapters.schema import AuthenticatedContext
+from chatbot.src.adapters.response_profiles import resolve_visible_order_id_from_contract
 from chatbot.src.infrastructure.conversation_logger import ConversationRunLogger
 from chatbot.src.onboarding_v2.llm_runtime import invoke_structured_stage
 from chatbot.src.onboarding_v2.models.analysis import AnalysisSnapshot
@@ -28,9 +29,11 @@ from chatbot.src.onboarding_v2.models.validation import (
     BackendRuntimePlan,
     BackendRuntimePrepResult,
     BackendRuntimeState,
+    ConversationScenarioContract,
     ConversationScenarioResult,
     ConversationValidationResult,
     ReplayResult,
+    ValidationCapabilityContract,
     ValidationBundle,
     ValidationCheck,
     WidgetOrderE2EResult,
@@ -45,10 +48,16 @@ from chatbot.src.onboarding_v2.validation.replay_evaluator import (
     evaluate_backend_workspace_static,
     evaluate_frontend_workspace_static,
 )
+from chatbot.src.onboarding_v2.validation.flow_contracts import (
+    build_conversation_scenarios as _build_conversation_scenarios_from_contract,
+    build_validation_capability_contract,
+)
+from chatbot.src.onboarding_v2.validation.flow_evaluator import (
+    classify_conversation_failure as _classify_conversation_failure_from_contract,
+    evaluate_conversation_deterministic_failures as _evaluate_conversation_deterministic_failures_from_contract,
+)
 from chatbot.src.onboarding_v2.validation.signatures import build_failure_signature
 from fastapi.testclient import TestClient
-from chatbot import server_fastapi
-from chatbot.src.api.v1.endpoints import chat as chat_endpoint
 
 
 @dataclass(slots=True)
@@ -121,6 +130,39 @@ class _ConversationTraceCallbackHandler(BaseCallbackHandler):
         self._logger.log_model_end(name, response)
 
 
+def _register_validation_runner_aliases() -> None:
+    current_module = sys.modules.get(__name__)
+    if current_module is None:
+        return
+    for alias in (
+        "chatbot.src.onboarding_v2.validation.runner",
+        "src.onboarding_v2.validation.runner",
+    ):
+        sys.modules[alias] = current_module
+    for package_name in (
+        "chatbot.src.onboarding_v2.validation",
+        "src.onboarding_v2.validation",
+    ):
+        package = sys.modules.get(package_name)
+        if package is not None:
+            setattr(package, "runner", current_module)
+
+
+_register_validation_runner_aliases()
+
+
+def _get_server_fastapi_module():
+    from chatbot import server_fastapi
+
+    return server_fastapi
+
+
+def _get_chat_endpoint_module():
+    from chatbot.src.api.v1.endpoints import chat as chat_endpoint
+
+    return chat_endpoint
+
+
 def _emit_validation_event(event_callback: Any | None, **payload: Any) -> None:
     if event_callback is None:
         return
@@ -133,6 +175,14 @@ def _append_text(path: Path | None, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(content)
+
+
+def _canonical_validation_runner_module() -> Any:
+    return (
+        sys.modules.get("chatbot.src.onboarding_v2.validation.runner")
+        or sys.modules.get("src.onboarding_v2.validation.runner")
+        or sys.modules[__name__]
+    )
 
 
 def run_validation(
@@ -148,7 +198,24 @@ def run_validation(
     required_rechecks: list[str] | None = None,
     event_callback: Any | None = None,
     live_logs_root: str | Path | None = None,
+    retrieval_status: dict[str, Any] | None = None,
 ) -> ValidationBundle:
+    canonical_runner = _canonical_validation_runner_module()
+    if getattr(canonical_runner, "run_validation", None) is not run_validation:
+        return canonical_runner.run_validation(
+            run_root=run_root,
+            host_runtime_workspace=host_runtime_workspace,
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+            snapshot=snapshot,
+            plan=plan,
+            replay_result=replay_result,
+            artifact_refs=artifact_refs,
+            onboarding_credentials=onboarding_credentials,
+            required_rechecks=required_rechecks,
+            event_callback=event_callback,
+            live_logs_root=live_logs_root,
+            retrieval_status=retrieval_status,
+        )
     return run_validation_cycle(
         run_root=run_root,
         host_runtime_workspace=host_runtime_workspace,
@@ -161,6 +228,7 @@ def run_validation(
         required_rechecks=required_rechecks,
         event_callback=event_callback,
         live_logs_root=live_logs_root,
+        retrieval_status=retrieval_status,
     ).bundle
 
 
@@ -177,7 +245,24 @@ def run_validation_cycle(
     required_rechecks: list[str] | None = None,
     event_callback: Any | None = None,
     live_logs_root: str | Path | None = None,
+    retrieval_status: dict[str, Any] | None = None,
 ) -> ValidationRunResult:
+    canonical_runner = _canonical_validation_runner_module()
+    if getattr(canonical_runner, "run_validation_cycle", None) is not run_validation_cycle:
+        return canonical_runner.run_validation_cycle(
+            run_root=run_root,
+            host_runtime_workspace=host_runtime_workspace,
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+            snapshot=snapshot,
+            plan=plan,
+            replay_result=replay_result,
+            artifact_refs=artifact_refs,
+            onboarding_credentials=onboarding_credentials,
+            required_rechecks=required_rechecks,
+            event_callback=event_callback,
+            live_logs_root=live_logs_root,
+            retrieval_status=retrieval_status,
+        )
     run_root = Path(run_root)
     host_runtime_workspace = Path(host_runtime_workspace)
     chatbot_runtime_workspace = Path(chatbot_runtime_workspace)
@@ -220,7 +305,9 @@ def run_validation_cycle(
 
     if prep_result.passed and runtime_state.passed and runtime_plan is not None:
         chatbot_runtime_boot = validate_chatbot_runtime_boot(
-            chatbot_runtime_workspace=chatbot_runtime_workspace
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+            runtime_plan=runtime_plan,
+            plan=plan,
         )
     else:
         chatbot_runtime_boot = _skipped_result(
@@ -290,6 +377,7 @@ def run_validation_cycle(
                 prep_result=prep_result,
                 bootstrap_result=host_auth_bootstrap,
                 adapter_auth_result=chatbot_adapter_auth,
+                widget_order_e2e_result=widget_order_e2e,
                 onboarding_credentials=onboarding_credentials,
                 event_callback=event_callback,
                 live_logs_root=live_logs_root_path,
@@ -378,6 +466,10 @@ def run_validation_cycle(
             summary=widget_order_e2e.failure_summary,
             details=widget_order_e2e.model_dump(mode="json"),
         ),
+        *_build_retrieval_validation_checks(
+            plan=plan,
+            retrieval_status=retrieval_status,
+        ),
         ValidationCheck(
             name="conversation_validation",
             passed=conversation_validation.passed,
@@ -413,7 +505,11 @@ def run_validation_cycle(
         check.name for check in checks if (not check.blocking and not check.passed)
     ]
     first_failure = next((check for check in checks if check.blocking and not check.passed), None)
-    related_artifacts = [ref for ref in artifact_refs.values() if ref is not None]
+    related_artifacts = [
+        ref.model_dump(mode="json") if hasattr(ref, "model_dump") else ref
+        for ref in artifact_refs.values()
+        if ref is not None
+    ]
     input_artifact_versions = {
         name: ref.version for name, ref in artifact_refs.items() if ref is not None
     }
@@ -456,6 +552,44 @@ def run_validation_cycle(
         widget_order_e2e=widget_order_e2e,
         conversation_validation=conversation_validation,
     )
+
+
+def _build_retrieval_validation_checks(
+    *,
+    plan: IntegrationPlan,
+    retrieval_status: dict[str, Any] | None,
+) -> list[ValidationCheck]:
+    if retrieval_status is None:
+        return []
+    status_map = dict((retrieval_status or {}).get("corpora") or {})
+    checks: list[ValidationCheck] = []
+    corpus_plans = [] if plan.retrieval_index_plan is None else list(plan.retrieval_index_plan.corpora)
+    for corpus_plan in corpus_plans:
+        payload = dict(status_map.get(corpus_plan.corpus) or {})
+        passed = (
+            str(payload.get("status") or "") == "completed"
+            and bool(payload.get("smoke_passed", True))
+            and int(payload.get("documents_indexed") or 0) >= int(corpus_plan.minimum_expected_documents)
+        )
+        summary = (
+            f"{corpus_plan.corpus} retrieval ready"
+            if passed
+            else f"{corpus_plan.corpus} retrieval unavailable"
+        )
+        checks.append(
+            ValidationCheck(
+                name=f"retrieval_{corpus_plan.corpus}",
+                passed=passed,
+                summary=summary,
+                blocking=False,
+                details={
+                    "collection_alias": corpus_plan.collection_alias,
+                    "minimum_expected_documents": corpus_plan.minimum_expected_documents,
+                    **payload,
+                },
+            )
+        )
+    return checks
 
 
 def validate_host_auth_bootstrap(
@@ -573,15 +707,30 @@ def validate_chatbot_adapter_auth(
     bootstrap_result: dict[str, Any],
     plan: IntegrationPlan,
 ) -> dict[str, Any]:
-    payload = dict(bootstrap_result.get("bootstrap_payload") or {})
     if not bootstrap_result.get("passed"):
         return _skipped_result(
             "chatbot adapter auth skipped because host auth bootstrap failed"
         )
+    auth_context, auth_failure = _build_bridge_auth_context(
+        bootstrap_result=bootstrap_result,
+        plan=plan,
+        user_id="__bridge__",
+    )
+    related_files = [
+        f"{plan.chatbot_bridge.adapter_package}/adapter.py",
+        f"{plan.chatbot_bridge.adapter_package}/auth.py",
+        plan.chatbot_bridge.setup_target,
+    ]
+    if auth_context is None:
+        return {
+            "passed": False,
+            "failure_summary": auth_failure or "chatbot adapter auth missing transport credentials",
+            "related_files": related_files,
+        }
 
     module_prefix = f"src.adapters.generated.{plan.chatbot_bridge.site_key}"
     with _prepend_path(chatbot_runtime_workspace):
-        _drop_import_cache(module_prefix)
+        _drop_generated_adapter_import_cache(module_prefix)
         adapter_module = importlib.import_module(f"{module_prefix}.adapter")
         client_module = importlib.import_module(f"{module_prefix}.client")
         adapter_class = getattr(
@@ -601,23 +750,13 @@ def validate_chatbot_adapter_auth(
         )
         try:
             validated_user = asyncio.run(
-                adapter.validate_auth(
-                    AuthenticatedContext(
-                        siteId=plan.chatbot_bridge.site_key,
-                        userId="__bridge__",
-                        accessToken=str(payload.get("access_token") or ""),
-                    )
-                )
+                adapter.validate_auth(auth_context)
             )
         except Exception as exc:
             return {
                 "passed": False,
                 "failure_summary": f"chatbot adapter auth failed: {exc}",
-                "related_files": [
-                    f"{plan.chatbot_bridge.adapter_package}/adapter.py",
-                    f"{plan.chatbot_bridge.adapter_package}/auth.py",
-                    plan.chatbot_bridge.setup_target,
-                ],
+                "related_files": related_files,
             }
     user_id = str(getattr(validated_user, "id", "") or "").strip()
     return {
@@ -626,17 +765,15 @@ def validate_chatbot_adapter_auth(
         if user_id
         else "chatbot adapter auth missing user.id",
         "validated_user": validated_user.model_dump(mode="json"),
-        "related_files": [
-            f"{plan.chatbot_bridge.adapter_package}/adapter.py",
-            f"{plan.chatbot_bridge.adapter_package}/auth.py",
-            plan.chatbot_bridge.setup_target,
-        ],
+        "related_files": related_files,
     }
 
 
 def validate_chatbot_runtime_boot(
     *,
     chatbot_runtime_workspace: Path,
+    runtime_plan: BackendRuntimePlan,
+    plan: IntegrationPlan,
 ) -> dict[str, Any]:
     command = [
         sys.executable,
@@ -655,6 +792,7 @@ def validate_chatbot_runtime_boot(
         if existing_pythonpath
         else str(chatbot_runtime_workspace)
     )
+    env.update(_chatbot_runtime_env_overrides(runtime_plan=runtime_plan, plan=plan))
     result = subprocess.run(
         command,
         cwd=str(chatbot_runtime_workspace),
@@ -682,6 +820,10 @@ def validate_chatbot_runtime_boot(
         "returncode": result.returncode,
         "stdout": result.stdout,
         "stderr": result.stderr,
+        "runtime_env_overrides": _chatbot_runtime_env_overrides(
+            runtime_plan=runtime_plan,
+            plan=plan,
+        ),
         "related_files": [
             "server_fastapi.py",
             "src/tools/adapter_order_tools.py",
@@ -724,6 +866,7 @@ def validate_widget_bundle_fetch(
             "related_files": [plan.host_frontend.mount_target],
         }
 
+    server_fastapi = _get_server_fastapi_module()
     client = TestClient(server_fastapi.app, base_url=chatbot_base_url)
     response = client.get(widget_path)
     passed = (
@@ -771,19 +914,24 @@ def validate_widget_order_e2e(
             related_files=[],
         )
 
-    payload = dict(bootstrap_result.get("bootstrap_payload") or {})
     adapter = _load_generated_adapter(
         chatbot_runtime_workspace=chatbot_runtime_workspace,
         runtime_plan=runtime_plan,
         plan=plan,
     )
-    auth_context = AuthenticatedContext(
-        siteId=plan.chatbot_bridge.site_key,
-        userId=str(
+    auth_context, auth_failure = _build_bridge_auth_context(
+        bootstrap_result=bootstrap_result,
+        plan=plan,
+        user_id=str(
             (adapter_auth_result.get("validated_user") or {}).get("id") or "__bridge__"
         ),
-        accessToken=str(payload.get("access_token") or ""),
     )
+    if auth_context is None:
+        return WidgetOrderE2EResult(
+            passed=False,
+            failure_summary=auth_failure or "widget order e2e auth context failed",
+            related_files=_widget_order_related_files(plan),
+        )
     try:
         sample_context = _acquire_widget_order_sample(
             adapter=adapter,
@@ -797,17 +945,26 @@ def validate_widget_order_e2e(
             scenario_mode="sample_acquisition_failed",
             related_files=_widget_order_related_files(plan),
         )
+    capability_contract = build_validation_capability_contract(
+        plan=plan,
+        fixture_manifest={
+            "enabled_retrieval_corpora": list(plan.host_frontend.enabled_retrieval_corpora or []),
+            "widget_features": dict(plan.host_frontend.widget_features or {}),
+        },
+        sample_context=sample_context,
+    )
     flow_reports = _collect_widget_order_flow_report(
         adapter=adapter,
         auth_context=auth_context,
         plan=plan,
         sample_context=sample_context,
-        server_fastapi=server_fastapi,
-        chat_endpoint=chat_endpoint,
+        server_fastapi=_get_server_fastapi_module(),
+        chat_endpoint=_get_chat_endpoint_module(),
     )
     return _evaluate_widget_order_flow_report(
         plan=plan,
         flow_reports=flow_reports,
+        capability_contract=capability_contract,
         sample_context=sample_context,
     )
 
@@ -822,6 +979,7 @@ def validate_conversation_runtime(
     prep_result: BackendRuntimePrepResult,
     bootstrap_result: dict[str, Any],
     adapter_auth_result: dict[str, Any],
+    widget_order_e2e_result: WidgetOrderE2EResult | None = None,
     onboarding_credentials: dict[str, str] | None = None,
     event_callback: Any | None = None,
     live_logs_root: str | Path | None = None,
@@ -850,134 +1008,162 @@ def validate_conversation_runtime(
         adapter_auth_result=adapter_auth_result,
         onboarding_credentials=onboarding_credentials,
     )
+    capability_contract = build_validation_capability_contract(
+        plan=plan,
+        fixture_manifest=fixture_manifest,
+        sample_context={
+            "sampled_order_id": getattr(widget_order_e2e_result, "sampled_order_id", None),
+            "sampled_option_id": getattr(widget_order_e2e_result, "sampled_option_id", None),
+            "scenario_mode": getattr(widget_order_e2e_result, "scenario_mode", None),
+        },
+        widget_order_e2e_result=widget_order_e2e_result,
+    )
+    fixture_manifest["validation_capability_contract"] = capability_contract.model_dump(
+        mode="json"
+    )
     if not fixture_manifest.get("available"):
         return ConversationValidationResult(
             passed=False,
             failure_summary=str(fixture_manifest.get("reason") or "fixture_unavailable"),
             fixture_manifest=fixture_manifest,
+            validation_capability_contract=capability_contract.model_dump(mode="json"),
             related_files=_widget_order_related_files(plan),
         )
 
-    runtime_server_fastapi, runtime_chat_endpoint = _load_runtime_chat_modules(
-        chatbot_runtime_workspace=chatbot_runtime_workspace
-    )
-
-    transcripts_dir = run_root / "conversation-validation"
-    transcripts_dir.mkdir(parents=True, exist_ok=True)
-    live_logs_root_path = Path(live_logs_root).resolve() if live_logs_root is not None else None
-    if live_logs_root_path is not None:
-        live_logs_root_path.mkdir(parents=True, exist_ok=True)
-    scenarios = _build_conversation_scenarios(fixture_manifest=fixture_manifest)
-    previous_states: dict[str, dict[str, Any]] = {}
-    results: list[ConversationScenarioResult] = []
-    transcript_contents: dict[str, str] = {}
-    trace_contents: dict[str, str] = {}
-
-    for scenario in scenarios:
-        scenario_log_path = (
-            live_logs_root_path / f"conversation-{scenario['scenario_id']}.log"
-            if live_logs_root_path is not None
-            else None
+    with _patched_chatbot_runtime_env(runtime_plan=runtime_plan, plan=plan):
+        runtime_server_fastapi, runtime_chat_endpoint = _load_runtime_chat_modules(
+            chatbot_runtime_workspace=chatbot_runtime_workspace
         )
-        _emit_validation_event(
-            event_callback,
-            phase="conversation_scenario_start",
-            event_type="conversation_validation_scenario_started",
-            summary=f"conversation scenario {scenario['scenario_id']} started",
-            details={
-                "scenario_id": scenario["scenario_id"],
-                "mode": scenario["mode"],
-                "log_path": str(scenario_log_path) if scenario_log_path is not None else None,
-                "status": "running",
-            },
+
+        transcripts_dir = run_root / "conversation-validation"
+        transcripts_dir.mkdir(parents=True, exist_ok=True)
+        live_logs_root_path = Path(live_logs_root).resolve() if live_logs_root is not None else None
+        if live_logs_root_path is not None:
+            live_logs_root_path.mkdir(parents=True, exist_ok=True)
+        scenarios = _build_conversation_scenarios(
+            fixture_manifest=fixture_manifest,
+            capability_contract=capability_contract,
         )
-        _append_text(
-            scenario_log_path,
-            json.dumps(
-                {
-                    "event": "start",
+        previous_states: dict[str, dict[str, Any]] = {}
+        results: list[ConversationScenarioResult] = []
+        transcript_contents: dict[str, str] = {}
+        trace_contents: dict[str, str] = {}
+
+        for scenario in scenarios:
+            scenario_log_path = (
+                live_logs_root_path / f"conversation-{scenario['scenario_id']}.log"
+                if live_logs_root_path is not None
+                else None
+            )
+            _emit_validation_event(
+                event_callback,
+                phase="conversation_scenario_start",
+                event_type="conversation_validation_scenario_started",
+                summary=f"conversation scenario {scenario['scenario_id']} started",
+                details={
                     "scenario_id": scenario["scenario_id"],
                     "mode": scenario["mode"],
+                    "log_path": str(scenario_log_path) if scenario_log_path is not None else None,
+                    "status": "running",
                 },
-                ensure_ascii=False,
             )
-            + "\n",
-        )
-        if scenario["scenario_id"] == "unauthenticated_chat_request":
-            result, transcript_text = asyncio.run(
-                _run_unauthenticated_conversation_scenario(
-                    runtime_server_fastapi=runtime_server_fastapi,
-                    fixture_manifest=fixture_manifest,
-                    scenario=scenario,
-                    transcripts_dir=transcripts_dir,
+            _append_text(
+                scenario_log_path,
+                json.dumps(
+                    {
+                        "event": "start",
+                        "scenario_id": scenario["scenario_id"],
+                        "mode": scenario["mode"],
+                    },
+                    ensure_ascii=False,
                 )
+                + "\n",
             )
-        else:
-            previous_state = None
-            previous_state_from = str(scenario.get("previous_state_from") or "").strip()
-            if previous_state_from:
-                previous_state = previous_states.get(previous_state_from)
-            result, transcript_text, trace_text, final_state = asyncio.run(
-                _run_authenticated_conversation_scenario(
-                    runtime_server_fastapi=runtime_server_fastapi,
-                    runtime_chat_endpoint=runtime_chat_endpoint,
-                    fixture_manifest=fixture_manifest,
-                    scenario=scenario,
-                    previous_state=previous_state,
-                    transcripts_dir=transcripts_dir,
+            if scenario["scenario_id"] == "unauthenticated_chat_request":
+                result, transcript_text = asyncio.run(
+                    _run_unauthenticated_conversation_scenario(
+                        runtime_server_fastapi=runtime_server_fastapi,
+                        fixture_manifest=fixture_manifest,
+                        scenario=scenario,
+                        transcripts_dir=transcripts_dir,
+                    )
                 )
+            else:
+                previous_state = None
+                previous_state_from = str(scenario.get("previous_state_from") or "").strip()
+                if previous_state_from:
+                    previous_state = previous_states.get(previous_state_from)
+                result, transcript_text, trace_text, final_state = asyncio.run(
+                    _run_authenticated_conversation_scenario(
+                        runtime_server_fastapi=runtime_server_fastapi,
+                        runtime_chat_endpoint=runtime_chat_endpoint,
+                        fixture_manifest=fixture_manifest,
+                        scenario=scenario,
+                        previous_state=previous_state,
+                        transcripts_dir=transcripts_dir,
+                    )
+                )
+                trace_contents[scenario["scenario_id"]] = trace_text
+                if final_state:
+                    previous_states[scenario["scenario_id"]] = final_state
+            result = result.model_copy(
+                update={
+                    "log_path": str(scenario_log_path) if scenario_log_path is not None else result.log_path
+                }
             )
-            trace_contents[scenario["scenario_id"]] = trace_text
-            if final_state:
-                previous_states[scenario["scenario_id"]] = final_state
-        result = result.model_copy(
-            update={
-                "log_path": str(scenario_log_path) if scenario_log_path is not None else result.log_path
-            }
-        )
-        results.append(result)
-        transcript_contents[scenario["scenario_id"]] = transcript_text
-        _append_text(
-            scenario_log_path,
-            json.dumps(
-                {
-                    "event": "finish",
+            results.append(result)
+            transcript_contents[scenario["scenario_id"]] = transcript_text
+            _append_text(
+                scenario_log_path,
+                json.dumps(
+                    {
+                        "event": "finish",
+                        "scenario_id": scenario["scenario_id"],
+                        "final_verdict": result.final_verdict,
+                        "transcript_path": result.transcript_path,
+                        "trace_path": result.trace_path,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+            )
+            _emit_validation_event(
+                event_callback,
+                phase="conversation_scenario_finish",
+                event_type="conversation_validation_scenario_completed",
+                summary=f"conversation scenario {scenario['scenario_id']} completed",
+                details={
                     "scenario_id": scenario["scenario_id"],
-                    "final_verdict": result.final_verdict,
+                    "mode": scenario["mode"],
+                    "status": "completed" if result.final_verdict == "pass" else "failed",
+                    "log_path": str(scenario_log_path) if scenario_log_path is not None else None,
                     "transcript_path": result.transcript_path,
                     "trace_path": result.trace_path,
+                    "final_verdict": result.final_verdict,
                 },
-                ensure_ascii=False,
             )
-            + "\n",
-        )
-        _emit_validation_event(
-            event_callback,
-            phase="conversation_scenario_finish",
-            event_type="conversation_validation_scenario_completed",
-            summary=f"conversation scenario {scenario['scenario_id']} completed",
-            details={
-                "scenario_id": scenario["scenario_id"],
-                "mode": scenario["mode"],
-                "status": "completed" if result.final_verdict == "pass" else "failed",
-                "log_path": str(scenario_log_path) if scenario_log_path is not None else None,
-                "transcript_path": result.transcript_path,
-                "trace_path": result.trace_path,
-                "final_verdict": result.final_verdict,
-            },
-        )
 
-    passed = all(result.final_verdict == "pass" for result in results)
-    failure_summary = None if passed else "one or more conversation scenarios failed"
-    return ConversationValidationResult(
-        passed=passed,
-        failure_summary=failure_summary,
-        fixture_manifest=fixture_manifest,
-        scenarios=results,
-        transcript_contents=transcript_contents,
-        trace_contents=trace_contents,
-        related_files=_widget_order_related_files(plan),
-    )
+        passed = all(result.final_verdict == "pass" for result in results)
+        failure_categories = sorted(
+            {
+                str(result.failure_category).strip()
+                for result in results
+                if str(result.failure_category or "").strip()
+            }
+        )
+        failure_summary = None if passed else "one or more conversation scenarios failed"
+        if failure_summary and failure_categories:
+            failure_summary = f"{failure_summary}: {', '.join(failure_categories)}"
+        return ConversationValidationResult(
+            passed=passed,
+            failure_summary=failure_summary,
+            fixture_manifest=fixture_manifest,
+            validation_capability_contract=capability_contract.model_dump(mode="json"),
+            scenarios=results,
+            transcript_contents=transcript_contents,
+            trace_contents=trace_contents,
+            related_files=_widget_order_related_files(plan),
+        )
 
 
 async def _run_unauthenticated_conversation_scenario(
@@ -1074,11 +1260,29 @@ async def _run_authenticated_conversation_scenario(
         error_message=None if response["status_code"] == 200 else f"chat status {response['status_code']}",
     )
     trace_text = _read_text_if_exists(Path(trace_path))
-    observed_tool_names = _extract_observed_tool_names(trace_text)
-    deterministic_failures = _evaluate_conversation_deterministic_failures(
-        scenario=scenario,
+    observed_tool_names = _augment_observed_tool_names(
         response=response,
-        observed_tool_names=observed_tool_names,
+        observed_tool_names=_extract_observed_tool_names(trace_text),
+    )
+    scenario_contract = ConversationScenarioContract.model_validate(
+        scenario.get("scenario_contract")
+        or {
+            "scenario_id": scenario["scenario_id"],
+            "mode": scenario["mode"],
+            "prompt": str(scenario.get("prompt") or ""),
+            "expected_milestones": list(scenario.get("expected_milestones") or []),
+            "allowed_paths": list(scenario.get("allowed_paths") or []),
+            "sampled_order_id": _optional_text(scenario.get("sampled_order_id")),
+            "sampled_option_id": _optional_text(scenario.get("sampled_option_id")),
+            "previous_state_from": _optional_text(scenario.get("previous_state_from")),
+        }
+    )
+    deterministic_failures, observed_milestones = (
+        _evaluate_conversation_deterministic_failures_from_contract(
+            scenario_contract=scenario_contract,
+            response=response,
+            observed_tool_names=observed_tool_names,
+        )
     )
     transcript_payload = {
         "scenario_id": scenario["scenario_id"],
@@ -1086,6 +1290,7 @@ async def _run_authenticated_conversation_scenario(
         "mode": scenario["mode"],
         "prompt": scenario["prompt"],
         "status_code": response["status_code"],
+        "response_text": response.get("response_text"),
         "raw_events": response["raw_events"],
         "final_answer": response["final_answer"],
         "metadata_state": response["metadata_state"],
@@ -1104,6 +1309,9 @@ async def _run_authenticated_conversation_scenario(
         trace_path=trace_path,
         expected_tool_names=list(scenario.get("expected_tool_names") or []),
         observed_tool_names=observed_tool_names,
+        expected_milestones=list(scenario_contract.expected_milestones),
+        observed_milestones=observed_milestones,
+        allowed_paths=list(scenario_contract.allowed_paths),
         deterministic_failures=deterministic_failures,
         sampled_order_id=_optional_text(scenario.get("sampled_order_id")),
         sampled_option_id=_optional_text(scenario.get("sampled_option_id")),
@@ -1123,9 +1331,10 @@ async def _stream_chat_request(
     payload: dict[str, Any] = {
         "message": scenario["prompt"],
         "site_id": fixture_manifest.get("site_id"),
-        "access_token": fixture_manifest.get("access_token"),
         "capability_profile": fixture_manifest.get("capability_profile"),
     }
+    if fixture_manifest.get("access_token"):
+        payload["access_token"] = fixture_manifest.get("access_token")
     if previous_state:
         payload["previous_state"] = previous_state
     if scenario.get("resume_payload"):
@@ -1138,25 +1347,30 @@ async def _stream_chat_request(
         timeout=30.0,
     ) as client:
         async with client.stream("POST", "/api/v1/chat/stream", json=payload) as response:
-            raw_events = await _collect_sse_events(response)
+            raw_events, response_text = await _collect_sse_events(response)
 
     return _extract_stream_outcome(
         status_code=response.status_code,
         raw_events=raw_events,
         conversation_id=conversation_id,
+        response_text=response_text,
     )
 
 
-async def _collect_sse_events(response: httpx.Response) -> list[dict[str, Any]]:
+async def _collect_sse_events(response: httpx.Response) -> tuple[list[dict[str, Any]], str]:
     events: list[dict[str, Any]] = []
+    raw_lines: list[str] = []
     async for line in response.aiter_lines():
-        if not line or not line.startswith("data: "):
+        if not line:
+            continue
+        raw_lines.append(line)
+        if not line.startswith("data: "):
             continue
         try:
             events.append(json.loads(line[len("data: ") :]))
         except json.JSONDecodeError:
             events.append({"type": "unparsed", "raw": line[len("data: ") :]})
-    return events
+    return events, "\n".join(raw_lines)
 
 
 def _extract_stream_outcome(
@@ -1164,6 +1378,7 @@ def _extract_stream_outcome(
     status_code: int,
     raw_events: list[dict[str, Any]],
     conversation_id: str,
+    response_text: str = "",
 ) -> dict[str, Any]:
     final_answer_parts: list[str] = []
     metadata_state: dict[str, Any] | None = None
@@ -1192,6 +1407,7 @@ def _extract_stream_outcome(
     return {
         "status_code": status_code,
         "raw_events": raw_events,
+        "response_text": response_text,
         "final_answer": final_answer,
         "metadata_state": metadata_state,
         "ui_interrupts": ui_interrupts,
@@ -1222,10 +1438,28 @@ def _build_runtime_fixture_manifest(
     auth.setdefault("password", credentials.get("password"))
     manifest["auth"] = auth
     manifest["site_id"] = plan.chatbot_bridge.site_key
-    manifest["capability_profile"] = "order_cs_only"
-    manifest["access_token"] = str((bootstrap_result.get("bootstrap_payload") or {}).get("access_token") or "")
+    manifest["capability_profile"] = str(plan.host_frontend.capability_profile or "order_cs_only")
+    manifest["enabled_retrieval_corpora"] = list(plan.host_frontend.enabled_retrieval_corpora or [])
+    manifest["widget_features"] = dict(plan.host_frontend.widget_features or {})
+    auth_material, auth_failure = _resolve_bridge_auth_material(
+        bootstrap_result=bootstrap_result,
+        plan=plan,
+    )
+    manifest["auth_transport"] = _normalized_auth_transport(plan.chatbot_bridge.auth_contract.transport)
+    manifest["access_token"] = str((auth_material or {}).get("access_token") or "")
     manifest["bootstrap_payload"] = dict(bootstrap_result.get("bootstrap_payload") or {})
-    manifest["session_cookies"] = dict(bootstrap_result.get("session_cookies") or {})
+    manifest["session_cookies"] = dict((auth_material or {}).get("cookies") or {})
+    manifest["auth_metadata"] = dict((auth_material or {}).get("metadata") or {})
+    if auth_failure:
+        manifest["available"] = False
+        manifest["reason"] = auth_failure
+        manifest["validation_capability_contract"] = build_validation_capability_contract(
+            plan=plan,
+            fixture_manifest=manifest,
+        ).model_dump(mode="json")
+        manifest["orders"] = dict(manifest.get("orders") or {})
+        manifest["seed_source"] = seed_source
+        return manifest
 
     try:
         adapter = _load_generated_adapter(
@@ -1233,15 +1467,24 @@ def _build_runtime_fixture_manifest(
             runtime_plan=runtime_plan,
             plan=plan,
         )
-        auth_context = AuthenticatedContext(
-            siteId=plan.chatbot_bridge.site_key,
-            userId=str(((adapter_auth_result.get("validated_user") or {}).get("id")) or "__bridge__"),
-            accessToken=str(manifest.get("access_token") or ""),
+        response_contract = getattr(adapter, "response_contract", None) or plan.chatbot_bridge.response_contract
+        auth_context = _auth_context_from_material(
+            auth_material=auth_material or {},
+            site_id=plan.chatbot_bridge.site_key,
+            user_id=str(((adapter_auth_result.get("validated_user") or {}).get("id")) or "__bridge__"),
         )
         headers = _build_generated_auth_headers(adapter=adapter, auth_context=auth_context)
         raw_orders = asyncio.run(adapter.client.list_orders(headers))
         order_candidates = _extract_order_candidates(raw_orders)
-        order_ids = [order_id for order_id in (_extract_order_id(item) for item in order_candidates) if order_id]
+        order_ids = [
+            order_id
+            for order_id in (
+                resolve_visible_order_id_from_contract(response_contract, item)
+                for item in order_candidates
+                if isinstance(item, dict)
+            )
+            if order_id
+        ]
         option_ids = [option_id for option_id in (_extract_option_id(item) for item in order_candidates) if option_id]
         if order_ids:
             manifest["available"] = True
@@ -1258,95 +1501,31 @@ def _build_runtime_fixture_manifest(
             manifest["available"] = False
             manifest["reason"] = "fixture_unavailable"
         manifest["seed_source"] = seed_source
+        manifest["validation_capability_contract"] = build_validation_capability_contract(
+            plan=plan,
+            fixture_manifest=manifest,
+        ).model_dump(mode="json")
     except Exception as exc:
         manifest["available"] = False
         manifest["reason"] = f"fixture_unavailable: {exc}"
         manifest["orders"] = dict(manifest.get("orders") or {})
         manifest["seed_source"] = seed_source
+        manifest["validation_capability_contract"] = build_validation_capability_contract(
+            plan=plan,
+            fixture_manifest=manifest,
+        ).model_dump(mode="json")
     return manifest
 
 
 def _build_conversation_scenarios(
     *,
     fixture_manifest: dict[str, Any],
+    capability_contract: ValidationCapabilityContract | None = None,
 ) -> list[dict[str, Any]]:
-    orders = dict(fixture_manifest.get("orders") or {})
-    lookup_order_id = str(orders.get("lookup_order_id") or "")
-    status_order_id = str(orders.get("status_order_id") or lookup_order_id)
-    cancel_order_id = str(orders.get("cancel_order_id") or lookup_order_id)
-    refund_order_id = str(orders.get("refund_order_id") or lookup_order_id)
-    exchange_order_id = str(orders.get("exchange_order_id") or lookup_order_id)
-    exchange_new_option_id = str(orders.get("exchange_new_option_id") or "synthetic-option-1")
-    return [
-        {
-            "scenario_id": "unauthenticated_chat_request",
-            "mode": "auth",
-            "prompt": "주문 목록 보여줘",
-        },
-        {
-            "scenario_id": "authenticated_list_orders",
-            "mode": "read_only",
-            "prompt": "내 주문 목록 보여줘",
-            "expected_tool_names": ["list_orders"],
-            "sampled_order_id": lookup_order_id,
-        },
-        {
-            "scenario_id": "same_session_followup_order_status",
-            "mode": "read_only",
-            "prompt": "그 주문 상태 알려줘",
-            "expected_tool_names": ["get_order_status"],
-            "previous_state_from": "authenticated_list_orders",
-            "sampled_order_id": status_order_id,
-        },
-        {
-            "scenario_id": "cancel_order",
-            "mode": "mutating",
-            "prompt": f"주문 {cancel_order_id} 취소해줘",
-            "expected_tool_names": ["cancel"],
-            "sampled_order_id": cancel_order_id,
-        },
-        {
-            "scenario_id": "refund_order",
-            "mode": "mutating",
-            "prompt": f"주문 {refund_order_id} 환불해줘",
-            "expected_tool_names": ["refund"],
-            "sampled_order_id": refund_order_id,
-        },
-        {
-            "scenario_id": "exchange_order",
-            "mode": "mutating",
-            "prompt": f"주문 {exchange_order_id} 옵션을 {exchange_new_option_id}로 교환해줘",
-            "expected_tool_names": ["exchange"],
-            "sampled_order_id": exchange_order_id,
-            "sampled_option_id": exchange_new_option_id,
-        },
-        {
-            "scenario_id": "session_continuity",
-            "mode": "read_only",
-            "prompt": "방금 조회한 주문 다시 이어서 설명해줘",
-            "expected_tool_names": [],
-            "previous_state_from": "authenticated_list_orders",
-            "sampled_order_id": status_order_id,
-        },
-        {
-            "scenario_id": "out_of_scope_discovery_rejected",
-            "mode": "policy",
-            "prompt": "가방 추천해줘",
-            "expected_tool_names": [],
-        },
-        {
-            "scenario_id": "review_writing_rejected",
-            "mode": "policy",
-            "prompt": "리뷰 작성 도와줘",
-            "expected_tool_names": [],
-        },
-        {
-            "scenario_id": "ambiguous_order_question",
-            "mode": "policy",
-            "prompt": "주문 관련해서 도와줘",
-            "expected_tool_names": [],
-        },
-    ]
+    return _build_conversation_scenarios_from_contract(
+        fixture_manifest=fixture_manifest,
+        capability_contract=capability_contract,
+    )
 
 
 def _evaluate_conversation_deterministic_failures(
@@ -1355,30 +1534,29 @@ def _evaluate_conversation_deterministic_failures(
     response: dict[str, Any],
     observed_tool_names: list[str],
 ) -> list[str]:
-    failures: list[str] = []
-    if response["status_code"] != 200:
-        failures.append(f"unexpected status {response['status_code']}")
-    if response["error_events"]:
-        failures.append("chat stream emitted error event")
-    if not response["metadata_state"]:
-        failures.append("missing metadata state")
-    if not response["final_answer"] and not response["ui_interrupts"]:
-        failures.append("missing final answer or ui interrupt")
-    expected_tool_names = list(scenario.get("expected_tool_names") or [])
-    for tool_name in expected_tool_names:
-        if tool_name not in observed_tool_names:
-            failures.append(f"missing expected tool {tool_name}")
-    expected_order_id = _optional_text(scenario.get("sampled_order_id"))
-    if expected_order_id and scenario["mode"] in {"mutating", "read_only"}:
-        serialized = json.dumps(response, ensure_ascii=False, default=str)
-        if expected_order_id not in serialized:
-            failures.append(f"missing expected order id {expected_order_id}")
-    expected_option_id = _optional_text(scenario.get("sampled_option_id"))
-    if expected_option_id:
-        serialized = json.dumps(response, ensure_ascii=False, default=str)
-        if expected_option_id not in serialized:
-            failures.append(f"missing expected option id {expected_option_id}")
+    scenario_contract = ConversationScenarioContract.model_validate(
+        scenario.get("scenario_contract")
+        or {
+            "scenario_id": scenario["scenario_id"],
+            "mode": scenario["mode"],
+            "prompt": str(scenario.get("prompt") or ""),
+            "expected_milestones": list(scenario.get("expected_milestones") or []),
+            "allowed_paths": list(scenario.get("allowed_paths") or []),
+            "sampled_order_id": _optional_text(scenario.get("sampled_order_id")),
+            "sampled_option_id": _optional_text(scenario.get("sampled_option_id")),
+            "previous_state_from": _optional_text(scenario.get("previous_state_from")),
+        }
+    )
+    failures, _ = _evaluate_conversation_deterministic_failures_from_contract(
+        scenario_contract=scenario_contract,
+        response=response,
+        observed_tool_names=observed_tool_names,
+    )
     return failures
+
+
+def _classify_conversation_failure(deterministic_failures: list[str]) -> str | None:
+    return _classify_conversation_failure_from_contract(deterministic_failures)
 
 
 def _finalize_conversation_scenario_result(
@@ -1394,12 +1572,16 @@ def _finalize_conversation_scenario_result(
     deterministic_failures: list[str],
     sampled_order_id: str | None,
     sampled_option_id: str | None,
+    expected_milestones: list[str] | None = None,
+    observed_milestones: list[str] | None = None,
+    allowed_paths: list[list[str]] | None = None,
     conversation_id: str | None = None,
 ) -> ConversationScenarioResult:
     deterministic_passed = not deterministic_failures
     llm_judgement: dict[str, Any] = {}
     llm_passed: bool | None = None
     final_verdict = "fail"
+    failure_category = _classify_conversation_failure(deterministic_failures)
     if deterministic_passed:
         llm_judgement = _run_conversation_llm_judge(
             prompt=prompt,
@@ -1418,6 +1600,7 @@ def _finalize_conversation_scenario_result(
         deterministic_passed=deterministic_passed,
         llm_passed=llm_passed,
         final_verdict=final_verdict,
+        failure_category=failure_category,
         transcript_path=transcript_path,
         trace_path=trace_path,
         sampled_or_fixture_order_id=sampled_order_id,
@@ -1425,6 +1608,9 @@ def _finalize_conversation_scenario_result(
         deterministic_failures=list(deterministic_failures),
         expected_tool_names=list(expected_tool_names),
         observed_tool_names=list(observed_tool_names),
+        expected_milestones=list(expected_milestones or []),
+        observed_milestones=list(observed_milestones or []),
+        allowed_paths=list(allowed_paths or []),
         llm_judgement=llm_judgement,
     )
 
@@ -1519,6 +1705,7 @@ def _collect_widget_order_flow_report(
             server_fastapi=server_fastapi,
             site_id=plan.chatbot_bridge.site_key,
             access_token=str(auth_context.accessToken or ""),
+            session_cookies=dict(auth_context.cookies or {}),
             conversation_id="conv-widget-list-orders",
             message="request_list_orders",
             step_specs=[
@@ -1536,6 +1723,7 @@ def _collect_widget_order_flow_report(
             server_fastapi=server_fastapi,
             site_id=plan.chatbot_bridge.site_key,
             access_token=str(auth_context.accessToken or ""),
+            session_cookies=dict(auth_context.cookies or {}),
             conversation_id="conv-widget-cancel",
             message="request_cancel_order",
             step_specs=[
@@ -1560,6 +1748,7 @@ def _collect_widget_order_flow_report(
             server_fastapi=server_fastapi,
             site_id=plan.chatbot_bridge.site_key,
             access_token=str(auth_context.accessToken or ""),
+            session_cookies=dict(auth_context.cookies or {}),
             conversation_id="conv-widget-refund",
             message="request_refund_order",
             step_specs=[
@@ -1584,6 +1773,7 @@ def _collect_widget_order_flow_report(
             server_fastapi=server_fastapi,
             site_id=plan.chatbot_bridge.site_key,
             access_token=str(auth_context.accessToken or ""),
+            session_cookies=dict(auth_context.cookies or {}),
             conversation_id="conv-widget-exchange",
             message="request_exchange_order",
             step_specs=[
@@ -1621,15 +1811,36 @@ def _evaluate_widget_order_flow_report(
     *,
     plan: IntegrationPlan,
     flow_reports: dict[str, dict[str, Any]],
+    capability_contract: ValidationCapabilityContract | None = None,
     sample_context: dict[str, Any] | None = None,
 ) -> WidgetOrderE2EResult:
     sample_context = dict(sample_context or {})
-    required_step_flows = [
-        ("list_orders", ["show_order_list"]),
-        ("cancel", ["show_order_list", "confirm_order_action"]),
-        ("refund", ["show_order_list", "confirm_order_action"]),
-        ("exchange", ["show_order_list", "show_option_list", "confirm_order_action"]),
-    ]
+    capability_contract = capability_contract or build_validation_capability_contract(
+        plan=plan,
+        fixture_manifest={
+            "enabled_retrieval_corpora": list(plan.host_frontend.enabled_retrieval_corpora or []),
+            "widget_features": dict(plan.host_frontend.widget_features or {}),
+        },
+        sample_context=sample_context,
+    )
+    required_step_flows = [("list_orders", ["show_order_list"])]
+    if "cancel" in capability_contract.available_actions:
+        cancel_steps = ["confirm_order_action"]
+        if capability_contract.requires_order_selection_for_actions:
+            cancel_steps.insert(0, "show_order_list")
+        required_step_flows.append(("cancel", cancel_steps))
+    if "refund" in capability_contract.available_actions:
+        refund_steps = ["confirm_order_action"]
+        if capability_contract.requires_order_selection_for_actions:
+            refund_steps.insert(0, "show_order_list")
+        required_step_flows.append(("refund", refund_steps))
+    if "exchange" in capability_contract.available_actions:
+        exchange_steps = ["confirm_order_action"]
+        if capability_contract.requires_option_selection_for_exchange:
+            exchange_steps.insert(0, "show_option_list")
+        if capability_contract.requires_order_selection_for_actions:
+            exchange_steps.insert(0, "show_order_list")
+        required_step_flows.append(("exchange", exchange_steps))
     covered_flows: list[str] = []
     for flow_name, expected_steps in required_step_flows:
         actual_steps = list((flow_reports.get(flow_name) or {}).get("steps") or [])
@@ -1640,6 +1851,7 @@ def _evaluate_widget_order_flow_report(
                 failure_summary=f"{missing_step} missing",
                 covered_flows=covered_flows,
                 flow_reports=flow_reports,
+                validation_capability_contract=capability_contract.model_dump(mode="json"),
                 sampled_order_id=_optional_text(sample_context.get("sampled_order_id")),
                 sampled_option_id=_optional_text(sample_context.get("sampled_option_id")),
                 scenario_mode=_optional_text(sample_context.get("scenario_mode")),
@@ -1656,6 +1868,7 @@ def _evaluate_widget_order_flow_report(
             ),
             covered_flows=covered_flows,
             flow_reports=flow_reports,
+            validation_capability_contract=capability_contract.model_dump(mode="json"),
             sampled_order_id=_optional_text(sample_context.get("sampled_order_id")),
             sampled_option_id=_optional_text(sample_context.get("sampled_option_id")),
             scenario_mode=_optional_text(sample_context.get("scenario_mode")),
@@ -1668,6 +1881,7 @@ def _evaluate_widget_order_flow_report(
         failure_summary="widget order e2e passed",
         covered_flows=covered_flows,
         flow_reports=flow_reports,
+        validation_capability_contract=capability_contract.model_dump(mode="json"),
         sampled_order_id=_optional_text(sample_context.get("sampled_order_id")),
         sampled_option_id=_optional_text(sample_context.get("sampled_option_id")),
         scenario_mode=_optional_text(sample_context.get("scenario_mode")),
@@ -1690,7 +1904,8 @@ def _acquire_widget_order_sample(
     if not order_candidates:
         raise RuntimeError("generated adapter list_orders returned no orders")
     raw_order = order_candidates[0]
-    sampled_order_id = _extract_order_id(raw_order)
+    response_contract = getattr(adapter, "response_contract", None) or plan.chatbot_bridge.response_contract
+    sampled_order_id = resolve_visible_order_id_from_contract(response_contract, raw_order)
     if not sampled_order_id:
         raise RuntimeError("generated adapter list_orders did not provide an order id")
 
@@ -1806,6 +2021,7 @@ def _exercise_widget_order_flow(
     server_fastapi: Any,
     site_id: str,
     access_token: str,
+    session_cookies: dict[str, str] | None,
     conversation_id: str,
     message: str,
     step_specs: list[dict[str, Any]],
@@ -1823,15 +2039,20 @@ def _exercise_widget_order_flow(
             request_payload: dict[str, Any] = {
                 "message": message if index == 0 else "resume_interrupt",
                 "site_id": site_id,
-                "access_token": access_token,
             }
+            if access_token:
+                request_payload["access_token"] = access_token
             if index > 0:
                 request_payload["previous_state"] = {
                     "conversation_id": conversation_id,
                     "pending_interrupt": pending_interrupt,
                 }
                 request_payload["resume_payload"] = resume_payloads[index - 1]
-            response = client.post("/api/v1/chat/stream", json=request_payload)
+            response = client.post(
+                "/api/v1/chat/stream",
+                json=request_payload,
+                cookies=session_cookies or None,
+            )
             text = response.text
             fragments.append(text)
             ui_action = step_spec["ui_action"]
@@ -2100,6 +2321,24 @@ def _extract_observed_tool_names(trace_text: str) -> list[str]:
     return observed
 
 
+def _augment_observed_tool_names(
+    *,
+    response: dict[str, Any],
+    observed_tool_names: list[str],
+) -> list[str]:
+    observed = list(observed_tool_names)
+    metadata_state = response.get("metadata_state") or {}
+    order_context = metadata_state.get("order_context") or {}
+    fallback_tool_name = _optional_text(order_context.get("last_tool"))
+    if fallback_tool_name:
+        normalized_tool_name = {
+            "get_user_orders": "list_orders",
+        }.get(fallback_tool_name, fallback_tool_name)
+        if normalized_tool_name not in observed:
+            observed.append(normalized_tool_name)
+    return observed
+
+
 def _read_text_if_exists(path: Path) -> str:
     if not path.exists():
         return ""
@@ -2156,12 +2395,144 @@ def _client_cookies_dict(client: Any) -> dict[str, str]:
         return {}
 
 
+def _chatbot_runtime_env_overrides(
+    *,
+    runtime_plan: BackendRuntimePlan,
+    plan: IntegrationPlan,
+) -> dict[str, str]:
+    env_var = str(plan.chatbot_bridge.host_base_url_env_var or "").strip()
+    if not env_var:
+        return {}
+    return {
+        env_var: _runtime_base_url(
+            runtime_plan,
+            chat_auth_contract_path=plan.host_backend.chat_auth_contract_path,
+        )
+    }
+
+
+def _normalized_auth_transport(value: Any) -> str:
+    normalized = str(value or "").strip()
+    if normalized == "session_token_cookie":
+        return "session_cookie"
+    return normalized or "session_cookie"
+
+
+def _resolve_bridge_auth_material(
+    *,
+    bootstrap_result: dict[str, Any],
+    plan: IntegrationPlan,
+) -> tuple[dict[str, Any] | None, str | None]:
+    payload = dict(bootstrap_result.get("bootstrap_payload") or {})
+    cookies = dict(bootstrap_result.get("session_cookies") or {})
+    auth_contract = plan.chatbot_bridge.auth_contract
+    transport = _normalized_auth_transport(auth_contract.transport)
+    access_token = str(payload.get("access_token") or "").strip()
+    session_cookie_name = str(auth_contract.session_cookie_name or "").strip()
+    csrf_cookie_name = str(auth_contract.csrf_cookie_name or "").strip()
+    csrf_header_name = str(auth_contract.csrf_header_name or "").strip()
+
+    if (
+        transport == "session_cookie"
+        and not session_cookie_name
+        and access_token
+        and not cookies
+    ):
+        transport = "bearer_token"
+
+    if transport == "bearer_token":
+        if not access_token:
+            return None, "missing bearer access_token for bridge auth"
+        return {
+            "auth_transport": transport,
+            "access_token": access_token,
+            "cookies": cookies,
+            "metadata": {},
+        }, None
+
+    if not session_cookie_name:
+        return None, "missing session_cookie_name in bridge auth contract"
+    session_cookie_value = str(cookies.get(session_cookie_name) or "").strip()
+    if not session_cookie_value:
+        return None, f"missing session cookie {session_cookie_name} for bridge auth"
+
+    metadata: dict[str, Any] = {}
+    if transport == "cookie_plus_csrf":
+        if not csrf_cookie_name or not csrf_header_name:
+            return None, "missing csrf contract fields for bridge auth"
+        csrf_token = str(
+            payload.get("csrf_token")
+            or cookies.get(csrf_cookie_name)
+            or ""
+        ).strip()
+        if not csrf_token:
+            return None, f"missing csrf token {csrf_cookie_name} for bridge auth"
+        metadata["csrf_token"] = csrf_token
+        metadata["csrf_header_name"] = csrf_header_name
+
+    return {
+        "auth_transport": transport,
+        "access_token": "",
+        "cookies": cookies,
+        "metadata": metadata,
+    }, None
+
+
+def _auth_context_from_material(
+    *,
+    auth_material: dict[str, Any],
+    site_id: str,
+    user_id: str,
+) -> AuthenticatedContext:
+    return AuthenticatedContext(
+        siteId=site_id,
+        userId=str(user_id or "__bridge__"),
+        accessToken=str(auth_material.get("access_token") or "") or None,
+        cookies=dict(auth_material.get("cookies") or {}) or None,
+        metadata=dict(auth_material.get("metadata") or {}) or None,
+    )
+
+
+def _build_bridge_auth_context(
+    *,
+    bootstrap_result: dict[str, Any],
+    plan: IntegrationPlan,
+    user_id: str,
+) -> tuple[AuthenticatedContext | None, str | None]:
+    auth_material, failure_summary = _resolve_bridge_auth_material(
+        bootstrap_result=bootstrap_result,
+        plan=plan,
+    )
+    if auth_material is None:
+        return None, failure_summary
+    return _auth_context_from_material(
+        auth_material=auth_material,
+        site_id=plan.chatbot_bridge.site_key,
+        user_id=user_id,
+    ), None
+
+
+@contextmanager
+def _patched_chatbot_runtime_env(
+    *,
+    runtime_plan: BackendRuntimePlan,
+    plan: IntegrationPlan,
+):
+    overrides = _chatbot_runtime_env_overrides(runtime_plan=runtime_plan, plan=plan)
+    if not overrides:
+        yield {}
+        return
+    with patch.dict(os.environ, overrides, clear=False):
+        yield overrides
+
+
 def _load_runtime_chat_modules(*, chatbot_runtime_workspace: Path) -> tuple[Any, Any]:
     with _prepend_path(chatbot_runtime_workspace):
-        _drop_import_cache("server_fastapi")
-        _drop_import_cache("src")
+        _drop_runtime_chat_import_cache()
+        _repair_runtime_src_namespace(chatbot_runtime_workspace=chatbot_runtime_workspace)
         runtime_server_fastapi = importlib.import_module("server_fastapi")
         runtime_chat_endpoint = importlib.import_module("src.api.v1.endpoints.chat")
+        _repair_runtime_src_namespace(chatbot_runtime_workspace=chatbot_runtime_workspace)
     return runtime_server_fastapi, runtime_chat_endpoint
 
 
@@ -2202,9 +2573,11 @@ def _load_generated_adapter(
 ):
     module_prefix = f"src.adapters.generated.{plan.chatbot_bridge.site_key}"
     with _prepend_path(chatbot_runtime_workspace):
-        _drop_import_cache(module_prefix)
+        _drop_generated_adapter_import_cache(module_prefix)
+        _repair_runtime_src_namespace(chatbot_runtime_workspace=chatbot_runtime_workspace)
         adapter_module = importlib.import_module(f"{module_prefix}.adapter")
         client_module = importlib.import_module(f"{module_prefix}.client")
+        _repair_runtime_src_namespace(chatbot_runtime_workspace=chatbot_runtime_workspace)
         adapter_class = getattr(
             adapter_module,
             f"Generated{_class_name(plan.chatbot_bridge.site_key)}Adapter",
@@ -2220,6 +2593,99 @@ def _load_generated_adapter(
                 )
             )
         )
+
+
+def _drop_generated_adapter_import_cache(module_prefix: str) -> None:
+    prefixes = [
+        module_prefix,
+        "src.adapters.generated",
+        "src.adapters.setup",
+        "src.runtime_auth",
+        module_prefix.replace("src.", "chatbot.src.", 1),
+        "chatbot.src.adapters.generated",
+        "chatbot.src.adapters.setup",
+        "chatbot.src.runtime_auth",
+    ]
+    seen: set[str] = set()
+    for prefix in prefixes:
+        if prefix in seen:
+            continue
+        seen.add(prefix)
+        _drop_import_cache(prefix)
+
+
+def _drop_runtime_chat_import_cache() -> None:
+    prefixes = [
+        "server_fastapi",
+        "src.api",
+        "src.adapters.generated",
+        "src.adapters.setup",
+        "src.runtime_auth",
+        "chatbot.src.api",
+        "chatbot.src.adapters.generated",
+        "chatbot.src.adapters.setup",
+        "chatbot.src.runtime_auth",
+    ]
+    for prefix in prefixes:
+        _drop_import_cache(prefix)
+
+
+def _repair_runtime_src_namespace(*, chatbot_runtime_workspace: Path) -> None:
+    workspace_src = str((chatbot_runtime_workspace / "src").resolve())
+    repo_src = str(Path(__file__).resolve().parents[2])
+    workspace_adapters = str((chatbot_runtime_workspace / "src" / "adapters").resolve())
+    repo_adapters = str((Path(__file__).resolve().parents[2] / "adapters").resolve())
+    workspace_api = str((chatbot_runtime_workspace / "src" / "api").resolve())
+    repo_api = str((Path(__file__).resolve().parents[2] / "api").resolve())
+    chatbot_pkg = sys.modules.get("chatbot")
+
+    namespace_paths = {
+        "src": (workspace_src, repo_src),
+        "chatbot.src": (workspace_src, repo_src),
+        "src.adapters": (workspace_adapters, repo_adapters),
+        "chatbot.src.adapters": (workspace_adapters, repo_adapters),
+        "src.api": (workspace_api, repo_api),
+        "chatbot.src.api": (workspace_api, repo_api),
+    }
+
+    for module_name, candidates in namespace_paths.items():
+        module = sys.modules.get(module_name)
+        if module is None:
+            continue
+        path_entries = list(getattr(module, "__path__", []) or [])
+        normalized = [str(Path(entry).resolve()) for entry in path_entries]
+        merged: list[str] = []
+        for candidate in (*candidates, *normalized):
+            if candidate not in merged:
+                merged.append(candidate)
+        module.__path__ = merged
+        if chatbot_pkg is not None and module_name == "chatbot.src":
+            setattr(chatbot_pkg, "src", module)
+
+    for module_name in (
+        "chatbot.src.onboarding_v2",
+        "chatbot.src.onboarding_v2.validation",
+        "chatbot.src.onboarding_v2.validation.runner",
+    ):
+        _reattach_parent_module(module_name)
+
+    if "chatbot.src.graph" not in sys.modules:
+        try:
+            importlib.import_module("chatbot.src.graph")
+        except ModuleNotFoundError:
+            pass
+    _reattach_parent_module("chatbot.src.graph")
+
+
+def _reattach_parent_module(module_name: str) -> None:
+    module = sys.modules.get(module_name)
+    if module is None or "." not in module_name:
+        return
+    parent_name, attr_name = module_name.rsplit(".", 1)
+    parent = sys.modules.get(parent_name)
+    if parent is None:
+        return
+    setattr(parent, attr_name, module)
 
 
 def _drop_import_cache(module_prefix: str) -> None:

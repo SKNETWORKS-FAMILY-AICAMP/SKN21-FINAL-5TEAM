@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from chatbot.src.onboarding_v2.eventing import EventCallback
 from chatbot.src.onboarding_v2.llm_runtime import invoke_structured_stage
 from chatbot.src.onboarding_v2.models.analysis import (
     AnalysisBundle,
@@ -36,6 +38,10 @@ from chatbot.src.onboarding_v2.models.planning import (
     PlanningRisk,
     RagCorpusPlan,
     RepairHint,
+    ResolvedAuthContract,
+    ResolvedOrderActionContract,
+    ResolvedRequestFieldContract,
+    ResolvedResponseContract,
     RetrievalIndexPlan,
     StrategyCandidate,
     TargetBinding,
@@ -165,6 +171,8 @@ def build_planning_bundle(
     validation_capabilities: list[str] | None = None,
     strict_coverage: bool = True,
     artifact_refs: list[ArtifactRef] | None = None,
+    event_callback: EventCallback | None = None,
+    heartbeat_interval_s: float = 5.0,
 ) -> PlanningBundle:
     if analysis_bundle is None:
         raise ValueError("analysis_bundle is required for onboarding_v2 planning")
@@ -204,6 +212,8 @@ def build_planning_bundle(
         usage_store=usage_store,
         llm_builder=llm_builder,
         artifact_refs=artifact_refs,
+        event_callback=event_callback,
+        heartbeat_interval_s=heartbeat_interval_s,
     )
     strategy_candidates = _feasibility_filter(
         candidates=strategy_response.strategy_candidates or strategy_fallback,
@@ -238,6 +248,8 @@ def build_planning_bundle(
         usage_store=usage_store,
         llm_builder=llm_builder,
         artifact_refs=artifact_refs,
+        event_callback=event_callback,
+        heartbeat_interval_s=heartbeat_interval_s,
     )
     target_bindings = _sanitize_target_bindings(
         requested=binding_response.target_bindings,
@@ -290,6 +302,8 @@ def build_planning_bundle(
         usage_store=usage_store,
         llm_builder=llm_builder,
         artifact_refs=artifact_refs,
+        event_callback=event_callback,
+        heartbeat_interval_s=heartbeat_interval_s,
     )
     risk_register = _dedupe_risks(risk_and_repair_response.risk_register or risk_fallback)
     repair_hints = _dedupe_repair_hints(risk_and_repair_response.repair_hints or repair_fallback)
@@ -297,6 +311,7 @@ def build_planning_bundle(
         site_id=_resolve_site_id(snapshot),
         rag_sources=bundle.rag_sources,
         run_id="runtime",
+        product_search_endpoint=str(snapshot.domain_integration.product_search_endpoint or ""),
     )
     capability_upgrade = _build_capability_upgrade(
         rag_sources=bundle.rag_sources,
@@ -554,7 +569,7 @@ def _select_integration_strategy(
 
 
 def _build_target_bindings_fallback(*, bundle: AnalysisBundle) -> list[TargetBinding]:
-    auth_record = _find_contract(bundle.verified_contracts.auth_components, "chat_auth_bootstrap")
+    auth_record = _select_auth_bridge_contract(bundle.verified_contracts.auth_components)
     lookup_record = _find_contract(bundle.verified_contracts.tool_targets, "order_lookup")
     action_record = _find_contract(bundle.verified_contracts.tool_targets, "order_action")
     route_target = _path_or_default(bundle.candidate_set.route_definitions, default="backend/foodshop/urls.py")
@@ -850,6 +865,11 @@ def _derive_integration_plan(
     bridge_contract = _derive_chatbot_bridge_contract(
         domain_integration=analysis_bundle.snapshot.domain_integration,
         site_id=site_id,
+        source_root=Path(snapshot.repo_profile.source_root),
+        backend_framework=analysis_bundle.framework_profile.backend_framework,
+        auth_handler_source=auth_source,
+        auth_style_hint=str(snapshot.repo_profile.auth_style or ""),
+        order_lookup_target=order_lookup_target,
     )
     assumptions = [
         "planner consumed verified analysis graph and deterministic compiler capabilities",
@@ -878,12 +898,12 @@ def _derive_integration_plan(
             order_action_new_option_field=bridge_contract["request_field_mappings"]["new_option_id"],
             order_action_response_serializer="serialize_order",
             exchange_status_transition="EXCHANGE_REQUESTED",
-            supported_order_tools=list(SUPPORTED_ORDER_TOOLS),
+            supported_order_tools=list(bridge_contract["order_action_contract"].supported_actions),
             auth_handler_source=auth_source,
             generated_handler_path=_choose_generated_handler_path(analysis_bundle.framework_profile.backend_framework),
             chat_auth_contract_path="/api/chat/auth-token",
             site_id=site_id,
-            capability_profile=str(capability_upgrade.get("capability_profile") or "order_cs_only"),
+            capability_profile="order_cs_only",
             enabled_retrieval_corpora=[],
             widget_features={"image_upload": False},
         ),
@@ -902,7 +922,7 @@ def _derive_integration_plan(
                 source_root=Path(snapshot.repo_profile.source_root),
                 runtime_base_url=normalized_chatbot_server_base_url,
             ),
-            capability_profile=str(capability_upgrade.get("capability_profile") or "order_cs_only"),
+            capability_profile="order_cs_only",
             enabled_retrieval_corpora=[],
             widget_features={"image_upload": False},
         ),
@@ -918,10 +938,12 @@ def _derive_integration_plan(
             order_detail_endpoint=bridge_contract["order_detail_endpoint"],
             order_action_endpoint=bridge_contract["order_action_endpoint"],
             order_action_endpoints=bridge_contract["order_action_endpoints"],
-            auth_transport=bridge_contract["auth_transport"],
+            auth_contract=bridge_contract["auth_contract"],
+            response_contract=bridge_contract["response_contract"],
+            order_action_contract=bridge_contract["order_action_contract"],
             response_mapping_profile=bridge_contract["response_mapping_profile"],
             request_field_mappings=bridge_contract["request_field_mappings"],
-            supported_tools=list(SUPPORTED_ORDER_TOOLS),
+            supported_tools=list(bridge_contract["order_action_contract"].supported_actions),
         ),
         retrieval_index_plan=retrieval_index_plan,
         capability_upgrade=capability_upgrade,
@@ -935,6 +957,27 @@ def _derive_integration_plan(
 
 def _find_contract(records: list[ContractRecord], identifier: str) -> ContractRecord | None:
     return next((record for record in records if record.identifier == identifier), None)
+
+
+def _select_auth_bridge_contract(records: list[ContractRecord]) -> ContractRecord | None:
+    ranked_matches: list[tuple[int, int, ContractRecord]] = []
+    for index, record in enumerate(records):
+        if record.identifier != "chat_auth_bootstrap":
+            continue
+        role = str(record.details.get("role", "")).strip().lower()
+        if record.kind == "auth_component" and role == "backend_auth_source":
+            priority = 0
+        elif record.kind == "auth_component":
+            priority = 1
+        elif record.kind == "authz_guard":
+            priority = 2
+        else:
+            priority = 3
+        ranked_matches.append((priority, index, record))
+    if not ranked_matches:
+        return None
+    ranked_matches.sort(key=lambda item: (item[0], item[1]))
+    return ranked_matches[0][2]
 
 
 def _path_or_default(candidates: list[PathCandidate], *, default: str) -> str:
@@ -1056,31 +1099,149 @@ def _build_retrieval_index_plan(
     site_id: str,
     rag_sources: RagSources,
     run_id: str,
+    product_search_endpoint: str,
 ) -> RetrievalIndexPlan:
     site_slug = _normalize_site_key(site_id)
     corpora: list[RagCorpusPlan] = []
     corpus_specs = {
         "faq": ("qa_level", rag_sources.faq, ["배송은 얼마나 걸리나요?"], "faq_source_scan"),
         "policy": ("heading_sections", rag_sources.policy, ["환불 규정"], "policy_source_scan"),
-        "discovery_image": ("entity_level", rag_sources.discovery_image, ["검은색 자켓"], "discovery_image_scan"),
+        "discovery_image": ("entity_level", rag_sources.discovery_image, ["검은색 자켓"], "public_url_fetch"),
     }
     for corpus, (chunking_strategy, records, smoke_queries, default_loader) in corpus_specs.items():
         if not records:
             continue
+        loader_strategy = _resolve_loader_strategy(
+            corpus=corpus,
+            records=records,
+            default_loader=default_loader,
+        )
         corpora.append(
-            RagCorpusPlan(
+            _build_rag_corpus_plan(
                 corpus=corpus,
-                enabled=True,
                 chunking_strategy=chunking_strategy,
                 collection_alias=f"site_{site_slug}__{corpus}",
                 build_collection=f"site_{site_slug}__{corpus}__run_{run_id}",
-                sources=[record.path for record in records],
+                records=records,
                 smoke_queries=smoke_queries,
-                minimum_expected_documents=1,
-                loader_strategy=str(records[0].details.get("loader_strategy") or default_loader),
+                loader_strategy=loader_strategy,
+                product_search_endpoint=product_search_endpoint,
             )
         )
     return RetrievalIndexPlan(site_id=site_id, site_slug=site_slug, corpora=corpora)
+
+
+def _build_rag_corpus_plan(
+    *,
+    corpus: str,
+    chunking_strategy: str,
+    collection_alias: str,
+    build_collection: str,
+    records: list[Any],
+    smoke_queries: list[str],
+    loader_strategy: str,
+    product_search_endpoint: str,
+) -> RagCorpusPlan:
+    faq_row_source_strategy = None
+    faq_row_source_module = None
+    faq_row_source_callable = None
+    if corpus == "faq":
+        faq_row_source_strategy, faq_row_source_module, faq_row_source_callable = _resolve_faq_row_source(
+            records=records,
+        )
+
+    if corpus != "discovery_image":
+        return RagCorpusPlan(
+            corpus=corpus,
+            enabled=True,
+            chunking_strategy=chunking_strategy,
+            collection_alias=collection_alias,
+            build_collection=build_collection,
+            sources=[record.path for record in records],
+            smoke_queries=smoke_queries,
+            minimum_expected_documents=1,
+            loader_strategy=loader_strategy,
+            row_source_strategy=faq_row_source_strategy,
+            row_source_module=faq_row_source_module,
+            row_source_callable=faq_row_source_callable,
+        )
+
+    image_field = next(
+        (
+            str((getattr(record, "details", {}) or {}).get("image_field") or "").strip()
+            for record in records
+            if str((getattr(record, "details", {}) or {}).get("image_field") or "").strip()
+        ),
+        "image_url",
+    )
+    return RagCorpusPlan(
+        corpus=corpus,
+        enabled=True,
+        chunking_strategy=chunking_strategy,
+        collection_alias=collection_alias,
+        build_collection=build_collection,
+        sources=[record.path for record in records],
+        smoke_queries=smoke_queries,
+        minimum_expected_documents=1,
+        loader_strategy=loader_strategy,
+        row_source_strategy="host_api_fetch",
+        row_source_endpoint=product_search_endpoint,
+        row_id_field="product_id",
+        row_image_url_field=image_field or "image_url",
+        pagination_strategy={
+            "type": "page_number",
+            "page_param": "page",
+            "page_size_param": "page_size",
+            "page_size": 100,
+            "stop_on": "empty_or_repeated_ids",
+        },
+    )
+
+
+def _resolve_loader_strategy(
+    *,
+    corpus: str,
+    records: list[Any],
+    default_loader: str,
+) -> str:
+    if corpus != "discovery_image":
+        return default_loader
+
+    discovered: list[str] = []
+    for record in records:
+        details = getattr(record, "details", {}) or {}
+        candidates = details.get("loader_candidates") or []
+        if isinstance(candidates, list):
+            discovered.extend(str(item).strip() for item in candidates if str(item).strip())
+        strategy = str(details.get("loader_strategy") or "").strip()
+        if strategy:
+            discovered.append(strategy)
+
+    for candidate in ("public_url_fetch", "signed_url_resolver", "bucket_list_and_fetch"):
+        if candidate in discovered:
+            return candidate
+    return default_loader
+
+
+def _resolve_faq_row_source(
+    *,
+    records: list[Any],
+) -> tuple[str, str | None, str | None]:
+    for record in records:
+        details = getattr(record, "details", {}) or {}
+        strategy = str(details.get("row_source_strategy") or "").strip()
+        module_name = str(details.get("row_source_module") or "").strip()
+        callable_name = str(details.get("row_source_callable") or "").strip()
+        if strategy == "host_python_fetch":
+            return (
+                "host_python_fetch",
+                module_name or "models.faq",
+                callable_name or "get_all_faq",
+            )
+        normalized_path = str(getattr(record, "path", "") or "").replace("\\", "/").lower()
+        if normalized_path.endswith("backend/models/faq.py"):
+            return ("host_python_fetch", "models.faq", "get_all_faq")
+    return ("static_source_scan", None, None)
 
 
 def _build_capability_upgrade(
@@ -1144,13 +1305,21 @@ def _derive_chatbot_bridge_contract(
     *,
     domain_integration: DomainIntegration,
     site_id: str,
+    source_root: Path,
+    backend_framework: str,
+    auth_handler_source: str,
+    auth_style_hint: str,
+    order_lookup_target: str | None = None,
 ) -> dict[str, Any]:
+    login_endpoint = str(domain_integration.login_endpoint or "").strip()
     auth_validation_endpoint = str(
         domain_integration.auth_validation_endpoint or domain_integration.current_user_endpoint or ""
     ).strip()
-    current_user_endpoint = str(
-        domain_integration.current_user_endpoint or auth_validation_endpoint
-    ).strip()
+    if not auth_validation_endpoint or auth_validation_endpoint == login_endpoint:
+        auth_validation_endpoint = "/api/chat/auth-token"
+    current_user_endpoint = str(domain_integration.current_user_endpoint or "").strip()
+    if not current_user_endpoint or current_user_endpoint == login_endpoint:
+        current_user_endpoint = auth_validation_endpoint
     product_search_endpoint = str(domain_integration.product_search_endpoint or "").strip()
     order_list_endpoint = str(domain_integration.order_list_endpoint or "").strip()
     order_detail_endpoint = str(domain_integration.order_detail_endpoint or "").strip()
@@ -1179,6 +1348,24 @@ def _derive_chatbot_bridge_contract(
             "missing verified chatbot bridge seams for planning: " + ", ".join(sorted(missing))
         )
 
+    auth_contract = _infer_bridge_auth_contract(
+        source_root=source_root,
+        backend_framework=backend_framework,
+        site_id=site_id,
+        auth_handler_source=auth_handler_source,
+        auth_style_hint=auth_style_hint,
+    )
+    response_contract = _infer_bridge_response_contract(
+        source_root=source_root,
+        domain_integration=domain_integration,
+        site_id=site_id,
+        order_lookup_target=order_lookup_target,
+    )
+    order_action_contract = _infer_bridge_order_action_contract(
+        domain_integration=domain_integration,
+        response_contract=response_contract,
+    )
+
     return {
         "auth_validation_endpoint": auth_validation_endpoint,
         "current_user_endpoint": current_user_endpoint,
@@ -1188,14 +1375,338 @@ def _derive_chatbot_bridge_contract(
         "order_action_endpoint": order_action_endpoint
         or next(iter(order_action_endpoints.values())),
         "order_action_endpoints": order_action_endpoints,
-        "auth_transport": "session_token_cookie",
-        "response_mapping_profile": "site_a" if _normalize_site_key(site_id) == "food" else "generic",
-        "request_field_mappings": {
-            "action": "action",
-            "reason": "reason",
-            "new_option_id": "new_option_id",
-        },
+        "auth_contract": auth_contract,
+        "response_contract": response_contract,
+        "order_action_contract": order_action_contract,
+        "response_mapping_profile": response_contract.order_profile,
+        "request_field_mappings": order_action_contract.request_fields.model_dump(mode="json"),
     }
+
+
+def _infer_bridge_response_contract(
+    *,
+    source_root: Path,
+    domain_integration: DomainIntegration,
+    site_id: str,
+    order_lookup_target: str | None = None,
+) -> ResolvedResponseContract:
+    order_list_endpoint = str(domain_integration.order_list_endpoint or "").strip()
+    order_detail_endpoint = str(domain_integration.order_detail_endpoint or "").strip()
+    lookup_source = _read_bridge_source(
+        source_root=source_root,
+        relative_path=order_lookup_target,
+    )
+    if (
+        "{user_id}" in order_list_endpoint
+        or "{user_id}" in order_detail_endpoint
+        or "get_order_by_number" in lookup_source
+        or "order_number" in lookup_source
+    ):
+        return ResolvedResponseContract(
+            user_profile="direct_user_session",
+            product_profile="catalog_items_keyword_results",
+            order_profile="user_scoped_order_service",
+            delivery_profile="shipping_tracking_record",
+            order_status_profile="service_tokens",
+            delivery_status_profile="service_tokens",
+            order_identifier_mode="order_number_with_internal_resolution",
+        )
+    if (
+        order_list_endpoint.endswith("/all")
+        or order_detail_endpoint == order_list_endpoint
+        or "orders = raw.get(\"orders\"" in lookup_source
+        or "orders = raw.get('orders'" in lookup_source
+    ):
+        return ResolvedResponseContract(
+            user_profile="orders_collection_user_id",
+            product_profile="products_wrapper_collection",
+            order_profile="orders_collection_scan",
+            delivery_profile="orders_collection_scan",
+            order_status_profile="korean_labels",
+            delivery_status_profile="korean_labels",
+            order_identifier_mode="direct_order_id",
+        )
+    return ResolvedResponseContract(
+        user_profile="wrapped_user",
+        product_profile="list_items_named_price",
+        order_profile="rest_detail_wrapped_order",
+        delivery_profile="rest_detail_wrapped_order",
+        order_status_profile="english_tokens",
+        delivery_status_profile="english_tokens",
+        order_identifier_mode="direct_order_id",
+    )
+
+
+def _infer_bridge_order_action_contract(
+    *,
+    domain_integration: DomainIntegration,
+    response_contract: ResolvedResponseContract,
+) -> ResolvedOrderActionContract:
+    request_fields = ResolvedRequestFieldContract()
+    if response_contract.order_profile == "orders_collection_scan":
+        return ResolvedOrderActionContract(
+            submission_mode="read_only",
+            supported_actions=["list_orders", "get_order_status"],
+            request_fields=request_fields,
+        )
+
+    order_action_endpoints = {
+        str(action).strip(): str(path).strip()
+        for action, path in (domain_integration.order_action_endpoints or {}).items()
+        if str(action).strip() and str(path).strip()
+    }
+    if order_action_endpoints and any(
+        path != str(domain_integration.order_action_endpoint or "").strip()
+        for path in order_action_endpoints.values()
+    ):
+        mutation_actions = [
+            action
+            for action in ("cancel", "refund", "exchange")
+            if action in order_action_endpoints
+        ]
+        return ResolvedOrderActionContract(
+            submission_mode="per_action_query_endpoint",
+            supported_actions=["list_orders", "get_order_status", *mutation_actions],
+            request_fields=request_fields,
+            reason_transport="query_param",
+            new_option_transport=(
+                "query_param" if "exchange" in mutation_actions else "unsupported"
+            ),
+            result_profile="requested_message",
+        )
+
+    return ResolvedOrderActionContract(
+        submission_mode="single_endpoint_json_body",
+        supported_actions=list(SUPPORTED_ORDER_TOOLS),
+        request_fields=request_fields,
+        reason_transport="json_body",
+        new_option_transport="json_body",
+        result_profile="accepted_message",
+    )
+
+
+def _read_bridge_source(*, source_root: Path, relative_path: str | None) -> str:
+    candidate = str(relative_path or "").strip()
+    if not candidate:
+        return ""
+    path = source_root / candidate
+    if not path.exists():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _infer_bridge_auth_contract(
+    *,
+    source_root: Path,
+    backend_framework: str,
+    site_id: str,
+    auth_handler_source: str,
+    auth_style_hint: str,
+) -> ResolvedAuthContract:
+    candidate_paths = _auth_transport_candidate_paths(
+        source_root=source_root,
+        auth_handler_source=auth_handler_source,
+    )
+    evidence = _collect_auth_transport_evidence(candidate_paths)
+
+    if evidence["supports_bearer"]:
+        return ResolvedAuthContract(transport="bearer_token")
+
+    session_cookie_name = evidence["session_cookie_name"]
+    csrf_cookie_name = evidence["csrf_cookie_name"]
+    csrf_header_name = evidence["csrf_header_name"]
+
+    if session_cookie_name and csrf_cookie_name and csrf_header_name and evidence["has_csrf_evidence"]:
+        return ResolvedAuthContract(
+            transport="cookie_plus_csrf",
+            session_cookie_name=session_cookie_name,
+            csrf_cookie_name=csrf_cookie_name,
+            csrf_header_name=csrf_header_name,
+        )
+
+    if session_cookie_name and evidence["has_cookie_evidence"]:
+        return ResolvedAuthContract(
+            transport="session_cookie",
+            session_cookie_name=session_cookie_name,
+        )
+
+    normalized_hint = str(auth_style_hint or "").strip().lower()
+    normalized_site = _normalize_site_key(site_id)
+    if normalized_site == "bilyeo" or normalized_hint in {"bearer", "bearer_token"}:
+        return ResolvedAuthContract(transport="bearer_token")
+    if normalized_hint == "cookie_plus_csrf":
+        return ResolvedAuthContract(
+            transport="cookie_plus_csrf",
+            session_cookie_name=session_cookie_name or "session_token",
+            csrf_cookie_name=csrf_cookie_name or "csrftoken",
+            csrf_header_name=csrf_header_name or "X-CSRFToken",
+        )
+    return ResolvedAuthContract(
+        transport="session_cookie",
+        session_cookie_name=session_cookie_name or "session_token",
+    )
+
+
+def _auth_transport_candidate_paths(
+    *,
+    source_root: Path,
+    auth_handler_source: str,
+) -> list[Path]:
+    candidate_paths: list[Path] = []
+    for relative_path in (
+        str(auth_handler_source or "").strip(),
+        "backend/chat_auth.py",
+    ):
+        if not relative_path:
+            continue
+        candidate = source_root / relative_path
+        if candidate.exists() and candidate not in candidate_paths:
+            candidate_paths.append(candidate)
+    candidate_paths.extend(
+        path
+        for path in sorted(source_root.rglob("chat_auth.py"))
+        if path not in candidate_paths
+    )
+    return candidate_paths
+
+
+def _collect_auth_transport_evidence(candidate_paths: list[Path]) -> dict[str, Any]:
+    supports_bearer = False
+    session_cookie_name: str | None = None
+    csrf_cookie_name: str | None = None
+    csrf_header_name: str | None = None
+    has_cookie_evidence = False
+    has_csrf_evidence = False
+
+    for candidate in candidate_paths:
+        try:
+            content = candidate.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        lowered = content.lower()
+        assignments = _extract_auth_constant_assignments(content)
+        if _flask_chat_auth_supports_bearer_transport(content):
+            supports_bearer = True
+        if "request.cookies.get" in lowered or "set_cookie(" in lowered:
+            has_cookie_evidence = True
+        if "csrf" in lowered:
+            has_csrf_evidence = True
+        extracted_session_cookie = _extract_session_cookie_name(content, assignments)
+        extracted_csrf_cookie = _extract_csrf_cookie_name(content, assignments)
+        extracted_csrf_header = _extract_csrf_header_name(content, assignments)
+        if session_cookie_name is None and extracted_session_cookie:
+            session_cookie_name = extracted_session_cookie
+        if csrf_cookie_name is None and extracted_csrf_cookie:
+            csrf_cookie_name = extracted_csrf_cookie
+        if csrf_header_name is None and extracted_csrf_header:
+            csrf_header_name = extracted_csrf_header
+
+    return {
+        "supports_bearer": supports_bearer,
+        "session_cookie_name": session_cookie_name,
+        "csrf_cookie_name": csrf_cookie_name,
+        "csrf_header_name": csrf_header_name,
+        "has_cookie_evidence": has_cookie_evidence,
+        "has_csrf_evidence": has_csrf_evidence,
+    }
+
+
+def _extract_auth_constant_assignments(content: str) -> dict[str, str]:
+    assignments: dict[str, str] = {}
+    for match in re.finditer(
+        r'(?m)^(?P<name>[A-Z][A-Z0-9_]+)\s*=\s*["\'](?P<value>[^"\']+)["\']',
+        content,
+    ):
+        assignments[str(match.group("name")).strip()] = str(match.group("value")).strip()
+    return assignments
+
+
+def _extract_session_cookie_name(content: str, assignments: dict[str, str]) -> str | None:
+    for key in ("SESSION_TOKEN_COOKIE_NAME", "SESSION_COOKIE_NAME"):
+        value = assignments.get(key)
+        if value:
+            return value
+    for value in _extract_cookie_candidates(content, assignments):
+        if "csrf" not in value.lower():
+            return value
+    return None
+
+
+def _extract_csrf_cookie_name(content: str, assignments: dict[str, str]) -> str | None:
+    value = assignments.get("CSRF_COOKIE_NAME")
+    if value:
+        return value
+    for candidate in _extract_cookie_candidates(content, assignments):
+        if "csrf" in candidate.lower():
+            return candidate
+    return None
+
+
+def _extract_csrf_header_name(content: str, assignments: dict[str, str]) -> str | None:
+    value = assignments.get("CSRF_HEADER_NAME")
+    if value:
+        return value
+    for match in re.finditer(
+        r'request\.(?:headers|META)\.get\((?P<token>[^)]+)\)',
+        content,
+    ):
+        resolved = _resolve_assignment_or_literal(match.group("token"), assignments)
+        if not resolved:
+            continue
+        if resolved.startswith("HTTP_"):
+            resolved = _http_meta_name_to_header(resolved)
+        if "csrf" in resolved.lower():
+            return resolved
+    return None
+
+
+def _extract_cookie_candidates(content: str, assignments: dict[str, str]) -> list[str]:
+    candidates: list[str] = []
+    patterns = (
+        r'request\.COOKIES\.get\((?P<token>[^)]+)\)',
+        r'request\.cookies\.get\((?P<token>[^)]+)\)',
+        r'set_cookie\((?P<token>[^,\n]+)',
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, content):
+            resolved = _resolve_assignment_or_literal(match.group("token"), assignments)
+            if resolved and resolved not in candidates:
+                candidates.append(resolved)
+    return candidates
+
+
+def _resolve_assignment_or_literal(token: str, assignments: dict[str, str]) -> str | None:
+    raw = str(token or "").strip()
+    if not raw:
+        return None
+    if raw.endswith(","):
+        raw = raw[:-1].strip()
+    if raw[:1] in {'"', "'"} and raw[-1:] == raw[:1]:
+        return raw[1:-1].strip() or None
+    return assignments.get(raw)
+
+
+def _http_meta_name_to_header(value: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized.startswith("HTTP_"):
+        return normalized
+    suffix = normalized[len("HTTP_") :]
+    if suffix.upper() == "X_CSRFTOKEN":
+        return "X-CSRFToken"
+    return "-".join(part.title() for part in suffix.split("_") if part)
+
+
+def _flask_chat_auth_supports_bearer_transport(content: str) -> bool:
+    lowered = str(content or "").lower()
+    has_bearer_markers = (
+        "_parse_bearer_token" in content
+        or ("authorization" in lowered and "bearer" in lowered)
+    )
+    resolves_authenticated_user = "resolve_authenticated_user_id" in content
+    return has_bearer_markers and resolves_authenticated_user
 
 
 def _derive_host_login_endpoint(domain_integration: DomainIntegration) -> str:

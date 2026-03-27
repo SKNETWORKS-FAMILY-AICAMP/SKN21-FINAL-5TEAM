@@ -218,3 +218,111 @@ def test_order_tool_registry_normalizes_action_contracts(monkeypatch) -> None:
     assert exchange_payload["status"] == "exchange_requested"
     assert exchange_payload["order_id"] == "site-a-4"
     assert exchange_payload["new_option_id"] == "opt-205"
+
+
+def test_order_tool_registry_forwards_cookie_auth_material_to_bridge_tools(monkeypatch) -> None:
+    calls: list[tuple[str, dict]] = []
+
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "get_user_orders_for_site",
+        lambda **kwargs: calls.append(("list_orders", kwargs)) or {
+            "ui_action": "show_order_list",
+            "message": "최근 주문입니다.",
+            "total_orders": 1,
+            "ui_data": [{"order_id": "food-1"}],
+            "requires_selection": False,
+            "prior_action": None,
+        },
+    )
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "get_order_status_via_adapter",
+        SimpleNamespace(
+            invoke=lambda payload: calls.append(("get_order_status", payload))
+            or {"order_id": payload["order_id"], "status": "paid"}
+        ),
+    )
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "cancel_order_via_adapter",
+        SimpleNamespace(
+            invoke=lambda payload: calls.append(("cancel", payload))
+            or {"success": True, "order_id": payload["order_id"]}
+        ),
+    )
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "register_return_via_adapter",
+        SimpleNamespace(
+            invoke=lambda payload: calls.append(("refund", payload))
+            or {"success": True, "order_id": payload["order_id"]}
+        ),
+    )
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "register_exchange_via_adapter",
+        SimpleNamespace(
+            invoke=lambda payload: calls.append(("exchange", payload))
+            or {"success": True, "order_id": payload["order_id"]}
+        ),
+    )
+
+    registry = setup.resolve_order_tool_registry(
+        "site-a",
+        access_token="food-token",
+        cookies={"session_token": "food-token"},
+        auth_metadata={"csrf_token": "csrf-123"},
+    )
+
+    registry["list_orders"](user_id=1, site_id="site-a")
+    registry["get_order_status"](order_id="food-1", user_id=1, site_id="site-a")
+    registry["cancel"](order_id="food-1", user_id=1, site_id="site-a")
+    registry["refund"](order_id="food-1", user_id=1, site_id="site-a")
+    registry["exchange"](order_id="food-1", user_id=1, site_id="site-a")
+
+    assert [name for name, _payload in calls] == [
+        "list_orders",
+        "get_order_status",
+        "cancel",
+        "refund",
+        "exchange",
+    ]
+    for _name, payload in calls:
+        assert payload["cookies"] == {"session_token": "food-token"}
+        assert payload["auth_metadata"] == {"csrf_token": "csrf-123"}
+
+
+def test_get_order_cs_bridge_operations_uses_adapter_supported_actions(monkeypatch) -> None:
+    monkeypatch.setattr(
+        setup,
+        "resolve_site_adapter",
+        lambda site_id: SimpleNamespace(
+            site_id=site_id,
+            order_action_contract=SimpleNamespace(
+                supported_actions=["list_orders", "get_order_status"]
+            ),
+        ),
+    )
+
+    assert setup.get_order_cs_bridge_operations("site-b") == (
+        "list_orders",
+        "get_order_status",
+    )
+
+
+def test_build_order_cs_bridge_filters_unsupported_mutation_operations(monkeypatch) -> None:
+    monkeypatch.setattr(
+        adapter_order_tools,
+        "get_adapter",
+        lambda site_id: SimpleNamespace(
+            site_id=site_id,
+            order_action_contract=SimpleNamespace(
+                supported_actions=["list_orders", "get_order_status"]
+            ),
+        ),
+    )
+
+    bridge = adapter_order_tools.build_order_cs_bridge(site_id="site-b")
+
+    assert tuple(bridge.keys()) == ("list_orders", "get_order_status")

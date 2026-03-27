@@ -7,6 +7,7 @@ import traceback
 import types
 from typing import Any, Dict, Literal
 from uuid import uuid4
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,11 +20,32 @@ def _bootstrap_legacy_import_alias() -> None:
     레거시 경로(`chatbot.src...`)를 현재 경로(`chatbot.src...`)로 매핑.
     기존 노드/툴 파일의 import를 변경하지 않고 서버 실행 가능하게 한다.
     """
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    workspace_root = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(workspace_root)
+    if workspace_root not in sys.path:
+        sys.path.insert(0, workspace_root)
     if repo_root not in sys.path:
-        sys.path.insert(0, repo_root)
+        sys.path.append(repo_root)
 
-    chatbot_src = importlib.import_module("chatbot.src")
+    chatbot_src = importlib.import_module("src")
+
+    def _install_lazy_alias(module: types.ModuleType, *, alias_base: str, import_base: str) -> None:
+        if getattr(module, "__codex_lazy_alias__", False):
+            return
+
+        def _lazy_getattr(name: str) -> Any:
+            imported = importlib.import_module(f"{import_base}.{name}")
+            _install_lazy_alias(
+                imported,
+                alias_base=f"{alias_base}.{name}",
+                import_base=f"{import_base}.{name}",
+            )
+            setattr(module, name, imported)
+            sys.modules[f"{alias_base}.{name}"] = imported
+            return imported
+
+        setattr(module, "__getattr__", _lazy_getattr)
+        setattr(module, "__codex_lazy_alias__", True)
 
     # ecommerce 네임스페이스 보장
     try:
@@ -37,11 +59,12 @@ def _bootstrap_legacy_import_alias() -> None:
     chatbot_ns = sys.modules.get("chatbot")
     if chatbot_ns is None:
         chatbot_ns = types.ModuleType("chatbot")
-        chatbot_ns.__path__ = [os.path.join(repo_root, "chatbot")]
+        chatbot_ns.__path__ = [workspace_root]
         sys.modules["chatbot"] = chatbot_ns
 
     setattr(ecommerce_pkg, "chatbot", chatbot_ns)
     setattr(chatbot_ns, "src", chatbot_src)
+    _install_lazy_alias(chatbot_src, alias_base="chatbot.src", import_base="src")
     sys.modules["chatbot.src"] = chatbot_src
 
 
@@ -49,12 +72,11 @@ _bootstrap_legacy_import_alias()
 
 from chatbot.src.infrastructure.model_startup_logging import configure_model_startup_logging  # noqa: E402
 from chatbot.src.core.config import settings  # noqa: E402
-from chatbot.src.adapters.base import AdapterError  # noqa: E402
-from chatbot.src.adapters import setup as adapter_setup  # noqa: E402
 from chatbot.src.graph.llm_providers import resolve_llm_runtime_policy  # noqa: E402
 from chatbot.src.graph.workflow import graph_app  # noqa: E402
 from chatbot.src.api.v1.endpoints.chat import build_widget_bundle_response, router as chat_router  # noqa: E402
 from chatbot.src.api.v1.endpoints.onboarding_runs import router as onboarding_runs_router  # noqa: E402
+from chatbot.src.runtime_auth import build_runtime_user_info, resolve_runtime_auth  # noqa: E402
 from chatbot.src.onboarding.redis_runtime import build_onboarding_event_store, close_onboarding_event_store  # noqa: E402
 from chatbot.src.graph.nodes.guardrail import load_guardrail_model  # noqa: E402
 from chatbot.src.tools.retrieval_tools import ensure_retrieval_models  # noqa: E402
@@ -182,7 +204,7 @@ def _last_ai_text(messages: list[BaseMessage]) -> str:
     return ""
 
 
-def _build_graph_input(req: ChatRequest) -> tuple[dict[str, Any], str]:
+def _build_graph_input(req: ChatRequest, http_request: Request) -> tuple[dict[str, Any], str]:
     previous_state = req.previous_state or {}
     previous_messages = _deserialize_messages(previous_state.get("messages", []))
 
@@ -194,22 +216,21 @@ def _build_graph_input(req: ChatRequest) -> tuple[dict[str, Any], str]:
     model = runtime_policy.model
 
     conversation_id = req.conversation_id or previous_state.get("conversation_id") or str(uuid4())
-    try:
-        resolved_adapter = adapter_setup.resolve_site_adapter(
-            req.site_id or previous_state.get("user_info", {}).get("site_id")
-        )
-    except AdapterError as exc:
-        raise HTTPException(status_code=400, detail=exc.message) from exc
-
-    user_info: dict[str, Any] = dict(previous_state.get("user_info") or {})
-    user_info["id"] = req.user_id
-    user_info["name"] = req.user_name
-    if req.user_email is not None:
-        user_info["email"] = req.user_email
-    user_info["site_id"] = resolved_adapter.site_id
-    access_token = req.access_token or previous_state.get("user_info", {}).get("access_token")
-    if access_token is not None:
-        user_info["access_token"] = access_token
+    resolved_auth = resolve_runtime_auth(
+        request=req,
+        http_request=http_request,
+        require_credentials=False,
+    )
+    user_info = build_runtime_user_info(
+        previous_user_info=previous_state.get("user_info") or {},
+        site_id=resolved_auth.site_id,
+        access_token=resolved_auth.access_token,
+        cookies=resolved_auth.cookies,
+        auth_metadata=resolved_auth.auth_metadata,
+        user_id=req.user_id,
+        user_name=req.user_name,
+        user_email=req.user_email,
+    )
 
     state: dict[str, Any] = {
         "messages": [*previous_messages, HumanMessage(content=req.message)],
@@ -248,10 +269,85 @@ def _build_persistent_state(final_state: dict[str, Any], conversation_id: str) -
     return persistent
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- Startup ---
+    print("\n" + "="*50)
+    print("🚀 Chatbot Server Startup: Loading Heavy Models...")
+    print("="*50)
+
+    app.state.onboarding_event_store = build_onboarding_event_store(
+        redis_url=settings.ONBOARDING_REDIS_URL,
+    )
+
+    if _env_flag("CHATBOT_SKIP_MODEL_PRELOAD"):
+        print("⚠️ Skipping model preload (CHATBOT_SKIP_MODEL_PRELOAD=true)")
+    else:
+        # 가드레일 모델 로드
+        try:
+            print("⏳ Loading Guardrail model...")
+            load_guardrail_model()
+            print("✅ Guardrail model loaded successfully.")
+        except Exception as e:
+            print(f"❌ Guardrail model loading failed: {e}")
+            traceback.print_exc()
+
+        # 리트리버 모델 로드
+        try:
+            print("⏳ Ensuring retrieval models (BM25, Ranker)...")
+            ensure_retrieval_models()
+            print("✅ Retrieval models ready.")
+        except Exception as e:
+            print(f"❌ Retrieval models loading failed: {e}")
+            traceback.print_exc()
+
+        # BGE-M3 임베딩 모델 로드
+        try:
+            print("⏳ Preloading BGE-M3 embedding model...")
+            preload_bge_m3()
+            print("✅ BGE-M3 embedding model loaded.")
+        except Exception as e:
+            print(f"❌ BGE-M3 loading failed: {e}")
+            traceback.print_exc()
+
+        # KoBART 요약 모델 로드
+        try:
+            print("⏳ Preloading KoBART summarizer model...")
+            preload_kobart()
+            print("✅ KoBART summarizer model loaded.")
+        except Exception as e:
+            print(f"❌ KoBART loading failed: {e}")
+            traceback.print_exc()
+
+        # CLIP 리소스 로드
+        try:
+            print("⏳ Preloading CLIP resources (Multimodal)...")
+            preload_clip_resources()
+            print("✅ CLIP resources loaded.")
+        except Exception as e:
+            print(f"❌ CLIP resources loading failed: {e}")
+            traceback.print_exc()
+
+    print("="*50)
+    print("✅ Startup Sequence Complete")
+    print("="*50 + "\n")
+
+    yield
+
+    # --- Shutdown ---
+    print("\n" + "="*50)
+    print("🛑 Chatbot Server Shutdown: Cleaning up...")
+    if hasattr(app.state, "onboarding_event_store"):
+        close_onboarding_event_store(app.state.onboarding_event_store)
+    print("✅ Shutdown Cleanup Complete")
+    print("="*50 + "\n")
+
+
 app = FastAPI(
-    title="Chatbot Standalone API",
+    title="Chatbot API Server",
     version="1.0.0",
-    description="SaaS Adapter/Tool 연동 테스트를 위한 챗봇 단독 서버",
+    description="Single-site logic simplified for the team",
+    lifespan=lifespan,
 )
 
 if CHATBOT_UPLOAD_DIR is not None:
@@ -276,51 +372,6 @@ app.include_router(onboarding_runs_router, prefix=settings.API_V1_STR)
 app.state.optional_extensions = _optional_extensions
 
 
-@app.on_event("startup")
-async def _startup_onboarding_event_store() -> None:
-    app.state.onboarding_event_store = build_onboarding_event_store(
-        redis_url=settings.ONBOARDING_REDIS_URL,
-    )
-    if _env_flag("CHATBOT_SKIP_MODEL_PRELOAD"):
-        print("Skipping chatbot model preload because CHATBOT_SKIP_MODEL_PRELOAD is enabled.")
-        return
-    # 가드레일 모델을 서버 시작 시 1회 로드합니다.
-    try:
-        load_guardrail_model()
-        print("✅ Guardrail 모델 로딩 완료")
-    except Exception as e:
-        print(f"❌ Guardrail 모델 로딩 실패: {e}")
-
-    try:
-        ensure_retrieval_models()
-        print("✅ 챗봇 리트리버 모델 로딩 완료")
-    except Exception as e:
-        print(f"❌ 챗봇 리트리버 모델 로딩 실패: {e}")
-
-    try:
-        preload_bge_m3()
-        print("✅ BGE-M3 임베딩 모델 로딩 완료")
-    except Exception as e:
-        print(f"❌ BGE-M3 임베딩 모델 로딩 실패: {e}")
-
-    try:
-        preload_kobart()
-        print("✅ KoBART 모델 로딩 완료")
-    except Exception as e:
-        print(f"❌ KoBART 모델 로딩 실패: {e}")
-
-    try:
-        preload_clip_resources()
-        print("✅ CLIP 검색 모델 로딩 완료")
-    except Exception as e:
-        print(f"❌ CLIP 검색 모델 로딩 실패: {e}")
-
-
-@app.on_event("shutdown")
-async def _shutdown_onboarding_event_store() -> None:
-    close_onboarding_event_store(getattr(app.state, "onboarding_event_store", None))
-
-
 @app.get("/health")
 def healthcheck() -> dict[str, Any]:
     return {
@@ -340,12 +391,7 @@ def shared_widget_bundle():
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(http_request: Request, req: ChatRequest) -> ChatResponse:
     try:
-        if req.access_token is None:
-            req.access_token = (
-                http_request.cookies.get("access_token")
-                or http_request.cookies.get("session_token")
-            )
-        state, conversation_id = _build_graph_input(req)
+        state, conversation_id = _build_graph_input(req, http_request)
 
         final_state = graph_app.invoke(
             state,
@@ -374,3 +420,8 @@ def chat(http_request: Request, req: ChatRequest) -> ChatResponse:
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"chat 처리 중 오류: {e}") from e
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("chatbot.server_fastapi:app", host="0.0.0.0", port=8100, reload=True)

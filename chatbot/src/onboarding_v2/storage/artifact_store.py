@@ -14,8 +14,9 @@ STAGE_DIRECTORY_MAP = {
     "planning": "02-planning",
     "compile": "03-compile",
     "apply": "04-apply",
-    "validation": "05-validation",
     "export": "06-export",
+    "indexing": "06-indexing",
+    "validation": "05-validation",
     "repair": "07-repair",
 }
 

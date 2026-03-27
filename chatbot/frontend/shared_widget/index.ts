@@ -6,6 +6,11 @@ export type SharedWidgetHostContract = {
   widgetBundlePath: string;
   widgetElementTag: string;
   mountMode: SharedWidgetMountMode;
+  capabilityProfile?: string;
+  enabledRetrievalCorpora?: string[];
+  widgetFeatures?: {
+    imageUpload?: boolean;
+  };
 };
 
 export const DEFAULT_SHARED_WIDGET_HOST_CONTRACT: SharedWidgetHostContract = {

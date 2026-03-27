@@ -56,4 +56,4 @@ def test_supervisor_retrieval_profile_blocks_image_when_discovery_corpus_missing
     assert result["current_active_task"] == TaskIntent.POLICY_RAG
     assert result["pending_tasks"] == []
     assert result["completed_tasks"] == [TaskIntent.GENERAL_CHAT]
-    assert "지원하지 않습니다" in result["agent_results"][TaskIntent.GENERAL_CHAT]
+    assert "활성화된 검색 지식 범위" in result["agent_results"][TaskIntent.GENERAL_CHAT]

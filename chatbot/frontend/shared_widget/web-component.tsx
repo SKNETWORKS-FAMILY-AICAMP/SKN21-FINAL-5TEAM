@@ -8,6 +8,11 @@ type SharedWidgetHostContract = {
   widgetBundlePath: string;
   widgetElementTag: string;
   mountMode: 'floating_launcher';
+  capabilityProfile?: string;
+  enabledRetrievalCorpora?: string[];
+  widgetFeatures?: {
+    imageUpload?: boolean;
+  };
 };
 
 type GlobalSharedWidgetContract = Partial<SharedWidgetHostContract> | undefined;
@@ -38,7 +43,9 @@ type HostAttributeName =
   | 'auth-bootstrap-path'
   | 'widget-bundle-path'
   | 'mount-mode'
-  | 'capabilities';
+  | 'capabilities'
+  | 'capability-profile'
+  | 'enabled-retrieval-corpora';
 
 type AttributeOverrides = Partial<Record<HostAttributeName, string | null | undefined>>;
 
@@ -57,7 +64,20 @@ function readAttributeOverrides(element: HTMLElement): AttributeOverrides {
     'widget-bundle-path': element.getAttribute('widget-bundle-path'),
     'mount-mode': element.getAttribute('mount-mode'),
     capabilities: element.getAttribute('capabilities'),
+    'capability-profile': element.getAttribute('capability-profile'),
+    'enabled-retrieval-corpora': element.getAttribute('enabled-retrieval-corpora'),
   };
+}
+
+function parseEnabledRetrievalCorpora(value: string | null | undefined): string[] | undefined {
+  const normalized = normalizeString(value);
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function readGlobalContract(): SharedWidgetHostContract {
@@ -76,6 +96,15 @@ function readGlobalContract(): SharedWidgetHostContract {
       globalContract.widgetElementTag ?? DEFAULT_SHARED_WIDGET_HOST_CONTRACT.widgetElementTag,
     ),
     mountMode: DEFAULT_SHARED_WIDGET_HOST_CONTRACT.mountMode,
+    capabilityProfile: normalizeString(globalContract.capabilityProfile),
+    enabledRetrievalCorpora: Array.isArray(globalContract.enabledRetrievalCorpora)
+      ? globalContract.enabledRetrievalCorpora.map((item) => String(item).trim()).filter(Boolean)
+      : undefined,
+    widgetFeatures:
+      globalContract.widgetFeatures &&
+      typeof globalContract.widgetFeatures === 'object'
+        ? { imageUpload: Boolean(globalContract.widgetFeatures.imageUpload) }
+        : undefined,
   };
 }
 
@@ -96,6 +125,13 @@ export function resolveOrderCsWidgetHostContract(
     // The custom element tag is fixed at registration time.
     widgetElementTag: ORDER_CS_WIDGET_TAG,
     mountMode: contract.mountMode,
+    capabilityProfile: normalizeString(
+      attributeOverrides['capability-profile'] ?? contract.capabilityProfile,
+    ),
+    enabledRetrievalCorpora:
+      parseEnabledRetrievalCorpora(attributeOverrides['enabled-retrieval-corpora']) ??
+      contract.enabledRetrievalCorpora,
+    widgetFeatures: contract.widgetFeatures,
   };
 }
 
@@ -105,6 +141,9 @@ function toHostedWidgetConfig(contract: SharedWidgetHostContract): SharedWidgetH
     chatbotApiBase: contract.chatbotServerBaseUrl,
     chatPath: '/api/chat',
     streamPath: '/api/v1/chat/stream',
+    capabilityProfile: contract.capabilityProfile,
+    enabledRetrievalCorpora: contract.enabledRetrievalCorpora,
+    widgetFeatures: contract.widgetFeatures,
   };
 }
 

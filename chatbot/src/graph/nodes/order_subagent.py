@@ -106,6 +106,8 @@ def order_subagent_node(state: GlobalAgentState) -> dict:
     user_id = user_info.get("id", 1)
     site_id = user_info.get("site_id")
     access_token = user_info.get("access_token")
+    cookies = user_info.get("cookies")
+    auth_metadata = user_info.get("auth_metadata")
     brand_profile = resolve_brand_profile(site_id)
 
     user_context = (
@@ -113,7 +115,7 @@ def order_subagent_node(state: GlobalAgentState) -> dict:
         f"Name: {user_info.get('name', '고객')}, "
         f"Brand: {brand_profile.display_name}, "
         f"Site ID: {site_id or 'site-a (default)'}\n"
-        f"[도구 호출 시 user_id={user_id}, site_id={site_id!r}, access_token={'(있음)' if access_token else '(없음)'} 을 반드시 전달하세요]"
+        f"[도구 호출 시 user_id={user_id}, site_id={site_id!r}, access_token={'(있음)' if access_token else '(없음)'}, cookies={'(있음)' if cookies else '(없음)'}, auth_metadata={'(있음)' if auth_metadata else '(없음)'} 을 반드시 전달하세요]"
     )
 
     # order_context 에 이미 주문번호가 있으면 프롬프트에 힌트 제공

@@ -11,6 +11,38 @@ _MAX_SAMPLE_LINES = 400
 _COMPILE_PREFLIGHT_CONTEXT_PATH = "__failure_context__/compile-preflight.json"
 
 
+def _is_chatbot_compile_preflight_failure(
+    *,
+    failed_stage: str,
+    failure_signature: str,
+    failure_summary: str,
+    related_artifacts: list[ArtifactRef],
+) -> bool:
+    if failed_stage != "compile":
+        return False
+    artifact_types = {artifact.artifact_type for artifact in related_artifacts}
+    if "compile-preflight" in artifact_types:
+        return True
+    haystack = f"{failure_signature}\n{failure_summary}".lower()
+    return "chatbot_runtime_import" in haystack or "banned import" in haystack
+
+
+def _is_host_import_smoke_failure(
+    *,
+    failed_stage: str,
+    failure_signature: str,
+    failure_summary: str,
+    related_artifacts: list[ArtifactRef],
+) -> bool:
+    if failed_stage != "compile":
+        return False
+    artifact_types = {artifact.artifact_type for artifact in related_artifacts}
+    if "host-import-smoke" in artifact_types:
+        return True
+    haystack = f"{failure_signature}\n{failure_summary}".lower()
+    return "host_backend_import" in haystack
+
+
 def collect_file_samples(
     *,
     workspace_root: str | Path | None,
@@ -56,13 +88,17 @@ def _is_compile_preflight_failure(
     failure_summary: str,
     related_artifacts: list[ArtifactRef],
 ) -> bool:
-    if failed_stage != "compile":
-        return False
-    artifact_types = {artifact.artifact_type for artifact in related_artifacts}
-    if "compile-preflight" in artifact_types:
-        return True
-    haystack = f"{failure_signature}\n{failure_summary}".lower()
-    return "chatbot_runtime_import" in haystack or "banned import" in haystack
+    return _is_chatbot_compile_preflight_failure(
+        failed_stage=failed_stage,
+        failure_signature=failure_signature,
+        failure_summary=failure_summary,
+        related_artifacts=related_artifacts,
+    ) or _is_host_import_smoke_failure(
+        failed_stage=failed_stage,
+        failure_signature=failure_signature,
+        failure_summary=failure_summary,
+        related_artifacts=related_artifacts,
+    )
 
 
 def _build_related_files(
@@ -74,7 +110,7 @@ def _build_related_files(
     related_files: list[str],
 ) -> list[str]:
     ordered: list[str] = []
-    if _is_compile_preflight_failure(
+    if _is_chatbot_compile_preflight_failure(
         failed_stage=failed_stage,
         failure_signature=failure_signature,
         failure_summary=failure_summary,

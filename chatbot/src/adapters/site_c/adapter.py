@@ -17,8 +17,9 @@ from ..schema import (
     DeliveryStatus,
 )
 from ..base import BaseEcommerceSupportAdapter
+from ..auth_headers import build_auth_headers_from_contract
 from .client import SiteCClient
-from .auth import assert_site_c_context, build_site_c_auth_headers
+from .auth import AUTH_CONTRACT, assert_site_c_context
 from .mappers import (
     map_site_c_user,
     map_site_c_product_search,
@@ -28,15 +29,52 @@ from .mappers import (
 )
 import datetime
 
+from chatbot.src.onboarding_v2.models.planning import ResolvedAuthContract
+from chatbot.src.onboarding_v2.models.planning import (
+    ResolvedOrderActionContract,
+    ResolvedRequestFieldContract,
+    ResolvedResponseContract,
+)
+
 
 class SiteCAdapter(BaseEcommerceSupportAdapter):
     def __init__(self, client: SiteCClient):
         self._site_id = "site-c"  # 모듈명과 일치 (Ecommerce 백엔드)
+        self._auth_contract = AUTH_CONTRACT
+        self._response_contract = ResolvedResponseContract(
+            user_profile="direct_user_session",
+            product_profile="catalog_items_keyword_results",
+            order_profile="user_scoped_order_service",
+            delivery_profile="shipping_tracking_record",
+            order_status_profile="service_tokens",
+            delivery_status_profile="service_tokens",
+            order_identifier_mode="order_number_with_internal_resolution",
+        )
+        self._order_action_contract = ResolvedOrderActionContract(
+            submission_mode="per_action_query_endpoint",
+            supported_actions=["list_orders", "get_order_status", "cancel", "refund"],
+            request_fields=ResolvedRequestFieldContract(),
+            reason_transport="query_param",
+            new_option_transport="unsupported",
+            result_profile="requested_message",
+        )
         self.client = client
 
     @property
     def site_id(self) -> str:
         return self._site_id
+
+    @property
+    def auth_contract(self) -> ResolvedAuthContract:
+        return self._auth_contract
+
+    @property
+    def response_contract(self) -> ResolvedResponseContract:
+        return self._response_contract
+
+    @property
+    def order_action_contract(self) -> ResolvedOrderActionContract:
+        return self._order_action_contract
 
     def _normalize_order_status(self, raw: str) -> OrderStatus:
         v = str(raw).lower()
@@ -86,7 +124,9 @@ class SiteCAdapter(BaseEcommerceSupportAdapter):
         assert_site_c_context(ctx)
 
         try:
-            raw = await self.client.validate_session(build_site_c_auth_headers(ctx))
+            raw = await self.client.validate_session(
+                build_auth_headers_from_contract(self.auth_contract, ctx)
+            )
             mapped = map_site_c_user(raw, self.site_id)
             if not mapped.id:
                 raise AdapterError("UNAUTHORIZED", "로그인이 필요합니다.")
@@ -107,7 +147,8 @@ class SiteCAdapter(BaseEcommerceSupportAdapter):
     ) -> ProductSearchResult:
         self.assert_authenticated(ctx)
         raw = await self.client.search_products(
-            input_data, build_site_c_auth_headers(ctx)
+            input_data,
+            build_auth_headers_from_contract(self.auth_contract, ctx),
         )
         return map_site_c_product_search(raw, self.site_id)
 
@@ -123,7 +164,7 @@ class SiteCAdapter(BaseEcommerceSupportAdapter):
         self, ctx: AuthenticatedContext, input_data: GetOrderStatusInput
     ) -> GetOrderStatusResult:
         self.assert_authenticated(ctx)
-        headers = build_site_c_auth_headers(ctx)
+        headers = build_auth_headers_from_contract(self.auth_contract, ctx)
         resolved_order_id = await self._resolve_internal_order_id(
             input_data.orderId, headers
         )
@@ -147,7 +188,7 @@ class SiteCAdapter(BaseEcommerceSupportAdapter):
         limit: int = 20,
     ) -> list[dict]:
         self.assert_authenticated(ctx)
-        headers = build_site_c_auth_headers(ctx)
+        headers = build_auth_headers_from_contract(self.auth_contract, ctx)
         raw = await self.client.list_orders(ctx.userId, headers, limit=limit)
         orders = raw.get("orders") if isinstance(raw, dict) else raw
         return orders if isinstance(orders, list) else []
@@ -156,7 +197,7 @@ class SiteCAdapter(BaseEcommerceSupportAdapter):
         self, ctx: AuthenticatedContext, input_data: GetDeliveryTrackingInput
     ) -> GetDeliveryTrackingResult:
         self.assert_authenticated(ctx)
-        headers = build_site_c_auth_headers(ctx)
+        headers = build_auth_headers_from_contract(self.auth_contract, ctx)
         resolved_order_id = await self._resolve_internal_order_id(
             input_data.orderId, headers
         )
@@ -184,7 +225,7 @@ class SiteCAdapter(BaseEcommerceSupportAdapter):
         self, ctx: AuthenticatedContext, input_data: SubmitOrderActionInput
     ) -> SubmitOrderActionResult:
         self.assert_authenticated(ctx)
-        headers = build_site_c_auth_headers(ctx)
+        headers = build_auth_headers_from_contract(self.auth_contract, ctx)
         resolved_order_id = await self._resolve_internal_order_id(
             input_data.orderId, headers
         )

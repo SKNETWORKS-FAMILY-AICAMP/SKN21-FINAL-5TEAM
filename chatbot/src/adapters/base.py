@@ -1,5 +1,12 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List
+
+from chatbot.src.onboarding_v2.models.planning import ResolvedAuthContract
+from chatbot.src.onboarding_v2.models.planning import (
+    ResolvedOrderActionContract,
+    ResolvedResponseContract,
+)
+
 from .schema import (
     AuthenticatedContext,
     User,
@@ -26,6 +33,21 @@ class BaseEcommerceSupportAdapter(ABC):
     @property
     @abstractmethod
     def site_id(self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def auth_contract(self) -> ResolvedAuthContract:
+        pass
+
+    @property
+    @abstractmethod
+    def response_contract(self) -> ResolvedResponseContract:
+        pass
+
+    @property
+    @abstractmethod
+    def order_action_contract(self) -> ResolvedOrderActionContract:
         pass
 
     @abstractmethod
