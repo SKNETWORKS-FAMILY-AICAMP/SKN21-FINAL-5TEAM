@@ -5,24 +5,50 @@ const test = require("node:test");
 const vm = require("node:vm");
 
 function createElement(id = "") {
+  const listeners = {};
+  const panels = {};
+  let html = "";
+
+  function ensurePanel(key, openPattern) {
+    if (!panels[key]) {
+      panels[key] = {
+        open: false,
+        listeners: {},
+        addEventListener(type, handler) {
+          this.listeners[type] = handler;
+        },
+      };
+    }
+    panels[key].open = openPattern.test(html);
+    return panels[key];
+  }
+
   return {
     id,
     value: "",
     textContent: "",
-    innerHTML: "",
+    get innerHTML() {
+      return html;
+    },
+    set innerHTML(value) {
+      html = String(value || "");
+    },
     className: "",
     disabled: false,
     open: false,
     dataset: {},
-    listeners: {},
+    listeners,
     addEventListener(type, handler) {
-      this.listeners[type] = handler;
+      listeners[type] = handler;
     },
-    querySelector() {
-      return {
-        open: false,
-        addEventListener() {},
-      };
+    querySelector(selector) {
+      if (selector === "[data-raw-log-panel]" && html.includes("data-raw-log-panel")) {
+        return ensurePanel("raw", /data-raw-log-panel[^>]*\sopen(?=[\s>])/);
+      }
+      if (selector === "[data-story-snapshot-panel]" && html.includes("data-story-snapshot-panel")) {
+        return ensurePanel("story", /data-story-snapshot-panel[^>]*\sopen(?=[\s>])/);
+      }
+      return null;
     },
     querySelectorAll() {
       return [];
@@ -95,6 +121,7 @@ function loadApp(options = {}) {
     "detail-title",
     "detail-status",
     "detail-description",
+    "current-work-banner",
     "stage-detail",
     "site",
     "repo-url",
@@ -299,6 +326,7 @@ test("restoreRunFromQuery falls back to persisted active run and restores panel 
         selectedStage: "planning",
         selectionPinned: true,
         rawLogOpen: true,
+        storySnapshotOpen: true,
       }),
     },
   });
@@ -317,6 +345,7 @@ test("restoreRunFromQuery falls back to persisted active run and restores panel 
   assert.equal(api.state.selectedStage, "planning");
   assert.equal(api.state.selectionPinned, true);
   assert.equal(api.state.rawLogOpen, true);
+  assert.equal(api.state.storySnapshotOpen, true);
 });
 
 test("beginRunTracking persists the active run in the URL and session storage", async () => {
@@ -413,4 +442,83 @@ test("indexing renders as a formal stage detail instead of only retrieval chips"
   assert.match(api.refs.stageDetail.innerHTML, /Current Stage Detail/);
   assert.match(api.refs.stageDetail.innerHTML, /FAQ smoke/);
   assert.match(api.refs.stageDetail.innerHTML, /Policy/);
+});
+
+test("run story snapshot stays open after toggle and rerender", async () => {
+  const api = loadApp();
+  const payload = repairPayload();
+  api.state.currentRun = {
+    site: "bilyeo",
+    run_id: "bilyeo-v2-repair-009",
+    generated_root: "generated-v2",
+  };
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "analysis";
+
+  api.renderSelectedStage(payload);
+
+  const snapshotPanel = api.refs.stageDetail.querySelector("[data-story-snapshot-panel]");
+  assert.ok(snapshotPanel, "story snapshot panel should render");
+
+  snapshotPanel.open = true;
+  snapshotPanel.listeners.toggle();
+
+  assert.equal(api.state.storySnapshotOpen, true);
+  assert.match(
+    api.sessionStorage.getItem("onmo.run-ui:bilyeo:bilyeo-v2-repair-009") || "",
+    /"storySnapshotOpen":true/
+  );
+
+  api.renderSelectedStage(payload);
+
+  const rerenderedPanel = api.refs.stageDetail.querySelector("[data-story-snapshot-panel]");
+  assert.equal(rerenderedPanel.open, true);
+});
+
+test("current work banner is rendered for normal and repair runs", async () => {
+  const api = loadApp();
+  const normalPayload = dashboardPayload();
+  api.state.lastPayload = normalPayload;
+  api.state.selectedStage = "analysis";
+
+  api.renderSelectedStage(normalPayload);
+
+  assert.match(api.refs.currentWorkBanner.innerHTML, /Current Work/);
+  assert.match(api.refs.currentWorkBanner.innerHTML, /Analysis/);
+  assert.match(api.refs.currentWorkBanner.innerHTML, /기존 이벤트를 불러오는 중입니다/);
+
+  const repairPayloadValue = repairPayload();
+  api.state.lastPayload = repairPayloadValue;
+  api.renderSelectedStage(repairPayloadValue);
+
+  assert.match(api.refs.currentWorkBanner.innerHTML, /계획 -&gt; 분석/);
+  assert.match(api.refs.currentWorkBanner.innerHTML, /분석 단계부터 다시 실행하도록 결정했습니다/);
+});
+
+test("left rail marks the live current stage separately from the selected stage", async () => {
+  const api = loadApp();
+  const payload = dashboardPayload();
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "import";
+
+  api.renderStageMenu(payload.stages);
+
+  assert.match(api.refs.stageTimeline.innerHTML, /stage-link-live/);
+  assert.match(api.refs.stageTimeline.innerHTML, /Analysis/);
+});
+
+test("cleanup pass removes redundant site and repair status surfaces", async () => {
+  const indexPath = path.resolve(__dirname, "../static/index.html");
+  const indexHtml = fs.readFileSync(indexPath, "utf8");
+
+  assert.doesNotMatch(indexHtml, /id="run-meta"/);
+  assert.doesNotMatch(indexHtml, /Preset Demo/);
+  assert.doesNotMatch(indexHtml, /hero-status/);
+
+  const api = loadApp();
+  const payload = repairPayload();
+  api.state.lastPayload = payload;
+  api.renderSelectedStage(payload);
+
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /분석 단계로 되감기/);
 });

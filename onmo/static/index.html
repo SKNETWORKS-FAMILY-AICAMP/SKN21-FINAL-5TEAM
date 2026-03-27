@@ -4,14 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ONMO</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260327h" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260327i" />
   </head>
   <body>
     <div class="shell">
       <main class="frame">
         <aside class="panel outline-panel">
           <p class="box-label">outline</p>
-          <div id="run-meta" class="run-meta empty-state">온보딩 실행을 기다리고 있습니다.</div>
           <div id="stage-timeline" class="stage-menu"></div>
         </aside>
 
@@ -34,18 +33,6 @@
                   </div>
                   <p class="field-hint">public repo는 바로 시작하고, 접근 권한이 필요하면 GitHub 승인으로 이어집니다.</p>
                 </form>
-
-                <div class="preset-launch">
-                  <span class="field-caption">Preset Demo</span>
-                  <form id="start-form" class="launch-form">
-                    <select id="site" name="site" required></select>
-                    <button class="secondary-launch-button" type="submit" id="launch-button">프리셋 실행</button>
-                  </form>
-                </div>
-              </div>
-              <div class="hero-status">
-                <span class="status-dot"></span>
-                <strong id="hero-status-text">대기 중</strong>
               </div>
             </div>
           </section>
@@ -61,6 +48,11 @@
             <p id="detail-description" class="detail-description">
               저장소 구조를 읽고 어떤 연결점과 계약을 찾아냈는지 보여주는 단계입니다.
             </p>
+            <div id="current-work-banner" class="current-work-banner idle">
+              <span class="section-kicker">Current Work</span>
+              <strong>실행을 시작하면 현재 작업이 여기서 강조됩니다.</strong>
+              <p>진행 중인 단계와 repair 재진입 위치를 상단에서 바로 확인할 수 있습니다.</p>
+            </div>
             <div id="stage-detail" class="stage-detail empty-state">
               실행을 시작하면 이 영역에 단계별 요약과 검증 결과가 표시됩니다.
             </div>
@@ -69,6 +61,6 @@
       </main>
     </div>
 
-    <script src="/static/app.js?v=20260327h" defer></script>
+    <script src="/static/app.js?v=20260327i" defer></script>
   </body>
 </html>
