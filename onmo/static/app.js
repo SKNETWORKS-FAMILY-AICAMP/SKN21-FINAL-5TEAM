@@ -465,6 +465,13 @@ function renderStoryLane(title, subtitle, steps, laneClass = "") {
             (step, index) => `
               ${step?.placeholder ? '<div class="story-step story-step-placeholder" aria-hidden="true"></div>' : `
               <div class="story-step ${statusClass(step.status)} ${escapeHtml(step.emphasis || "default")}">
+                ${step.entry ? `
+                  <div class="story-rerun-entry-link">
+                    <span class="story-rerun-entry-tag">repair</span>
+                    <small>${escapeHtml(localizeUiText(step.entry_label || ""))}</small>
+                    <span class="story-rerun-entry-arrow">↓</span>
+                  </div>
+                ` : ""}
                 <div class="story-step-node"></div>
                 <div class="story-step-copy">
                   <strong>${escapeHtml(stageLabel(step.stage, localizeUiText(step.label)))}</strong>
@@ -577,22 +584,28 @@ function renderRepairStoryStrip(story = {}, repairStory = {}) {
   const currentAction = localizeUiText(repairStory.current_action || repairStory.summary || `${rewindLabel} 단계 재실행 진행 중입니다.`);
   const primarySteps = buildPrimaryAttemptSteps(steps, repairStory);
   const rerunSteps = buildRerunSteps(story, repairStory);
+  const connectorLabel = localizeUiText(storyUi.connector_label || `${rewindLabel} 단계로 되돌아감`);
 
   if (!rerunSteps.length) {
     return renderStoryLane("", "", storyUi.steps || steps, "story-strip-primary");
   }
 
+  const primaryLaneSteps = storyUi.steps ? buildPrimaryAttemptSteps(storyUi.steps, repairStory) : primarySteps;
+  const rerunLaneSteps = storyUi.steps ? buildRerunSteps({ ...story, steps: storyUi.steps }, repairStory) : rerunSteps;
+  const rerunEntryIndex = rerunLaneSteps.findIndex((step) => !step?.placeholder);
+  if (rerunEntryIndex !== -1) {
+    rerunLaneSteps[rerunEntryIndex] = {
+      ...rerunLaneSteps[rerunEntryIndex],
+      entry: true,
+      entry_label: connectorLabel,
+    };
+  }
+
   return `
     <section class="run-story-block story-rewind-section">
       <div class="story-rewind-graph">
-        ${renderStoryLane(storyUi.primary_lane_label || "처음 실행", "", storyUi.steps ? buildPrimaryAttemptSteps(storyUi.steps, repairStory) : primarySteps, "story-strip-primary")}
-        <div class="story-rewind-connector">
-          <span class="story-rewind-arrow">↺</span>
-          <div class="story-rewind-copy">
-            <strong>${escapeHtml(localizeUiText(storyUi.connector_label || `${rewindLabel} 단계로 되돌아감`))}</strong>
-          </div>
-        </div>
-        ${renderStoryLane(storyUi.rerun_lane_label || `${rewindLabel}부터 다시 실행`, "", storyUi.steps ? buildRerunSteps({ ...story, steps: storyUi.steps }, repairStory) : rerunSteps, "story-strip-rerun")}
+        ${renderStoryLane(storyUi.primary_lane_label || "처음 실행", "", primaryLaneSteps, "story-strip-primary")}
+        ${renderStoryLane(storyUi.rerun_lane_label || `${rewindLabel}부터 다시 실행`, "", rerunLaneSteps, "story-strip-rerun")}
       </div>
     </section>
   `;

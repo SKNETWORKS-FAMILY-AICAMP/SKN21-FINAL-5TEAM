@@ -622,7 +622,8 @@ test("repair snapshot renders a rerun lane and rewind connector", async () => {
 
   assert.match(api.refs.runStoryShell.innerHTML, /story-strip-primary/);
   assert.match(api.refs.runStoryShell.innerHTML, /story-strip-rerun/);
-  assert.match(api.refs.runStoryShell.innerHTML, /story-rewind-connector/);
+  assert.match(api.refs.runStoryShell.innerHTML, /story-rerun-entry-link/);
+  assert.match(api.refs.runStoryShell.innerHTML, />repair</);
   assert.match(api.refs.runStoryShell.innerHTML, /분석부터 다시 실행/);
   assert.match(api.refs.runStoryShell.innerHTML, /분석 단계로 되돌아감/);
   assert.match(api.refs.runStoryShell.innerHTML, /검증/);
@@ -643,6 +644,8 @@ test("rerun lane keeps original stage columns and starts from the rewind stage",
   const placeholderCount = (rerunHtml.match(/story-step-placeholder/g) || []).length;
 
   assert.equal(placeholderCount, 2);
+  assert.match(rerunHtml, /story-rerun-entry-link/);
+  assert.match(rerunHtml, />repair</);
   assert.match(rerunHtml, /생성부터 다시 실행/);
   assert.match(rerunHtml, /생성/);
   assert.match(rerunHtml, /적용/);
