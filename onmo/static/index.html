@@ -4,23 +4,23 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ONMO</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260327i" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260327k" />
   </head>
   <body>
     <div class="shell">
       <main class="frame">
         <aside class="panel outline-panel">
-          <p class="box-label">outline</p>
+          <p class="box-label">단계</p>
           <div id="stage-timeline" class="stage-menu"></div>
         </aside>
 
         <section class="main-panel">
           <section class="panel site-panel">
-            <p class="box-label">site</p>
+            <p class="box-label">GitHub 가져오기</p>
             <div class="site-row">
               <div class="launch-stack">
                 <form id="github-form" class="github-form">
-                  <label class="field-caption" for="repo-url">GitHub Repo URL</label>
+                  <label class="field-caption" for="repo-url">GitHub 저장소 주소</label>
                   <div class="github-row">
                     <input
                       id="repo-url"
@@ -37,22 +37,24 @@
             </div>
           </section>
 
+          <section class="panel run-story-panel">
+            <p class="box-label">진행 흐름</p>
+            <div id="run-story-shell" class="run-story-shell empty-state">
+              온보딩을 시작하면 전체 진행 흐름 그래프가 이 영역에 고정 표시됩니다.
+            </div>
+          </section>
+
           <section class="panel stage-panel">
             <div class="stage-top">
               <div>
-                <p class="box-label">stage</p>
-                <h2 id="detail-title">Analysis</h2>
+                <p class="box-label">현재 단계</p>
+                <h2 id="detail-title">분석</h2>
               </div>
-              <span id="detail-status" class="status-badge neutral">Waiting</span>
+              <span id="detail-status" class="status-badge neutral">대기</span>
             </div>
             <p id="detail-description" class="detail-description">
               저장소 구조를 읽고 어떤 연결점과 계약을 찾아냈는지 보여주는 단계입니다.
             </p>
-            <div id="current-work-banner" class="current-work-banner idle">
-              <span class="section-kicker">Current Work</span>
-              <strong>실행을 시작하면 현재 작업이 여기서 강조됩니다.</strong>
-              <p>진행 중인 단계와 repair 재진입 위치를 상단에서 바로 확인할 수 있습니다.</p>
-            </div>
             <div id="stage-detail" class="stage-detail empty-state">
               실행을 시작하면 이 영역에 단계별 요약과 검증 결과가 표시됩니다.
             </div>
@@ -61,6 +63,6 @@
       </main>
     </div>
 
-    <script src="/static/app.js?v=20260327i" defer></script>
+    <script src="/static/app.js?v=20260327k" defer></script>
   </body>
 </html>

@@ -1,34 +1,34 @@
 const STAGE_COPY = {
   import: {
-    title: "Import",
+    title: "가져오기",
     description: "GitHub 저장소 접근을 확인하고 임시 source workspace를 준비하는 단계입니다.",
   },
   analysis: {
-    title: "Analysis",
+    title: "분석",
     description: "저장소 구조를 읽고 인증, 주문, 마운트 후보를 추려내는 단계입니다.",
   },
   planning: {
-    title: "Planning",
+    title: "계획",
     description: "어디에 붙일지 결정하고 검증 계획까지 정리하는 단계입니다.",
   },
   compile: {
-    title: "Compile",
+    title: "생성",
     description: "수정 파일과 생성 파일을 실제 편집 프로그램으로 바꾸는 단계입니다.",
   },
   apply: {
-    title: "Apply",
+    title: "적용",
     description: "워크스페이스에 변경을 적용해 실행 가능한 결과물을 만드는 단계입니다.",
   },
   export: {
-    title: "Export",
+    title: "추출",
     description: "적용 결과를 패치로 다시 추출하고 재현 가능한지 확인하는 단계입니다.",
   },
   indexing: {
-    title: "Indexing",
+    title: "인덱싱",
     description: "retrieval corpus를 준비하고 smoke 결과를 확인하는 단계입니다.",
   },
   validation: {
-    title: "Validation",
+    title: "검증",
     description: "검증이 끝나면 실제 bilyeo와 챗봇 서버가 올라와 정상 동작 준비가 됩니다.",
   },
 };
@@ -45,7 +45,6 @@ const state = {
   displayStages: [],
   targetStages: [],
   rawLogOpen: false,
-  storySnapshotOpen: false,
 };
 
 const ACTIVE_RUN_STORAGE_KEY = "onmo.active-run";
@@ -80,7 +79,7 @@ const REPAIR_LIMITS = {
 const refs = {
   form: document.getElementById("start-form"),
   githubForm: document.getElementById("github-form"),
-  currentWorkBanner: document.getElementById("current-work-banner"),
+  runStoryShell: document.getElementById("run-story-shell"),
   launchButton: document.getElementById("launch-button"),
   githubLaunchButton: document.getElementById("github-launch-button"),
   stageTimeline: document.getElementById("stage-timeline"),
@@ -168,7 +167,6 @@ function persistRunUiState() {
     selectedStage: state.selectedStage,
     selectionPinned: Boolean(state.selectionPinned),
     rawLogOpen: Boolean(state.rawLogOpen),
-    storySnapshotOpen: Boolean(state.storySnapshotOpen),
   });
 }
 
@@ -180,7 +178,6 @@ function restoreRunUiState(run = state.currentRun) {
   }
   state.selectionPinned = Boolean(stored.selectionPinned);
   state.rawLogOpen = Boolean(stored.rawLogOpen);
-  state.storySnapshotOpen = Boolean(stored.storySnapshotOpen);
 }
 
 async function request(path, options = {}) {
@@ -217,6 +214,50 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function stageLabel(stageKey, fallback = "") {
+  return STAGE_COPY[String(stageKey || "").trim()]?.title || fallback || String(stageKey || "").trim();
+}
+
+function localizeUiText(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  const replacements = [
+    [/Import/g, "가져오기"],
+    [/Analysis/g, "분석"],
+    [/Planning/g, "계획"],
+    [/Compile/g, "생성"],
+    [/Apply/g, "적용"],
+    [/Export/g, "추출"],
+    [/Indexing/g, "인덱싱"],
+    [/Validation/g, "검증"],
+    [/GitHub Mode/g, "GitHub 모드"],
+    [/Running/g, "진행 중"],
+    [/Completed/g, "완료"],
+    [/Failed/g, "실패"],
+    [/Waiting/g, "대기"],
+    [/Ready/g, "준비 완료"],
+    [/blocked/gi, "중단됨"],
+    [/running/gi, "진행 중"],
+    [/completed/gi, "완료"],
+    [/failed/gi, "실패"],
+    [/waiting/gi, "대기"],
+    [/ready/gi, "준비 완료"],
+  ];
+
+  return replacements.reduce((text, [pattern, next]) => text.replace(pattern, next), raw);
+}
+
+function compactText(value, max = 120) {
+  const text = localizeUiText(value);
+  if (!text || text.length <= max) {
+    return text;
+  }
+  return `${text.slice(0, max - 1).trimEnd()}…`;
 }
 
 function statusClass(status) {
@@ -309,13 +350,13 @@ function formatTimestamp(value) {
 function stageFlag(stage) {
   const repairStory = state.lastPayload?.repair_story || {};
   if (repairStory.active && repairStory.failed_stage && repairStory.failed_stage === stage.stage) {
-    return { label: "failed here", className: "fail" };
+    return { label: "오류 지점", className: "fail" };
   }
   if (repairStory.active && repairStory.rewind_to && repairStory.rewind_to === stage.stage) {
-    return { label: "re-enter here", className: "rewind" };
+    return { label: "되돌아감", className: "rewind" };
   }
   if (stage.status === "failed") {
-    return { label: "fail", className: "fail" };
+    return { label: "실패", className: "fail" };
   }
   return null;
 }
@@ -335,84 +376,18 @@ function resolveLiveStage(payload = state.lastPayload, stages = []) {
 
 function statusLabelForStep(status, fallback = "") {
   if (fallback) {
-    return fallback;
+    return localizeUiText(fallback);
   }
   if (status === "completed" || status === "exported" || status === "ready") {
-    return "Completed";
+    return "완료";
   }
   if (status === "running" || status === "starting") {
-    return "Running";
+    return "진행 중";
   }
   if (status === "failed" || status === "process_failed" || status === "failed_human_review" || status === "blocked") {
-    return "Failed";
+    return "실패";
   }
-  return "Waiting";
-}
-
-function renderCurrentWorkBanner(payload) {
-  if (!refs.currentWorkBanner) {
-    return;
-  }
-
-  if (!payload) {
-    refs.currentWorkBanner.className = "current-work-banner idle";
-    refs.currentWorkBanner.innerHTML = `
-      <span class="section-kicker">Current Work</span>
-      <strong>실행을 시작하면 현재 작업이 여기서 강조됩니다.</strong>
-      <p>진행 중인 단계와 repair 재진입 위치를 상단에서 바로 확인할 수 있습니다.</p>
-    `;
-    return;
-  }
-
-  const story = payload.story || {};
-  const repairStory = payload.repair_story || {};
-  const repair = payload.repair || {};
-  const currentStage = story.current_stage || {};
-  const failedLabel = repairStory.failed_stage_label || repair.failed_stage_label || repairStory.failed_stage || "";
-  const rewindLabel = repairStory.rewind_to_label || repair.effective_rewind_label || repairStory.rewind_to || "";
-
-  if (repairStory.active) {
-    const badgeLabel = repair.status_label || payload.run?.status_label || "Repair";
-    const title = `${failedLabel || "Failure"} -> ${rewindLabel || "Rewind"}`;
-    const summary = repairStory.current_action || repair.current_action || "되감기 이후 재실행을 준비 중입니다.";
-    const detail = repairStory.problem || repair.problem_explanation || repairStory.summary || "문제 원인을 다시 확인하는 중입니다.";
-    refs.currentWorkBanner.className = `current-work-banner repair ${statusClass(repair.status || "running")}`;
-    refs.currentWorkBanner.innerHTML = `
-      <div class="current-work-head">
-        <span class="section-kicker">Current Work</span>
-        <span class="status-badge ${statusClass(repair.status || "running")}">${escapeHtml(badgeLabel)}</span>
-      </div>
-      <strong>${escapeHtml(title)}</strong>
-      <p>${escapeHtml(summary)}</p>
-      <div class="current-work-meta">
-        <span class="current-work-pill fail">Failed here ${escapeHtml(failedLabel || "-")}</span>
-        <span class="current-work-pill rewind">Re-enter here ${escapeHtml(rewindLabel || "-")}</span>
-      </div>
-      <small>${escapeHtml(detail)}</small>
-    `;
-    return;
-  }
-
-  const copy = STAGE_COPY[currentStage.stage] || STAGE_COPY[state.selectedStage] || STAGE_COPY.analysis;
-  const title = currentStage.label || copy.title || "Current Stage";
-  const statusLabel = currentStage.status_label || payload.run?.status_label || "Waiting";
-  const summary = story.summary || story.headline || copy.description;
-  const detail = story.headline && story.summary && story.headline !== story.summary
-    ? story.headline
-    : copy.description;
-  refs.currentWorkBanner.className = `current-work-banner ${statusClass(currentStage.status || payload.run?.status || "pending")}`;
-  refs.currentWorkBanner.innerHTML = `
-    <div class="current-work-head">
-      <span class="section-kicker">Current Work</span>
-      <span class="status-badge ${statusClass(currentStage.status || payload.run?.status || "pending")}">${escapeHtml(statusLabel)}</span>
-    </div>
-    <strong>${escapeHtml(title)}</strong>
-    <p>${escapeHtml(summary || "현재 단계를 진행 중입니다.")}</p>
-    <div class="current-work-meta">
-      <span class="current-work-pill neutral">Live stage ${escapeHtml(title)}</span>
-    </div>
-    <small>${escapeHtml(detail || "현재 단계 세부 정보를 불러오는 중입니다.")}</small>
-  `;
+  return "대기";
 }
 
 function renderStoryLane(title, subtitle, steps, laneClass = "") {
@@ -432,8 +407,8 @@ function renderStoryLane(title, subtitle, steps, laneClass = "") {
               <div class="story-step ${statusClass(step.status)} ${escapeHtml(step.emphasis || "default")}">
                 <div class="story-step-node"></div>
                 <div class="story-step-copy">
-                  <strong>${escapeHtml(step.label)}</strong>
-                  <small>${escapeHtml(step.status_label)}</small>
+                  <strong>${escapeHtml(stageLabel(step.stage, localizeUiText(step.label)))}</strong>
+                  <small>${escapeHtml(localizeUiText(step.status_label))}</small>
                 </div>
                 ${index < steps.length - 1 ? '<div class="story-step-line"></div>' : ""}
               </div>
@@ -529,33 +504,33 @@ function renderRepairStoryStrip(story = {}, repairStory = {}) {
   }
   const rewindIndex = steps.findIndex((step) => String(step.stage || "") === String(repairStory.rewind_to || ""));
   const rewindLabel = rewindIndex >= 0
-    ? String(steps[rewindIndex].label || repairStory.rewind_to_label || repairStory.rewind_to || "Rewind")
-    : String(repairStory.rewind_to_label || repairStory.rewind_to || "Rewind");
-  const problem = repairStory.problem || story.headline || "원래 시도에서 문제가 발생했습니다.";
-  const currentAction = repairStory.current_action || repairStory.summary || `${rewindLabel} 단계 재실행 진행 중입니다.`;
+    ? stageLabel(steps[rewindIndex].stage, steps[rewindIndex].label || repairStory.rewind_to_label || repairStory.rewind_to || "되돌아감")
+    : stageLabel(repairStory.rewind_to, repairStory.rewind_to_label || repairStory.rewind_to || "되돌아감");
+  const problem = localizeUiText(repairStory.problem || story.headline || "처음 실행에서 문제가 발생했습니다.");
+  const currentAction = localizeUiText(repairStory.current_action || repairStory.summary || `${rewindLabel} 단계 재실행 진행 중입니다.`);
   const primarySteps = buildPrimaryAttemptSteps(steps, repairStory);
   const rerunSteps = buildRerunSteps(story, repairStory);
 
   if (!rerunSteps.length) {
-    return renderStoryLane("Run Story", story.headline || "", steps, "story-strip-primary");
+    return renderStoryLane("전체 흐름", localizeUiText(story.headline || ""), steps, "story-strip-primary");
   }
 
   return `
-    <section class="story-section story-rewind-section">
+    <section class="run-story-block story-rewind-section">
       <div class="story-section-head">
-        <span class="section-kicker">Run Story</span>
-        <small>${escapeHtml(story.headline || "")}</small>
+        <span class="section-kicker">진행 흐름</span>
+        <small>${escapeHtml(localizeUiText(story.headline || ""))}</small>
       </div>
       <div class="story-rewind-graph">
-        ${renderStoryLane("Original Attempt", problem, primarySteps, "story-strip-primary")}
+        ${renderStoryLane("처음 실행", problem, primarySteps, "story-strip-primary")}
         <div class="story-rewind-connector">
           <span class="story-rewind-arrow">↺</span>
           <div class="story-rewind-copy">
-            <strong>rewind to ${escapeHtml(rewindLabel)}</strong>
+            <strong>${escapeHtml(rewindLabel)} 단계로 되돌아감</strong>
             <small>${escapeHtml(currentAction)}</small>
           </div>
         </div>
-        ${renderStoryLane(`Re-run from ${rewindLabel}`, currentAction, rerunSteps, "story-strip-rerun")}
+        ${renderStoryLane(`${rewindLabel}부터 다시 실행`, currentAction, rerunSteps, "story-strip-rerun")}
       </div>
     </section>
   `;
@@ -570,32 +545,12 @@ function renderStoryStrip(story = {}, repairStory = {}) {
     return "";
   }
   return `
-    <section class="story-section">
+    <section class="run-story-block">
       <div class="story-section-head">
-        <span class="section-kicker">Run Story</span>
-        <small>${escapeHtml(story.headline || "")}</small>
+        <span class="section-kicker">진행 흐름</span>
+        <small>${escapeHtml(localizeUiText(story.headline || ""))}</small>
       </div>
-      ${renderStoryLane("Run Story", story.summary || story.headline || "", steps, "story-strip-primary")}
-    </section>
-  `;
-}
-
-function renderRunStorySnapshot(story = {}, repairStory = {}) {
-  const content = renderStoryStrip(story, repairStory);
-  if (!content) {
-    return "";
-  }
-  return `
-    <section class="story-section raw-log-shell">
-      <details class="raw-log-panel story-snapshot-panel" data-story-snapshot-panel ${state.storySnapshotOpen ? "open" : ""}>
-        <summary>
-          <span>Run Story Snapshot</span>
-          <small>${escapeHtml(story.headline || "전체 단계 흐름")}</small>
-        </summary>
-        <div class="raw-log-body">
-          ${content}
-        </div>
-      </details>
+      ${renderStoryLane("전체 흐름", localizeUiText(story.summary || story.headline || ""), steps, "story-strip-primary")}
     </section>
   `;
 }
@@ -606,27 +561,14 @@ function renderCompactRetrievalSummary(retrieval = {}) {
   }
   const items = Array.isArray(retrieval.items) ? retrieval.items : [];
   const summary = items
-    .map((item) => `${item.label || item.corpus || ""} ${item.status_label || item.status || ""}`.trim())
+    .map((item) => `${localizeUiText(item.label || item.corpus || "")} ${localizeUiText(item.status_label || item.status || "")}`.trim())
     .filter(Boolean)
     .join(" / ");
   return `
     <div class="repair-retrieval-strip">
-      <span>Retrieval</span>
-      <small>${escapeHtml(summary || retrieval.summary || "retrieval 준비 상태를 확인하는 중입니다.")}</small>
+      <span>인덱싱</span>
+      <small>${escapeHtml(summary || localizeUiText(retrieval.summary) || "인덱싱 준비 상태를 확인하는 중입니다.")}</small>
     </div>
-  `;
-}
-
-function renderNarrativeSummary(story = {}) {
-  if (!story.headline && !story.summary) {
-    return "";
-  }
-  return `
-    <section class="story-section story-summary-card">
-      <span class="section-kicker">Narrative Summary</span>
-      <strong>${escapeHtml(story.headline || "현재 실행 흐름을 확인하는 중입니다.")}</strong>
-      <p>${escapeHtml(story.summary || "단계별 진행과 되감기 여부를 정리하는 중입니다.")}</p>
-    </section>
   `;
 }
 
@@ -638,16 +580,16 @@ function renderRetrievalLane(retrieval = {}) {
   return `
     <section class="story-section retrieval-section">
       <div class="story-section-head">
-        <span class="section-kicker">${escapeHtml(retrieval.headline || "Retrieval Ready")}</span>
-        <small>${escapeHtml(retrieval.summary || "")}</small>
+        <span class="section-kicker">${escapeHtml(localizeUiText(retrieval.headline || "인덱싱 준비"))}</span>
+        <small>${escapeHtml(localizeUiText(retrieval.summary || ""))}</small>
       </div>
       <div class="retrieval-chip-list">
         ${items
           .map(
             (item) => `
               <div class="retrieval-chip ${escapeHtml(item.status || "queued")}">
-                <strong>${escapeHtml(item.label || item.corpus || "")}</strong>
-                <small>${escapeHtml(item.status_label || "")}</small>
+                <strong>${escapeHtml(localizeUiText(item.label || item.corpus || ""))}</strong>
+                <small>${escapeHtml(localizeUiText(item.status_label || ""))}</small>
               </div>
             `
           )
@@ -668,65 +610,57 @@ function renderRepairStory(repairStory = {}, repair = {}, options = {}) {
   }
   const focusTitle = options.focusTitle || "Focus";
   const focusHtml = options.focusHtml || '<div class="empty-state">표시할 세부 내용이 없습니다.</div>';
-  const retrieval = options.retrieval || {};
   const steps = Array.isArray(repairStory.steps) ? repairStory.steps : [];
   const failedLabel = repairStory.failed_stage_label || repair.failed_stage_label || repairStory.failed_stage || "-";
   const rewindLabel = repairStory.rewind_to_label || repair.effective_rewind_label || repairStory.rewind_to || "-";
   const diagnosis = repairStory.diagnosis || repair.diagnosis_summary || "원인을 분석 중입니다.";
   const currentAction = repairStory.current_action || repair.current_action || repair.stop_reason_text || "재실행 단계를 준비 중입니다.";
   const problem = repairStory.problem || repair.problem_explanation || repair.failure_summary || repairStory.summary || "문제 원인을 정리하는 중입니다.";
+  const failureStep = steps.find((step) => step.kind === "failure") || {};
+  const diagnosisStep = steps.find((step) => step.kind === "diagnosis") || {};
+  const rewindStep = steps.find((step) => step.kind === "rewind") || {};
+  const statusTitle = repair.status_label || repairStory.status_label || repairStory.summary || "복구 판단 진행 중";
+  const errorDetail = compactText(repair.failure_signature || repair.failure_summary || problem, 140);
   return `
-    <section class="story-section rewind-section primary-rewind repair-hero">
-      <div class="story-section-head repair-hero-head">
+    <section class="repair-summary-block">
+      <div class="repair-hero-head">
         <div class="repair-head-copy repair-hero-copy">
-          <span class="section-kicker">${escapeHtml(repairStory.headline || "Repair Rewind")}</span>
-          <strong>${escapeHtml(failedLabel)} -> ${escapeHtml(rewindLabel)}</strong>
+          <span class="section-kicker">복구 요약</span>
+          <strong>${escapeHtml(localizeUiText(`${failedLabel} 단계에서 문제가 발생했습니다.`))}</strong>
         </div>
       </div>
-      <p class="repair-summary-text">${escapeHtml(problem)}</p>
-      <p class="repair-now-text">${escapeHtml(currentAction)}</p>
-      <div class="repair-sequence repair-hero-sequence">
-        ${steps
-          .map(
-            (step, index) => `
-              <div class="repair-sequence-step ${statusClass(step.status)}">
-                <div class="repair-sequence-count">${index + 1}</div>
-                <div class="repair-sequence-copy">
-                  <span>${escapeHtml(step.kind)}</span>
-                  <strong>${escapeHtml(step.label)}</strong>
-                  <small>${
-                    step.timestamp
-                      ? escapeHtml(formatTimestamp(step.timestamp))
-                      : escapeHtml(step.status || "")
-                  }</small>
-                </div>
-              </div>
-            `
-          )
-          .join("")}
-      </div>
-      <div class="repair-narrative-stack">
-        <div class="repair-narrative-row fail">
-          <span>Why It Failed</span>
-          <strong>${escapeHtml(diagnosis)}</strong>
-          <small>${escapeHtml(problem)}</small>
+      <p class="repair-summary-text">${escapeHtml(localizeUiText(currentAction))}</p>
+      <div class="repair-facts">
+        <div class="repair-fact fail">
+          <span>문제 발생</span>
+          <strong>${escapeHtml(localizeUiText(`${failedLabel} 단계`))}</strong>
+          <small>${escapeHtml(localizeUiText(failureStep.label || problem))}${failureStep.timestamp ? ` · ${escapeHtml(formatTimestamp(failureStep.timestamp))}` : ""}</small>
         </div>
-        <div class="repair-narrative-row rewind">
-          <span>Re-enter Here</span>
-          <strong>${escapeHtml(rewindLabel)}</strong>
-          <small>${escapeHtml(repairStory.summary || "실패 지점 앞단부터 다시 확인합니다.")}</small>
+        <div class="repair-fact fail">
+          <span>오류 상세</span>
+          <strong>${escapeHtml(errorDetail || localizeUiText(problem))}</strong>
+          <small>${escapeHtml(localizeUiText(problem))}</small>
         </div>
-        <div class="repair-narrative-row current">
-          <span>Now Running</span>
-          <strong>${escapeHtml(currentAction)}</strong>
-          <small>${escapeHtml(steps[steps.length - 1]?.label || "재실행 준비 중")}</small>
+        <div class="repair-fact rewind">
+          <span>진단 판단</span>
+          <strong>${escapeHtml(compactText(diagnosis, 140))}</strong>
+          <small>${escapeHtml(localizeUiText(diagnosisStep.label || "원인 분석 완료"))}${diagnosisStep.timestamp ? ` · ${escapeHtml(formatTimestamp(diagnosisStep.timestamp))}` : ""}</small>
+        </div>
+        <div class="repair-fact current">
+          <span>되돌아감</span>
+          <strong>${escapeHtml(localizeUiText(`${rewindLabel} 단계`))}</strong>
+          <small>${escapeHtml(localizeUiText(rewindStep.label || currentAction))}${rewindStep.timestamp ? ` · ${escapeHtml(formatTimestamp(rewindStep.timestamp))}` : ""}</small>
         </div>
       </div>
-      ${renderCompactRetrievalSummary(retrieval)}
+      <div class="repair-status-strip">
+        <span>현재 상태</span>
+        <strong>${escapeHtml(localizeUiText(statusTitle))}</strong>
+        <small>${escapeHtml(localizeUiText(currentAction))}</small>
+      </div>
       <div class="repair-focus-shell">
         <div class="repair-focus-head">
-          <span class="section-kicker">Repair Focus Detail</span>
-          <small>${escapeHtml(focusTitle)}</small>
+          <span class="section-kicker">선택한 단계 상세</span>
+          <small>${escapeHtml(localizeUiText(focusTitle))}</small>
         </div>
         <div class="repair-focus-body">
           ${focusHtml}
@@ -743,13 +677,13 @@ function renderRawEventLog(payload) {
     <section class="story-section raw-log-shell">
       <details class="raw-log-panel" data-raw-log-panel ${state.rawLogOpen ? "open" : ""}>
         <summary>
-          <span>Raw Event Log</span>
+          <span>이벤트 기록</span>
           <small>${events.length ? `최근 이벤트 ${events.length}개` : "최근 이벤트 없음"}</small>
         </summary>
         <div class="raw-log-body">
           ${
             logPath
-              ? `<div class="raw-log-meta"><strong>Log Path</strong><small>${escapeHtml(logPath)}</small></div>`
+              ? `<div class="raw-log-meta"><strong>로그 파일</strong><small>${escapeHtml(logPath)}</small></div>`
               : ""
           }
           ${
@@ -760,8 +694,8 @@ function renderRawEventLog(payload) {
                       (event) => `
                         <div class="raw-log-row">
                           <span>${escapeHtml(formatTimestamp(event.timestamp))}</span>
-                          <strong>${escapeHtml(event.stage || "-")}</strong>
-                          <small>${escapeHtml(event.summary || event.event_type || "-")}</small>
+                          <strong>${escapeHtml(stageLabel(event.stage, localizeUiText(event.stage || "-")))}</strong>
+                          <small>${escapeHtml(localizeUiText(event.summary || event.event_type || "-"))}</small>
                         </div>
                       `
                     )
@@ -776,14 +710,7 @@ function renderRawEventLog(payload) {
 }
 
 function bindStoryInteractions() {
-  const storyPanel = refs.stageDetail.querySelector("[data-story-snapshot-panel]");
   const rawPanel = refs.stageDetail.querySelector("[data-raw-log-panel]");
-  if (storyPanel) {
-    storyPanel.addEventListener("toggle", () => {
-      state.storySnapshotOpen = storyPanel.open;
-      persistRunUiState();
-    });
-  }
   if (rawPanel) {
     rawPanel.addEventListener("toggle", () => {
       state.rawLogOpen = rawPanel.open;
@@ -792,7 +719,7 @@ function bindStoryInteractions() {
   }
 }
 
-function wrapStageDetail(title, html, kicker = "Current Stage Detail") {
+function wrapStageDetail(title, html, kicker = "선택한 단계 상세") {
   return `
     <section class="story-section current-stage-section">
       <div class="story-section-head">
@@ -821,7 +748,7 @@ function renderStageDetailContent(stageKey, details, payload, compact = true) {
 function renderImport(details = {}, compact = false) {
   const limits = viewLimits(compact);
   const summaryHtml = details.summary
-    ? `<div class="fact-list"><div class="fact-list-item"><strong>Summary</strong><small>${escapeHtml(details.summary)}</small></div></div>`
+    ? `<div class="fact-list"><div class="fact-list-item"><strong>요약</strong><small>${escapeHtml(localizeUiText(details.summary))}</small></div></div>`
     : "";
   return `
     ${renderCards(details.cards, limits)}
@@ -832,7 +759,7 @@ function renderImport(details = {}, compact = false) {
 function renderIndexing(details = {}, compact = false) {
   const limits = viewLimits(compact);
   const summaryHtml = details.summary
-    ? `<div class="fact-list"><div class="fact-list-item"><strong>Summary</strong><small>${escapeHtml(details.summary)}</small></div></div>`
+    ? `<div class="fact-list"><div class="fact-list-item"><strong>요약</strong><small>${escapeHtml(localizeUiText(details.summary))}</small></div></div>`
     : "";
   return `
     ${renderCards(details.cards, limits)}
@@ -880,7 +807,7 @@ function syncStagePlayback(stages = []) {
     state.displayStages = incomingStages.map((stage) => ({
       ...stage,
       status: "pending",
-      status_label: "Waiting",
+      status_label: "대기",
       summary: "",
     }));
   }
@@ -925,9 +852,9 @@ function stepStagePlayback() {
   };
 
   if (nextStatus !== target.status) {
-    displayStages[diffIndex].status_label = "Running";
+    displayStages[diffIndex].status_label = statusLabelForStep("running");
   } else {
-    displayStages[diffIndex].status_label = target.status_label;
+    displayStages[diffIndex].status_label = statusLabelForStep(target.status, target.status_label);
   }
 
   if (!state.selectionPinned) {
@@ -958,15 +885,15 @@ function renderStageMenu(stages = []) {
       const flag = stageFlag(stage);
       const muted = repairStory.active && !flag && !isLive ? "stage-link-muted" : "";
       const anchor = flag ? `anchor-${escapeHtml(flag.className)}` : "";
-      const liveChip = isLive && !flag ? '<span class="stage-mini-flag live">current work</span>' : "";
+      const liveChip = isLive && !flag ? '<span class="stage-mini-flag live">진행 중</span>' : "";
       return `
         <button type="button" class="stage-link ${isActive ? "active" : ""} ${isLive ? "stage-link-live" : ""} ${muted} ${anchor} ${flag ? `marker-${escapeHtml(flag.className)}` : ""}" data-stage="${escapeHtml(stage.stage)}">
           <div class="stage-link-head">
-            <h3>${escapeHtml(stage.label)}</h3>
+            <h3>${escapeHtml(stageLabel(stage.stage, localizeUiText(stage.label)))}</h3>
             <div class="stage-link-meta">
               ${liveChip}
               ${flag ? `<span class="stage-mini-flag ${escapeHtml(flag.className)}">${escapeHtml(flag.label)}</span>` : ""}
-              <small>${escapeHtml(stage.status_label)}</small>
+              <small>${escapeHtml(localizeUiText(stage.status_label))}</small>
             </div>
           </div>
           <p>${escapeHtml(copy.description || "")}</p>
@@ -1027,14 +954,14 @@ function renderCompile(details = {}, compact = false) {
   return `
     ${renderCards(details.cards, limits)}
     ${renderList(details.host_targets || [], (item) => `
-      <div class="fact-list-item">
-        <strong>Host</strong>
+        <div class="fact-list-item">
+        <strong>호스트</strong>
         <small>${escapeHtml(item)}</small>
       </div>
     `, limits)}
     ${renderList(details.chatbot_targets || [], (item) => `
-      <div class="fact-list-item">
-        <strong>Chatbot</strong>
+        <div class="fact-list-item">
+        <strong>챗봇</strong>
         <small>${escapeHtml(item)}</small>
       </div>
     `, limits)}
@@ -1048,8 +975,8 @@ function renderApply(details = {}, compact = false) {
     ${renderCards(details.cards, limits)}
     ${renderHighlights(details.paths || [], limits)}
     ${renderList(details.applied_files || [], (item) => `
-      <div class="fact-list-item">
-        <strong>Applied file</strong>
+        <div class="fact-list-item">
+        <strong>적용 파일</strong>
         <small>${escapeHtml(item)}</small>
       </div>
     `, limits)}
@@ -1063,7 +990,7 @@ function renderExport(details = {}, compact = false) {
     ${renderHighlights(details.paths || [], limits)}
     ${
       details.failure_summary
-        ? `<div class="fact-list"><div class="fact-list-item"><strong>Replay note</strong><small>${escapeHtml(details.failure_summary)}</small></div></div>`
+        ? `<div class="fact-list"><div class="fact-list-item"><strong>재현 메모</strong><small>${escapeHtml(localizeUiText(details.failure_summary))}</small></div></div>`
         : ""
     }
   `;
@@ -1074,16 +1001,16 @@ function renderServiceGrid(services = [], demo = {}, limits = LIMITS) {
   if (!visibleServices.length) {
     return `
       <div class="demo-banner ${statusClass(demo.status || "pending")}">
-        <strong>${escapeHtml(demo.status_label || "Waiting for validation")}</strong>
-        <small>${escapeHtml(demo.message || "서비스는 validation 이후에 시작됩니다.")}</small>
+        <strong>${escapeHtml(localizeUiText(demo.status_label || "검증 대기"))}</strong>
+        <small>${escapeHtml(localizeUiText(demo.message || "서비스는 검증 이후에 시작됩니다."))}</small>
       </div>
     `;
   }
 
   return `
     <div class="demo-banner ${statusClass(demo.status || "pending")}">
-      <strong>${escapeHtml(demo.status_label || "Bilyeo")}</strong>
-      <small>${escapeHtml(demo.message || "")}</small>
+      <strong>${escapeHtml(localizeUiText(demo.status_label || "Bilyeo"))}</strong>
+      <small>${escapeHtml(localizeUiText(demo.message || ""))}</small>
     </div>
     <div class="service-grid">
       ${visibleServices
@@ -1091,10 +1018,10 @@ function renderServiceGrid(services = [], demo = {}, limits = LIMITS) {
           (service) => `
             <div class="service-card">
               <div class="service-card-head">
-                <strong>${escapeHtml(service.label)}</strong>
-                <span class="status-badge ${statusClass(service.status)}">${escapeHtml(service.status_label)}</span>
+                <strong>${escapeHtml(localizeUiText(service.label))}</strong>
+                <span class="status-badge ${statusClass(service.status)}">${escapeHtml(localizeUiText(service.status_label))}</span>
               </div>
-              <p>${escapeHtml(service.reason || service.url || "")}</p>
+              <p>${escapeHtml(localizeUiText(service.reason || service.url || ""))}</p>
               ${
                 service.url
                   ? `<a class="service-link" href="${escapeHtml(service.url)}" target="_blank" rel="noreferrer">열기</a>`
@@ -1114,16 +1041,16 @@ function renderValidation(details = {}, services = [], demo = {}, compact = fals
     .map(
       (item) => `
         <div class="check-card">
-          <span class="status-badge ${item.passed ? "ok" : "fail"}">${item.passed ? "PASS" : "FAIL"}</span>
+          <span class="status-badge ${item.passed ? "ok" : "fail"}">${item.passed ? "통과" : "실패"}</span>
           <h4>${escapeHtml(item.name)}</h4>
-          <p>${escapeHtml(item.summary)}</p>
+          <p>${escapeHtml(localizeUiText(item.summary))}</p>
         </div>
       `
     )
     .join("");
 
   const proofLink = demo.preview_url
-    ? `<div class="fact-list"><div class="fact-list-item"><strong>Preview</strong><small>${escapeHtml(demo.preview_url)}</small></div></div>`
+    ? `<div class="fact-list"><div class="fact-list-item"><strong>미리보기</strong><small>${escapeHtml(demo.preview_url)}</small></div></div>`
     : "";
 
   return `
@@ -1158,12 +1085,12 @@ function renderRepairInsight(repair = {}) {
     ${tags.length ? `<div class="tag-list">${tags.map((item) => `<span class="tag">${escapeHtml(item)}</span>`).join("")}</div>` : ""}
     ${
       repair.diagnosis_summary
-        ? `<div class="fact-list"><div class="fact-list-item"><strong>원인 설명</strong><small>${escapeHtml(repair.diagnosis_summary)}</small></div></div>`
+        ? `<div class="fact-list"><div class="fact-list-item"><strong>원인 설명</strong><small>${escapeHtml(localizeUiText(repair.diagnosis_summary))}</small></div></div>`
         : ""
     }
     ${
       repair.stop_reason_text
-        ? `<div class="fact-list"><div class="fact-list-item"><strong>중단 이유</strong><small>${escapeHtml(repair.stop_reason_text)}</small></div></div>`
+        ? `<div class="fact-list"><div class="fact-list-item"><strong>중단 이유</strong><small>${escapeHtml(localizeUiText(repair.stop_reason_text))}</small></div></div>`
         : ""
     }
   `;
@@ -1176,10 +1103,10 @@ function renderErrorPane(error = null) {
   return `
     <section class="stage-error-pane">
       <div class="stage-error-head">
-        <strong>Error</strong>
+        <strong>오류</strong>
         ${error.source ? `<span class="status-badge fail">${escapeHtml(error.source)}</span>` : ""}
       </div>
-      <p>${escapeHtml(error.message || "알 수 없는 오류가 발생했습니다.")}</p>
+      <p>${escapeHtml(localizeUiText(error.message || "알 수 없는 오류가 발생했습니다."))}</p>
     </section>
   `;
 }
@@ -1233,6 +1160,7 @@ function stopPolling() {
 }
 
 function renderSelectedStage(payload) {
+  renderRunStoryPanel(payload);
   const selected = state.selectedStage;
   const details = payload.details || {};
   const stages = (state.displayStages && state.displayStages.length ? state.displayStages : payload.stages) || [];
@@ -1251,26 +1179,25 @@ function renderSelectedStage(payload) {
         status: repair.status || payload.run.status,
       }
     : {
-        label: story.current_stage?.status_label || payload.run.status_label || (stageView ? stageView.status_label : "Waiting"),
+        label: story.current_stage?.status_label || payload.run.status_label || (stageView ? stageView.status_label : "대기"),
         status: story.current_stage?.status || payload.run.status || (stageView ? stageView.status : "pending"),
       };
 
   refs.detailTitle.textContent = repairStory.active
-    ? `${failedLabel || "Failure"} -> ${rewindLabel || "Rewind"}`
-    : focusStage.label || stageView?.label || copy.title;
+    ? stageLabel(detailStageKey, localizeUiText(focusStage.label || stageView?.label || copy.title))
+    : stageLabel(detailStageKey, localizeUiText(focusStage.label || stageView?.label || copy.title));
   refs.detailDescription.textContent = repairStory.active
-    ? `${repairStory.problem || repair.problem_explanation || repairStory.summary || story.headline || ""} ${repairStory.current_action || repair.current_action || ""}`.trim()
-    : story.headline || copy.description;
-  refs.detailStatus.textContent = panelStatus.label || "Waiting";
+    ? localizeUiText(repairStory.current_action || repair.current_action || `${failedLabel} 단계 문제로 ${rewindLabel} 단계부터 다시 확인하고 있습니다.`)
+    : localizeUiText(story.headline || copy.description);
+  refs.detailStatus.textContent = localizeUiText(panelStatus.label || "대기");
   refs.detailStatus.className = `status-badge ${statusClass(panelStatus.status || "pending")}`;
-  renderCurrentWorkBanner(payload);
 
   const html = renderStageDetailContent(detailStageKey, details, payload, repairStory.active ? "repair" : true);
 
   const stageDetailSection = wrapStageDetail(
-    focusStage.label || copy.title,
+    stageLabel(detailStageKey, localizeUiText(focusStage.label || copy.title)),
     html || '<div class="empty-state">이 단계에서 표시할 내용이 아직 없습니다.</div>',
-    repairStory.active ? "Repair Focus Detail" : "Current Stage Detail"
+    "선택한 단계 상세"
   );
 
   refs.stageDetail.classList.remove("with-sidepane");
@@ -1278,19 +1205,16 @@ function renderSelectedStage(payload) {
     ? `
       <div class="story-panel repair-mode">
         ${renderRepairStory(repairStory, repair, {
-          focusTitle: focusStage.label || copy.title,
+          focusTitle: stageLabel(detailStageKey, localizeUiText(focusStage.label || copy.title)),
           focusHtml: html || '<div class="empty-state">이 단계에서 표시할 내용이 아직 없습니다.</div>',
           retrieval: story.retrieval || {},
         })}
         ${state.lastError ? renderErrorPane(state.lastError) : ""}
-        ${renderRunStorySnapshot(story, repairStory)}
         ${renderRawEventLog(payload)}
       </div>
     `
     : `
       <div class="story-panel">
-        ${renderStoryStrip(story, repairStory)}
-        ${renderNarrativeSummary(story)}
         ${state.lastError ? renderErrorPane(state.lastError) : ""}
         ${stageDetailSection}
         ${renderRetrievalLane(story.retrieval || {})}
@@ -1360,7 +1284,6 @@ function beginRunTracking(payload, preferredStage = "import") {
   state.targetStages = [];
   state.lastError = null;
   state.rawLogOpen = false;
-  state.storySnapshotOpen = false;
   if (state.playbackTimer) {
     window.clearTimeout(state.playbackTimer);
     state.playbackTimer = null;
@@ -1383,6 +1306,20 @@ function resolveHeroStatus(payload) {
     return payload.demo.status_label;
   }
   return payload.run.status_label;
+}
+
+function renderRunStoryPanel(payload) {
+  if (!refs.runStoryShell) {
+    return;
+  }
+  if (!payload) {
+    refs.runStoryShell.className = "run-story-shell empty-state";
+    refs.runStoryShell.innerHTML = "온보딩을 시작하면 전체 진행 흐름 그래프가 이 영역에 고정 표시됩니다.";
+    return;
+  }
+  const content = renderStoryStrip(payload.story || {}, payload.repair_story || {});
+  refs.runStoryShell.className = "run-story-shell";
+  refs.runStoryShell.innerHTML = content || '<div class="empty-state">표시할 진행 흐름이 아직 없습니다.</div>';
 }
 
 function restoreRunFromQuery() {
@@ -1426,6 +1363,7 @@ async function refreshDashboard() {
     state.selectedStage = pickDefaultStage(state.displayStages.length ? state.displayStages : payload.stages || [], payload);
   }
   persistRunUiState();
+  renderRunStoryPanel(payload);
   renderStageMenu(state.displayStages.length ? state.displayStages : payload.stages || []);
   renderSelectedStage(payload);
 
@@ -1453,16 +1391,9 @@ function showError(error) {
     source: "runtime",
     message: error.message || String(error),
   };
-  renderCurrentWorkBanner({
-    run: { status: "failed", status_label: "오류" },
-    story: {
-      current_stage: { stage: state.selectedStage, label: STAGE_COPY[state.selectedStage]?.title || "Stage", status: "failed", status_label: "오류" },
-      headline: "실행 중 오류가 발생했습니다.",
-      summary: state.lastError.message,
-    },
-    repair_story: { active: false },
-    repair: { active: false },
-  });
+  if (!state.lastPayload) {
+    renderRunStoryPanel(null);
+  }
   if (state.lastPayload) {
     renderSelectedStage(state.lastPayload);
   } else {
@@ -1487,16 +1418,6 @@ refs.form.addEventListener("submit", async (event) => {
   state.displayStages = [];
   state.targetStages = [];
   state.lastError = null;
-  renderCurrentWorkBanner({
-    run: { status: "running", status_label: "실행 중" },
-    story: {
-      current_stage: { stage: "analysis", label: "Analysis", status: "running", status_label: "실행 중" },
-      headline: "프리셋 온보딩을 시작했습니다.",
-      summary: "분석 단계로 진입하기 위해 런타임을 준비하는 중입니다.",
-    },
-    repair_story: { active: false },
-    repair: { active: false },
-  });
   if (state.playbackTimer) {
     window.clearTimeout(state.playbackTimer);
     state.playbackTimer = null;
@@ -1526,16 +1447,6 @@ refs.githubForm.addEventListener("submit", async (event) => {
   state.displayStages = [];
   state.targetStages = [];
   state.lastError = null;
-  renderCurrentWorkBanner({
-    run: { status: "running", status_label: "가져오는 중" },
-    story: {
-      current_stage: { stage: "import", label: "Import", status: "running", status_label: "가져오는 중" },
-      headline: "GitHub 저장소 접근을 확인하는 중입니다.",
-      summary: "public이면 바로 가져오고, private면 승인 플로우로 이어집니다.",
-    },
-    repair_story: { active: false },
-    repair: { active: false },
-  });
   if (state.playbackTimer) {
     window.clearTimeout(state.playbackTimer);
     state.playbackTimer = null;
@@ -1562,14 +1473,14 @@ function renderInitialStageMenu() {
       stage,
       label: STAGE_COPY[stage].title,
       status: "pending",
-      status_label: "Waiting",
+      status_label: "대기",
     }));
   renderStageMenu(state.displayStages);
 }
 
 async function boot() {
   renderInitialStageMenu();
-  renderCurrentWorkBanner(null);
+  renderRunStoryPanel(null);
   try {
     await loadConfig();
     restoreRunFromQuery();

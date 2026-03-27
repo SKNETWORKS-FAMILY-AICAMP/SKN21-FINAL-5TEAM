@@ -121,7 +121,7 @@ function loadApp(options = {}) {
     "detail-title",
     "detail-status",
     "detail-description",
-    "current-work-banner",
+    "run-story-shell",
     "stage-detail",
     "site",
     "repo-url",
@@ -357,11 +357,18 @@ test("repair mode renders a dedicated hero and uses focus stage details", async 
 
   api.renderSelectedStage(payload);
 
-  assert.equal(api.refs.detailTitle.textContent, "계획 -> 분석");
-  assert.match(api.refs.stageDetail.innerHTML, /repair-hero/);
+  assert.equal(api.refs.detailTitle.textContent, "분석");
+  assert.match(api.refs.stageDetail.innerHTML, /repair-summary-block/);
+  assert.match(api.refs.stageDetail.innerHTML, /복구 요약/);
+  assert.match(api.refs.stageDetail.innerHTML, /문제 발생/);
+  assert.match(api.refs.stageDetail.innerHTML, /오류 상세/);
+  assert.match(api.refs.stageDetail.innerHTML, /진단 판단/);
+  assert.match(api.refs.stageDetail.innerHTML, /되돌아감/);
   assert.match(api.refs.stageDetail.innerHTML, /Analysis focus card/);
   assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Validation card/);
-  assert.match(api.refs.stageDetail.innerHTML, /Run Story Snapshot/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Why It Failed/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Re-enter Here/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Now Running/);
 });
 
 test("repair mode keeps rewind target selected during playback and rail labels the anchors", async () => {
@@ -381,8 +388,8 @@ test("repair mode keeps rewind target selected during playback and rail labels t
   api.renderStageMenu(payload.stages);
 
   assert.equal(api.state.selectedStage, "analysis");
-  assert.match(api.refs.stageTimeline.innerHTML, /failed here/);
-  assert.match(api.refs.stageTimeline.innerHTML, /re-enter here/);
+  assert.match(api.refs.stageTimeline.innerHTML, /오류 지점/);
+  assert.match(api.refs.stageTimeline.innerHTML, /되돌아감/);
   assert.match(api.refs.stageTimeline.innerHTML, /stage-link-muted/);
 });
 
@@ -398,7 +405,6 @@ test("restoreRunFromQuery falls back to persisted active run and restores panel 
         selectedStage: "planning",
         selectionPinned: true,
         rawLogOpen: true,
-        storySnapshotOpen: true,
       }),
     },
   });
@@ -417,7 +423,6 @@ test("restoreRunFromQuery falls back to persisted active run and restores panel 
   assert.equal(api.state.selectedStage, "planning");
   assert.equal(api.state.selectionPinned, true);
   assert.equal(api.state.rawLogOpen, true);
-  assert.equal(api.state.storySnapshotOpen, true);
 });
 
 test("beginRunTracking persists the active run in the URL and session storage", async () => {
@@ -450,7 +455,7 @@ test("site panel row is not locked to a clipping fixed height", async () => {
   const styles = fs.readFileSync(stylesPath, "utf8");
 
   assert.doesNotMatch(styles, /\.main-panel\s*\{[^}]*grid-template-rows:\s*104px minmax\(0,\s*1fr\)/s);
-  assert.match(styles, /\.main-panel\s*\{[^}]*grid-template-rows:\s*minmax\(\d+px,\s*auto\)\s+minmax\(0,\s*1fr\)/s);
+  assert.match(styles, /\.main-panel\s*\{[^}]*grid-template-rows:\s*minmax\(\d+px,\s*auto\)\s+auto\s+minmax\(0,\s*1fr\)/s);
 });
 
 test("indexing renders as a formal stage detail instead of only retrieval chips", async () => {
@@ -510,13 +515,13 @@ test("indexing renders as a formal stage detail instead of only retrieval chips"
   api.renderStageMenu(payload.stages);
   api.renderSelectedStage(payload);
 
-  assert.match(api.refs.stageTimeline.innerHTML, /Indexing/);
-  assert.match(api.refs.stageDetail.innerHTML, /Current Stage Detail/);
+  assert.match(api.refs.stageTimeline.innerHTML, /인덱싱/);
+  assert.match(api.refs.stageDetail.innerHTML, /선택한 단계 상세/);
   assert.match(api.refs.stageDetail.innerHTML, /FAQ smoke/);
   assert.match(api.refs.stageDetail.innerHTML, /Policy/);
 });
 
-test("run story snapshot stays open after toggle and rerender", async () => {
+test("run story graph renders in a dedicated always-visible panel", async () => {
   const api = loadApp();
   const payload = repairPayload();
   api.state.currentRun = {
@@ -528,23 +533,10 @@ test("run story snapshot stays open after toggle and rerender", async () => {
   api.state.selectedStage = "analysis";
 
   api.renderSelectedStage(payload);
-
-  const snapshotPanel = api.refs.stageDetail.querySelector("[data-story-snapshot-panel]");
-  assert.ok(snapshotPanel, "story snapshot panel should render");
-
-  snapshotPanel.open = true;
-  snapshotPanel.listeners.toggle();
-
-  assert.equal(api.state.storySnapshotOpen, true);
-  assert.match(
-    api.sessionStorage.getItem("onmo.run-ui:bilyeo:bilyeo-v2-repair-009") || "",
-    /"storySnapshotOpen":true/
-  );
-
-  api.renderSelectedStage(payload);
-
-  const rerenderedPanel = api.refs.stageDetail.querySelector("[data-story-snapshot-panel]");
-  assert.equal(rerenderedPanel.open, true);
+  assert.match(api.refs.runStoryShell.innerHTML, /진행 흐름/);
+  assert.match(api.refs.runStoryShell.innerHTML, /story-rewind-graph/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Run Story Snapshot/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Narrative Summary/);
 });
 
 test("repair snapshot renders a rerun lane and rewind connector", async () => {
@@ -555,32 +547,12 @@ test("repair snapshot renders a rerun lane and rewind connector", async () => {
 
   api.renderSelectedStage(payload);
 
-  assert.match(api.refs.stageDetail.innerHTML, /story-strip-primary/);
-  assert.match(api.refs.stageDetail.innerHTML, /story-strip-rerun/);
-  assert.match(api.refs.stageDetail.innerHTML, /story-rewind-connector/);
-  assert.match(api.refs.stageDetail.innerHTML, /Re-run from Analysis/);
-  assert.match(api.refs.stageDetail.innerHTML, /rewind to Analysis/);
-  assert.match(api.refs.stageDetail.innerHTML, /Validation/);
-});
-
-test("current work banner is rendered for normal and repair runs", async () => {
-  const api = loadApp();
-  const normalPayload = dashboardPayload();
-  api.state.lastPayload = normalPayload;
-  api.state.selectedStage = "analysis";
-
-  api.renderSelectedStage(normalPayload);
-
-  assert.match(api.refs.currentWorkBanner.innerHTML, /Current Work/);
-  assert.match(api.refs.currentWorkBanner.innerHTML, /Analysis/);
-  assert.match(api.refs.currentWorkBanner.innerHTML, /기존 이벤트를 불러오는 중입니다/);
-
-  const repairPayloadValue = repairPayload();
-  api.state.lastPayload = repairPayloadValue;
-  api.renderSelectedStage(repairPayloadValue);
-
-  assert.match(api.refs.currentWorkBanner.innerHTML, /계획 -&gt; 분석/);
-  assert.match(api.refs.currentWorkBanner.innerHTML, /분석 단계부터 다시 실행하도록 결정했습니다/);
+  assert.match(api.refs.runStoryShell.innerHTML, /story-strip-primary/);
+  assert.match(api.refs.runStoryShell.innerHTML, /story-strip-rerun/);
+  assert.match(api.refs.runStoryShell.innerHTML, /story-rewind-connector/);
+  assert.match(api.refs.runStoryShell.innerHTML, /분석부터 다시 실행/);
+  assert.match(api.refs.runStoryShell.innerHTML, /분석 단계로 되돌아감/);
+  assert.match(api.refs.runStoryShell.innerHTML, /검증/);
 });
 
 test("left rail marks the live current stage separately from the selected stage", async () => {
@@ -592,7 +564,8 @@ test("left rail marks the live current stage separately from the selected stage"
   api.renderStageMenu(payload.stages);
 
   assert.match(api.refs.stageTimeline.innerHTML, /stage-link-live/);
-  assert.match(api.refs.stageTimeline.innerHTML, /Analysis/);
+  assert.match(api.refs.stageTimeline.innerHTML, /분석/);
+  assert.match(api.refs.stageTimeline.innerHTML, /진행 중/);
 });
 
 test("cleanup pass removes redundant site and repair status surfaces", async () => {
@@ -602,11 +575,28 @@ test("cleanup pass removes redundant site and repair status surfaces", async () 
   assert.doesNotMatch(indexHtml, /id="run-meta"/);
   assert.doesNotMatch(indexHtml, /Preset Demo/);
   assert.doesNotMatch(indexHtml, /hero-status/);
+  assert.doesNotMatch(indexHtml, /id="current-work-banner"/);
+  assert.match(indexHtml, /id="run-story-shell"/);
 
   const api = loadApp();
   const payload = repairPayload();
   api.state.lastPayload = payload;
   api.renderSelectedStage(payload);
 
-  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /분석 단계로 되감기/);
+  assert.match(api.refs.stageDetail.innerHTML, /복구 요약/);
+  assert.match(indexHtml, /id="run-story-shell"/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Repair Focus Detail/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Narrative Summary/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Current Work/);
+});
+
+test("running stage visuals use live animations for emphasis", async () => {
+  const stylesPath = path.resolve(__dirname, "../static/styles.css");
+  const styles = fs.readFileSync(stylesPath, "utf8");
+
+  assert.match(styles, /@keyframes liveCardPulse/);
+  assert.match(styles, /@keyframes liveDotPulse/);
+  assert.match(styles, /\.stage-link\.stage-link-live\s*\{[^}]*animation:\s*liveCardPulse/s);
+  assert.match(styles, /\.status-badge\.warn\s*\{[^}]*animation:\s*liveChipPulse/s);
+  assert.match(styles, /\.story-step\.current \.story-step-node\s*\{[^}]*animation:\s*liveDotPulse/s);
 });
