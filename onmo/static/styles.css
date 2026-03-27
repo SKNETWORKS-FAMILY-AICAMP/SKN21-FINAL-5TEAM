@@ -68,7 +68,7 @@ body {
 
 .main-panel {
   display: grid;
-  grid-template-rows: 104px minmax(0, 1fr);
+  grid-template-rows: minmax(136px, auto) minmax(0, 1fr);
   gap: 18px;
   min-height: 0;
 }
@@ -317,6 +317,7 @@ body {
   display: flex;
   justify-content: space-between;
   gap: 14px;
+  flex-wrap: wrap;
   align-items: start;
   min-height: 0;
 }
@@ -324,7 +325,9 @@ body {
 .launch-stack {
   display: grid;
   gap: 12px;
-  width: min(620px, 100%);
+  flex: 1 1 640px;
+  width: min(700px, 100%);
+  min-width: 0;
 }
 
 .github-form,
@@ -436,6 +439,7 @@ body {
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.96);
   white-space: nowrap;
+  align-self: flex-start;
 }
 
 .status-dot {

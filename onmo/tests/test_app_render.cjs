@@ -343,3 +343,11 @@ test("beginRunTracking persists the active run in the URL and session storage", 
   assert.match(api.window.location.search, /run_id=food-run-001/);
   assert.match(api.window.location.search, /generated_root=generated-v2/);
 });
+
+test("site panel row is not locked to a clipping fixed height", async () => {
+  const stylesPath = path.resolve(__dirname, "../static/styles.css");
+  const styles = fs.readFileSync(stylesPath, "utf8");
+
+  assert.doesNotMatch(styles, /\.main-panel\s*\{[^}]*grid-template-rows:\s*104px minmax\(0,\s*1fr\)/s);
+  assert.match(styles, /\.main-panel\s*\{[^}]*grid-template-rows:\s*minmax\(\d+px,\s*auto\)\s+minmax\(0,\s*1fr\)/s);
+});
