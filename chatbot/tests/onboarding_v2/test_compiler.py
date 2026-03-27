@@ -15,7 +15,8 @@ from chatbot.src.onboarding_v2.compile import compile_plan
 from chatbot.src.onboarding_v2.compile.preflight import run_flask_host_import_smoke
 from chatbot.src.onboarding_v2.compile.strategies.backend.django import compile_django_backend_bundle
 from chatbot.src.onboarding_v2.compile.strategies.backend.flask import compile_flask_backend_bundle
-from chatbot.src.onboarding_v2.models.planning import HostBackendPlan
+from chatbot.src.onboarding_v2.compile.strategies.chatbot import generated_adapter as generated_adapter_module
+from chatbot.src.onboarding_v2.models.planning import ChatbotBridgePlan, HostBackendPlan, ResolvedAuthContract
 from chatbot.src.onboarding_v2.planning import build_planning_bundle
 from chatbot.src.onboarding_v2.planning.planner import _choose_generated_handler_path
 
@@ -124,6 +125,81 @@ def test_compiler_uses_chat_auth_bridge_for_bilyeo_bearer_validation():
     assert '"주문완료": OrderStatus.PAID' in generated_adapter
     assert '"배송준비중": OrderStatus.PREPARING' in generated_adapter
     assert '"배송완료": OrderStatus.DELIVERED' in generated_adapter
+
+
+def test_compiler_uses_session_cookie_generated_auth_for_food():
+    analysis_bundle = build_analysis_bundle(site="food", source_root=ROOT / "food")
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+    )
+    program = compile_plan(
+        analysis_bundle=analysis_bundle,
+        planning_bundle=planning_bundle,
+        source_root=ROOT / "food",
+    )
+
+    generated_auth = next(
+        bundle.content
+        for bundle in program.chatbot_program.supporting_artifact_bundles
+        if bundle.path == "src/adapters/generated/food/auth.py"
+    )
+
+    assert 'cookie_map = ctx.cookies.copy() if ctx.cookies else {}' in generated_auth
+    assert 'if "session_token" not in cookie_map and ctx.accessToken:' in generated_auth
+
+
+def test_compiler_generates_cookie_plus_csrf_auth_headers():
+    plan = ChatbotBridgePlan(
+        site_key="csrf-shop",
+        adapter_package="src/adapters/generated/csrf-shop",
+        setup_target="src/adapters/setup.py",
+        host_base_url_env_var="GENERATED_CSRF_SHOP_API_URL",
+        auth_validation_endpoint="/api/users/me/",
+        current_user_endpoint="/api/users/me/",
+        product_search_endpoint="/api/products/",
+        order_list_endpoint="/api/orders/",
+        order_detail_endpoint="/api/orders/{order_id}/",
+        order_action_endpoint="/api/orders/{order_id}/actions/",
+        auth_transport="cookie_plus_csrf",
+        session_cookie_name="sessionid",
+        csrf_cookie_name="csrftoken",
+        csrf_header_name="X-CSRFToken",
+    )
+
+    generated_auth = generated_adapter_module._build_generated_auth(plan=plan)
+
+    assert 'if "sessionid" not in cookie_map and ctx.accessToken:' in generated_auth
+    assert 'cookie_map.get("csrftoken")' in generated_auth
+    assert 'headers["X-CSRFToken"] = csrf_token' in generated_auth
+
+
+def test_compiler_generated_auth_prefers_nested_auth_contract_over_legacy_fields():
+    plan = ChatbotBridgePlan(
+        site_key="food",
+        adapter_package="src/adapters/generated/food",
+        setup_target="src/adapters/setup.py",
+        host_base_url_env_var="GENERATED_FOOD_API_URL",
+        auth_validation_endpoint="/api/users/me/",
+        current_user_endpoint="/api/users/me/",
+        product_search_endpoint="/api/products/",
+        order_list_endpoint="/api/orders/",
+        order_detail_endpoint="/api/orders/{order_id}/",
+        order_action_endpoint="/api/orders/{order_id}/actions/",
+        auth_contract=ResolvedAuthContract(
+            transport="session_cookie",
+            session_cookie_name="real_session",
+        ),
+        auth_transport="bearer_token",
+        session_cookie_name="legacy_cookie",
+    )
+
+    generated_auth = generated_adapter_module._build_generated_auth(plan=plan)
+
+    assert 'headers["Authorization"] = f"Bearer {ctx.accessToken}"' not in generated_auth
+    assert 'if "real_session" not in cookie_map and ctx.accessToken:' in generated_auth
+    assert 'if "legacy_cookie" not in cookie_map and ctx.accessToken:' not in generated_auth
 
 
 def test_compiler_registers_generated_adapter_in_setup_bundle():

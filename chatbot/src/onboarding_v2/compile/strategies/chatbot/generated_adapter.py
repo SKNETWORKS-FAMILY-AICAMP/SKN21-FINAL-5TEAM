@@ -210,7 +210,8 @@ def _build_generated_client(*, plan: ChatbotBridgePlan) -> str:
 
 
 def _build_generated_auth(*, plan: ChatbotBridgePlan) -> str:
-    if plan.auth_transport == "bearer_token":
+    auth_contract = plan.auth_contract
+    if auth_contract.transport == "bearer_token":
         return (
             "from typing import Dict\n\n"
             "from ...schema import AuthenticatedContext, AdapterError\n\n\n"
@@ -232,7 +233,42 @@ def _build_generated_auth(*, plan: ChatbotBridgePlan) -> str:
             "    return headers\n"
         )
 
-    cookie_name = "session_token"
+    cookie_name = str(auth_contract.session_cookie_name or "").strip()
+    if not cookie_name:
+        raise ValueError("generated adapter auth requires session_cookie_name for cookie transports")
+    if auth_contract.transport == "cookie_plus_csrf":
+        csrf_cookie_name = str(auth_contract.csrf_cookie_name or "").strip()
+        csrf_header_name = str(auth_contract.csrf_header_name or "").strip()
+        if not csrf_cookie_name or not csrf_header_name:
+            raise ValueError(
+                "generated adapter auth requires csrf_cookie_name and csrf_header_name for cookie_plus_csrf transport"
+            )
+        return (
+            "from typing import Dict\n\n"
+            "from ...schema import AuthenticatedContext, AdapterError\n\n\n"
+            f'SITE_KEY = "{plan.site_key}"\n\n\n'
+            "def assert_generated_context(ctx: AuthenticatedContext) -> None:\n"
+            "    if ctx.siteId != SITE_KEY:\n"
+            "        raise AdapterError(\n"
+            '            "INVALID_INPUT",\n'
+            '            "generated adapter context siteId mismatch",\n'
+            '            {"expected": SITE_KEY, "received": ctx.siteId},\n'
+            "        )\n\n\n"
+            "def build_generated_auth_headers(ctx: AuthenticatedContext) -> Dict[str, str]:\n"
+            "    cookie_map = ctx.cookies.copy() if ctx.cookies else {}\n"
+            f'    if "{cookie_name}" not in cookie_map and ctx.accessToken:\n'
+            f'        cookie_map["{cookie_name}"] = ctx.accessToken\n'
+            '    csrf_token = str((ctx.metadata or {}).get("csrf_token") or cookie_map.get("'
+            f'{csrf_cookie_name}'
+            '") or "").strip()\n'
+            "    headers: Dict[str, str] = {}\n"
+            "    if cookie_map:\n"
+            '        headers["Cookie"] = \"; \".join([f\"{key}={value}\" for key, value in cookie_map.items()])\n'
+            "    if csrf_token:\n"
+            f'        headers["{csrf_header_name}"] = csrf_token\n'
+            "    return headers\n"
+        )
+
     return (
         "from typing import Dict\n\n"
         "from ...schema import AuthenticatedContext, AdapterError\n\n\n"
@@ -246,7 +282,7 @@ def _build_generated_auth(*, plan: ChatbotBridgePlan) -> str:
         "        )\n\n\n"
         "def build_generated_auth_headers(ctx: AuthenticatedContext) -> Dict[str, str]:\n"
         "    cookie_map = ctx.cookies.copy() if ctx.cookies else {}\n"
-        "    if ctx.accessToken:\n"
+        f'    if "{cookie_name}" not in cookie_map and ctx.accessToken:\n'
         f'        cookie_map["{cookie_name}"] = ctx.accessToken\n'
         "    headers: Dict[str, str] = {}\n"
         "    if cookie_map:\n"

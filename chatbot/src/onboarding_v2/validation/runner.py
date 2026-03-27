@@ -620,11 +620,26 @@ def validate_chatbot_adapter_auth(
     bootstrap_result: dict[str, Any],
     plan: IntegrationPlan,
 ) -> dict[str, Any]:
-    payload = dict(bootstrap_result.get("bootstrap_payload") or {})
     if not bootstrap_result.get("passed"):
         return _skipped_result(
             "chatbot adapter auth skipped because host auth bootstrap failed"
         )
+    auth_context, auth_failure = _build_bridge_auth_context(
+        bootstrap_result=bootstrap_result,
+        plan=plan,
+        user_id="__bridge__",
+    )
+    related_files = [
+        f"{plan.chatbot_bridge.adapter_package}/adapter.py",
+        f"{plan.chatbot_bridge.adapter_package}/auth.py",
+        plan.chatbot_bridge.setup_target,
+    ]
+    if auth_context is None:
+        return {
+            "passed": False,
+            "failure_summary": auth_failure or "chatbot adapter auth missing transport credentials",
+            "related_files": related_files,
+        }
 
     module_prefix = f"src.adapters.generated.{plan.chatbot_bridge.site_key}"
     with _prepend_path(chatbot_runtime_workspace):
@@ -648,23 +663,13 @@ def validate_chatbot_adapter_auth(
         )
         try:
             validated_user = asyncio.run(
-                adapter.validate_auth(
-                    AuthenticatedContext(
-                        siteId=plan.chatbot_bridge.site_key,
-                        userId="__bridge__",
-                        accessToken=str(payload.get("access_token") or ""),
-                    )
-                )
+                adapter.validate_auth(auth_context)
             )
         except Exception as exc:
             return {
                 "passed": False,
                 "failure_summary": f"chatbot adapter auth failed: {exc}",
-                "related_files": [
-                    f"{plan.chatbot_bridge.adapter_package}/adapter.py",
-                    f"{plan.chatbot_bridge.adapter_package}/auth.py",
-                    plan.chatbot_bridge.setup_target,
-                ],
+                "related_files": related_files,
             }
     user_id = str(getattr(validated_user, "id", "") or "").strip()
     return {
@@ -673,11 +678,7 @@ def validate_chatbot_adapter_auth(
         if user_id
         else "chatbot adapter auth missing user.id",
         "validated_user": validated_user.model_dump(mode="json"),
-        "related_files": [
-            f"{plan.chatbot_bridge.adapter_package}/adapter.py",
-            f"{plan.chatbot_bridge.adapter_package}/auth.py",
-            plan.chatbot_bridge.setup_target,
-        ],
+        "related_files": related_files,
     }
 
 
@@ -825,19 +826,24 @@ def validate_widget_order_e2e(
             related_files=[],
         )
 
-    payload = dict(bootstrap_result.get("bootstrap_payload") or {})
     adapter = _load_generated_adapter(
         chatbot_runtime_workspace=chatbot_runtime_workspace,
         runtime_plan=runtime_plan,
         plan=plan,
     )
-    auth_context = AuthenticatedContext(
-        siteId=plan.chatbot_bridge.site_key,
-        userId=str(
+    auth_context, auth_failure = _build_bridge_auth_context(
+        bootstrap_result=bootstrap_result,
+        plan=plan,
+        user_id=str(
             (adapter_auth_result.get("validated_user") or {}).get("id") or "__bridge__"
         ),
-        accessToken=str(payload.get("access_token") or ""),
     )
+    if auth_context is None:
+        return WidgetOrderE2EResult(
+            passed=False,
+            failure_summary=auth_failure or "widget order e2e auth context failed",
+            related_files=_widget_order_related_files(plan),
+        )
     try:
         sample_context = _acquire_widget_order_sample(
             adapter=adapter,
@@ -1191,9 +1197,10 @@ async def _stream_chat_request(
     payload: dict[str, Any] = {
         "message": scenario["prompt"],
         "site_id": fixture_manifest.get("site_id"),
-        "access_token": fixture_manifest.get("access_token"),
         "capability_profile": fixture_manifest.get("capability_profile"),
     }
+    if fixture_manifest.get("access_token"):
+        payload["access_token"] = fixture_manifest.get("access_token")
     if previous_state:
         payload["previous_state"] = previous_state
     if scenario.get("resume_payload"):
@@ -1300,9 +1307,21 @@ def _build_runtime_fixture_manifest(
     manifest["capability_profile"] = str(plan.host_frontend.capability_profile or "order_cs_only")
     manifest["enabled_retrieval_corpora"] = list(plan.host_frontend.enabled_retrieval_corpora or [])
     manifest["widget_features"] = dict(plan.host_frontend.widget_features or {})
-    manifest["access_token"] = str((bootstrap_result.get("bootstrap_payload") or {}).get("access_token") or "")
+    auth_material, auth_failure = _resolve_bridge_auth_material(
+        bootstrap_result=bootstrap_result,
+        plan=plan,
+    )
+    manifest["auth_transport"] = _normalized_auth_transport(plan.chatbot_bridge.auth_contract.transport)
+    manifest["access_token"] = str((auth_material or {}).get("access_token") or "")
     manifest["bootstrap_payload"] = dict(bootstrap_result.get("bootstrap_payload") or {})
-    manifest["session_cookies"] = dict(bootstrap_result.get("session_cookies") or {})
+    manifest["session_cookies"] = dict((auth_material or {}).get("cookies") or {})
+    manifest["auth_metadata"] = dict((auth_material or {}).get("metadata") or {})
+    if auth_failure:
+        manifest["available"] = False
+        manifest["reason"] = auth_failure
+        manifest["orders"] = dict(manifest.get("orders") or {})
+        manifest["seed_source"] = seed_source
+        return manifest
 
     try:
         adapter = _load_generated_adapter(
@@ -1310,10 +1329,10 @@ def _build_runtime_fixture_manifest(
             runtime_plan=runtime_plan,
             plan=plan,
         )
-        auth_context = AuthenticatedContext(
-            siteId=plan.chatbot_bridge.site_key,
-            userId=str(((adapter_auth_result.get("validated_user") or {}).get("id")) or "__bridge__"),
-            accessToken=str(manifest.get("access_token") or ""),
+        auth_context = _auth_context_from_material(
+            auth_material=auth_material or {},
+            site_id=plan.chatbot_bridge.site_key,
+            user_id=str(((adapter_auth_result.get("validated_user") or {}).get("id")) or "__bridge__"),
         )
         headers = _build_generated_auth_headers(adapter=adapter, auth_context=auth_context)
         raw_orders = asyncio.run(adapter.client.list_orders(headers))
@@ -1622,6 +1641,7 @@ def _collect_widget_order_flow_report(
             server_fastapi=server_fastapi,
             site_id=plan.chatbot_bridge.site_key,
             access_token=str(auth_context.accessToken or ""),
+            session_cookies=dict(auth_context.cookies or {}),
             conversation_id="conv-widget-list-orders",
             message="request_list_orders",
             step_specs=[
@@ -1639,6 +1659,7 @@ def _collect_widget_order_flow_report(
             server_fastapi=server_fastapi,
             site_id=plan.chatbot_bridge.site_key,
             access_token=str(auth_context.accessToken or ""),
+            session_cookies=dict(auth_context.cookies or {}),
             conversation_id="conv-widget-cancel",
             message="request_cancel_order",
             step_specs=[
@@ -1663,6 +1684,7 @@ def _collect_widget_order_flow_report(
             server_fastapi=server_fastapi,
             site_id=plan.chatbot_bridge.site_key,
             access_token=str(auth_context.accessToken or ""),
+            session_cookies=dict(auth_context.cookies or {}),
             conversation_id="conv-widget-refund",
             message="request_refund_order",
             step_specs=[
@@ -1687,6 +1709,7 @@ def _collect_widget_order_flow_report(
             server_fastapi=server_fastapi,
             site_id=plan.chatbot_bridge.site_key,
             access_token=str(auth_context.accessToken or ""),
+            session_cookies=dict(auth_context.cookies or {}),
             conversation_id="conv-widget-exchange",
             message="request_exchange_order",
             step_specs=[
@@ -1909,6 +1932,7 @@ def _exercise_widget_order_flow(
     server_fastapi: Any,
     site_id: str,
     access_token: str,
+    session_cookies: dict[str, str] | None,
     conversation_id: str,
     message: str,
     step_specs: list[dict[str, Any]],
@@ -1926,15 +1950,20 @@ def _exercise_widget_order_flow(
             request_payload: dict[str, Any] = {
                 "message": message if index == 0 else "resume_interrupt",
                 "site_id": site_id,
-                "access_token": access_token,
             }
+            if access_token:
+                request_payload["access_token"] = access_token
             if index > 0:
                 request_payload["previous_state"] = {
                     "conversation_id": conversation_id,
                     "pending_interrupt": pending_interrupt,
                 }
                 request_payload["resume_payload"] = resume_payloads[index - 1]
-            response = client.post("/api/v1/chat/stream", json=request_payload)
+            response = client.post(
+                "/api/v1/chat/stream",
+                json=request_payload,
+                cookies=session_cookies or None,
+            )
             text = response.text
             fragments.append(text)
             ui_action = step_spec["ui_action"]
@@ -2291,6 +2320,99 @@ def _chatbot_runtime_env_overrides(
             chat_auth_contract_path=plan.host_backend.chat_auth_contract_path,
         )
     }
+
+
+def _normalized_auth_transport(value: Any) -> str:
+    normalized = str(value or "").strip()
+    if normalized == "session_token_cookie":
+        return "session_cookie"
+    return normalized or "session_cookie"
+
+
+def _resolve_bridge_auth_material(
+    *,
+    bootstrap_result: dict[str, Any],
+    plan: IntegrationPlan,
+) -> tuple[dict[str, Any] | None, str | None]:
+    payload = dict(bootstrap_result.get("bootstrap_payload") or {})
+    cookies = dict(bootstrap_result.get("session_cookies") or {})
+    auth_contract = plan.chatbot_bridge.auth_contract
+    transport = _normalized_auth_transport(auth_contract.transport)
+    access_token = str(payload.get("access_token") or "").strip()
+    session_cookie_name = str(auth_contract.session_cookie_name or "").strip()
+    csrf_cookie_name = str(auth_contract.csrf_cookie_name or "").strip()
+    csrf_header_name = str(auth_contract.csrf_header_name or "").strip()
+
+    if transport == "bearer_token":
+        if not access_token:
+            return None, "missing bearer access_token for bridge auth"
+        return {
+            "auth_transport": transport,
+            "access_token": access_token,
+            "cookies": cookies,
+            "metadata": {},
+        }, None
+
+    if not session_cookie_name:
+        return None, "missing session_cookie_name in bridge auth contract"
+    session_cookie_value = str(cookies.get(session_cookie_name) or "").strip()
+    if not session_cookie_value:
+        return None, f"missing session cookie {session_cookie_name} for bridge auth"
+
+    metadata: dict[str, Any] = {}
+    if transport == "cookie_plus_csrf":
+        if not csrf_cookie_name or not csrf_header_name:
+            return None, "missing csrf contract fields for bridge auth"
+        csrf_token = str(
+            payload.get("csrf_token")
+            or cookies.get(csrf_cookie_name)
+            or ""
+        ).strip()
+        if not csrf_token:
+            return None, f"missing csrf token {csrf_cookie_name} for bridge auth"
+        metadata["csrf_token"] = csrf_token
+        metadata["csrf_header_name"] = csrf_header_name
+
+    return {
+        "auth_transport": transport,
+        "access_token": "",
+        "cookies": cookies,
+        "metadata": metadata,
+    }, None
+
+
+def _auth_context_from_material(
+    *,
+    auth_material: dict[str, Any],
+    site_id: str,
+    user_id: str,
+) -> AuthenticatedContext:
+    return AuthenticatedContext(
+        siteId=site_id,
+        userId=str(user_id or "__bridge__"),
+        accessToken=str(auth_material.get("access_token") or "") or None,
+        cookies=dict(auth_material.get("cookies") or {}) or None,
+        metadata=dict(auth_material.get("metadata") or {}) or None,
+    )
+
+
+def _build_bridge_auth_context(
+    *,
+    bootstrap_result: dict[str, Any],
+    plan: IntegrationPlan,
+    user_id: str,
+) -> tuple[AuthenticatedContext | None, str | None]:
+    auth_material, failure_summary = _resolve_bridge_auth_material(
+        bootstrap_result=bootstrap_result,
+        plan=plan,
+    )
+    if auth_material is None:
+        return None, failure_summary
+    return _auth_context_from_material(
+        auth_material=auth_material,
+        site_id=plan.chatbot_bridge.site_key,
+        user_id=user_id,
+    ), None
 
 
 @contextmanager

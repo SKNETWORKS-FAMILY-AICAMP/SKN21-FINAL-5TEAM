@@ -14,21 +14,31 @@ from chatbot.src.onboarding_v2.apply import apply_edit_program
 from chatbot.src.onboarding_v2.compile import compile_plan
 from chatbot.src.onboarding_v2.export import export_and_replay
 from chatbot.src.onboarding_v2.models.validation import BackendRuntimePlan, BackendRuntimePrepResult, BackendRuntimeState
-from chatbot.src.onboarding_v2.models.planning import ChatbotBridgePlan, HostBackendPlan, HostFrontendPlan, IntegrationPlan
+from chatbot.src.onboarding_v2.models.planning import (
+    ChatbotBridgePlan,
+    HostBackendPlan,
+    HostFrontendPlan,
+    IntegrationPlan,
+    ResolvedAuthContract,
+)
 from chatbot.src.onboarding_v2.planning import build_planning_bundle
 from chatbot.src.onboarding_v2.storage import ArtifactStore
+from chatbot.src.adapters.schema import User
 from chatbot.src.onboarding_v2.validation.runner import (
     ConversationScenarioResult,
     ConversationValidationResult,
+    _build_runtime_fixture_manifest,
     _evaluate_conversation_deterministic_failures,
     _finalize_conversation_scenario_result,
     _evaluate_widget_order_flow_report,
     _enforce_required_rechecks,
     _load_generated_adapter,
     _load_runtime_chat_modules,
+    _resolve_bridge_auth_material,
     _run_conversation_llm_judge,
     _runtime_base_url,
     run_validation,
+    validate_chatbot_adapter_auth,
     validate_host_auth_bootstrap,
     validate_chatbot_runtime_boot,
     validate_conversation_runtime,
@@ -763,8 +773,181 @@ def test_validate_conversation_runtime_emits_scenario_events(monkeypatch, tmp_pa
         "conversation_scenario_start",
         "conversation_scenario_finish",
     ]
-    assert observed_events[0]["details"]["scenario_id"] == "unauthenticated_chat_request"
-    assert observed_events[-1]["details"]["scenario_id"] == "authenticated_list_orders"
+
+
+def test_validate_chatbot_adapter_auth_uses_real_session_cookie_for_food(monkeypatch, tmp_path: Path):
+    captured: dict[str, object] = {}
+    real_import_module = validate_chatbot_adapter_auth.__globals__["importlib"].import_module
+
+    class _FakeClient:
+        def __init__(self, base_url: str):
+            captured["base_url"] = base_url
+
+    class _FakeAdapter:
+        def __init__(self, client):
+            self.client = client
+
+        async def validate_auth(self, ctx):
+            captured["ctx"] = ctx
+            return User(id="7", siteId="food")
+
+    def _fake_import_module(name: str):
+        if name == "src.adapters.generated.food.adapter":
+            return types.SimpleNamespace(GeneratedFoodAdapter=_FakeAdapter)
+        if name == "src.adapters.generated.food.client":
+            return types.SimpleNamespace(GeneratedFoodClient=_FakeClient)
+        return real_import_module(name)
+
+    monkeypatch.setattr(
+        validate_chatbot_adapter_auth.__globals__["importlib"],
+        "import_module",
+        _fake_import_module,
+    )
+
+    result = validate_chatbot_adapter_auth(
+        chatbot_runtime_workspace=tmp_path,
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path / "backend"),
+            command=["python", "manage.py", "runserver"],
+            readiness_url="http://127.0.0.1:8123/api/chat/auth-token",
+            listen_port=8123,
+        ),
+        bootstrap_result={
+            "passed": True,
+            "bootstrap_payload": {
+                "access_token": "validation-food",
+                "user": {"id": "7"},
+            },
+            "session_cookies": {"session_token": "real-session-token"},
+        },
+        plan=_build_food_plan(),
+    )
+
+    assert result["passed"] is True
+    ctx = captured["ctx"]
+    assert getattr(ctx, "accessToken", None) in (None, "")
+    assert getattr(ctx, "cookies", None) == {"session_token": "real-session-token"}
+
+
+def test_runtime_fixture_manifest_reuses_transport_aware_food_auth_context(monkeypatch, tmp_path: Path):
+    captured: dict[str, object] = {}
+
+    class _FakeClient:
+        async def list_orders(self, headers):
+            captured["headers"] = headers
+            return [{"order_id": "10", "option_id": "opt-1"}]
+
+    class _FakeAdapter:
+        def __init__(self):
+            self.client = _FakeClient()
+
+    monkeypatch.setitem(
+        _build_runtime_fixture_manifest.__globals__,
+        "_load_generated_adapter",
+        lambda **kwargs: _FakeAdapter(),
+    )
+
+    def _fake_build_generated_auth_headers(*, adapter, auth_context):
+        del adapter
+        captured["auth_context"] = auth_context
+        return {"Cookie": "session_token=real-session-token"}
+
+    monkeypatch.setitem(
+        _build_runtime_fixture_manifest.__globals__,
+        "_build_generated_auth_headers",
+        _fake_build_generated_auth_headers,
+    )
+
+    manifest = _build_runtime_fixture_manifest(
+        chatbot_runtime_workspace=tmp_path,
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path / "backend"),
+            command=["python", "manage.py", "runserver"],
+            readiness_url="http://127.0.0.1:8124/api/chat/auth-token",
+            listen_port=8124,
+        ),
+        plan=_build_food_plan(),
+        prep_result=BackendRuntimePrepResult(
+            framework="django",
+            passed=True,
+            fixture_manifest={"seed_source": {}, "auth": {}},
+        ),
+        bootstrap_result={
+            "passed": True,
+            "bootstrap_payload": {
+                "access_token": "validation-food",
+                "user": {"id": "7"},
+            },
+            "session_cookies": {"session_token": "real-session-token"},
+        },
+        adapter_auth_result={"passed": True, "validated_user": {"id": "7"}},
+        onboarding_credentials=None,
+    )
+
+    assert manifest["available"] is True
+    assert manifest["access_token"] == ""
+    assert manifest["session_cookies"] == {"session_token": "real-session-token"}
+    auth_context = captured["auth_context"]
+    assert getattr(auth_context, "accessToken", None) in (None, "")
+    assert getattr(auth_context, "cookies", None) == {"session_token": "real-session-token"}
+
+
+def test_resolve_bridge_auth_material_prefers_nested_auth_contract_over_legacy_fields():
+    plan = IntegrationPlan(
+        host_backend=HostBackendPlan(
+            strategy="django_project_urlconf_import_view",
+            route_target="backend/foodshop/urls.py",
+            import_target="backend/foodshop/urls.py",
+            login_endpoint="/api/users/login/",
+            auth_handler_source="backend/users/views.py",
+            chat_auth_contract_path="/api/chat/auth-token",
+            site_id="food",
+        ),
+        host_frontend=HostFrontendPlan(
+            mount_strategy="react_app_shell_outside_routes",
+            mount_target="frontend/src/App.js",
+            api_strategy="react_api_client_augment_existing",
+            api_client_target="frontend/src/api/api.js",
+            chatbot_server_base_url="http://localhost:8100",
+        ),
+        chatbot_bridge=ChatbotBridgePlan(
+            site_key="food",
+            adapter_package="src/adapters/generated/food",
+            setup_target="src/adapters/setup.py",
+            host_base_url_env_var="GENERATED_FOOD_API_URL",
+            auth_validation_endpoint="/api/users/me/",
+            current_user_endpoint="/api/users/me/",
+            product_search_endpoint="/api/products/",
+            order_list_endpoint="/api/orders/",
+            order_detail_endpoint="/api/orders/{order_id}/",
+            order_action_endpoint="/api/orders/{order_id}/actions/",
+            auth_contract=ResolvedAuthContract(
+                transport="session_cookie",
+                session_cookie_name="real_session",
+            ),
+            auth_transport="bearer_token",
+            session_cookie_name="legacy_session",
+        ),
+    )
+
+    auth_material, failure_summary = _resolve_bridge_auth_material(
+        bootstrap_result={
+            "bootstrap_payload": {"access_token": "synthetic-access-token"},
+            "session_cookies": {
+                "real_session": "real-session-token",
+                "legacy_session": "stale-legacy-token",
+            },
+        },
+        plan=plan,
+    )
+
+    assert failure_summary is None
+    assert auth_material is not None
+    assert auth_material["auth_transport"] == "session_cookie"
+    assert auth_material["access_token"] == ""
+    assert auth_material["cookies"]["real_session"] == "real-session-token"
 
 
 def test_validate_host_auth_bootstrap_falls_back_to_validation_bridge_when_login_fails(

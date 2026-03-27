@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable
 
@@ -37,6 +38,7 @@ from chatbot.src.onboarding_v2.models.planning import (
     PlanningRisk,
     RagCorpusPlan,
     RepairHint,
+    ResolvedAuthContract,
     RetrievalIndexPlan,
     StrategyCandidate,
     TargetBinding,
@@ -862,6 +864,8 @@ def _derive_integration_plan(
         site_id=site_id,
         source_root=Path(snapshot.repo_profile.source_root),
         backend_framework=analysis_bundle.framework_profile.backend_framework,
+        auth_handler_source=auth_source,
+        auth_style_hint=str(snapshot.repo_profile.auth_style or ""),
     )
     assumptions = [
         "planner consumed verified analysis graph and deterministic compiler capabilities",
@@ -930,7 +934,7 @@ def _derive_integration_plan(
             order_detail_endpoint=bridge_contract["order_detail_endpoint"],
             order_action_endpoint=bridge_contract["order_action_endpoint"],
             order_action_endpoints=bridge_contract["order_action_endpoints"],
-            auth_transport=bridge_contract["auth_transport"],
+            auth_contract=bridge_contract["auth_contract"],
             response_mapping_profile=bridge_contract["response_mapping_profile"],
             request_field_mappings=bridge_contract["request_field_mappings"],
             supported_tools=list(SUPPORTED_ORDER_TOOLS),
@@ -1297,6 +1301,8 @@ def _derive_chatbot_bridge_contract(
     site_id: str,
     source_root: Path,
     backend_framework: str,
+    auth_handler_source: str,
+    auth_style_hint: str,
 ) -> dict[str, Any]:
     login_endpoint = str(domain_integration.login_endpoint or "").strip()
     auth_validation_endpoint = str(
@@ -1335,6 +1341,14 @@ def _derive_chatbot_bridge_contract(
             "missing verified chatbot bridge seams for planning: " + ", ".join(sorted(missing))
         )
 
+    auth_contract = _infer_bridge_auth_contract(
+        source_root=source_root,
+        backend_framework=backend_framework,
+        site_id=site_id,
+        auth_handler_source=auth_handler_source,
+        auth_style_hint=auth_style_hint,
+    )
+
     return {
         "auth_validation_endpoint": auth_validation_endpoint,
         "current_user_endpoint": current_user_endpoint,
@@ -1344,11 +1358,7 @@ def _derive_chatbot_bridge_contract(
         "order_action_endpoint": order_action_endpoint
         or next(iter(order_action_endpoints.values())),
         "order_action_endpoints": order_action_endpoints,
-        "auth_transport": _infer_bridge_auth_transport(
-            source_root=source_root,
-            backend_framework=backend_framework,
-            site_id=site_id,
-        ),
+        "auth_contract": auth_contract,
         "response_mapping_profile": "site_a" if _normalize_site_key(site_id) == "food" else "generic",
         "request_field_mappings": {
             "action": "action",
@@ -1358,37 +1368,205 @@ def _derive_chatbot_bridge_contract(
     }
 
 
-def _infer_bridge_auth_transport(
+def _infer_bridge_auth_contract(
     *,
     source_root: Path,
     backend_framework: str,
     site_id: str,
-) -> str:
-    if str(backend_framework or "").strip().lower() != "flask":
-        return "session_token_cookie"
+    auth_handler_source: str,
+    auth_style_hint: str,
+) -> ResolvedAuthContract:
+    candidate_paths = _auth_transport_candidate_paths(
+        source_root=source_root,
+        auth_handler_source=auth_handler_source,
+    )
+    evidence = _collect_auth_transport_evidence(candidate_paths)
 
+    if evidence["supports_bearer"]:
+        return ResolvedAuthContract(transport="bearer_token")
+
+    session_cookie_name = evidence["session_cookie_name"]
+    csrf_cookie_name = evidence["csrf_cookie_name"]
+    csrf_header_name = evidence["csrf_header_name"]
+
+    if session_cookie_name and csrf_cookie_name and csrf_header_name and evidence["has_csrf_evidence"]:
+        return ResolvedAuthContract(
+            transport="cookie_plus_csrf",
+            session_cookie_name=session_cookie_name,
+            csrf_cookie_name=csrf_cookie_name,
+            csrf_header_name=csrf_header_name,
+        )
+
+    if session_cookie_name and evidence["has_cookie_evidence"]:
+        return ResolvedAuthContract(
+            transport="session_cookie",
+            session_cookie_name=session_cookie_name,
+        )
+
+    normalized_hint = str(auth_style_hint or "").strip().lower()
+    normalized_site = _normalize_site_key(site_id)
+    if normalized_site == "bilyeo" or normalized_hint in {"bearer", "bearer_token"}:
+        return ResolvedAuthContract(transport="bearer_token")
+    if normalized_hint == "cookie_plus_csrf":
+        return ResolvedAuthContract(
+            transport="cookie_plus_csrf",
+            session_cookie_name=session_cookie_name or "session_token",
+            csrf_cookie_name=csrf_cookie_name or "csrftoken",
+            csrf_header_name=csrf_header_name or "X-CSRFToken",
+        )
+    return ResolvedAuthContract(
+        transport="session_cookie",
+        session_cookie_name=session_cookie_name or "session_token",
+    )
+
+
+def _auth_transport_candidate_paths(
+    *,
+    source_root: Path,
+    auth_handler_source: str,
+) -> list[Path]:
     candidate_paths: list[Path] = []
-    default_handler = source_root / "backend" / "chat_auth.py"
-    if default_handler.exists():
-        candidate_paths.append(default_handler)
+    for relative_path in (
+        str(auth_handler_source or "").strip(),
+        "backend/chat_auth.py",
+    ):
+        if not relative_path:
+            continue
+        candidate = source_root / relative_path
+        if candidate.exists() and candidate not in candidate_paths:
+            candidate_paths.append(candidate)
     candidate_paths.extend(
         path
         for path in sorted(source_root.rglob("chat_auth.py"))
         if path not in candidate_paths
     )
+    return candidate_paths
+
+
+def _collect_auth_transport_evidence(candidate_paths: list[Path]) -> dict[str, Any]:
+    supports_bearer = False
+    session_cookie_name: str | None = None
+    csrf_cookie_name: str | None = None
+    csrf_header_name: str | None = None
+    has_cookie_evidence = False
+    has_csrf_evidence = False
 
     for candidate in candidate_paths:
         try:
             content = candidate.read_text(encoding="utf-8")
         except OSError:
             continue
+        lowered = content.lower()
+        assignments = _extract_auth_constant_assignments(content)
         if _flask_chat_auth_supports_bearer_transport(content):
-            return "bearer_token"
+            supports_bearer = True
+        if "request.cookies.get" in lowered or "set_cookie(" in lowered:
+            has_cookie_evidence = True
+        if "csrf" in lowered:
+            has_csrf_evidence = True
+        extracted_session_cookie = _extract_session_cookie_name(content, assignments)
+        extracted_csrf_cookie = _extract_csrf_cookie_name(content, assignments)
+        extracted_csrf_header = _extract_csrf_header_name(content, assignments)
+        if session_cookie_name is None and extracted_session_cookie:
+            session_cookie_name = extracted_session_cookie
+        if csrf_cookie_name is None and extracted_csrf_cookie:
+            csrf_cookie_name = extracted_csrf_cookie
+        if csrf_header_name is None and extracted_csrf_header:
+            csrf_header_name = extracted_csrf_header
 
-    normalized_site = _normalize_site_key(site_id)
-    if normalized_site == "bilyeo":
-        return "bearer_token"
-    return "session_token_cookie"
+    return {
+        "supports_bearer": supports_bearer,
+        "session_cookie_name": session_cookie_name,
+        "csrf_cookie_name": csrf_cookie_name,
+        "csrf_header_name": csrf_header_name,
+        "has_cookie_evidence": has_cookie_evidence,
+        "has_csrf_evidence": has_csrf_evidence,
+    }
+
+
+def _extract_auth_constant_assignments(content: str) -> dict[str, str]:
+    assignments: dict[str, str] = {}
+    for match in re.finditer(
+        r'(?m)^(?P<name>[A-Z][A-Z0-9_]+)\s*=\s*["\'](?P<value>[^"\']+)["\']',
+        content,
+    ):
+        assignments[str(match.group("name")).strip()] = str(match.group("value")).strip()
+    return assignments
+
+
+def _extract_session_cookie_name(content: str, assignments: dict[str, str]) -> str | None:
+    for key in ("SESSION_TOKEN_COOKIE_NAME", "SESSION_COOKIE_NAME"):
+        value = assignments.get(key)
+        if value:
+            return value
+    for value in _extract_cookie_candidates(content, assignments):
+        if "csrf" not in value.lower():
+            return value
+    return None
+
+
+def _extract_csrf_cookie_name(content: str, assignments: dict[str, str]) -> str | None:
+    value = assignments.get("CSRF_COOKIE_NAME")
+    if value:
+        return value
+    for candidate in _extract_cookie_candidates(content, assignments):
+        if "csrf" in candidate.lower():
+            return candidate
+    return None
+
+
+def _extract_csrf_header_name(content: str, assignments: dict[str, str]) -> str | None:
+    value = assignments.get("CSRF_HEADER_NAME")
+    if value:
+        return value
+    for match in re.finditer(
+        r'request\.(?:headers|META)\.get\((?P<token>[^)]+)\)',
+        content,
+    ):
+        resolved = _resolve_assignment_or_literal(match.group("token"), assignments)
+        if not resolved:
+            continue
+        if resolved.startswith("HTTP_"):
+            resolved = _http_meta_name_to_header(resolved)
+        if "csrf" in resolved.lower():
+            return resolved
+    return None
+
+
+def _extract_cookie_candidates(content: str, assignments: dict[str, str]) -> list[str]:
+    candidates: list[str] = []
+    patterns = (
+        r'request\.COOKIES\.get\((?P<token>[^)]+)\)',
+        r'request\.cookies\.get\((?P<token>[^)]+)\)',
+        r'set_cookie\((?P<token>[^,\n]+)',
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, content):
+            resolved = _resolve_assignment_or_literal(match.group("token"), assignments)
+            if resolved and resolved not in candidates:
+                candidates.append(resolved)
+    return candidates
+
+
+def _resolve_assignment_or_literal(token: str, assignments: dict[str, str]) -> str | None:
+    raw = str(token or "").strip()
+    if not raw:
+        return None
+    if raw.endswith(","):
+        raw = raw[:-1].strip()
+    if raw[:1] in {'"', "'"} and raw[-1:] == raw[:1]:
+        return raw[1:-1].strip() or None
+    return assignments.get(raw)
+
+
+def _http_meta_name_to_header(value: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized.startswith("HTTP_"):
+        return normalized
+    suffix = normalized[len("HTTP_") :]
+    if suffix.upper() == "X_CSRFTOKEN":
+        return "X-CSRFToken"
+    return "-".join(part.title() for part in suffix.split("_") if part)
 
 
 def _flask_chat_auth_supports_bearer_transport(content: str) -> bool:

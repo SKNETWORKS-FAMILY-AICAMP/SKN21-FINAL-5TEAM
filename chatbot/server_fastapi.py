@@ -7,6 +7,7 @@ import traceback
 import types
 from typing import Any, Dict, Literal
 from uuid import uuid4
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -270,10 +271,85 @@ def _build_persistent_state(final_state: dict[str, Any], conversation_id: str) -
     return persistent
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- Startup ---
+    print("\n" + "="*50)
+    print("🚀 Chatbot Server Startup: Loading Heavy Models...")
+    print("="*50)
+
+    app.state.onboarding_event_store = build_onboarding_event_store(
+        redis_url=settings.ONBOARDING_REDIS_URL,
+    )
+
+    if _env_flag("CHATBOT_SKIP_MODEL_PRELOAD"):
+        print("⚠️ Skipping model preload (CHATBOT_SKIP_MODEL_PRELOAD=true)")
+    else:
+        # 가드레일 모델 로드
+        try:
+            print("⏳ Loading Guardrail model...")
+            load_guardrail_model()
+            print("✅ Guardrail model loaded successfully.")
+        except Exception as e:
+            print(f"❌ Guardrail model loading failed: {e}")
+            traceback.print_exc()
+
+        # 리트리버 모델 로드
+        try:
+            print("⏳ Ensuring retrieval models (BM25, Ranker)...")
+            ensure_retrieval_models()
+            print("✅ Retrieval models ready.")
+        except Exception as e:
+            print(f"❌ Retrieval models loading failed: {e}")
+            traceback.print_exc()
+
+        # BGE-M3 임베딩 모델 로드
+        try:
+            print("⏳ Preloading BGE-M3 embedding model...")
+            preload_bge_m3()
+            print("✅ BGE-M3 embedding model loaded.")
+        except Exception as e:
+            print(f"❌ BGE-M3 loading failed: {e}")
+            traceback.print_exc()
+
+        # KoBART 요약 모델 로드
+        try:
+            print("⏳ Preloading KoBART summarizer model...")
+            preload_kobart()
+            print("✅ KoBART summarizer model loaded.")
+        except Exception as e:
+            print(f"❌ KoBART loading failed: {e}")
+            traceback.print_exc()
+
+        # CLIP 리소스 로드
+        try:
+            print("⏳ Preloading CLIP resources (Multimodal)...")
+            preload_clip_resources()
+            print("✅ CLIP resources loaded.")
+        except Exception as e:
+            print(f"❌ CLIP resources loading failed: {e}")
+            traceback.print_exc()
+
+    print("="*50)
+    print("✅ Startup Sequence Complete")
+    print("="*50 + "\n")
+
+    yield
+
+    # --- Shutdown ---
+    print("\n" + "="*50)
+    print("🛑 Chatbot Server Shutdown: Cleaning up...")
+    if hasattr(app.state, "onboarding_event_store"):
+        close_onboarding_event_store(app.state.onboarding_event_store)
+    print("✅ Shutdown Cleanup Complete")
+    print("="*50 + "\n")
+
+
 app = FastAPI(
-    title="Chatbot Standalone API",
+    title="Chatbot API Server",
     version="1.0.0",
-    description="SaaS Adapter/Tool 연동 테스트를 위한 챗봇 단독 서버",
+    description="Single-site logic simplified for the team",
+    lifespan=lifespan,
 )
 
 if CHATBOT_UPLOAD_DIR is not None:
@@ -296,51 +372,6 @@ if ecommerce_chat_router is not None:
     app.include_router(ecommerce_chat_router, prefix=f"{settings.API_V1_STR}/chat")
 app.include_router(onboarding_runs_router, prefix=settings.API_V1_STR)
 app.state.optional_extensions = _optional_extensions
-
-
-@app.on_event("startup")
-async def _startup_onboarding_event_store() -> None:
-    app.state.onboarding_event_store = build_onboarding_event_store(
-        redis_url=settings.ONBOARDING_REDIS_URL,
-    )
-    if _env_flag("CHATBOT_SKIP_MODEL_PRELOAD"):
-        print("Skipping chatbot model preload because CHATBOT_SKIP_MODEL_PRELOAD is enabled.")
-        return
-    # 가드레일 모델을 서버 시작 시 1회 로드합니다.
-    try:
-        load_guardrail_model()
-        print("✅ Guardrail 모델 로딩 완료")
-    except Exception as e:
-        print(f"❌ Guardrail 모델 로딩 실패: {e}")
-
-    try:
-        ensure_retrieval_models()
-        print("✅ 챗봇 리트리버 모델 로딩 완료")
-    except Exception as e:
-        print(f"❌ 챗봇 리트리버 모델 로딩 실패: {e}")
-
-    try:
-        preload_bge_m3()
-        print("✅ BGE-M3 임베딩 모델 로딩 완료")
-    except Exception as e:
-        print(f"❌ BGE-M3 임베딩 모델 로딩 실패: {e}")
-
-    try:
-        preload_kobart()
-        print("✅ KoBART 모델 로딩 완료")
-    except Exception as e:
-        print(f"❌ KoBART 모델 로딩 실패: {e}")
-
-    try:
-        preload_clip_resources()
-        print("✅ CLIP 검색 모델 로딩 완료")
-    except Exception as e:
-        print(f"❌ CLIP 검색 모델 로딩 실패: {e}")
-
-
-@app.on_event("shutdown")
-async def _shutdown_onboarding_event_store() -> None:
-    close_onboarding_event_store(getattr(app.state, "onboarding_event_store", None))
 
 
 @app.get("/health")
@@ -396,3 +427,8 @@ def chat(http_request: Request, req: ChatRequest) -> ChatResponse:
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"chat 처리 중 오류: {e}") from e
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("chatbot.server_fastapi:app", host="0.0.0.0", port=8100, reload=True)

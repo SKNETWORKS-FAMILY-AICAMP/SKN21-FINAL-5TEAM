@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 DEFAULT_ORDER_TOOLS = [
     "list_orders",
@@ -21,6 +21,15 @@ def _normalize_optional_text(value: Any) -> str | None:
     if value is None:
         return None
     return str(value).strip()
+
+
+def _normalize_auth_transport(value: Any) -> str | None:
+    normalized = _normalize_optional_text(value)
+    if normalized is None:
+        return None
+    if normalized == "session_token_cookie":
+        return "session_cookie"
+    return normalized
 
 
 class HostBackendPlan(BaseModel):
@@ -104,6 +113,44 @@ class HostFrontendPlan(BaseModel):
         return _normalize_optional_text(value)
 
 
+class ResolvedAuthContract(BaseModel):
+    transport: str = "session_cookie"
+    session_cookie_name: str | None = None
+    csrf_cookie_name: str | None = None
+    csrf_header_name: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator(
+        "transport",
+        "session_cookie_name",
+        "csrf_cookie_name",
+        "csrf_header_name",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_contract_fields(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = _normalize_optional_text(value)
+            if normalized in {"session_token_cookie", "session_cookie"}:
+                return "session_cookie"
+            return normalized
+        return _normalize_optional_text(value)
+
+    @model_validator(mode="after")
+    def _normalize_transport_shape(self) -> "ResolvedAuthContract":
+        if self.transport == "bearer_token":
+            self.session_cookie_name = None
+            self.csrf_cookie_name = None
+            self.csrf_header_name = None
+        elif self.transport == "session_cookie":
+            self.csrf_cookie_name = None
+            self.csrf_header_name = None
+        return self
+
+
 class ChatbotBridgePlan(BaseModel):
     site_key: str
     adapter_package: str
@@ -116,7 +163,11 @@ class ChatbotBridgePlan(BaseModel):
     order_detail_endpoint: str
     order_action_endpoint: str
     order_action_endpoints: dict[str, str] = Field(default_factory=dict)
-    auth_transport: str = "session_token_cookie"
+    auth_contract: ResolvedAuthContract = Field(default_factory=ResolvedAuthContract)
+    auth_transport: str = "session_cookie"
+    session_cookie_name: str | None = None
+    csrf_cookie_name: str | None = None
+    csrf_header_name: str | None = None
     response_mapping_profile: str = "site_a"
     request_field_mappings: dict[str, str] = Field(
         default_factory=lambda: {
@@ -130,6 +181,32 @@ class ChatbotBridgePlan(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _hydrate_auth_contract(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        raw_contract = payload.get("auth_contract")
+        if raw_contract is None:
+            raw_contract = {
+                key: item
+                for key, item in {
+                    "transport": payload.get("auth_transport"),
+                    "session_cookie_name": payload.get("session_cookie_name"),
+                    "csrf_cookie_name": payload.get("csrf_cookie_name"),
+                    "csrf_header_name": payload.get("csrf_header_name"),
+                }.items()
+                if item is not None
+            }
+        contract = raw_contract if isinstance(raw_contract, ResolvedAuthContract) else ResolvedAuthContract.model_validate(raw_contract)
+        payload["auth_contract"] = contract
+        payload["auth_transport"] = contract.transport
+        payload["session_cookie_name"] = contract.session_cookie_name
+        payload["csrf_cookie_name"] = contract.csrf_cookie_name
+        payload["csrf_header_name"] = contract.csrf_header_name
+        return payload
+
     @field_validator(
         "site_key",
         "adapter_package",
@@ -142,9 +219,11 @@ class ChatbotBridgePlan(BaseModel):
         "order_detail_endpoint",
         "order_action_endpoint",
         "supported_tools",
-        "auth_transport",
         "response_mapping_profile",
         "runtime_base_url",
+        "session_cookie_name",
+        "csrf_cookie_name",
+        "csrf_header_name",
         mode="before",
     )
     @classmethod
@@ -154,6 +233,11 @@ class ChatbotBridgePlan(BaseModel):
         if isinstance(value, list):
             return [str(item).strip() for item in value]
         return _normalize_text(value)
+
+    @field_validator("auth_transport", mode="before")
+    @classmethod
+    def _normalize_auth_transport(cls, value: Any) -> str | None:
+        return _normalize_auth_transport(value)
 
 
 class IntegrationStrategy(BaseModel):

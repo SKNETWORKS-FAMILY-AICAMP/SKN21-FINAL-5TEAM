@@ -156,7 +156,12 @@ def test_planner_selects_food_strategies():
     assert plan.chatbot_bridge.order_list_endpoint == "/api/orders/"
     assert plan.chatbot_bridge.order_detail_endpoint == "/api/orders/{order_id}/"
     assert plan.chatbot_bridge.order_action_endpoint == "/api/orders/{order_id}/actions/"
-    assert plan.chatbot_bridge.auth_transport == "session_token_cookie"
+    assert plan.chatbot_bridge.auth_transport == "session_cookie"
+    assert plan.chatbot_bridge.session_cookie_name == "session_token"
+    assert plan.chatbot_bridge.csrf_cookie_name is None
+    assert plan.chatbot_bridge.csrf_header_name is None
+    assert plan.chatbot_bridge.auth_contract.transport == "session_cookie"
+    assert plan.chatbot_bridge.auth_contract.session_cookie_name == "session_token"
     assert plan.chatbot_bridge.response_mapping_profile == "site_a"
     assert plan.chatbot_bridge.request_field_mappings == {
         "action": "action",
@@ -311,6 +316,50 @@ def test_planner_accepts_bilyeo_strict_coverage_with_verified_flask_endpoints():
     assert plan.chatbot_bridge.auth_validation_endpoint == "/api/chat/auth-token"
     assert plan.chatbot_bridge.current_user_endpoint == "/api/chat/auth-token"
     assert plan.chatbot_bridge.auth_transport == "bearer_token"
+
+
+def test_planner_infers_cookie_plus_csrf_transport_from_auth_source(tmp_path: Path):
+    auth_source = tmp_path / "backend" / "users" / "views.py"
+    auth_source.parent.mkdir(parents=True, exist_ok=True)
+    auth_source.write_text(
+        "from django.http import JsonResponse\n\n"
+        'SESSION_COOKIE_NAME = "sessionid"\n'
+        'CSRF_COOKIE_NAME = "csrftoken"\n'
+        'CSRF_HEADER_NAME = "X-CSRFToken"\n\n'
+        "def login(request):\n"
+        '    token = request.COOKIES.get(CSRF_COOKIE_NAME) or request.META.get("HTTP_X_CSRFTOKEN")\n'
+        '    session_id = request.COOKIES.get(SESSION_COOKIE_NAME)\n'
+        "    response = JsonResponse({'ok': True})\n"
+        "    if token and session_id:\n"
+        "        return response\n"
+        '    response.set_cookie(SESSION_COOKIE_NAME, "session-1")\n'
+        '    response.set_cookie(CSRF_COOKIE_NAME, "csrf-1")\n'
+        "    return response\n",
+        encoding="utf-8",
+    )
+
+    contract = planner_module._derive_chatbot_bridge_contract(
+        domain_integration=DomainIntegration(
+            auth_validation_endpoint="/api/users/me/",
+            current_user_endpoint="/api/users/me/",
+            product_search_endpoint="/api/products/",
+            order_list_endpoint="/api/orders/",
+            order_detail_endpoint="/api/orders/{order_id}/",
+            order_action_endpoint="/api/orders/{order_id}/actions/",
+        ),
+        site_id="csrf-shop",
+        source_root=tmp_path,
+        backend_framework="django",
+        auth_handler_source="backend/users/views.py",
+        auth_style_hint="cookie_plus_csrf",
+    )
+
+    auth_contract = contract["auth_contract"]
+
+    assert auth_contract.transport == "cookie_plus_csrf"
+    assert auth_contract.session_cookie_name == "sessionid"
+    assert auth_contract.csrf_cookie_name == "csrftoken"
+    assert auth_contract.csrf_header_name == "X-CSRFToken"
 
 
 def test_planner_combines_risk_and_repair_hint_llm_calls(monkeypatch):

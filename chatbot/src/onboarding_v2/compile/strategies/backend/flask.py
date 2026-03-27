@@ -436,7 +436,7 @@ def _infer_auth_transport_from_chat_auth_content(content: str) -> str:
         or ("authorization" in lowered and "bearer" in lowered)
     ) and "resolve_authenticated_user_id" in content:
         return "bearer_token"
-    return "session_token_cookie"
+    return "session_cookie"
 
 
 def _ensure_plain_imports(original: str, module_names: list[str]) -> str:

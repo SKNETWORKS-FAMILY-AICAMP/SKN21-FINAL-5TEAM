@@ -39,6 +39,7 @@ from chatbot.src.onboarding_v2.models import (
     PathCandidate,
     ReplayResult,
     RepairDecision,
+    ResolvedAuthContract,
     RetrievalIndexPlan,
     RetrievalPlan,
     RepoProfile,
@@ -104,6 +105,8 @@ def test_model_contracts_round_trip():
             order_list_endpoint="/api/orders/",
             order_detail_endpoint="/api/orders/{order_id}/",
             order_action_endpoint="/api/orders/{order_id}/actions/",
+            auth_transport="session_cookie",
+            session_cookie_name="session_token",
         ),
         retrieval_index_plan=RetrievalIndexPlan(
             site_id="food",
@@ -214,7 +217,12 @@ def test_model_contracts_round_trip():
         "refund",
         "exchange",
     ]
-    assert plan.chatbot_bridge.auth_transport == "session_token_cookie"
+    assert plan.chatbot_bridge.auth_transport == "session_cookie"
+    assert plan.chatbot_bridge.session_cookie_name == "session_token"
+    assert plan.chatbot_bridge.csrf_cookie_name is None
+    assert plan.chatbot_bridge.csrf_header_name is None
+    assert plan.chatbot_bridge.auth_contract.transport == "session_cookie"
+    assert plan.chatbot_bridge.auth_contract.session_cookie_name == "session_token"
     assert plan.chatbot_bridge.response_mapping_profile == "site_a"
     assert plan.chatbot_bridge.request_field_mappings["new_option_id"] == "new_option_id"
     assert plan.host_frontend.chatbot_server_base_url_expression == ""
@@ -248,6 +256,67 @@ def test_model_contracts_round_trip():
     assert replay_result.host_allowed_targets == ["frontend/src/App.js"]
     assert summary.latest_rewind_to == "validation"
     assert summary.repair_attempt_count == 2
+
+
+def test_chatbot_bridge_plan_prefers_nested_auth_contract_and_mirrors_legacy_fields():
+    plan = ChatbotBridgePlan.model_validate(
+        {
+            "site_key": "food",
+            "adapter_package": "src/adapters/generated/food",
+            "setup_target": "src/adapters/setup.py",
+            "host_base_url_env_var": "GENERATED_FOOD_API_URL",
+            "auth_validation_endpoint": "/api/users/me/",
+            "current_user_endpoint": "/api/users/me/",
+            "product_search_endpoint": "/api/products/",
+            "order_list_endpoint": "/api/orders/",
+            "order_detail_endpoint": "/api/orders/{order_id}/",
+            "order_action_endpoint": "/api/orders/{order_id}/actions/",
+            "auth_contract": {
+                "transport": "session_cookie",
+                "session_cookie_name": "session_token",
+            },
+            "auth_transport": "bearer_token",
+            "session_cookie_name": "ignored_cookie",
+            "csrf_cookie_name": "ignored_csrf",
+            "csrf_header_name": "Ignored-CSRF",
+        }
+    )
+
+    assert isinstance(plan.auth_contract, ResolvedAuthContract)
+    assert plan.auth_contract.transport == "session_cookie"
+    assert plan.auth_contract.session_cookie_name == "session_token"
+    assert plan.auth_transport == "session_cookie"
+    assert plan.session_cookie_name == "session_token"
+    assert plan.csrf_cookie_name is None
+    assert plan.csrf_header_name is None
+
+    dumped = plan.model_dump(mode="json")
+
+    assert dumped["auth_contract"]["transport"] == "session_cookie"
+    assert dumped["auth_transport"] == "session_cookie"
+    assert dumped["session_cookie_name"] == "session_token"
+
+
+def test_chatbot_bridge_plan_accepts_legacy_auth_fields_without_nested_contract():
+    plan = ChatbotBridgePlan.model_validate(
+        {
+            "site_key": "bilyeo",
+            "adapter_package": "src/adapters/generated/bilyeo",
+            "setup_target": "src/adapters/setup.py",
+            "host_base_url_env_var": "GENERATED_BILYEO_API_URL",
+            "auth_validation_endpoint": "/api/chat/auth-token",
+            "current_user_endpoint": "/api/chat/auth-token",
+            "product_search_endpoint": "/api/products",
+            "order_list_endpoint": "/api/orders/all",
+            "order_detail_endpoint": "/api/orders/{order_id}",
+            "order_action_endpoint": "/api/orders/{order_id}/exchange",
+            "auth_transport": "bearer_token",
+        }
+    )
+
+    assert plan.auth_contract.transport == "bearer_token"
+    assert plan.auth_contract.session_cookie_name is None
+    assert plan.auth_transport == "bearer_token"
 
 
 def test_repair_model_contracts_round_trip():
