@@ -105,6 +105,31 @@ def inject_import_stage(
     return updated
 
 
+def decorate_dashboard_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    updated = dict(payload)
+    run_payload = dict(updated.get("run") or {})
+    repair_payload = dict(updated.get("repair") or {})
+    stages = list(updated.get("stages") or [])
+    recent_events = list(updated.get("recent_events") or [])
+    repair_events = list(updated.get("repair_events") or [])
+
+    story = _build_story_payload(
+        run=run_payload,
+        stages=stages,
+        repair=repair_payload,
+        recent_events=recent_events,
+    )
+    repair_story = _build_repair_story_payload(
+        repair=repair_payload,
+        recent_events=recent_events,
+        repair_events=repair_events,
+    )
+
+    updated["story"] = story
+    updated["repair_story"] = repair_story
+    return updated
+
+
 def discover_runs(*, generated_root: str | Path, site: str | None = None, limit: int = 12) -> list[dict[str, Any]]:
     root = Path(generated_root)
     if not root.exists():
@@ -190,6 +215,8 @@ def load_run_dashboard(*, run_root: str | Path, process: ProcessSnapshot | None 
             "repair_attempt_count": int(summary.get("repair_attempt_count") or 0),
             "latest_failure_signature": str(summary.get("latest_failure_signature") or ""),
             "latest_rewind_to": str(summary.get("latest_rewind_to") or ""),
+            "retrieval_status": dict(summary.get("retrieval_status") or {}),
+            "enabled_retrieval_corpora": list(summary.get("enabled_retrieval_corpora") or []),
         },
         "process": {
             "running": bool(process.running) if process else False,
@@ -921,6 +948,281 @@ def _compact_event(event: dict[str, Any]) -> dict[str, Any]:
         "summary": str(event.get("summary") or ""),
         "severity": str(event.get("severity") or "info"),
     }
+
+
+def _build_story_payload(
+    *,
+    run: dict[str, Any],
+    stages: list[dict[str, Any]],
+    repair: dict[str, Any],
+    recent_events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    current_stage = _select_story_current_stage(stages)
+    current_label = str(current_stage.get("label") or current_stage.get("stage") or "-")
+    current_status = str(current_stage.get("status") or "pending")
+    repair_active = bool(repair.get("active"))
+    failed_stage = str(repair.get("failed_stage") or "").strip()
+    rewind_to = str(repair.get("effective_rewind_to") or repair.get("requested_rewind_to") or "").strip()
+    focus_stage = current_stage
+    if repair_active and rewind_to:
+        focus_stage = next((stage for stage in stages if str(stage.get("stage") or "") == rewind_to), current_stage)
+
+    story_steps = []
+    for stage in stages:
+        stage_key = str(stage.get("stage") or "")
+        emphasis = "default"
+        if stage_key == str(current_stage.get("stage") or ""):
+            emphasis = "current"
+        elif str(stage.get("status") or "") == "failed":
+            emphasis = "failed"
+        elif repair_active and rewind_to and stage_key == rewind_to:
+            emphasis = "rewind"
+        story_steps.append(
+            {
+                "stage": stage_key,
+                "label": str(stage.get("label") or stage_key),
+                "status": str(stage.get("status") or "pending"),
+                "status_label": str(stage.get("status_label") or STATUS_LABELS.get(str(stage.get("status") or "pending"), "Unknown")),
+                "emphasis": emphasis,
+            }
+        )
+
+    headline = f"현재 {current_label} 단계가 진행 중입니다."
+    summary = str(current_stage.get("summary") or "").strip()
+    if current_status == "failed":
+        headline = f"{current_label} 단계에서 실행이 중단되었습니다."
+    elif current_status == "completed":
+        headline = "온보딩 흐름이 완료되었습니다."
+
+    if repair_active:
+        failed_label = str(repair.get("failed_stage_label") or _stage_label_ko(failed_stage) or failed_stage or "")
+        rewind_label = str(repair.get("effective_rewind_label") or _stage_label_ko(rewind_to) or rewind_to or "")
+        if current_status == "running":
+            headline = f"현재 {current_label} 단계가 다시 진행 중입니다."
+        if failed_label and rewind_label:
+            summary = f"{failed_label} 단계 실패 이후 {rewind_label} 단계로 되감아 다시 확인하고 있습니다."
+        elif str(repair.get("problem_explanation") or "").strip():
+            summary = str(repair.get("problem_explanation") or "").strip()
+        if str(repair.get("current_action") or "").strip():
+            summary = str(repair.get("current_action") or "").strip()
+
+    if not summary:
+        if recent_events:
+            summary = str(recent_events[-1].get("summary") or "").strip()
+        if not summary:
+            summary = "현재 실행 흐름을 준비 중입니다."
+
+    retrieval_story = _build_retrieval_story(run=run, repair=repair)
+
+    return {
+        "headline": headline,
+        "summary": summary,
+        "steps": story_steps,
+        "current_stage": {
+            "stage": str(current_stage.get("stage") or ""),
+            "label": current_label,
+            "status": current_status,
+            "status_label": str(current_stage.get("status_label") or STATUS_LABELS.get(current_status, "Unknown")),
+        },
+        "focus_stage": {
+            "stage": str(focus_stage.get("stage") or ""),
+            "label": str(focus_stage.get("label") or focus_stage.get("stage") or ""),
+            "status": str(focus_stage.get("status") or "pending"),
+            "status_label": str(
+                focus_stage.get("status_label")
+                or STATUS_LABELS.get(str(focus_stage.get("status") or "pending"), "Unknown")
+            ),
+        },
+        "retrieval": retrieval_story,
+    }
+
+
+def _build_repair_story_payload(
+    *,
+    repair: dict[str, Any],
+    recent_events: list[dict[str, Any]],
+    repair_events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not bool(repair.get("active")):
+        return {
+            "active": False,
+            "headline": "",
+            "summary": "",
+            "steps": [],
+            "failed_stage": "",
+            "rewind_to": "",
+        }
+
+    failed_stage = str(repair.get("failed_stage") or "").strip()
+    failed_label = str(repair.get("failed_stage_label") or _stage_label_ko(failed_stage) or failed_stage or "문제 단계").strip()
+    rewind_to = str(repair.get("effective_rewind_to") or repair.get("requested_rewind_to") or "").strip()
+    rewind_label = str(repair.get("effective_rewind_label") or _stage_label_ko(rewind_to) or rewind_to or "이전 단계").strip()
+    stop_reason_text = str(repair.get("stop_reason_text") or "").strip()
+
+    failure_event = _find_event(recent_events, event_type="stage_failed", stage=failed_stage)
+    diagnosis_event = _find_event(repair_events, event_type="repair_diagnosis_started")
+    decision_event = _find_event(repair_events, event_type="repair_decision_emitted")
+    rewind_event = _find_event(repair_events, event_type="rewind_requested")
+    rerun_event = _find_event(recent_events, event_type="stage_rerun_started", stage=rewind_to)
+    stopped_event = _find_event(repair_events, event_type="repair_stopped", stage="repair")
+
+    diagnosis_status = "completed" if str(repair.get("diagnosis_summary") or "").strip() or diagnosis_event else "running"
+    rewind_status = "failed" if stop_reason_text else ("completed" if rewind_to else "running")
+    rerun_status = "failed" if stop_reason_text else ("running" if rerun_event or rewind_to else "pending")
+    rerun_label = "사용자 확인 대기" if stop_reason_text else f"{rewind_label} 재실행 시작"
+
+    return {
+        "active": True,
+        "headline": "Repair Rewind",
+        "summary": str(repair.get("problem_explanation") or repair.get("current_action") or "").strip(),
+        "status_label": str(repair.get("status_label") or "").strip(),
+        "steps": [
+            {
+                "kind": "failure",
+                "label": f"{failed_label} 실패 감지",
+                "status": "completed",
+                "timestamp": str((failure_event or {}).get("timestamp") or ""),
+            },
+            {
+                "kind": "diagnosis",
+                "label": "원인 진단 완료" if diagnosis_status == "completed" else "원인 진단 중",
+                "status": diagnosis_status,
+                "timestamp": str((decision_event or diagnosis_event or {}).get("timestamp") or ""),
+            },
+            {
+                "kind": "rewind",
+                "label": "자동 복구 중단" if stop_reason_text else f"{rewind_label}로 되감기 결정",
+                "status": rewind_status,
+                "timestamp": str((stopped_event or rewind_event or decision_event or {}).get("timestamp") or ""),
+            },
+            {
+                "kind": "rerun",
+                "label": rerun_label,
+                "status": rerun_status,
+                "timestamp": str((rerun_event or stopped_event or {}).get("timestamp") or ""),
+            },
+        ],
+        "failed_stage": failed_stage,
+        "failed_stage_label": failed_label,
+        "rewind_to": rewind_to,
+        "rewind_to_label": rewind_label,
+        "problem": str(repair.get("problem_explanation") or repair.get("failure_summary") or "").strip(),
+        "diagnosis": str(repair.get("diagnosis_summary") or "").strip(),
+        "current_action": str(repair.get("current_action") or stop_reason_text or "").strip(),
+    }
+
+
+def _build_retrieval_story(*, run: dict[str, Any], repair: dict[str, Any]) -> dict[str, Any]:
+    retrieval_status = dict(run.get("retrieval_status") or {})
+    enabled = list(run.get("enabled_retrieval_corpora") or [])
+    corpora = list(dict.fromkeys(enabled + list(retrieval_status.keys())))
+    if not corpora:
+        return {
+            "active": False,
+            "headline": "",
+            "summary": "",
+            "items": [],
+            "rewind_note": "",
+        }
+
+    items = []
+    ready_count = 0
+    for corpus in corpora:
+        payload = dict(retrieval_status.get(corpus) or {})
+        status = _retrieval_chip_status(payload)
+        if status == "ready":
+            ready_count += 1
+        items.append(
+            {
+                "corpus": corpus,
+                "label": _corpus_label(corpus),
+                "status": status,
+                "status_label": _retrieval_status_label(status),
+                "documents_indexed": int(payload.get("documents_indexed") or 0),
+            }
+        )
+
+    summary = "Retrieval 준비 대기 중입니다."
+    if all(item["status"] in {"ready", "skipped"} for item in items):
+        summary = "Retrieval 준비가 완료되었습니다."
+    elif any(item["status"] == "indexing" for item in items):
+        summary = f"{len(items)}개 corpus 중 {ready_count}개 준비됨. Validation 전에 retrieval 사용 가능 상태를 맞추는 중입니다."
+    elif any(item["status"] == "failed" for item in items):
+        summary = "일부 retrieval 준비가 실패했습니다."
+
+    rewind_note = ""
+    rewind_to = str(repair.get("effective_rewind_to") or "").strip()
+    if rewind_to and rewind_to in {"analysis", "planning", "compile", "apply", "export"}:
+        rewind_note = "되감기로 인해 retrieval 준비도 다시 수행될 수 있습니다."
+
+    return {
+        "active": True,
+        "headline": "Retrieval Ready",
+        "summary": summary,
+        "items": items,
+        "rewind_note": rewind_note,
+    }
+
+
+def _select_story_current_stage(stages: list[dict[str, Any]]) -> dict[str, Any]:
+    for stage in stages:
+        if str(stage.get("status") or "") == "running":
+            return stage
+    for stage in reversed(stages):
+        if str(stage.get("status") or "") == "failed":
+            return stage
+    for stage in reversed(stages):
+        if str(stage.get("status") or "") == "completed":
+            return stage
+    return stages[0] if stages else {"stage": "", "label": "", "status": "pending", "status_label": "Waiting"}
+
+
+def _find_event(
+    events: list[dict[str, Any]],
+    *,
+    event_type: str,
+    stage: str | None = None,
+) -> dict[str, Any] | None:
+    for event in reversed(events):
+        if str(event.get("event_type") or "") != event_type:
+            continue
+        if stage is not None and str(event.get("stage") or "") != stage:
+            continue
+        return event
+    return None
+
+
+def _corpus_label(corpus: str) -> str:
+    return {
+        "faq": "FAQ",
+        "policy": "Policy",
+        "discovery_image": "Discovery Image",
+    }.get(str(corpus or "").strip(), str(corpus or "").replace("_", " ").title())
+
+
+def _retrieval_chip_status(payload: dict[str, Any]) -> str:
+    raw_status = str(payload.get("status") or "").strip()
+    if raw_status == "completed" and bool(payload.get("smoke_passed", True)):
+        return "ready"
+    if raw_status in {"running", "pending", "starting"}:
+        return "indexing"
+    if raw_status in {"failed", "cancelled"}:
+        return "failed"
+    if raw_status in {"skipped"}:
+        return "skipped"
+    if not raw_status:
+        return "queued"
+    return "queued"
+
+
+def _retrieval_status_label(status: str) -> str:
+    return {
+        "ready": "Ready",
+        "indexing": "Indexing",
+        "queued": "Queued",
+        "skipped": "Skipped",
+        "failed": "Failed",
+    }.get(str(status or ""), "Queued")
 
 
 def _card(label: str, value: Any, caption: Any) -> dict[str, str]:

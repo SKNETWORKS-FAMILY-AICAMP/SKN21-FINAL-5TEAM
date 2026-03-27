@@ -40,6 +40,7 @@ const state = {
   lastError: null,
   displayStages: [],
   targetStages: [],
+  rawLogOpen: false,
 };
 
 const LIMITS = {
@@ -57,6 +58,15 @@ const COMPACT_LIMITS = {
   tags: 2,
   list: 1,
   checks: 2,
+  services: 2,
+};
+
+const REPAIR_LIMITS = {
+  cards: 2,
+  highlights: 1,
+  tags: 1,
+  list: 1,
+  checks: 1,
   services: 2,
 };
 
@@ -123,6 +133,9 @@ function limitItems(items, max) {
 }
 
 function viewLimits(compact = false) {
+  if (compact === "repair") {
+    return REPAIR_LIMITS;
+  }
   return compact ? COMPACT_LIMITS : LIMITS;
 }
 
@@ -177,8 +190,25 @@ function renderList(items = [], formatter, limits = LIMITS) {
   return `<div class="fact-list">${visibleItems.map((item) => formatter(item)).join("")}</div>`;
 }
 
-function renderRunMeta(run, demo = {}) {
+function renderRunMeta(run, demo = {}, repairStory = {}, repair = {}) {
   const modeLabel = demo.status === "disabled" ? "mode" : "bilyeo";
+  const failedLabel = repairStory.failed_stage_label || repair.failed_stage_label || repairStory.failed_stage || "";
+  const rewindLabel = repairStory.rewind_to_label || repair.effective_rewind_label || repairStory.rewind_to || "";
+  const repairMeta = repairStory.active
+    ? `
+      <div class="run-repair-meta">
+        <div class="run-repair-pill fail">
+          <span>Failed Here</span>
+          <strong>${escapeHtml(failedLabel || "-")}</strong>
+        </div>
+        <div class="run-repair-pill rewind">
+          <span>Re-enter Here</span>
+          <strong>${escapeHtml(rewindLabel || "-")}</strong>
+        </div>
+        <small>${escapeHtml(repairStory.current_action || repair.current_action || repairStory.summary || "자동 복구 흐름을 정리하는 중입니다.")}</small>
+      </div>
+    `
+    : "";
   refs.runMeta.innerHTML = `
     <div class="run-summary">
       <span><strong>site</strong><small>${escapeHtml(run.site)}</small></span>
@@ -186,7 +216,300 @@ function renderRunMeta(run, demo = {}) {
       <span><strong>status</strong><small>${escapeHtml(run.status_label)}</small></span>
       <span><strong>${escapeHtml(modeLabel)}</strong><small>${escapeHtml(demo.status_label || "Waiting")}</small></span>
     </div>
+    ${repairMeta}
   `;
+}
+
+function formatTimestamp(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return raw;
+  }
+  return parsed.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+function stageFlag(stage) {
+  const repairStory = state.lastPayload?.repair_story || {};
+  if (repairStory.active && repairStory.failed_stage && repairStory.failed_stage === stage.stage) {
+    return { label: "failed here", className: "fail" };
+  }
+  if (repairStory.active && repairStory.rewind_to && repairStory.rewind_to === stage.stage) {
+    return { label: "re-enter here", className: "rewind" };
+  }
+  if (stage.status === "failed") {
+    return { label: "fail", className: "fail" };
+  }
+  return null;
+}
+
+function renderStoryStrip(story = {}) {
+  const steps = Array.isArray(story.steps) ? story.steps : [];
+  if (!steps.length) {
+    return "";
+  }
+  return `
+    <section class="story-section">
+      <div class="story-section-head">
+        <span class="section-kicker">Run Story</span>
+        <small>${escapeHtml(story.headline || "")}</small>
+      </div>
+      <div class="story-strip">
+        ${steps
+          .map(
+            (step, index) => `
+              <div class="story-step ${statusClass(step.status)} ${escapeHtml(step.emphasis || "default")}">
+                <div class="story-step-node"></div>
+                <div class="story-step-copy">
+                  <strong>${escapeHtml(step.label)}</strong>
+                  <small>${escapeHtml(step.status_label)}</small>
+                </div>
+                ${index < steps.length - 1 ? '<div class="story-step-line"></div>' : ""}
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderRunStorySnapshot(story = {}) {
+  const content = renderStoryStrip(story);
+  if (!content) {
+    return "";
+  }
+  return `
+    <section class="story-section raw-log-shell">
+      <details class="raw-log-panel story-snapshot-panel">
+        <summary>
+          <span>Run Story Snapshot</span>
+          <small>${escapeHtml(story.headline || "전체 단계 흐름")}</small>
+        </summary>
+        <div class="raw-log-body">
+          ${content}
+        </div>
+      </details>
+    </section>
+  `;
+}
+
+function renderCompactRetrievalSummary(retrieval = {}) {
+  if (!retrieval.active) {
+    return "";
+  }
+  const items = Array.isArray(retrieval.items) ? retrieval.items : [];
+  const summary = items
+    .map((item) => `${item.label || item.corpus || ""} ${item.status_label || item.status || ""}`.trim())
+    .filter(Boolean)
+    .join(" / ");
+  return `
+    <div class="repair-retrieval-strip">
+      <span>Retrieval</span>
+      <small>${escapeHtml(summary || retrieval.summary || "retrieval 준비 상태를 확인하는 중입니다.")}</small>
+    </div>
+  `;
+}
+
+function renderNarrativeSummary(story = {}) {
+  if (!story.headline && !story.summary) {
+    return "";
+  }
+  return `
+    <section class="story-section story-summary-card">
+      <span class="section-kicker">Narrative Summary</span>
+      <strong>${escapeHtml(story.headline || "현재 실행 흐름을 확인하는 중입니다.")}</strong>
+      <p>${escapeHtml(story.summary || "단계별 진행과 되감기 여부를 정리하는 중입니다.")}</p>
+    </section>
+  `;
+}
+
+function renderRetrievalLane(retrieval = {}) {
+  if (!retrieval.active) {
+    return "";
+  }
+  const items = Array.isArray(retrieval.items) ? retrieval.items : [];
+  return `
+    <section class="story-section retrieval-section">
+      <div class="story-section-head">
+        <span class="section-kicker">${escapeHtml(retrieval.headline || "Retrieval Ready")}</span>
+        <small>${escapeHtml(retrieval.summary || "")}</small>
+      </div>
+      <div class="retrieval-chip-list">
+        ${items
+          .map(
+            (item) => `
+              <div class="retrieval-chip ${escapeHtml(item.status || "queued")}">
+                <strong>${escapeHtml(item.label || item.corpus || "")}</strong>
+                <small>${escapeHtml(item.status_label || "")}</small>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+      ${
+        retrieval.rewind_note
+          ? `<p class="section-note">${escapeHtml(retrieval.rewind_note)}</p>`
+          : ""
+      }
+    </section>
+  `;
+}
+
+function renderRepairStory(repairStory = {}, repair = {}, options = {}) {
+  if (!repairStory.active) {
+    return "";
+  }
+  const focusTitle = options.focusTitle || "Focus";
+  const focusHtml = options.focusHtml || '<div class="empty-state">표시할 세부 내용이 없습니다.</div>';
+  const retrieval = options.retrieval || {};
+  const steps = Array.isArray(repairStory.steps) ? repairStory.steps : [];
+  const failedLabel = repairStory.failed_stage_label || repair.failed_stage_label || repairStory.failed_stage || "-";
+  const rewindLabel = repairStory.rewind_to_label || repair.effective_rewind_label || repairStory.rewind_to || "-";
+  const diagnosis = repairStory.diagnosis || repair.diagnosis_summary || "원인을 분석 중입니다.";
+  const currentAction = repairStory.current_action || repair.current_action || repair.stop_reason_text || "재실행 단계를 준비 중입니다.";
+  const problem = repairStory.problem || repair.problem_explanation || repair.failure_summary || repairStory.summary || "문제 원인을 정리하는 중입니다.";
+  const statusLabel = repairStory.status_label || repair.status_label || "Repair Running";
+  return `
+    <section class="story-section rewind-section primary-rewind repair-hero">
+      <div class="story-section-head repair-hero-head">
+        <div class="repair-head-copy repair-hero-copy">
+          <span class="section-kicker">${escapeHtml(repairStory.headline || "Repair Rewind")}</span>
+          <strong>${escapeHtml(failedLabel)} -> ${escapeHtml(rewindLabel)}</strong>
+        </div>
+        <span class="status-badge ${statusClass(repair.status || "running")}">${escapeHtml(statusLabel)}</span>
+      </div>
+      <p class="repair-summary-text">${escapeHtml(problem)}</p>
+      <p class="repair-now-text">${escapeHtml(currentAction)}</p>
+      <div class="repair-sequence repair-hero-sequence">
+        ${steps
+          .map(
+            (step, index) => `
+              <div class="repair-sequence-step ${statusClass(step.status)}">
+                <div class="repair-sequence-count">${index + 1}</div>
+                <div class="repair-sequence-copy">
+                  <span>${escapeHtml(step.kind)}</span>
+                  <strong>${escapeHtml(step.label)}</strong>
+                  <small>${
+                    step.timestamp
+                      ? escapeHtml(formatTimestamp(step.timestamp))
+                      : escapeHtml(step.status || "")
+                  }</small>
+                </div>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+      <div class="repair-narrative-stack">
+        <div class="repair-narrative-row fail">
+          <span>Why It Failed</span>
+          <strong>${escapeHtml(diagnosis)}</strong>
+          <small>${escapeHtml(problem)}</small>
+        </div>
+        <div class="repair-narrative-row rewind">
+          <span>Re-enter Here</span>
+          <strong>${escapeHtml(rewindLabel)}</strong>
+          <small>${escapeHtml(repairStory.summary || "실패 지점 앞단부터 다시 확인합니다.")}</small>
+        </div>
+        <div class="repair-narrative-row current">
+          <span>Now Running</span>
+          <strong>${escapeHtml(currentAction)}</strong>
+          <small>${escapeHtml(steps[steps.length - 1]?.label || "재실행 준비 중")}</small>
+        </div>
+      </div>
+      ${renderCompactRetrievalSummary(retrieval)}
+      <div class="repair-focus-shell">
+        <div class="repair-focus-head">
+          <span class="section-kicker">Repair Focus Detail</span>
+          <small>${escapeHtml(focusTitle)}</small>
+        </div>
+        <div class="repair-focus-body">
+          ${focusHtml}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderRawEventLog(payload) {
+  const events = Array.isArray(payload.recent_events) ? payload.recent_events : [];
+  const logPath = payload.process?.log_path || "";
+  return `
+    <section class="story-section raw-log-shell">
+      <details class="raw-log-panel" data-raw-log-panel ${state.rawLogOpen ? "open" : ""}>
+        <summary>
+          <span>Raw Event Log</span>
+          <small>${events.length ? `최근 이벤트 ${events.length}개` : "최근 이벤트 없음"}</small>
+        </summary>
+        <div class="raw-log-body">
+          ${
+            logPath
+              ? `<div class="raw-log-meta"><strong>Log Path</strong><small>${escapeHtml(logPath)}</small></div>`
+              : ""
+          }
+          ${
+            events.length
+              ? `<div class="raw-log-list">
+                  ${events
+                    .map(
+                      (event) => `
+                        <div class="raw-log-row">
+                          <span>${escapeHtml(formatTimestamp(event.timestamp))}</span>
+                          <strong>${escapeHtml(event.stage || "-")}</strong>
+                          <small>${escapeHtml(event.summary || event.event_type || "-")}</small>
+                        </div>
+                      `
+                    )
+                    .join("")}
+                </div>`
+              : '<div class="empty-state">표시할 최근 이벤트가 아직 없습니다.</div>'
+          }
+        </div>
+      </details>
+    </section>
+  `;
+}
+
+function bindStoryInteractions() {
+  const rawPanel = refs.stageDetail.querySelector("[data-raw-log-panel]");
+  if (!rawPanel) {
+    return;
+  }
+  rawPanel.addEventListener("toggle", () => {
+    state.rawLogOpen = rawPanel.open;
+  });
+}
+
+function wrapStageDetail(title, html, kicker = "Current Stage Detail") {
+  return `
+    <section class="story-section current-stage-section">
+      <div class="story-section-head">
+        <span class="section-kicker">${escapeHtml(kicker)}</span>
+        <small>${escapeHtml(title)}</small>
+      </div>
+      <div class="current-stage-body">
+        ${html}
+      </div>
+    </section>
+  `;
+}
+
+function renderStageDetailContent(stageKey, details, payload, compact = true) {
+  if (stageKey === "import") return renderImport(details.import || {}, compact);
+  if (stageKey === "analysis") return renderAnalysis(details.analysis || {}, compact);
+  if (stageKey === "planning") return renderPlanning(details.planning || {}, compact);
+  if (stageKey === "compile") return renderCompile(details.compile || {}, compact);
+  if (stageKey === "apply") return renderApply(details.apply || {}, compact);
+  if (stageKey === "export") return renderExport(details.export || {}, compact);
+  if (stageKey === "validation") return renderValidation(details.validation || {}, payload.services || [], payload.demo || {}, compact);
+  return "";
 }
 
 function renderImport(details = {}, compact = false) {
@@ -279,7 +602,9 @@ function stepStagePlayback() {
   }
 
   if (!state.selectionPinned) {
-    state.selectedStage = displayStages[diffIndex].stage;
+    state.selectedStage = state.lastPayload?.repair_story?.active
+      ? pickDefaultStage(displayStages, state.lastPayload)
+      : displayStages[diffIndex].stage;
   }
 
   renderStageMenu(displayStages);
@@ -294,15 +619,22 @@ function stepStagePlayback() {
 }
 
 function renderStageMenu(stages = []) {
+  const repairStory = state.lastPayload?.repair_story || {};
   refs.stageTimeline.innerHTML = stages
     .map((stage) => {
       const isActive = state.selectedStage === stage.stage;
       const copy = STAGE_COPY[stage.stage] || {};
+      const flag = stageFlag(stage);
+      const muted = repairStory.active && !flag ? "stage-link-muted" : "";
+      const anchor = flag ? `anchor-${escapeHtml(flag.className)}` : "";
       return `
-        <button type="button" class="stage-link ${isActive ? "active" : ""}" data-stage="${escapeHtml(stage.stage)}">
+        <button type="button" class="stage-link ${isActive ? "active" : ""} ${muted} ${anchor} ${flag ? `marker-${escapeHtml(flag.className)}` : ""}" data-stage="${escapeHtml(stage.stage)}">
           <div class="stage-link-head">
             <h3>${escapeHtml(stage.label)}</h3>
-            <small>${escapeHtml(stage.status_label)}</small>
+            <div class="stage-link-meta">
+              ${flag ? `<span class="stage-mini-flag ${escapeHtml(flag.className)}">${escapeHtml(flag.label)}</span>` : ""}
+              <small>${escapeHtml(stage.status_label)}</small>
+            </div>
           </div>
           <p>${escapeHtml(copy.description || "")}</p>
         </button>
@@ -518,7 +850,13 @@ function renderErrorPane(error = null) {
   `;
 }
 
-function pickDefaultStage(stages = []) {
+function pickDefaultStage(stages = [], payload = state.lastPayload) {
+  const repairRewind = String((payload?.repair_story || {}).rewind_to || "");
+  if (repairRewind) return repairRewind;
+  const storyFocus = String((payload?.story || {}).focus_stage?.stage || "");
+  if (storyFocus) return storyFocus;
+  const storyCurrent = String((payload?.story || {}).current_stage?.stage || "");
+  if (storyCurrent) return storyCurrent;
   const running = stages.find((item) => item.status === "running");
   if (running) return running.stage;
   const failed = [...stages].reverse().find((item) => item.status === "failed");
@@ -563,44 +901,66 @@ function stopPolling() {
 function renderSelectedStage(payload) {
   const selected = state.selectedStage;
   const details = payload.details || {};
-  const repair = payload.repair || {};
   const stages = (state.displayStages && state.displayStages.length ? state.displayStages : payload.stages) || [];
   const stageView = stages.find((item) => item.stage === selected) || null;
-  const copy = STAGE_COPY[selected] || STAGE_COPY.analysis;
-  const compactView = Boolean(repair.active || state.lastError);
+  const story = payload.story || {};
+  const repairStory = payload.repair_story || {};
+  const repair = payload.repair || {};
+  const focusStage = story.focus_stage || story.current_stage || {};
+  const failedLabel = repairStory.failed_stage_label || repair.failed_stage_label || repairStory.failed_stage || "";
+  const rewindLabel = repairStory.rewind_to_label || repair.effective_rewind_label || repairStory.rewind_to || "";
+  const detailStageKey = repairStory.active ? String(focusStage.stage || selected || "analysis") : selected;
+  const copy = STAGE_COPY[detailStageKey] || STAGE_COPY.analysis;
+  const panelStatus = repairStory.active
+    ? {
+        label: repair.status_label || payload.run.status_label,
+        status: repair.status || payload.run.status,
+      }
+    : {
+        label: story.current_stage?.status_label || payload.run.status_label || (stageView ? stageView.status_label : "Waiting"),
+        status: story.current_stage?.status || payload.run.status || (stageView ? stageView.status : "pending"),
+      };
 
-  refs.detailTitle.textContent = copy.title;
-  refs.detailDescription.textContent = copy.description;
-  refs.detailStatus.textContent = stageView ? stageView.status_label : "Waiting";
-  refs.detailStatus.className = `status-badge ${statusClass(stageView ? stageView.status : "pending")}`;
+  refs.detailTitle.textContent = repairStory.active ? `${failedLabel || "Failure"} -> ${rewindLabel || "Rewind"}` : "Run Story";
+  refs.detailDescription.textContent = repairStory.active
+    ? `${repairStory.problem || repair.problem_explanation || repairStory.summary || story.headline || ""} ${repairStory.current_action || repair.current_action || ""}`.trim()
+    : story.headline || copy.description;
+  refs.detailStatus.textContent = panelStatus.label || "Waiting";
+  refs.detailStatus.className = `status-badge ${statusClass(panelStatus.status || "pending")}`;
 
-  let html = "";
-  if (selected === "import") html = renderImport(details.import || {}, compactView);
-  else if (selected === "analysis") html = renderAnalysis(details.analysis || {}, compactView);
-  else if (selected === "planning") html = renderPlanning(details.planning || {}, compactView);
-  else if (selected === "compile") html = renderCompile(details.compile || {}, compactView);
-  else if (selected === "apply") html = renderApply(details.apply || {}, compactView);
-  else if (selected === "export") html = renderExport(details.export || {}, compactView);
-  else if (selected === "validation") html = renderValidation(details.validation || {}, payload.services || [], payload.demo || {}, compactView);
+  const html = renderStageDetailContent(detailStageKey, details, payload, repairStory.active ? "repair" : true);
 
-  const mainHtml = html
-    ? html
-    : '<div class="empty-state">이 단계에서 표시할 내용이 아직 없습니다.</div>';
-  const repairHtml = renderRepairInsight(repair);
-  const errorHtml = renderErrorPane(state.lastError);
-  const sideHtml = errorHtml || repairHtml;
-
-  if (sideHtml) {
-    refs.stageDetail.classList.add("with-sidepane");
-    refs.stageDetail.innerHTML = `
-      <div class="stage-detail-main">${mainHtml}</div>
-      <div class="stage-detail-error">${sideHtml}</div>
-    `;
-    return;
-  }
+  const stageDetailSection = wrapStageDetail(
+    focusStage.label || copy.title,
+    html || '<div class="empty-state">이 단계에서 표시할 내용이 아직 없습니다.</div>',
+    repairStory.active ? "Repair Focus Detail" : "Current Stage Detail"
+  );
 
   refs.stageDetail.classList.remove("with-sidepane");
-  refs.stageDetail.innerHTML = mainHtml;
+  refs.stageDetail.innerHTML = repairStory.active
+    ? `
+      <div class="story-panel repair-mode">
+        ${renderRepairStory(repairStory, repair, {
+          focusTitle: focusStage.label || copy.title,
+          focusHtml: html || '<div class="empty-state">이 단계에서 표시할 내용이 아직 없습니다.</div>',
+          retrieval: story.retrieval || {},
+        })}
+        ${state.lastError ? renderErrorPane(state.lastError) : ""}
+        ${renderRunStorySnapshot(story)}
+        ${renderRawEventLog(payload)}
+      </div>
+    `
+    : `
+      <div class="story-panel">
+        ${renderStoryStrip(story)}
+        ${renderNarrativeSummary(story)}
+        ${state.lastError ? renderErrorPane(state.lastError) : ""}
+        ${stageDetailSection}
+        ${renderRetrievalLane(story.retrieval || {})}
+        ${renderRawEventLog(payload)}
+      </div>
+    `;
+  bindStoryInteractions();
 }
 
 function currentProjectOption() {
@@ -656,6 +1016,7 @@ function beginRunTracking(payload, preferredStage = "import") {
   state.displayStages = [];
   state.targetStages = [];
   state.lastError = null;
+  state.rawLogOpen = false;
   if (state.playbackTimer) {
     window.clearTimeout(state.playbackTimer);
     state.playbackTimer = null;
@@ -668,6 +1029,9 @@ function resolveHeroStatus(payload) {
   const importStage = stages.find((item) => item.stage === "import");
   if (importStage && ["running", "failed"].includes(importStage.status)) {
     return importStage.status_label;
+  }
+  if (payload.repair_story?.active) {
+    return payload.repair?.status_label || payload.run.status_label;
   }
   if (payload.demo?.status && payload.demo.status !== "disabled") {
     return payload.demo.status_label;
@@ -689,6 +1053,7 @@ function restoreRunFromQuery() {
   };
   state.selectedStage = "import";
   state.selectionPinned = false;
+  state.rawLogOpen = false;
   const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
   window.history.replaceState({}, "", cleanUrl);
   startPolling();
@@ -708,11 +1073,11 @@ async function refreshDashboard() {
   syncStagePlayback(payload.stages || []);
 
   if (!state.selectionPinned) {
-    state.selectedStage = pickDefaultStage(state.displayStages.length ? state.displayStages : payload.stages || []);
+    state.selectedStage = pickDefaultStage(state.displayStages.length ? state.displayStages : payload.stages || [], payload);
   }
 
   refs.heroStatusText.textContent = resolveHeroStatus(payload);
-  renderRunMeta(payload.run, payload.demo || {});
+  renderRunMeta(payload.run, payload.demo || {}, payload.repair_story || {}, payload.repair || {});
   renderStageMenu(state.displayStages.length ? state.displayStages : payload.stages || []);
   renderSelectedStage(payload);
 

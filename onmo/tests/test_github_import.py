@@ -182,6 +182,10 @@ def test_dashboard_returns_synthetic_import_stage(monkeypatch, tmp_path: Path):
     assert payload["stages"][0]["status"] == "running"
     assert payload["details"]["import"]["summary"] == "GitHub 저장소 소스를 내려받는 중입니다."
     assert payload["demo"]["status"] == "disabled"
+    assert payload["story"]["steps"][0]["stage"] == "import"
+    assert payload["story"]["current_stage"]["stage"] == "import"
+    assert payload["story"]["focus_stage"]["stage"] == "import"
+    assert payload["repair_story"]["active"] is False
 
 
 def test_probe_github_repository_accepts_tree_subdir_url(monkeypatch):

@@ -25,6 +25,7 @@ from onmo.dashboard import (
     STAGE_LABELS,
     STAGE_ORDER,
     STATUS_LABELS,
+    decorate_dashboard_payload,
     discover_runs,
     inject_import_stage,
     load_run_dashboard,
@@ -780,6 +781,8 @@ def _build_pending_run_dashboard(
             "repair_attempt_count": 0,
             "latest_failure_signature": "",
             "latest_rewind_to": "",
+            "retrieval_status": {},
+            "enabled_retrieval_corpora": [],
         },
         "process": {
             "running": bool(process.running) if process else False,
@@ -1486,6 +1489,7 @@ def get_run_dashboard(
     else:
         payload = load_run_dashboard(run_root=run_root, process=process)
     payload = _decorate_dashboard_with_github_import(payload, run_id)
+    payload = decorate_dashboard_payload(payload)
     github_mode = _github_mode_enabled_for_run(site=site, run_id=run_id, process_record=process_record)
     if github_mode:
         payload["services"] = []
