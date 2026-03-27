@@ -82,6 +82,7 @@ def test_compiler_builds_complete_food_program():
     assert set(program.chatbot_program.compile_preflight.scan_paths) == {
         "src/adapters/setup.py",
         "src/adapters/generated/food/__init__.py",
+        "src/adapters/generated/food/contracts.py",
         "src/adapters/generated/food/client.py",
         "src/adapters/generated/food/auth.py",
         "src/adapters/generated/food/mappers.py",
@@ -118,13 +119,25 @@ def test_compiler_uses_chat_auth_bridge_for_bilyeo_bearer_validation():
         for bundle in program.chatbot_program.supporting_artifact_bundles
         if bundle.path == "src/adapters/generated/bilyeo/auth.py"
     )
+    generated_adapter = next(
+        bundle.content
+        for bundle in program.chatbot_program.supporting_artifact_bundles
+        if bundle.path == "src/adapters/generated/bilyeo/adapter.py"
+    )
+    generated_mappers = next(
+        bundle.content
+        for bundle in program.chatbot_program.supporting_artifact_bundles
+        if bundle.path == "src/adapters/generated/bilyeo/mappers.py"
+    )
 
-    assert 'return await self._request("GET", "/api/chat/auth-token", headers=headers)' in generated_client
-    assert 'headers["Authorization"] = f"Bearer {ctx.accessToken}"' in generated_auth
-    assert 'cookie_map["session_token"] = ctx.accessToken' not in generated_auth
-    assert '"주문완료": OrderStatus.PAID' in generated_adapter
-    assert '"배송준비중": OrderStatus.PREPARING' in generated_adapter
-    assert '"배송완료": OrderStatus.DELIVERED' in generated_adapter
+    assert 'AUTH_VALIDATION_ENDPOINT = "/api/chat/auth-token"' in generated_client
+    assert "from ...auth_headers import assert_context_site, build_auth_headers_from_contract" in generated_auth
+    assert 'AUTH_CONTRACT = ResolvedAuthContract(transport="bearer_token")' in generated_auth
+    assert 'build_auth_headers_from_contract(AUTH_CONTRACT, ctx)' in generated_auth
+    assert 'headers["Authorization"] = f"Bearer {ctx.accessToken}"' not in generated_auth
+    assert "from ...response_profiles import (" in generated_adapter
+    assert "normalize_order_status_from_contract" in generated_adapter
+    assert "from ...response_profiles import (" in generated_mappers
 
 
 def test_compiler_uses_session_cookie_generated_auth_for_food():
@@ -145,9 +158,31 @@ def test_compiler_uses_session_cookie_generated_auth_for_food():
         for bundle in program.chatbot_program.supporting_artifact_bundles
         if bundle.path == "src/adapters/generated/food/auth.py"
     )
+    generated_client = next(
+        bundle.content
+        for bundle in program.chatbot_program.supporting_artifact_bundles
+        if bundle.path == "src/adapters/generated/food/client.py"
+    )
+    generated_mappers = next(
+        bundle.content
+        for bundle in program.chatbot_program.supporting_artifact_bundles
+        if bundle.path == "src/adapters/generated/food/mappers.py"
+    )
+    generated_adapter = next(
+        bundle.content
+        for bundle in program.chatbot_program.supporting_artifact_bundles
+        if bundle.path == "src/adapters/generated/food/adapter.py"
+    )
 
-    assert 'cookie_map = ctx.cookies.copy() if ctx.cookies else {}' in generated_auth
-    assert 'if "session_token" not in cookie_map and ctx.accessToken:' in generated_auth
+    assert "from ...auth_headers import assert_context_site, build_auth_headers_from_contract" in generated_auth
+    assert 'AUTH_CONTRACT = ResolvedAuthContract(' in generated_auth
+    assert 'session_cookie_name="session_token"' in generated_auth
+    assert 'build_auth_headers_from_contract(AUTH_CONTRACT, ctx)' in generated_auth
+    assert "from .contracts import ORDER_ACTION_CONTRACT, RESPONSE_CONTRACT" in generated_client
+    assert "build_order_action_request_from_contract" in generated_client
+    assert "from ...response_profiles import" in generated_mappers
+    assert "from ...site_a.mappers import" not in generated_mappers
+    assert "from .contracts import ORDER_ACTION_CONTRACT, RESPONSE_CONTRACT" in generated_adapter
 
 
 def test_compiler_generates_cookie_plus_csrf_auth_headers():
@@ -170,9 +205,12 @@ def test_compiler_generates_cookie_plus_csrf_auth_headers():
 
     generated_auth = generated_adapter_module._build_generated_auth(plan=plan)
 
-    assert 'if "sessionid" not in cookie_map and ctx.accessToken:' in generated_auth
-    assert 'cookie_map.get("csrftoken")' in generated_auth
-    assert 'headers["X-CSRFToken"] = csrf_token' in generated_auth
+    assert "from ...auth_headers import assert_context_site, build_auth_headers_from_contract" in generated_auth
+    assert 'AUTH_CONTRACT = ResolvedAuthContract(' in generated_auth
+    assert 'transport="cookie_plus_csrf"' in generated_auth
+    assert 'build_auth_headers_from_contract(AUTH_CONTRACT, ctx)' in generated_auth
+    assert 'cookie_map.get("csrftoken")' not in generated_auth
+    assert 'headers["X-CSRFToken"] = csrf_token' not in generated_auth
 
 
 def test_compiler_generated_auth_prefers_nested_auth_contract_over_legacy_fields():
@@ -197,9 +235,10 @@ def test_compiler_generated_auth_prefers_nested_auth_contract_over_legacy_fields
 
     generated_auth = generated_adapter_module._build_generated_auth(plan=plan)
 
-    assert 'headers["Authorization"] = f"Bearer {ctx.accessToken}"' not in generated_auth
-    assert 'if "real_session" not in cookie_map and ctx.accessToken:' in generated_auth
-    assert 'if "legacy_cookie" not in cookie_map and ctx.accessToken:' not in generated_auth
+    assert 'AUTH_CONTRACT = ResolvedAuthContract(' in generated_auth
+    assert 'session_cookie_name="real_session"' in generated_auth
+    assert 'session_cookie_name="legacy_cookie"' not in generated_auth
+    assert 'build_auth_headers_from_contract(AUTH_CONTRACT, ctx)' in generated_auth
 
 
 def test_compiler_registers_generated_adapter_in_setup_bundle():
@@ -243,6 +282,64 @@ def test_compiler_uses_site_specific_generated_host_url_fallback():
     assert 'os.environ.get("BILYEO_API_URL")' in setup_operation.new
     assert 'locals().get("bilyeo_url", "")' in setup_operation.new
     assert 'os.environ.get("GENERATED_BILYEO_API_URL", food_url)' not in setup_operation.new
+
+
+def test_compiler_generated_adapter_exposes_auth_contract_property():
+    analysis_bundle = build_analysis_bundle(site="food", source_root=ROOT / "food")
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+    )
+    program = compile_plan(
+        analysis_bundle=analysis_bundle,
+        planning_bundle=planning_bundle,
+        source_root=ROOT / "food",
+    )
+
+    generated_adapter = next(
+        bundle.content
+        for bundle in program.chatbot_program.supporting_artifact_bundles
+        if bundle.path == "src/adapters/generated/food/adapter.py"
+    )
+
+    assert "from .auth import AUTH_CONTRACT, assert_generated_context, build_generated_auth_headers" in generated_adapter
+    assert "self._auth_contract = AUTH_CONTRACT" in generated_adapter
+    assert "def auth_contract(self) -> ResolvedAuthContract:" in generated_adapter
+    assert 'transport="session_cookie"' not in generated_adapter
+    assert 'session_cookie_name="session_token"' not in generated_adapter
+
+
+def test_compiler_generated_adapter_emits_nested_response_and_action_contracts():
+    analysis_bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+        strict_coverage=True,
+    )
+    program = compile_plan(
+        analysis_bundle=analysis_bundle,
+        planning_bundle=planning_bundle,
+        source_root=ROOT / "bilyeo",
+    )
+
+    contracts_bundle = next(
+        bundle.content
+        for bundle in program.chatbot_program.supporting_artifact_bundles
+        if bundle.path == "src/adapters/generated/bilyeo/contracts.py"
+    )
+    generated_client = next(
+        bundle.content
+        for bundle in program.chatbot_program.supporting_artifact_bundles
+        if bundle.path == "src/adapters/generated/bilyeo/client.py"
+    )
+
+    assert 'RESPONSE_CONTRACT = ResolvedResponseContract(' in contracts_bundle
+    assert 'ORDER_ACTION_CONTRACT = ResolvedOrderActionContract(' in contracts_bundle
+    assert 'order_profile="orders_collection_scan"' in contracts_bundle
+    assert 'submission_mode="read_only"' in contracts_bundle
+    assert "build_order_action_request_from_contract" in generated_client
 
 
 def test_compiler_tolerates_multiline_models_import_and_next_def_boundary(tmp_path: Path):

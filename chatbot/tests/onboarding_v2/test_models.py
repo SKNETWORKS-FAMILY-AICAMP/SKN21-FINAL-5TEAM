@@ -40,6 +40,9 @@ from chatbot.src.onboarding_v2.models import (
     ReplayResult,
     RepairDecision,
     ResolvedAuthContract,
+    ResolvedOrderActionContract,
+    ResolvedRequestFieldContract,
+    ResolvedResponseContract,
     RetrievalIndexPlan,
     RetrievalPlan,
     RepoProfile,
@@ -107,6 +110,33 @@ def test_model_contracts_round_trip():
             order_action_endpoint="/api/orders/{order_id}/actions/",
             auth_transport="session_cookie",
             session_cookie_name="session_token",
+            response_contract=ResolvedResponseContract(
+                user_profile="wrapped_user",
+                product_profile="list_items_named_price",
+                order_profile="rest_detail_wrapped_order",
+                delivery_profile="rest_detail_wrapped_order",
+                order_status_profile="english_tokens",
+                delivery_status_profile="english_tokens",
+                order_identifier_mode="direct_order_id",
+            ),
+            order_action_contract=ResolvedOrderActionContract(
+                submission_mode="single_endpoint_json_body",
+                supported_actions=[
+                    "list_orders",
+                    "get_order_status",
+                    "cancel",
+                    "refund",
+                    "exchange",
+                ],
+                request_fields=ResolvedRequestFieldContract(
+                    action="action",
+                    reason="reason",
+                    new_option_id="new_option_id",
+                ),
+                reason_transport="json_body",
+                new_option_transport="json_body",
+                result_profile="accepted_message",
+            ),
         ),
         retrieval_index_plan=RetrievalIndexPlan(
             site_id="food",
@@ -223,7 +253,9 @@ def test_model_contracts_round_trip():
     assert plan.chatbot_bridge.csrf_header_name is None
     assert plan.chatbot_bridge.auth_contract.transport == "session_cookie"
     assert plan.chatbot_bridge.auth_contract.session_cookie_name == "session_token"
-    assert plan.chatbot_bridge.response_mapping_profile == "site_a"
+    assert plan.chatbot_bridge.response_contract.order_profile == "rest_detail_wrapped_order"
+    assert plan.chatbot_bridge.order_action_contract.submission_mode == "single_endpoint_json_body"
+    assert plan.chatbot_bridge.response_mapping_profile == "rest_detail_wrapped_order"
     assert plan.chatbot_bridge.request_field_mappings["new_option_id"] == "new_option_id"
     assert plan.host_frontend.chatbot_server_base_url_expression == ""
     assert plan.host_frontend.enabled_retrieval_corpora == ["faq"]
@@ -317,6 +349,62 @@ def test_chatbot_bridge_plan_accepts_legacy_auth_fields_without_nested_contract(
     assert plan.auth_contract.transport == "bearer_token"
     assert plan.auth_contract.session_cookie_name is None
     assert plan.auth_transport == "bearer_token"
+
+
+def test_chatbot_bridge_plan_prefers_nested_response_and_order_action_contracts():
+    plan = ChatbotBridgePlan.model_validate(
+        {
+            "site_key": "food",
+            "adapter_package": "src/adapters/generated/food",
+            "setup_target": "src/adapters/setup.py",
+            "host_base_url_env_var": "GENERATED_FOOD_API_URL",
+            "auth_validation_endpoint": "/api/users/me/",
+            "current_user_endpoint": "/api/users/me/",
+            "product_search_endpoint": "/api/products/",
+            "order_list_endpoint": "/api/orders/",
+            "order_detail_endpoint": "/api/orders/{order_id}/",
+            "order_action_endpoint": "/api/orders/{order_id}/actions/",
+            "response_contract": {
+                "user_profile": "wrapped_user",
+                "product_profile": "list_items_named_price",
+                "order_profile": "rest_detail_wrapped_order",
+                "delivery_profile": "rest_detail_wrapped_order",
+                "order_status_profile": "english_tokens",
+                "delivery_status_profile": "english_tokens",
+                "order_identifier_mode": "direct_order_id",
+            },
+            "order_action_contract": {
+                "submission_mode": "single_endpoint_json_body",
+                "supported_actions": ["list_orders", "get_order_status", "cancel"],
+                "request_fields": {
+                    "action": "action_type",
+                    "reason": "reason_text",
+                    "new_option_id": "variant_id",
+                },
+                "reason_transport": "json_body",
+                "new_option_transport": "json_body",
+                "result_profile": "accepted_message",
+            },
+            "response_mapping_profile": "legacy_profile",
+            "request_field_mappings": {
+                "action": "legacy_action",
+                "reason": "legacy_reason",
+                "new_option_id": "legacy_option",
+            },
+            "supported_tools": ["legacy_tool"],
+        }
+    )
+
+    assert plan.response_contract.order_profile == "rest_detail_wrapped_order"
+    assert plan.order_action_contract.submission_mode == "single_endpoint_json_body"
+    assert plan.order_action_contract.request_fields.action == "action_type"
+    assert plan.response_mapping_profile == "rest_detail_wrapped_order"
+    assert plan.request_field_mappings == {
+        "action": "action_type",
+        "reason": "reason_text",
+        "new_option_id": "variant_id",
+    }
+    assert plan.supported_tools == ["list_orders", "get_order_status", "cancel"]
 
 
 def test_repair_model_contracts_round_trip():

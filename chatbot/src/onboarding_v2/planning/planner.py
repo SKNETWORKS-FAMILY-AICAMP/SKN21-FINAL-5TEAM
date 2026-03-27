@@ -39,6 +39,9 @@ from chatbot.src.onboarding_v2.models.planning import (
     RagCorpusPlan,
     RepairHint,
     ResolvedAuthContract,
+    ResolvedOrderActionContract,
+    ResolvedRequestFieldContract,
+    ResolvedResponseContract,
     RetrievalIndexPlan,
     StrategyCandidate,
     TargetBinding,
@@ -866,6 +869,7 @@ def _derive_integration_plan(
         backend_framework=analysis_bundle.framework_profile.backend_framework,
         auth_handler_source=auth_source,
         auth_style_hint=str(snapshot.repo_profile.auth_style or ""),
+        order_lookup_target=order_lookup_target,
     )
     assumptions = [
         "planner consumed verified analysis graph and deterministic compiler capabilities",
@@ -894,7 +898,7 @@ def _derive_integration_plan(
             order_action_new_option_field=bridge_contract["request_field_mappings"]["new_option_id"],
             order_action_response_serializer="serialize_order",
             exchange_status_transition="EXCHANGE_REQUESTED",
-            supported_order_tools=list(SUPPORTED_ORDER_TOOLS),
+            supported_order_tools=list(bridge_contract["order_action_contract"].supported_actions),
             auth_handler_source=auth_source,
             generated_handler_path=_choose_generated_handler_path(analysis_bundle.framework_profile.backend_framework),
             chat_auth_contract_path="/api/chat/auth-token",
@@ -935,9 +939,11 @@ def _derive_integration_plan(
             order_action_endpoint=bridge_contract["order_action_endpoint"],
             order_action_endpoints=bridge_contract["order_action_endpoints"],
             auth_contract=bridge_contract["auth_contract"],
+            response_contract=bridge_contract["response_contract"],
+            order_action_contract=bridge_contract["order_action_contract"],
             response_mapping_profile=bridge_contract["response_mapping_profile"],
             request_field_mappings=bridge_contract["request_field_mappings"],
-            supported_tools=list(SUPPORTED_ORDER_TOOLS),
+            supported_tools=list(bridge_contract["order_action_contract"].supported_actions),
         ),
         retrieval_index_plan=retrieval_index_plan,
         capability_upgrade=capability_upgrade,
@@ -1303,6 +1309,7 @@ def _derive_chatbot_bridge_contract(
     backend_framework: str,
     auth_handler_source: str,
     auth_style_hint: str,
+    order_lookup_target: str | None = None,
 ) -> dict[str, Any]:
     login_endpoint = str(domain_integration.login_endpoint or "").strip()
     auth_validation_endpoint = str(
@@ -1348,6 +1355,16 @@ def _derive_chatbot_bridge_contract(
         auth_handler_source=auth_handler_source,
         auth_style_hint=auth_style_hint,
     )
+    response_contract = _infer_bridge_response_contract(
+        source_root=source_root,
+        domain_integration=domain_integration,
+        site_id=site_id,
+        order_lookup_target=order_lookup_target,
+    )
+    order_action_contract = _infer_bridge_order_action_contract(
+        domain_integration=domain_integration,
+        response_contract=response_contract,
+    )
 
     return {
         "auth_validation_endpoint": auth_validation_endpoint,
@@ -1359,13 +1376,126 @@ def _derive_chatbot_bridge_contract(
         or next(iter(order_action_endpoints.values())),
         "order_action_endpoints": order_action_endpoints,
         "auth_contract": auth_contract,
-        "response_mapping_profile": "site_a" if _normalize_site_key(site_id) == "food" else "generic",
-        "request_field_mappings": {
-            "action": "action",
-            "reason": "reason",
-            "new_option_id": "new_option_id",
-        },
+        "response_contract": response_contract,
+        "order_action_contract": order_action_contract,
+        "response_mapping_profile": response_contract.order_profile,
+        "request_field_mappings": order_action_contract.request_fields.model_dump(mode="json"),
     }
+
+
+def _infer_bridge_response_contract(
+    *,
+    source_root: Path,
+    domain_integration: DomainIntegration,
+    site_id: str,
+    order_lookup_target: str | None = None,
+) -> ResolvedResponseContract:
+    order_list_endpoint = str(domain_integration.order_list_endpoint or "").strip()
+    order_detail_endpoint = str(domain_integration.order_detail_endpoint or "").strip()
+    lookup_source = _read_bridge_source(
+        source_root=source_root,
+        relative_path=order_lookup_target,
+    )
+    if (
+        "{user_id}" in order_list_endpoint
+        or "{user_id}" in order_detail_endpoint
+        or "get_order_by_number" in lookup_source
+        or "order_number" in lookup_source
+    ):
+        return ResolvedResponseContract(
+            user_profile="direct_user_session",
+            product_profile="catalog_items_keyword_results",
+            order_profile="user_scoped_order_service",
+            delivery_profile="shipping_tracking_record",
+            order_status_profile="service_tokens",
+            delivery_status_profile="service_tokens",
+            order_identifier_mode="order_number_with_internal_resolution",
+        )
+    if (
+        order_list_endpoint.endswith("/all")
+        or order_detail_endpoint == order_list_endpoint
+        or "orders = raw.get(\"orders\"" in lookup_source
+        or "orders = raw.get('orders'" in lookup_source
+    ):
+        return ResolvedResponseContract(
+            user_profile="orders_collection_user_id",
+            product_profile="products_wrapper_collection",
+            order_profile="orders_collection_scan",
+            delivery_profile="orders_collection_scan",
+            order_status_profile="korean_labels",
+            delivery_status_profile="korean_labels",
+            order_identifier_mode="direct_order_id",
+        )
+    return ResolvedResponseContract(
+        user_profile="wrapped_user",
+        product_profile="list_items_named_price",
+        order_profile="rest_detail_wrapped_order",
+        delivery_profile="rest_detail_wrapped_order",
+        order_status_profile="english_tokens",
+        delivery_status_profile="english_tokens",
+        order_identifier_mode="direct_order_id",
+    )
+
+
+def _infer_bridge_order_action_contract(
+    *,
+    domain_integration: DomainIntegration,
+    response_contract: ResolvedResponseContract,
+) -> ResolvedOrderActionContract:
+    request_fields = ResolvedRequestFieldContract()
+    if response_contract.order_profile == "orders_collection_scan":
+        return ResolvedOrderActionContract(
+            submission_mode="read_only",
+            supported_actions=["list_orders", "get_order_status"],
+            request_fields=request_fields,
+        )
+
+    order_action_endpoints = {
+        str(action).strip(): str(path).strip()
+        for action, path in (domain_integration.order_action_endpoints or {}).items()
+        if str(action).strip() and str(path).strip()
+    }
+    if order_action_endpoints and any(
+        path != str(domain_integration.order_action_endpoint or "").strip()
+        for path in order_action_endpoints.values()
+    ):
+        mutation_actions = [
+            action
+            for action in ("cancel", "refund", "exchange")
+            if action in order_action_endpoints
+        ]
+        return ResolvedOrderActionContract(
+            submission_mode="per_action_query_endpoint",
+            supported_actions=["list_orders", "get_order_status", *mutation_actions],
+            request_fields=request_fields,
+            reason_transport="query_param",
+            new_option_transport=(
+                "query_param" if "exchange" in mutation_actions else "unsupported"
+            ),
+            result_profile="requested_message",
+        )
+
+    return ResolvedOrderActionContract(
+        submission_mode="single_endpoint_json_body",
+        supported_actions=list(SUPPORTED_ORDER_TOOLS),
+        request_fields=request_fields,
+        reason_transport="json_body",
+        new_option_transport="json_body",
+        result_profile="accepted_message",
+    )
+
+
+def _read_bridge_source(*, source_root: Path, relative_path: str | None) -> str:
+    candidate = str(relative_path or "").strip()
+    if not candidate:
+        return ""
+    path = source_root / candidate
+    if not path.exists():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
 
 
 def _infer_bridge_auth_contract(

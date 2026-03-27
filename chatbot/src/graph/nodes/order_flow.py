@@ -183,6 +183,8 @@ def order_list_subagent_node(state: GlobalAgentState) -> dict:
         user_id=user_id,
         site_id=user_info.get("site_id"),
         access_token=user_info.get("access_token"),
+        cookies=user_info.get("cookies"),
+        auth_metadata=user_info.get("auth_metadata"),
         limit=10,
         days=30,
         requires_selection=False,
@@ -278,6 +280,8 @@ def _build_tool_payload(state: GlobalAgentState, *, include_site_context: bool) 
     if include_site_context:
         payload["site_id"] = user_info.get("site_id")
         payload["access_token"] = user_info.get("access_token")
+        payload["cookies"] = user_info.get("cookies")
+        payload["auth_metadata"] = user_info.get("auth_metadata")
 
     return payload
 
@@ -668,4 +672,3 @@ def _get_latest_user_message(state: GlobalAgentState) -> str:
         if isinstance(msg, HumanMessage):
             return str(msg.content).strip()
     return ""
-

@@ -134,11 +134,48 @@ class SmokeRunResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class OrderActionCapability(BaseModel):
+    requires_order_selection: bool = False
+    requires_option_selection: bool = False
+    allows_direct_execution: bool = True
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ValidationCapabilityContract(BaseModel):
+    supports_authenticated_chat: bool = True
+    supports_widget_order_flow: bool = True
+    supports_direct_order_lookup: bool = True
+    supports_mutations: bool = True
+    supports_retrieval: bool = False
+    supports_image_upload: bool = False
+    requires_order_selection_for_actions: bool = False
+    requires_option_selection_for_exchange: bool = False
+    available_actions: list[str] = Field(default_factory=list)
+    action_capabilities: dict[str, OrderActionCapability] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ConversationScenarioContract(BaseModel):
+    scenario_id: str
+    mode: str
+    prompt: str
+    expected_milestones: list[str] = Field(default_factory=list)
+    allowed_paths: list[list[str]] = Field(default_factory=list)
+    sampled_order_id: str | None = None
+    sampled_option_id: str | None = None
+    previous_state_from: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class WidgetOrderE2EResult(BaseModel):
     passed: bool
     failure_summary: str
     covered_flows: list[str] = Field(default_factory=list)
     flow_reports: dict[str, Any] = Field(default_factory=dict)
+    validation_capability_contract: dict[str, Any] = Field(default_factory=dict)
     sampled_order_id: str | None = None
     sampled_option_id: str | None = None
     scenario_mode: str | None = None
@@ -163,6 +200,9 @@ class ConversationScenarioResult(BaseModel):
     deterministic_failures: list[str] = Field(default_factory=list)
     expected_tool_names: list[str] = Field(default_factory=list)
     observed_tool_names: list[str] = Field(default_factory=list)
+    expected_milestones: list[str] = Field(default_factory=list)
+    observed_milestones: list[str] = Field(default_factory=list)
+    allowed_paths: list[list[str]] = Field(default_factory=list)
     llm_judgement: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
@@ -172,6 +212,7 @@ class ConversationValidationResult(BaseModel):
     passed: bool
     failure_summary: str | None = None
     fixture_manifest: dict[str, Any] = Field(default_factory=dict)
+    validation_capability_contract: dict[str, Any] = Field(default_factory=dict)
     scenarios: list[ConversationScenarioResult] = Field(default_factory=list)
     transcript_contents: dict[str, str] = Field(default_factory=dict)
     trace_contents: dict[str, str] = Field(default_factory=dict)

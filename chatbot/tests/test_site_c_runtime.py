@@ -22,7 +22,14 @@ langchain_ollama.ChatOllama = _DummyChatOllama
 sys.modules.setdefault("langchain_ollama", langchain_ollama)
 
 from chatbot.src.adapters import setup as adapter_setup
+from chatbot.src.adapters.site_a.adapter import SiteAAdapter
+from chatbot.src.adapters.site_a.client import SiteAClient
+from chatbot.src.adapters.site_b.adapter import SiteBAdapter
+from chatbot.src.adapters.site_b.client import SiteBClient
+from chatbot.src.adapters.site_c.adapter import SiteCAdapter
+from chatbot.src.adapters.site_c.client import SiteCClient
 from chatbot.src.api.v1.endpoints.chat import _build_current_state, _resolve_authenticated_current_user
+from chatbot.src.onboarding_v2.models.planning import ResolvedAuthContract
 from chatbot.src.schemas.chat import ChatRequest as SharedChatRequest
 from chatbot.src.tools import adapter_order_tools
 
@@ -130,6 +137,10 @@ def test_resolve_authenticated_current_user_uses_bridge_user_id_on_initial_reque
 
     class StubAdapter:
         site_id = "site-c"
+        auth_contract = ResolvedAuthContract(
+            transport="session_cookie",
+            session_cookie_name="access_token",
+        )
 
         async def validate_auth(self, ctx):
             captured["site_id"] = ctx.siteId
@@ -157,6 +168,57 @@ def test_resolve_authenticated_current_user_uses_bridge_user_id_on_initial_reque
         "access_token": "bridge-token",
     }
     assert current_user.id == "7"
+
+
+def test_resolve_authenticated_current_user_uses_session_cookie_auth_contract(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class StubAdapter:
+        site_id = "site-a"
+        auth_contract = ResolvedAuthContract(
+            transport="session_cookie",
+            session_cookie_name="session_token",
+        )
+
+        async def validate_auth(self, ctx):
+            captured["site_id"] = ctx.siteId
+            captured["user_id"] = ctx.userId
+            captured["access_token"] = ctx.accessToken
+            captured["cookies"] = ctx.cookies
+            return SimpleNamespace(id="7", email="tester@example.com", name="Tester")
+
+    monkeypatch.setattr(adapter_setup, "resolve_site_adapter", lambda site_id: StubAdapter())
+
+    current_user = asyncio.run(
+        _resolve_authenticated_current_user(
+            request=SharedChatRequest(
+                message="주문 보여줘",
+                site_id="site-a",
+                user_id="7",
+            ),
+            http_request=SimpleNamespace(cookies={"session_token": "food-cookie"}, headers={}),
+        )
+    )
+
+    assert captured == {
+        "site_id": "site-a",
+        "user_id": "7",
+        "access_token": "food-cookie",
+        "cookies": {"session_token": "food-cookie"},
+    }
+    assert current_user.id == "7"
+
+
+def test_static_adapters_expose_site_auth_contracts():
+    food_adapter = SiteAAdapter(client=SiteAClient(base_url="http://food.example"))
+    bilyeo_adapter = SiteBAdapter(client=SiteBClient(base_url="http://bilyeo.example"))
+    ecommerce_adapter = SiteCAdapter(client=SiteCClient(base_url="http://ecommerce.example"))
+
+    assert food_adapter.auth_contract.transport == "session_cookie"
+    assert food_adapter.auth_contract.session_cookie_name == "session_token"
+    assert bilyeo_adapter.auth_contract.transport == "bearer_token"
+    assert ecommerce_adapter.auth_contract.transport == "session_cookie"
+    assert ecommerce_adapter.auth_contract.session_cookie_name == "access_token"
 
 
 def test_shared_widget_source_preserves_bridge_user_id_contract():

@@ -31,11 +31,10 @@ import orjson
 
 from chatbot.src.graph.workflow import graph_app
 from chatbot.src.adapters.base import AdapterError
-from chatbot.src.adapters import setup as adapter_setup
-from chatbot.src.adapters.schema import AuthenticatedContext
 from chatbot.src.graph.llm_providers import resolve_llm_runtime_policy
 from chatbot.src.infrastructure.conversation_logger import SessionConversationLogger
 from chatbot.src.infrastructure.site_retrieval import resolve_runtime_retrieval_capabilities
+from chatbot.src.runtime_auth import build_runtime_user_info, resolve_runtime_auth
 from chatbot.src.schemas.chat import ChatRequest
 
 class OrjsonResponse(JSONResponse):
@@ -448,6 +447,8 @@ def _build_current_state(
     conversation_id: str,
     turn_id: str,
     access_token: str | None = None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
     site_id: str | None = None,
     capability_profile: str | None = None,
 ) -> dict:
@@ -462,6 +463,16 @@ def _build_current_state(
     effective_access_token = (
         access_token
         or previous_state.get("user_info", {}).get("access_token")
+    )
+    effective_cookies = dict(
+        cookies
+        or previous_state.get("user_info", {}).get("cookies")
+        or {}
+    )
+    effective_auth_metadata = dict(
+        auth_metadata
+        or previous_state.get("user_info", {}).get("auth_metadata")
+        or {}
     )
     effective_capability_profile = (
         capability_profile
@@ -511,13 +522,16 @@ def _build_current_state(
         # per-turn 초기화 (이전 턴 값 오염 방지)
         **turn_defaults,
         # 사용자 / LLM / 세션
-        "user_info": {
-            "id": current_user.id,
-            "name": current_user.name,
-            "email": current_user.email,
-            "site_id": effective_site_id,
-            "access_token": effective_access_token,
-        },
+        "user_info": build_runtime_user_info(
+            previous_user_info=previous_state.get("user_info", {}),
+            site_id=effective_site_id,
+            access_token=effective_access_token,
+            cookies=effective_cookies,
+            auth_metadata=effective_auth_metadata,
+            user_id=current_user.id,
+            user_name=current_user.name,
+            user_email=current_user.email,
+        ),
         "llm_provider": provider,
         "llm_model": model,
         "capability_profile": effective_capability_profile,
@@ -564,32 +578,13 @@ async def _resolve_authenticated_current_user(
     request: ChatRequest,
     http_request: Request,
 ) -> Any:
-    previous_user_info = request.previous_state.get("user_info", {}) if isinstance(request.previous_state, dict) else {}
-    effective_site_id = request.site_id or previous_user_info.get("site_id")
-    effective_access_token = (
-        request.access_token
-        or previous_user_info.get("access_token")
-        or http_request.cookies.get("access_token")
-        or http_request.cookies.get("session_token")
+    resolution = resolve_runtime_auth(
+        request=request,
+        http_request=http_request,
+        require_credentials=True,
     )
-    effective_user_id = (
-        request.user_id
-        or previous_user_info.get("id")
-        or previous_user_info.get("user_id")
-    )
-
-    if not effective_site_id or not effective_access_token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
     try:
-        resolved_adapter = adapter_setup.resolve_site_adapter(effective_site_id)
-        validated_user = await resolved_adapter.validate_auth(
-            AuthenticatedContext(
-                siteId=resolved_adapter.site_id,
-                userId=str(effective_user_id or "__bridge__"),
-                accessToken=str(effective_access_token),
-            )
-        )
+        validated_user = await resolution.adapter.validate_auth(resolution.context)
     except AdapterError as exc:
         raise HTTPException(status_code=401, detail=exc.message) from exc
 
@@ -684,14 +679,14 @@ async def chat_streaming_endpoint(
             provider, model = _resolve_chat_runtime_policy(request, previous_state)
             conversation_id = previous_state.get("conversation_id") or f"conv_{uuid4().hex[:12]}"
             turn_id = f"turn_{uuid4().hex[:12]}"
-            try:
-                resolved_adapter = adapter_setup.resolve_site_adapter(
-                    request.site_id or previous_state.get("user_info", {}).get("site_id")
-                )
-            except AdapterError as exc:
-                raise HTTPException(status_code=400, detail=exc.message) from exc
+            resolved_auth = resolve_runtime_auth(
+                request=request,
+                http_request=http_request,
+                require_credentials=True,
+            )
 
             pending_interrupt = previous_state.get("pending_interrupt")
+            current_state: dict | None = None
 
             stream_input: dict | Command
             if pending_interrupt:
@@ -715,12 +710,10 @@ async def chat_streaming_endpoint(
                         model=model,
                         conversation_id=conversation_id,
                         turn_id=turn_id,
-                        access_token=(
-                            request.access_token
-                            or http_request.cookies.get("access_token")
-                            or http_request.cookies.get("session_token")
-                        ),
-                        site_id=resolved_adapter.site_id,
+                        access_token=resolved_auth.access_token,
+                        cookies=resolved_auth.cookies,
+                        auth_metadata=resolved_auth.auth_metadata,
+                        site_id=resolved_auth.site_id,
                     )
                     stream_input = current_state
                 else:
@@ -770,12 +763,10 @@ async def chat_streaming_endpoint(
                     model=model,
                     conversation_id=conversation_id,
                     turn_id=turn_id,
-                    access_token=(
-                        request.access_token
-                        or http_request.cookies.get("access_token")
-                        or http_request.cookies.get("session_token")
-                    ),
-                    site_id=resolved_adapter.site_id,
+                    access_token=resolved_auth.access_token,
+                    cookies=resolved_auth.cookies,
+                    auth_metadata=resolved_auth.auth_metadata,
+                    site_id=resolved_auth.site_id,
                     capability_profile=request.capability_profile,
                 )
                 stream_input = current_state
@@ -878,9 +869,29 @@ async def chat_streaming_endpoint(
 
                 persisted_state = {
                     **previous_state,
+                    "user_info": (
+                        current_state.get("user_info", {})
+                        if isinstance(current_state, dict)
+                        else previous_state.get("user_info", {})
+                    ),
                     "conversation_id": conversation_id,
                     "llm_provider": provider,
                     "llm_model": model,
+                    "capability_profile": (
+                        current_state.get("capability_profile")
+                        if isinstance(current_state, dict)
+                        else previous_state.get("capability_profile")
+                    ),
+                    "enabled_retrieval_corpora": (
+                        current_state.get("enabled_retrieval_corpora")
+                        if isinstance(current_state, dict)
+                        else previous_state.get("enabled_retrieval_corpora")
+                    ),
+                    "widget_features": (
+                        current_state.get("widget_features")
+                        if isinstance(current_state, dict)
+                        else previous_state.get("widget_features")
+                    ),
                     "awaiting_interrupt": True,
                     "pending_interrupt": interrupt_payloads,
                 }
@@ -977,9 +988,10 @@ async def chat_json_endpoint(
     provider, model = _resolve_chat_runtime_policy(request, previous_state)
     conversation_id = previous_state.get("conversation_id") or f"conv_{uuid4().hex[:12]}"
     turn_id = f"turn_{uuid4().hex[:12]}"
-
-    resolved_adapter = adapter_setup.resolve_site_adapter(
-        request.site_id or previous_state.get("user_info", {}).get("site_id")
+    resolved_auth = resolve_runtime_auth(
+        request=request,
+        http_request=http_request,
+        require_credentials=True,
     )
 
     current_state = _build_current_state(
@@ -990,12 +1002,10 @@ async def chat_json_endpoint(
         model=model,
         conversation_id=conversation_id,
         turn_id=turn_id,
-        access_token=(
-            request.access_token
-            or http_request.cookies.get("access_token")
-            or http_request.cookies.get("session_token")
-        ),
-        site_id=resolved_adapter.site_id,
+        access_token=resolved_auth.access_token,
+        cookies=resolved_auth.cookies,
+        auth_metadata=resolved_auth.auth_metadata,
+        site_id=resolved_auth.site_id,
         capability_profile=request.capability_profile,
     )
 

@@ -72,12 +72,11 @@ _bootstrap_legacy_import_alias()
 
 from chatbot.src.infrastructure.model_startup_logging import configure_model_startup_logging  # noqa: E402
 from chatbot.src.core.config import settings  # noqa: E402
-from chatbot.src.adapters.base import AdapterError  # noqa: E402
-from chatbot.src.adapters import setup as adapter_setup  # noqa: E402
 from chatbot.src.graph.llm_providers import resolve_llm_runtime_policy  # noqa: E402
 from chatbot.src.graph.workflow import graph_app  # noqa: E402
 from chatbot.src.api.v1.endpoints.chat import build_widget_bundle_response, router as chat_router  # noqa: E402
 from chatbot.src.api.v1.endpoints.onboarding_runs import router as onboarding_runs_router  # noqa: E402
+from chatbot.src.runtime_auth import build_runtime_user_info, resolve_runtime_auth  # noqa: E402
 from chatbot.src.onboarding.redis_runtime import build_onboarding_event_store, close_onboarding_event_store  # noqa: E402
 from chatbot.src.graph.nodes.guardrail import load_guardrail_model  # noqa: E402
 from chatbot.src.tools.retrieval_tools import ensure_retrieval_models  # noqa: E402
@@ -205,7 +204,7 @@ def _last_ai_text(messages: list[BaseMessage]) -> str:
     return ""
 
 
-def _build_graph_input(req: ChatRequest) -> tuple[dict[str, Any], str]:
+def _build_graph_input(req: ChatRequest, http_request: Request) -> tuple[dict[str, Any], str]:
     previous_state = req.previous_state or {}
     previous_messages = _deserialize_messages(previous_state.get("messages", []))
 
@@ -217,22 +216,21 @@ def _build_graph_input(req: ChatRequest) -> tuple[dict[str, Any], str]:
     model = runtime_policy.model
 
     conversation_id = req.conversation_id or previous_state.get("conversation_id") or str(uuid4())
-    try:
-        resolved_adapter = adapter_setup.resolve_site_adapter(
-            req.site_id or previous_state.get("user_info", {}).get("site_id")
-        )
-    except AdapterError as exc:
-        raise HTTPException(status_code=400, detail=exc.message) from exc
-
-    user_info: dict[str, Any] = dict(previous_state.get("user_info") or {})
-    user_info["id"] = req.user_id
-    user_info["name"] = req.user_name
-    if req.user_email is not None:
-        user_info["email"] = req.user_email
-    user_info["site_id"] = resolved_adapter.site_id
-    access_token = req.access_token or previous_state.get("user_info", {}).get("access_token")
-    if access_token is not None:
-        user_info["access_token"] = access_token
+    resolved_auth = resolve_runtime_auth(
+        request=req,
+        http_request=http_request,
+        require_credentials=False,
+    )
+    user_info = build_runtime_user_info(
+        previous_user_info=previous_state.get("user_info") or {},
+        site_id=resolved_auth.site_id,
+        access_token=resolved_auth.access_token,
+        cookies=resolved_auth.cookies,
+        auth_metadata=resolved_auth.auth_metadata,
+        user_id=req.user_id,
+        user_name=req.user_name,
+        user_email=req.user_email,
+    )
 
     state: dict[str, Any] = {
         "messages": [*previous_messages, HumanMessage(content=req.message)],
@@ -393,12 +391,7 @@ def shared_widget_bundle():
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(http_request: Request, req: ChatRequest) -> ChatResponse:
     try:
-        if req.access_token is None:
-            req.access_token = (
-                http_request.cookies.get("access_token")
-                or http_request.cookies.get("session_token")
-            )
-        state, conversation_id = _build_graph_input(req)
+        state, conversation_id = _build_graph_input(req, http_request)
 
         final_state = graph_app.invoke(
             state,

@@ -1,18 +1,16 @@
 from typing import Dict
-from ..schema import AuthenticatedContext, AdapterError
 
+from chatbot.src.onboarding_v2.models.planning import ResolvedAuthContract
+
+from ..auth_headers import assert_context_site, build_auth_headers_from_contract
+from ..schema import AuthenticatedContext
+
+SITE_ID = "site-b"
+AUTH_CONTRACT = ResolvedAuthContract(transport="bearer_token")
 
 def assert_site_b_context(ctx: AuthenticatedContext) -> None:
-    if ctx.siteId != "site-b":
-        raise AdapterError(
-            "INVALID_INPUT", "site-b 콘텍스트가 아닙니다.", {"siteId": ctx.siteId}
-        )
+    assert_context_site(ctx, expected_site_id=SITE_ID, label=SITE_ID)
 
 
 def build_site_b_auth_headers(ctx: AuthenticatedContext) -> Dict[str, str]:
-    headers: Dict[str, str] = {}
-    if ctx.accessToken:
-        headers["Authorization"] = f"Bearer {ctx.accessToken}"
-    elif ctx.sessionRef:
-        headers["Authorization"] = f"Bearer {ctx.sessionRef}"
-    return headers
+    return build_auth_headers_from_contract(AUTH_CONTRACT, ctx)

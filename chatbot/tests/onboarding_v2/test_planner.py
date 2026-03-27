@@ -162,7 +162,15 @@ def test_planner_selects_food_strategies():
     assert plan.chatbot_bridge.csrf_header_name is None
     assert plan.chatbot_bridge.auth_contract.transport == "session_cookie"
     assert plan.chatbot_bridge.auth_contract.session_cookie_name == "session_token"
-    assert plan.chatbot_bridge.response_mapping_profile == "site_a"
+    assert plan.chatbot_bridge.response_contract.order_profile == "rest_detail_wrapped_order"
+    assert plan.chatbot_bridge.response_contract.order_status_profile == "english_tokens"
+    assert plan.chatbot_bridge.order_action_contract.submission_mode == "single_endpoint_json_body"
+    assert plan.chatbot_bridge.order_action_contract.request_fields.model_dump(mode="json") == {
+        "action": "action",
+        "reason": "reason",
+        "new_option_id": "new_option_id",
+    }
+    assert plan.chatbot_bridge.response_mapping_profile == "rest_detail_wrapped_order"
     assert plan.chatbot_bridge.request_field_mappings == {
         "action": "action",
         "reason": "reason",
@@ -316,6 +324,47 @@ def test_planner_accepts_bilyeo_strict_coverage_with_verified_flask_endpoints():
     assert plan.chatbot_bridge.auth_validation_endpoint == "/api/chat/auth-token"
     assert plan.chatbot_bridge.current_user_endpoint == "/api/chat/auth-token"
     assert plan.chatbot_bridge.auth_transport == "bearer_token"
+    assert plan.chatbot_bridge.response_contract.order_profile == "orders_collection_scan"
+    assert plan.chatbot_bridge.order_action_contract.submission_mode == "read_only"
+    assert plan.chatbot_bridge.order_action_contract.supported_actions == [
+        "list_orders",
+        "get_order_status",
+    ]
+
+
+def test_planner_infers_user_scoped_order_service_contract():
+    contract = planner_module._derive_chatbot_bridge_contract(
+        domain_integration=DomainIntegration(
+            auth_validation_endpoint="/users/me/",
+            current_user_endpoint="/users/me/",
+            product_search_endpoint="/products/new",
+            order_list_endpoint="/orders/{user_id}/orders",
+            order_detail_endpoint="/orders/{user_id}/orders/{order_id}",
+            order_action_endpoint="/orders/{user_id}/orders/{order_id}/cancel",
+            order_action_endpoints={
+                "cancel": "/orders/{user_id}/orders/{order_id}/cancel",
+                "refund": "/orders/{user_id}/orders/{order_id}/refund",
+            },
+        ),
+        site_id="site-c-like",
+        source_root=ROOT,
+        backend_framework="fastapi",
+        auth_handler_source="backend/users/views.py",
+        auth_style_hint="session_cookie",
+    )
+
+    response_contract = contract["response_contract"]
+    order_action_contract = contract["order_action_contract"]
+
+    assert response_contract.order_profile == "user_scoped_order_service"
+    assert response_contract.order_identifier_mode == "order_number_with_internal_resolution"
+    assert order_action_contract.submission_mode == "per_action_query_endpoint"
+    assert order_action_contract.supported_actions == [
+        "list_orders",
+        "get_order_status",
+        "cancel",
+        "refund",
+    ]
 
 
 def test_planner_infers_cookie_plus_csrf_transport_from_auth_source(tmp_path: Path):

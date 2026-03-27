@@ -20,6 +20,9 @@ from chatbot.src.onboarding_v2.models.planning import (
     HostFrontendPlan,
     IntegrationPlan,
     ResolvedAuthContract,
+    ResolvedOrderActionContract,
+    ResolvedRequestFieldContract,
+    ResolvedResponseContract,
 )
 from chatbot.src.onboarding_v2.planning import build_planning_bundle
 from chatbot.src.onboarding_v2.storage import ArtifactStore
@@ -889,9 +892,120 @@ def test_runtime_fixture_manifest_reuses_transport_aware_food_auth_context(monke
     assert manifest["available"] is True
     assert manifest["access_token"] == ""
     assert manifest["session_cookies"] == {"session_token": "real-session-token"}
+    assert manifest["validation_capability_contract"]["supports_authenticated_chat"] is True
+    assert manifest["validation_capability_contract"]["supports_mutations"] is True
     auth_context = captured["auth_context"]
     assert getattr(auth_context, "accessToken", None) in (None, "")
     assert getattr(auth_context, "cookies", None) == {"session_token": "real-session-token"}
+
+
+def test_runtime_fixture_manifest_uses_nested_response_contract_for_visible_order_ids(
+    monkeypatch, tmp_path: Path
+):
+    captured: dict[str, object] = {}
+
+    class _FakeClient:
+        async def list_orders(self, headers):
+            captured["headers"] = headers
+            return [{"id": 99, "order_number": "ORD-9001"}]
+
+    class _FakeAdapter:
+        def __init__(self):
+            self.client = _FakeClient()
+            self.response_contract = ResolvedResponseContract(
+                order_profile="user_scoped_order_service",
+                order_identifier_mode="order_number_with_internal_resolution",
+            )
+            self.order_action_contract = ResolvedOrderActionContract(
+                submission_mode="per_action_query_endpoint",
+                supported_actions=["list_orders", "get_order_status", "cancel", "refund"],
+                request_fields=ResolvedRequestFieldContract(),
+            )
+
+    monkeypatch.setitem(
+        _build_runtime_fixture_manifest.__globals__,
+        "_load_generated_adapter",
+        lambda **kwargs: _FakeAdapter(),
+    )
+    monkeypatch.setitem(
+        _build_runtime_fixture_manifest.__globals__,
+        "_build_generated_auth_headers",
+        lambda **kwargs: {"Authorization": "Bearer bridge-token"},
+    )
+
+    plan = IntegrationPlan(
+        host_backend=HostBackendPlan(
+            strategy="django_project_urlconf_import_view",
+            route_target="backend/project/urls.py",
+            import_target="backend/project/urls.py",
+            login_endpoint="/api/login",
+            auth_handler_source="backend/users/views.py",
+            chat_auth_contract_path="/api/chat/auth-token",
+            site_id="site-c",
+        ),
+        host_frontend=HostFrontendPlan(
+            mount_strategy="react_app_shell_outside_routes",
+            mount_target="frontend/src/App.js",
+            api_strategy="react_api_client_augment_existing",
+            api_client_target="frontend/src/api/api.js",
+            chatbot_server_base_url="http://localhost:8100",
+        ),
+        chatbot_bridge=ChatbotBridgePlan(
+            site_key="site-c",
+            adapter_package="src/adapters/generated/site_c",
+            setup_target="src/adapters/setup.py",
+            host_base_url_env_var="GENERATED_SITE_C_API_URL",
+            auth_validation_endpoint="/api/auth/me",
+            current_user_endpoint="/api/auth/me",
+            product_search_endpoint="/api/products",
+            order_list_endpoint="/api/users/{user_id}/orders",
+            order_detail_endpoint="/api/users/{user_id}/orders/{order_id}",
+            order_action_endpoint="/api/users/{user_id}/orders/{order_id}/actions",
+            auth_contract=ResolvedAuthContract(
+                transport="bearer_token",
+            ),
+            response_contract=ResolvedResponseContract(
+                order_profile="user_scoped_order_service",
+                order_identifier_mode="order_number_with_internal_resolution",
+            ),
+            order_action_contract=ResolvedOrderActionContract(
+                submission_mode="per_action_query_endpoint",
+                supported_actions=["list_orders", "get_order_status", "cancel", "refund"],
+                request_fields=ResolvedRequestFieldContract(),
+            ),
+        ),
+    )
+
+    manifest = _build_runtime_fixture_manifest(
+        chatbot_runtime_workspace=tmp_path,
+        runtime_plan=BackendRuntimePlan(
+            framework="fastapi",
+            backend_root=str(tmp_path / "backend"),
+            command=["uvicorn", "app:app"],
+            readiness_url="http://127.0.0.1:8125/api/chat/auth-token",
+            listen_port=8125,
+        ),
+        plan=plan,
+        prep_result=BackendRuntimePrepResult(
+            framework="fastapi",
+            passed=True,
+            fixture_manifest={"seed_source": {}, "auth": {}},
+        ),
+        bootstrap_result={
+            "passed": True,
+            "bootstrap_payload": {
+                "access_token": "bridge-token",
+                "user": {"id": "7"},
+            },
+            "session_cookies": {},
+        },
+        adapter_auth_result={"passed": True, "validated_user": {"id": "7"}},
+        onboarding_credentials=None,
+    )
+
+    assert manifest["available"] is True
+    assert manifest["orders"]["lookup_order_id"] == "ORD-9001"
+    assert manifest["orders"]["status_order_id"] == "ORD-9001"
 
 
 def test_resolve_bridge_auth_material_prefers_nested_auth_contract_over_legacy_fields():
