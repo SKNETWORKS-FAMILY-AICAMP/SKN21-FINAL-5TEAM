@@ -1,0 +1,320 @@
+[
+  {
+    "scenario": {
+      "name": "주문 취소",
+      "action": "cancel",
+      "tools": [
+        "cancel"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0001",
+      "status": ""
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0001로 주문한 상품을 취소하고 싶은데, 가능할까요?",
+    "meta": {
+      "note": "llm_eval_case_001",
+      "rationale": "이 질문은 주문 취소를 희망하는 의도를 명확히 표현하고 있으며, 특정 주문번호를 포함하고 있어 cancel 도구로 라우팅되어야 합니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "환불/반품 신청",
+      "action": "refund",
+      "tools": [
+        "refund"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0002",
+      "status": ""
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0002에 대해 반품을 진행하고 싶은데, 배송비가 두 건으로 차감되는 건 좀 불합리한 것 같습니다. 어떻게 처리할 수 있을까요?",
+    "meta": {
+      "note": "llm_eval_case_002",
+      "rationale": "질문에서 반품을 원하고 있으며, 배송비 문제를 언급함으로써 환불/반품 신청을 명확히 하고 있습니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "교환 신청",
+      "action": "exchange",
+      "tools": [
+        "exchange",
+        "change_option"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0003",
+      "status": ""
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0003로 안경렌즈를 구매했는데, 커브 때문에 시야가 불편해서 교환이 가능할까요?",
+    "meta": {
+      "note": "llm_eval_case_003",
+      "rationale": "이 질문은 사용자에게 주문번호를 명시하고 교환을 요청하는 내용을 포함하고 있어, 교환 신청을 위한 tool인 exchange로 라우팅되어야 합니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "배송 조회",
+      "action": "shipping",
+      "tools": [
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0003",
+      "status": ""
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "지난번에 주문한 부츠(ORD-eval_dataset-0003) 배송이 어떻게 되고 있는지 궁금한데, 현재 위치와 예상 도착일 좀 알려주실 수 있을까요?",
+    "meta": {
+      "note": "llm_eval_case_004",
+      "rationale": "이 질문은 고객이 특정 주문번호에 대한 배송 상태를 문의하고 있어 shipping 도구로 라우팅되어야 합니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "주문 내역 조회",
+      "action": "get_user_orders",
+      "tools": [
+        "get_user_orders"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "",
+      "status": ""
+    },
+    "user_id": 1,
+    "user_email": "test@example.com",
+    "user_query": "최근에 제가 주문한 내역을 확인할 수 있을까요?",
+    "meta": {
+      "note": "llm_eval_case_005",
+      "rationale": "주문 번호 없이 최근 주문 목록을 조회하고 싶다는 요청으로, get_user_orders 도구로 적합합니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "주문 취소",
+      "action": "cancel",
+      "tools": [
+        "cancel"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0004",
+      "status": ""
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0004 건 취소하고 싶은데, 어떻게 하면 돼?",
+    "meta": {
+      "note": "llm_eval_case_006",
+      "rationale": "이 질문은 사용자가 특정 주문을 취소하려는 의도를 명확히 표현하고 있으며, 주문번호가 포함되어 있어 해당 도구로 라우팅되어야 합니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "환불/반품 신청",
+      "action": "refund",
+      "tools": [
+        "refund"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0005",
+      "status": ""
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "안녕하세요, 제가 주문한 제품의 환불을 신청하고 싶은데요. 주문번호는 ORD-eval_dataset-0005입니다. 어떻게 진행해야 하나요?",
+    "meta": {
+      "note": "llm_eval_case_007",
+      "rationale": "이 질문은 고객이 주문번호를 명시하며 환불을 요청하고 있어 refund tool로 라우팅되어야 합니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "교환 신청",
+      "action": "exchange",
+      "tools": [
+        "exchange",
+        "change_option"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0006",
+      "status": ""
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "안녕하세요, 주문번호 ORD-eval_dataset-0006의 상품에 문제가 있어서 교환을 신청하고 싶습니다. 어떻게 진행하면 될까요?",
+    "meta": {
+      "note": "llm_eval_case_008",
+      "rationale": "이 질문은 교환 신청에 대한 명확한 요청을 포함하고 있으며, 주문번호가 자연스럽게 포함되어 있어 exchange 도구로 라우팅되어야 합니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "배송 조회",
+      "action": "shipping",
+      "tools": [
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0006",
+      "status": ""
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "안녕하세요, 주문번호 ORD-eval_dataset-0006에 대한 배송 상태를 확인하고 싶습니다. 현재 위치와 예상 도착일을 알려주실 수 있을까요?",
+    "meta": {
+      "note": "llm_eval_case_009",
+      "rationale": "이 질문은 특정 주문번호에 대한 배송 조회를 요청하고 있으며, 배송 현황 정보를 제공하는 shipping tool로 라우팅되어야 합니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "주문 내역 조회",
+      "action": "get_user_orders",
+      "tools": [
+        "get_user_orders"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "",
+      "status": ""
+    },
+    "user_id": 2,
+    "user_email": "test2@example.com",
+    "user_query": "최근에 주문한 내역 좀 볼 수 있을까요?",
+    "meta": {
+      "note": "llm_eval_case_010",
+      "rationale": "이 질문은 사용자가 자신의 최근 주문 목록을 확인하고 싶어하는 상황을 반영하며, get_user_orders 도구로 요청되어야 합니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "주문 취소",
+      "action": "cancel",
+      "tools": [
+        "cancel"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0007",
+      "status": ""
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "주문한 양말이 이염이 걱정되는데, 주문번호 ORD-eval_dataset-0007로 취소 가능할까요?",
+    "meta": {
+      "note": "llm_eval_case_011",
+      "rationale": "이 질문은 사용자가 양말 상품의 이염 문제로 인해 주문 취소를 요청하고 있으며, 주문번호가 포함되어 있어 cancel tool로 라우팅되어야 합니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "환불/반품 신청",
+      "action": "refund",
+      "tools": [
+        "refund"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0008",
+      "status": ""
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "안녕하세요, 주문번호 ORD-eval_dataset-0008로 구매한 시계가 불량인 것 같아서 반품 신청을 하고 싶습니다. 어떻게 진행해야 하나요?",
+    "meta": {
+      "note": "llm_eval_case_012",
+      "rationale": "이 질문은 제품의 불량으로 인해 반품을 요청하는 상황을 나타내며, refund 도구로 라우팅되어야 합니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "교환 신청",
+      "action": "exchange",
+      "tools": [
+        "exchange",
+        "change_option"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0009",
+      "status": ""
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "주문번호 ORD-eval_dataset-0009로 상품 교환하고 싶은데, 어떻게 해야 하나요?",
+    "meta": {
+      "note": "llm_eval_case_013",
+      "rationale": "이 질문은 특정 주문번호를 언급하며 교환 신청을 요청하고 있어, exchange 도구로 라우팅되어야 합니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "배송 조회",
+      "action": "shipping",
+      "tools": [
+        "shipping"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "ORD-eval_dataset-0009",
+      "status": ""
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "내가 주문한 상품 ORD-eval_dataset-0009 배송 현황이 어떻게 되나요?",
+    "meta": {
+      "note": "llm_eval_case_014",
+      "rationale": "이 질문은 배송 조회를 요청하고 있으며, 주문번호가 포함되어 있어 shipping tool로 라우팅되어야 합니다."
+    }
+  },
+  {
+    "scenario": {
+      "name": "주문 내역 조회",
+      "action": "get_user_orders",
+      "tools": [
+        "get_user_orders"
+      ],
+      "possible": true
+    },
+    "order": {
+      "order_id": "",
+      "status": ""
+    },
+    "user_id": 3,
+    "user_email": "test3@example.com",
+    "user_query": "최근에 주문한 것들이 어떤 것들이 있는지 확인할 수 있을까요?",
+    "meta": {
+      "note": "llm_eval_case_015",
+      "rationale": "이 질문은 사용자가 자신의 최근 주문 목록을 조회하고 싶어하는 의도를 가지고 있으며, 이는 get_user_orders 도구로 적절히 라우팅될 수 있습니다."
+    }
+  }
+]

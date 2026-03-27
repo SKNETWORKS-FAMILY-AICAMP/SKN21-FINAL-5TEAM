@@ -1,11 +1,13 @@
+import argparse
 import json
 import sys
 from pathlib import Path
 
-# 경로 설정
-DATA_DIR = Path(r"c:\Users\Playdata\Documents\SKN21_FINAL_5TEAM\SKN21-FINAL-5TEAM\chatbot\chatbot_eval\benchmarkV2\FunctionChat-Bench\data")
-input_path = DATA_DIR / "intermediate_queries_v1.json"
-output_path = DATA_DIR / "intermediate_queries_v1_verified.jsonl"
+current_dir = Path(__file__).resolve().parent
+if str(current_dir) not in sys.path:
+    sys.path.append(str(current_dir))
+
+from paths import DATA_DIR
 
 # 다변화 템플릿 (valid_and_diversify_dataset.py와 동일)
 QUERIES_DICT = {
@@ -36,7 +38,23 @@ QUERIES_DICT = {
     ]
 }
 
-def convert_v6_to_v4_verified():
+DEFAULT_INPUT_CANDIDATES = [
+    DATA_DIR / "intermediate_queries.json"
+]
+
+
+def resolve_default_input() -> Path:
+    for candidate in DEFAULT_INPUT_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    return DEFAULT_INPUT_CANDIDATES[0]
+
+
+def resolve_default_output(input_path: Path) -> Path:
+    return input_path.with_name(f"{input_path.stem}_verified.jsonl")
+
+
+def convert_v6_to_v4_verified(input_path: Path, output_path: Path):
     if not input_path.exists():
         print(f"Error: {input_path} 파일을 찾을 수 없습니다.")
         return
@@ -85,7 +103,14 @@ def convert_v6_to_v4_verified():
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
     print(f"[출력] {output_path.name} ({len(results)}건)")
-    print("✅ 변환 완료! v4_verified와 동일한 JSONL 형식으로 저장되었습니다.")
+    print("✅ 변환 완료! _verified와 동일한 JSONL 형식으로 저장되었습니다.")
 
 if __name__ == "__main__":
-    convert_v6_to_v4_verified()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", dest="input_path", type=Path, default=None)
+    parser.add_argument("--output", dest="output_path", type=Path, default=None)
+    args = parser.parse_args()
+
+    input_path = args.input_path or resolve_default_input()
+    output_path = args.output_path or resolve_default_output(input_path)
+    convert_v6_to_v4_verified(input_path, output_path)
