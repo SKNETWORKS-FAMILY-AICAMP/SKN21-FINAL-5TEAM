@@ -23,6 +23,109 @@ from chatbot.src.onboarding_v2.models.validation import (
 
 ValidationEventCallback = Callable[[dict[str, Any]], None]
 
+_ORACLE_REQUIRED_ENV_KEYS = [
+    "ORACLE_USER",
+    "ORACLE_PASSWORD",
+    "ORACLE_HOST",
+    "ORACLE_PORT",
+    "ORACLE_SERVICE_NAME",
+]
+_EXTERNAL_DEPENDENCY_ERROR_TOKENS = (
+    "socket.gaierror",
+    "nodename nor servname provided",
+    "name or service not known",
+    "temporary failure in name resolution",
+    "could not translate host name",
+    "connection refused",
+    "connection reset",
+    "timed out",
+    "timeout",
+    "unable to connect",
+    "can't connect",
+    "connection aborted",
+    "connection error",
+    "dpy-",
+    "ora-",
+)
+
+
+def _loaded_env_source_labels(env_source: dict[str, Any]) -> list[str]:
+    labels: list[str] = []
+    for label in ("source", "backend", "workspace"):
+        if bool(env_source.get(f"loaded_{label}_dotenv")):
+            labels.append(label)
+    return labels
+
+
+def _classify_dependency_kind(*, output_text: str, env: dict[str, str], script_path: Path | None) -> str | None:
+    lower_output = output_text.lower()
+    lower_script = str(script_path or "").lower()
+    oracle_markers = (
+        "oracledb",
+        "oracle",
+        "dpy-",
+        "ora-",
+    )
+    if any(marker in lower_output for marker in oracle_markers):
+        return "oracle"
+    if any(str(key).startswith("ORACLE_") for key in env):
+        return "oracle"
+    if "oracle" in lower_script:
+        return "oracle"
+    return None
+
+
+def _required_env_keys_for_dependency_kind(kind: str | None) -> list[str]:
+    if kind == "oracle":
+        return list(_ORACLE_REQUIRED_ENV_KEYS)
+    return []
+
+
+def _classify_prep_external_dependency_failure(
+    *,
+    step_name: str,
+    result: BackendRuntimeCommandResult,
+    env: dict[str, str],
+    env_source: dict[str, Any],
+    script_path: Path | None,
+) -> dict[str, Any] | None:
+    output_text = "\n".join(
+        part.strip()
+        for part in (result.stderr, result.stdout)
+        if str(part or "").strip()
+    )
+    lower_output = output_text.lower()
+    dependency_kind = _classify_dependency_kind(
+        output_text=output_text,
+        env=env,
+        script_path=script_path,
+    )
+    required_env_keys = _required_env_keys_for_dependency_kind(dependency_kind)
+    missing_env_keys = [key for key in required_env_keys if not str(env.get(key) or "").strip()]
+    has_external_dependency_signal = any(
+        token in lower_output for token in _EXTERNAL_DEPENDENCY_ERROR_TOKENS
+    )
+    if not has_external_dependency_signal and not missing_env_keys:
+        return None
+    diagnostics: dict[str, Any] = {
+        "step_name": step_name,
+        "script_path": str(script_path) if script_path is not None else None,
+        "loaded_env_sources": _loaded_env_source_labels(env_source),
+        "missing_env_keys": missing_env_keys,
+        "error_excerpt": output_text[:2000],
+    }
+    if result.returncode not in (None, 0):
+        diagnostics["returncode"] = result.returncode
+    if dependency_kind is not None:
+        diagnostics["dependency_kind"] = dependency_kind
+    return {
+        "failure_origin": "host_contract",
+        "failure_code": "backend_runtime_prep_external_dependency_unavailable",
+        "dependency_kind": dependency_kind,
+        "required_env_keys": required_env_keys,
+        "dependency_diagnostics": diagnostics,
+    }
+
 
 def prepare_backend_runtime(
     *,
@@ -187,6 +290,10 @@ def prepare_backend_runtime(
 
     reset_path = _discover_reset_script(workspace=workspace, backend_root=backend_root)
     seed_path = _discover_seed_script(workspace=workspace, backend_root=backend_root)
+    reset_env = build_backend_subprocess_env(
+        backend_root=backend_root,
+        dotenv_defaults=backend_env_defaults,
+    )
     reset_command = [str(python_executable), str(reset_path)] if reset_path is not None else []
     reset = _run_prep_step(
         step_name="reset",
@@ -198,10 +305,7 @@ def prepare_backend_runtime(
             framework=framework,
             backend_root=backend_root,
             python_executable=python_executable,
-            env=build_backend_subprocess_env(
-                backend_root=backend_root,
-                dotenv_defaults=backend_env_defaults,
-            ),
+            env=reset_env,
             missing_stdout="reset script not found; skipped reset",
             log_path=log_path,
             heartbeat_interval_s=heartbeat_interval_s,
@@ -218,13 +322,39 @@ def prepare_backend_runtime(
     )
     _record_live_log_path(live_log_paths, "reset", reset.log_path)
     if not reset.passed:
+        failure_details = _classify_prep_external_dependency_failure(
+            step_name="reset",
+            result=reset,
+            env=reset_env,
+            env_source=env_source,
+            script_path=reset_path,
+        ) or {}
+        fixture_manifest = _build_fixture_manifest(
+            available=False,
+            seed_source=_build_seed_source(
+                workspace=workspace,
+                reset_path=reset_path,
+                seed_path=seed_path,
+                python_executable=python_executable,
+            ),
+            reason=_prep_failure_summary("reset", reset),
+        )
+        for key in ("failure_origin", "failure_code", "dependency_kind", "required_env_keys", "dependency_diagnostics"):
+            value = failure_details.get(key)
+            if value not in (None, [], {}):
+                fixture_manifest[key] = value
         return BackendRuntimePrepResult(
             framework=framework,
             passed=False,
             failure_summary=_prep_failure_summary("reset", reset),
+            failure_origin=failure_details.get("failure_origin"),
+            failure_code=failure_details.get("failure_code"),
             backend_root=str(backend_root),
             venv_path=str(venv_path),
             python_executable=str(python_executable),
+            dependency_kind=failure_details.get("dependency_kind"),
+            required_env_keys=list(failure_details.get("required_env_keys") or []),
+            dependency_diagnostics=dict(failure_details.get("dependency_diagnostics") or {}),
             create_venv=create_venv,
             install=install,
             migrate=migrate,
@@ -233,19 +363,14 @@ def prepare_backend_runtime(
             live_log_paths=live_log_paths,
             seed_source_path=str(seed_path) if seed_path is not None else None,
             reset_source_path=str(reset_path) if reset_path is not None else None,
-            fixture_manifest=_build_fixture_manifest(
-                available=False,
-                seed_source=_build_seed_source(
-                    workspace=workspace,
-                    reset_path=reset_path,
-                    seed_path=seed_path,
-                    python_executable=python_executable,
-                ),
-                reason=_prep_failure_summary("reset", reset),
-            ),
+            fixture_manifest=fixture_manifest,
             related_files=_default_related_files(framework),
         )
 
+    seed_env = build_backend_subprocess_env(
+        backend_root=backend_root,
+        dotenv_defaults=backend_env_defaults,
+    )
     seed_command = [str(python_executable), str(seed_path)] if seed_path is not None else []
     seed = _run_prep_step(
         step_name="seed",
@@ -257,10 +382,7 @@ def prepare_backend_runtime(
             framework=framework,
             backend_root=backend_root,
             python_executable=python_executable,
-            env=build_backend_subprocess_env(
-                backend_root=backend_root,
-                dotenv_defaults=backend_env_defaults,
-            ),
+            env=seed_env,
             missing_stdout="seed script not found; skipped seed",
             log_path=log_path,
             heartbeat_interval_s=heartbeat_interval_s,
@@ -277,13 +399,39 @@ def prepare_backend_runtime(
     )
     _record_live_log_path(live_log_paths, "seed", seed.log_path)
     if not seed.passed:
+        failure_details = _classify_prep_external_dependency_failure(
+            step_name="seed",
+            result=seed,
+            env=seed_env,
+            env_source=env_source,
+            script_path=seed_path,
+        ) or {}
+        fixture_manifest = _build_fixture_manifest(
+            available=False,
+            seed_source=_build_seed_source(
+                workspace=workspace,
+                reset_path=reset_path,
+                seed_path=seed_path,
+                python_executable=python_executable,
+            ),
+            reason=_prep_failure_summary("seed", seed),
+        )
+        for key in ("failure_origin", "failure_code", "dependency_kind", "required_env_keys", "dependency_diagnostics"):
+            value = failure_details.get(key)
+            if value not in (None, [], {}):
+                fixture_manifest[key] = value
         return BackendRuntimePrepResult(
             framework=framework,
             passed=False,
             failure_summary=_prep_failure_summary("seed", seed),
+            failure_origin=failure_details.get("failure_origin"),
+            failure_code=failure_details.get("failure_code"),
             backend_root=str(backend_root),
             venv_path=str(venv_path),
             python_executable=str(python_executable),
+            dependency_kind=failure_details.get("dependency_kind"),
+            required_env_keys=list(failure_details.get("required_env_keys") or []),
+            dependency_diagnostics=dict(failure_details.get("dependency_diagnostics") or {}),
             create_venv=create_venv,
             install=install,
             migrate=migrate,
@@ -293,16 +441,7 @@ def prepare_backend_runtime(
             live_log_paths=live_log_paths,
             seed_source_path=str(seed_path) if seed_path is not None else None,
             reset_source_path=str(reset_path) if reset_path is not None else None,
-            fixture_manifest=_build_fixture_manifest(
-                available=False,
-                seed_source=_build_seed_source(
-                    workspace=workspace,
-                    reset_path=reset_path,
-                    seed_path=seed_path,
-                    python_executable=python_executable,
-                ),
-                reason=_prep_failure_summary("seed", seed),
-            ),
+            fixture_manifest=fixture_manifest,
             related_files=_default_related_files(framework),
         )
 

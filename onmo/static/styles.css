@@ -682,6 +682,117 @@ body {
   margin-top: 12px;
 }
 
+.stage-live-shell {
+  display: grid;
+  gap: 12px;
+  padding: 6px 0 2px;
+}
+
+.stage-live-head {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(95, 107, 122, 0.12);
+}
+
+.stage-live-head span {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.stage-live-head small {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.stage-live-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.stage-live-metric {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.stage-live-metric strong {
+  font-size: 0.78rem;
+  color: var(--soft);
+  font-weight: 600;
+}
+
+.stage-live-metric small {
+  font-size: 0.84rem;
+  color: var(--ink);
+}
+
+.stage-live-events {
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.stage-live-event {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding-top: 8px;
+  border-top: 1px solid rgba(95, 107, 122, 0.1);
+}
+
+.stage-live-event:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.stage-live-event span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.stage-live-event small {
+  color: var(--ink);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.stage-live-tech {
+  padding-top: 2px;
+}
+
+.stage-live-tech summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--soft);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.stage-live-tech summary::-webkit-details-marker {
+  display: none;
+}
+
+.stage-live-tech small,
+.stage-live-tech p {
+  display: block;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .demo-banner {
   display: grid;
   gap: 4px;
@@ -1480,6 +1591,10 @@ body {
   display: grid;
   gap: 10px;
   padding: 0 16px 16px;
+  max-height: 420px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .raw-log-meta {
@@ -1528,8 +1643,24 @@ body {
 }
 
 .raw-log-row span,
-.raw-log-row small {
+.raw-log-copy small,
+.raw-log-row > small {
   color: var(--muted);
+}
+
+.raw-log-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.raw-log-primary {
+  color: var(--ink);
+}
+
+.raw-log-secondary {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 @media (max-width: 960px) {

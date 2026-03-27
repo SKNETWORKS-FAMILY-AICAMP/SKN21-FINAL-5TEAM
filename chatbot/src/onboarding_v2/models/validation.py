@@ -22,6 +22,8 @@ class ApplyResult(BaseModel):
     host_source_snapshot_path: str | None = None
     chatbot_source_snapshot_path: str | None = None
     passed: bool
+    failure_summary: str | None = None
+    failure_details: dict[str, Any] = Field(default_factory=dict)
     applied_files: list[str] = Field(default_factory=list)
     host_applied_files: list[str] = Field(default_factory=list)
     chatbot_applied_files: list[str] = Field(default_factory=list)
@@ -72,9 +74,14 @@ class BackendRuntimePrepResult(BaseModel):
     framework: str
     passed: bool
     failure_summary: str | None = None
+    failure_origin: str | None = None
+    failure_code: str | None = None
     backend_root: str | None = None
     venv_path: str | None = None
     python_executable: str | None = None
+    dependency_kind: str | None = None
+    required_env_keys: list[str] = Field(default_factory=list)
+    dependency_diagnostics: dict[str, Any] = Field(default_factory=dict)
     create_venv: BackendRuntimeCommandResult | None = None
     install: BackendRuntimeCommandResult | None = None
     migrate: BackendRuntimeCommandResult | None = None
@@ -117,6 +124,8 @@ class BackendRuntimeState(BaseModel):
     launcher_log_path: str | None = None
     readiness_probe_log_path: str | None = None
     failure_summary: str | None = None
+    failure_origin: str | None = None
+    failure_code: str | None = None
     stdout: str = ""
     stderr: str = ""
     related_files: list[str] = Field(default_factory=list)
@@ -173,12 +182,18 @@ class ConversationScenarioContract(BaseModel):
 class WidgetOrderE2EResult(BaseModel):
     passed: bool
     failure_summary: str
+    failure_origin: str | None = None
+    failure_code: str | None = None
     covered_flows: list[str] = Field(default_factory=list)
     flow_reports: dict[str, Any] = Field(default_factory=dict)
+    module_origins: dict[str, str] = Field(default_factory=dict)
     validation_capability_contract: dict[str, Any] = Field(default_factory=dict)
     sampled_order_id: str | None = None
     sampled_option_id: str | None = None
     scenario_mode: str | None = None
+    resolved_chatbot_runtime_workspace: str | None = None
+    runtime_harness_path: str | None = None
+    runtime_harness_origin: str | None = None
     related_files: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -211,6 +226,8 @@ class ConversationScenarioResult(BaseModel):
 class ConversationValidationResult(BaseModel):
     passed: bool
     failure_summary: str | None = None
+    failure_origin: str | None = None
+    failure_code: str | None = None
     fixture_manifest: dict[str, Any] = Field(default_factory=dict)
     validation_capability_contract: dict[str, Any] = Field(default_factory=dict)
     scenarios: list[ConversationScenarioResult] = Field(default_factory=list)
@@ -238,6 +255,8 @@ class ValidationBundle(BaseModel):
     advisory_failures: list[str] = Field(default_factory=list)
     failure_signature: str | None = None
     failure_summary: str | None = None
+    failure_origin: str | None = None
+    failure_code: str | None = None
     related_files: list[str] = Field(default_factory=list)
     related_artifacts: list[ArtifactRef] = Field(default_factory=list)
     input_artifact_versions: dict[str, int] = Field(default_factory=dict)

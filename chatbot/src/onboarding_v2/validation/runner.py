@@ -73,6 +73,29 @@ class ValidationRunResult:
     conversation_validation: ConversationValidationResult
 
 
+@dataclass(slots=True)
+class _ResolvedValidationPaths:
+    run_root: Path
+    host_runtime_workspace: Path
+    chatbot_runtime_workspace: Path
+    live_logs_root: Path | None
+
+
+class _RuntimeValidationSubprocessError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_origin: str = "platform_validation",
+        failure_code: str = "runtime_validation_subprocess_failed",
+        diagnostics: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.failure_origin = failure_origin
+        self.failure_code = failure_code
+        self.diagnostics = dict(diagnostics or {})
+
+
 class _ConversationLlmJudgeResponse(BaseModel):
     task_completion: str = "unknown"
     factual_alignment: str = "unknown"
@@ -185,6 +208,126 @@ def _canonical_validation_runner_module() -> Any:
     )
 
 
+def _resolve_validation_paths(
+    *,
+    run_root: str | Path,
+    host_runtime_workspace: str | Path,
+    chatbot_runtime_workspace: str | Path,
+    live_logs_root: str | Path | None,
+) -> _ResolvedValidationPaths:
+    return _ResolvedValidationPaths(
+        run_root=Path(run_root).resolve(),
+        host_runtime_workspace=Path(host_runtime_workspace).resolve(),
+        chatbot_runtime_workspace=Path(chatbot_runtime_workspace).resolve(),
+        live_logs_root=(
+            Path(live_logs_root).resolve() if live_logs_root is not None else None
+        ),
+    )
+
+
+def _runtime_harness_origin(
+    *,
+    chatbot_runtime_workspace: Path,
+    harness_path: Path,
+) -> str:
+    workspace_root = chatbot_runtime_workspace.resolve()
+    resolved_harness = harness_path.resolve()
+    return (
+        "workspace"
+        if workspace_root == resolved_harness or workspace_root in resolved_harness.parents
+        else "repo_fallback"
+    )
+
+
+def _runtime_context_payload(
+    *,
+    chatbot_runtime_workspace: Path,
+    harness_path: Path,
+) -> dict[str, Any]:
+    workspace_root = chatbot_runtime_workspace.resolve()
+    resolved_harness = harness_path.resolve()
+    return {
+        "resolved_chatbot_runtime_workspace": str(workspace_root),
+        "runtime_harness_path": str(resolved_harness),
+        "runtime_harness_origin": _runtime_harness_origin(
+            chatbot_runtime_workspace=workspace_root,
+            harness_path=resolved_harness,
+        ),
+    }
+
+
+def _failure_result(
+    summary: str,
+    *,
+    related_files: list[str] | None = None,
+    failure_origin: str | None = None,
+    failure_code: str | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "passed": False,
+        "failure_summary": summary,
+        "related_files": list(related_files or []),
+    }
+    if failure_origin is not None:
+        payload["failure_origin"] = failure_origin
+    if failure_code is not None:
+        payload["failure_code"] = failure_code
+    payload.update(extra)
+    return payload
+
+
+def _failure_metadata_from_context(context: Any) -> tuple[str | None, str | None]:
+    if context is None:
+        return None, None
+    if isinstance(context, dict):
+        return (
+            _optional_text(context.get("failure_origin")),
+            _optional_text(context.get("failure_code")),
+        )
+    return (
+        _optional_text(getattr(context, "failure_origin", None)),
+        _optional_text(getattr(context, "failure_code", None)),
+    )
+
+
+def _skipped_result(
+    reason: str,
+    *,
+    upstream: Any | None = None,
+    related_files: list[str] | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    failure_origin, failure_code = _failure_metadata_from_context(upstream)
+    return _failure_result(
+        reason,
+        related_files=related_files,
+        failure_origin=failure_origin,
+        failure_code=failure_code,
+        **extra,
+    )
+
+
+def _platform_validation_failure_code(exc: Exception) -> str:
+    message = str(exc).lower()
+    if "resolved outside runtime workspace" in message or "resolved without a file origin" in message:
+        return "runtime_module_origin_error"
+    if "no module named" in message or "cannot import" in message:
+        return "runtime_import_error"
+    if "server_fastapi.app missing" in message:
+        return "chatbot_runtime_app_missing"
+    return "runtime_validation_platform_error"
+
+
+def _subprocess_failure_code(message: str) -> str:
+    normalized = str(message or "").lower()
+    if "runtime_harness.py" in normalized and "no such file or directory" in normalized:
+        return "runtime_harness_missing"
+    if "returned no structured result" in normalized:
+        return "runtime_validation_no_structured_result"
+    return "runtime_validation_subprocess_failed"
+
+
 def run_validation(
     *,
     run_root: str | Path,
@@ -263,10 +406,16 @@ def run_validation_cycle(
             live_logs_root=live_logs_root,
             retrieval_status=retrieval_status,
         )
-    run_root = Path(run_root)
-    host_runtime_workspace = Path(host_runtime_workspace)
-    chatbot_runtime_workspace = Path(chatbot_runtime_workspace)
-    live_logs_root_path = Path(live_logs_root).resolve() if live_logs_root is not None else None
+    resolved_paths = _resolve_validation_paths(
+        run_root=run_root,
+        host_runtime_workspace=host_runtime_workspace,
+        chatbot_runtime_workspace=chatbot_runtime_workspace,
+        live_logs_root=live_logs_root,
+    )
+    run_root = resolved_paths.run_root
+    host_runtime_workspace = resolved_paths.host_runtime_workspace
+    chatbot_runtime_workspace = resolved_paths.chatbot_runtime_workspace
+    live_logs_root_path = resolved_paths.live_logs_root
 
     prep_result = prepare_backend_runtime(
         workspace=host_runtime_workspace,
@@ -301,6 +450,7 @@ def run_validation_cycle(
         runtime_state = _skipped_runtime_state(
             framework=snapshot.repo_profile.backend_framework,
             reason="backend runtime boot skipped because backend runtime prep failed",
+            upstream=prep_result,
         )
 
     if prep_result.passed and runtime_state.passed and runtime_plan is not None:
@@ -313,7 +463,8 @@ def run_validation_cycle(
         chatbot_runtime_boot = _skipped_result(
             "chatbot runtime boot skipped because backend runtime boot failed"
             if prep_result.passed
-            else "chatbot runtime boot skipped because backend runtime prep failed"
+            else "chatbot runtime boot skipped because backend runtime prep failed",
+            upstream=runtime_state if prep_result.passed else prep_result,
         )
 
     if (
@@ -323,6 +474,7 @@ def run_validation_cycle(
         and chatbot_runtime_boot.get("passed")
     ):
         widget_bundle_fetch = validate_widget_bundle_fetch(
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
             runtime_plan=runtime_plan,
             plan=plan,
         )
@@ -334,7 +486,12 @@ def run_validation_cycle(
                 "widget bundle fetch skipped because backend runtime boot failed"
                 if prep_result.passed
                 else "widget bundle fetch skipped because backend runtime prep failed"
-            )
+            ),
+            upstream=(
+                chatbot_runtime_boot
+                if prep_result.passed and runtime_state.passed
+                else (runtime_state if prep_result.passed else prep_result)
+            ),
         )
 
     if (
@@ -390,8 +547,10 @@ def run_validation_cycle(
             if prep_result.passed
             else "backend runtime prep failed"
         )
+        upstream_failure: Any = prep_result if not prep_result.passed else runtime_state
         if prep_result.passed and runtime_state.passed and not chatbot_runtime_boot.get("passed"):
             reason = "chatbot runtime boot failed"
+            upstream_failure = chatbot_runtime_boot
         elif (
             prep_result.passed
             and runtime_state.passed
@@ -399,21 +558,36 @@ def run_validation_cycle(
             and not widget_bundle_fetch.get("passed")
         ):
             reason = "widget bundle fetch failed"
+            upstream_failure = widget_bundle_fetch
         host_auth_bootstrap = _skipped_result(
-            "host auth bootstrap skipped because " + reason
+            "host auth bootstrap skipped because " + reason,
+            upstream=upstream_failure,
         )
         chatbot_adapter_auth = _skipped_result(
-            "chatbot adapter auth skipped because " + reason
+            "chatbot adapter auth skipped because " + reason,
+            upstream=upstream_failure,
+        )
+        upstream_failure_origin, upstream_failure_code = _failure_metadata_from_context(
+            upstream_failure
         )
         widget_order_e2e = WidgetOrderE2EResult(
             passed=False,
             failure_summary="widget order e2e skipped because " + reason,
+            failure_origin=upstream_failure_origin,
+            failure_code=upstream_failure_code,
             related_files=[],
         )
+        fixture_manifest = dict(prep_result.fixture_manifest or {})
+        if upstream_failure_origin and "failure_origin" not in fixture_manifest:
+            fixture_manifest["failure_origin"] = upstream_failure_origin
+        if upstream_failure_code and "failure_code" not in fixture_manifest:
+            fixture_manifest["failure_code"] = upstream_failure_code
         conversation_validation = ConversationValidationResult(
             passed=False,
             failure_summary="conversation validation skipped because " + reason,
-            fixture_manifest=dict(prep_result.fixture_manifest or {}),
+            failure_origin=upstream_failure_origin,
+            failure_code=upstream_failure_code,
+            fixture_manifest=fixture_manifest,
             related_files=[],
         )
 
@@ -537,6 +711,16 @@ def run_validation_cycle(
             )
         ),
         failure_summary=None if first_failure is None else first_failure.summary,
+        failure_origin=(
+            _optional_text(first_failure.details.get("failure_origin"))
+            if first_failure is not None and isinstance(first_failure.details, dict)
+            else None
+        ),
+        failure_code=(
+            _optional_text(first_failure.details.get("failure_code"))
+            if first_failure is not None and isinstance(first_failure.details, dict)
+            else None
+        ),
         related_files=related_files,
         related_artifacts=related_artifacts,
         input_artifact_versions=input_artifact_versions,
@@ -663,20 +847,36 @@ def validate_host_auth_bootstrap(
         payload=payload,
     )
     failure_origin: str | None
+    failure_code: str | None
     if passed:
         failure_origin = "login" if bootstrap_mode == "validation_bridge" else None
+        failure_code = None
         summary = "host auth bootstrap passed"
     elif bootstrap_response is None:
-        failure_origin = "runtime" if bootstrap_error else "unknown"
+        failure_origin = "host_contract"
+        failure_code = "bootstrap_request_failed"
         summary = bootstrap_error or "host auth bootstrap request failed"
     elif bootstrap_response.status_code != 200:
-        failure_origin = "bootstrap"
+        failure_origin = "host_contract"
+        failure_code = "bootstrap_http_status_failed"
+    elif not bool(payload.get("authenticated")):
+        failure_origin = "host_contract"
+        failure_code = "bootstrap_contract_missing_authenticated"
+    elif not str(payload.get("site_id") or "").strip():
+        failure_origin = "host_contract"
+        failure_code = "bootstrap_contract_missing_site_id"
+    elif not str(payload.get("access_token") or "").strip():
+        failure_origin = "host_contract"
+        failure_code = "bootstrap_contract_missing_access_token"
+    elif not str((payload.get("user") or {}).get("id") or "").strip():
+        failure_origin = "host_contract"
+        failure_code = "bootstrap_contract_missing_user_id"
     elif payload:
-        failure_origin = "bootstrap"
-    elif bootstrap_error:
-        failure_origin = "runtime"
+        failure_origin = "host_contract"
+        failure_code = "bootstrap_contract_invalid"
     else:
-        failure_origin = "unknown"
+        failure_origin = "host_contract"
+        failure_code = "bootstrap_request_failed"
     return {
         "passed": passed,
         "failure_summary": summary,
@@ -689,6 +889,7 @@ def validate_host_auth_bootstrap(
         "session_cookies": _client_cookies_dict(client),
         "bootstrap_mode": bootstrap_mode,
         "failure_origin": failure_origin,
+        "failure_code": failure_code,
         "login_response_text": _truncate_text(
             login_error or str(getattr(login_response, "text", "") or ""),
         ),
@@ -700,7 +901,7 @@ def validate_host_auth_bootstrap(
     }
 
 
-def validate_chatbot_adapter_auth(
+def _validate_chatbot_adapter_auth_inprocess(
     *,
     chatbot_runtime_workspace: Path,
     runtime_plan: BackendRuntimePlan,
@@ -722,32 +923,145 @@ def validate_chatbot_adapter_auth(
         plan.chatbot_bridge.setup_target,
     ]
     if auth_context is None:
-        return {
-            "passed": False,
-            "failure_summary": auth_failure or "chatbot adapter auth missing transport credentials",
-            "related_files": related_files,
-        }
-
-    try:
-        adapter = _load_generated_adapter(
-            chatbot_runtime_workspace=chatbot_runtime_workspace,
-            runtime_plan=runtime_plan,
-            plan=plan,
+        return _failure_result(
+            auth_failure or "chatbot adapter auth missing transport credentials",
+            related_files=related_files,
+            failure_origin="host_contract",
+            failure_code="bridge_auth_context_missing",
         )
+
+    module_origins: dict[str, str] = {}
+    try:
+        _, _, adapter_setup, _, module_origins = _load_runtime_validation_modules(
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+        )
+    except Exception as exc:
+        return _failure_result(
+            f"chatbot adapter auth failed: {exc}",
+            related_files=related_files,
+            failure_origin="platform_validation",
+            failure_code=_platform_validation_failure_code(exc),
+            module_origins=module_origins or None,
+        )
+    try:
+        adapter = adapter_setup.resolve_site_adapter(plan.chatbot_bridge.site_key)
+    except Exception as exc:
+        return _failure_result(
+            f"chatbot adapter auth failed: {exc}",
+            related_files=related_files,
+            failure_origin="generated_runtime",
+            failure_code="runtime_registry_resolution_failed",
+            module_origins=module_origins,
+        )
+    try:
         validated_user = asyncio.run(adapter.validate_auth(auth_context))
     except Exception as exc:
-        return {
-            "passed": False,
-            "failure_summary": f"chatbot adapter auth failed: {exc}",
-            "related_files": related_files,
-        }
+        return _failure_result(
+            f"chatbot adapter auth failed: {exc}",
+            related_files=related_files,
+            failure_origin="generated_runtime",
+            failure_code="adapter_auth_validation_failed",
+            module_origins=module_origins,
+        )
     user_id = str(getattr(validated_user, "id", "") or "").strip()
-    return {
+    success_result = {
         "passed": bool(user_id),
         "failure_summary": "chatbot adapter auth passed"
         if user_id
         else "chatbot adapter auth missing user.id",
+        "failure_origin": None if user_id else "generated_runtime",
+        "failure_code": None if user_id else "validated_user_missing_id",
         "validated_user": validated_user.model_dump(mode="json"),
+        "related_files": related_files,
+    }
+    if module_origins:
+        success_result["module_origins"] = module_origins
+    return success_result
+
+
+def validate_chatbot_adapter_auth(
+    *,
+    chatbot_runtime_workspace: Path,
+    runtime_plan: BackendRuntimePlan,
+    bootstrap_result: dict[str, Any],
+    plan: IntegrationPlan,
+) -> dict[str, Any]:
+    related_files = [
+        f"{plan.chatbot_bridge.adapter_package}/adapter.py",
+        f"{plan.chatbot_bridge.adapter_package}/auth.py",
+        plan.chatbot_bridge.setup_target,
+    ]
+    if not bootstrap_result.get("passed"):
+        return _skipped_result(
+            "chatbot adapter auth skipped because host auth bootstrap failed"
+        )
+    try:
+        envelope = _run_runtime_validation_subprocess(
+            action="adapter_auth",
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+            runtime_plan=runtime_plan,
+            plan=plan,
+            payload={
+                "bootstrap_result": bootstrap_result,
+            },
+        )
+    except _RuntimeValidationSubprocessError as exc:
+        return _failure_result(
+            f"chatbot adapter auth failed: {exc}",
+            related_files=related_files,
+            failure_origin=exc.failure_origin,
+            failure_code=exc.failure_code,
+            **exc.diagnostics,
+        )
+    except Exception as exc:
+        return _failure_result(
+            f"chatbot adapter auth failed: {exc}",
+            related_files=related_files,
+            failure_origin="platform_validation",
+            failure_code="runtime_validation_subprocess_failed",
+        )
+    result = dict(envelope.get("result") or {})
+    if "related_files" not in result:
+        result["related_files"] = related_files
+    return result
+
+
+def _validate_chatbot_runtime_boot_inprocess(
+    *,
+    chatbot_runtime_workspace: Path,
+    runtime_plan: BackendRuntimePlan,
+    plan: IntegrationPlan,
+) -> dict[str, Any]:
+    del runtime_plan
+    related_files = [
+        "server_fastapi.py",
+        "src/tools/adapter_order_tools.py",
+        "src/tools/order_tools.py",
+    ]
+    try:
+        runtime_server_fastapi, _, _, _, module_origins = _load_runtime_validation_modules(
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+        )
+    except Exception as exc:
+        return _failure_result(
+            f"chatbot runtime boot failed: {exc}",
+            related_files=related_files,
+            failure_origin="platform_validation",
+            failure_code=_platform_validation_failure_code(exc),
+        )
+    app = getattr(runtime_server_fastapi, "app", None)
+    if app is None:
+        return _failure_result(
+            "chatbot runtime boot failed: server_fastapi.app missing",
+            related_files=related_files,
+            failure_origin="generated_runtime",
+            failure_code="chatbot_runtime_app_missing",
+            module_origins=module_origins,
+        )
+    return {
+        "passed": True,
+        "failure_summary": "chatbot runtime boot passed",
+        "module_origins": module_origins,
         "related_files": related_files,
     }
 
@@ -758,65 +1072,43 @@ def validate_chatbot_runtime_boot(
     runtime_plan: BackendRuntimePlan,
     plan: IntegrationPlan,
 ) -> dict[str, Any]:
-    command = [
-        sys.executable,
-        "-c",
-        (
-            "import server_fastapi as module; "
-            "app = getattr(module, 'app', None); "
-            "assert app is not None, 'server_fastapi.app missing'; "
-            "print('chatbot runtime boot passed')"
-        ),
+    related_files = [
+        "server_fastapi.py",
+        "src/tools/adapter_order_tools.py",
+        "src/tools/order_tools.py",
     ]
-    env = os.environ.copy()
-    existing_pythonpath = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = (
-        f"{chatbot_runtime_workspace}{os.pathsep}{existing_pythonpath}"
-        if existing_pythonpath
-        else str(chatbot_runtime_workspace)
-    )
-    env.update(_chatbot_runtime_env_overrides(runtime_plan=runtime_plan, plan=plan))
-    result = subprocess.run(
-        command,
-        cwd=str(chatbot_runtime_workspace),
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        summary = "chatbot runtime boot passed"
-    else:
-        failure_line = next(
-            (
-                line.strip()
-                for line in reversed(result.stderr.splitlines())
-                if line.strip()
-            ),
-            f"exit code {result.returncode}",
-        )
-        summary = f"chatbot runtime boot failed: {failure_line}"
-    return {
-        "passed": result.returncode == 0,
-        "failure_summary": summary,
-        "command": command,
-        "cwd": str(chatbot_runtime_workspace),
-        "returncode": result.returncode,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "runtime_env_overrides": _chatbot_runtime_env_overrides(
+    try:
+        envelope = _run_runtime_validation_subprocess(
+            action="chatbot_runtime_boot",
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
             runtime_plan=runtime_plan,
             plan=plan,
-        ),
-        "related_files": [
-            "server_fastapi.py",
-            "src/tools/adapter_order_tools.py",
-            "src/tools/order_tools.py",
-        ],
-    }
+            payload={},
+        )
+    except _RuntimeValidationSubprocessError as exc:
+        return _failure_result(
+            f"chatbot runtime boot failed: {exc}",
+            related_files=related_files,
+            failure_origin=exc.failure_origin,
+            failure_code=exc.failure_code,
+            **exc.diagnostics,
+        )
+    except Exception as exc:
+        return _failure_result(
+            f"chatbot runtime boot failed: {exc}",
+            related_files=related_files,
+            failure_origin="platform_validation",
+            failure_code="runtime_validation_subprocess_failed",
+        )
+    result = dict(envelope.get("result") or {})
+    if "related_files" not in result:
+        result["related_files"] = related_files
+    return result
 
 
-def validate_widget_bundle_fetch(
+def _validate_widget_bundle_fetch_inprocess(
     *,
+    chatbot_runtime_workspace: Path,
     runtime_plan: BackendRuntimePlan,
     plan: IntegrationPlan,
 ) -> dict[str, Any]:
@@ -828,12 +1120,13 @@ def validate_widget_bundle_fetch(
     ).rstrip("/")
 
     if not chatbot_base_url:
-        return {
-            "passed": False,
-            "failure_summary": "widget bundle fetch failed: chatbotServerBaseUrl is empty",
-            "target_url": widget_path,
-            "related_files": [plan.host_frontend.mount_target],
-        }
+        return _failure_result(
+            "widget bundle fetch failed: chatbotServerBaseUrl is empty",
+            related_files=[plan.host_frontend.mount_target],
+            failure_origin="generated_runtime",
+            failure_code="widget_base_url_missing",
+            target_url=widget_path,
+        )
 
     target_url = f"{chatbot_base_url}{widget_path}"
     chatbot_origin = urlparse(chatbot_base_url)
@@ -842,14 +1135,26 @@ def validate_widget_bundle_fetch(
         chatbot_origin.scheme == host_origin.scheme
         and chatbot_origin.netloc == host_origin.netloc
     ):
-        return {
-            "passed": False,
-            "failure_summary": "widget bundle fetch failed: resolved to host origin",
-            "target_url": target_url,
-            "related_files": [plan.host_frontend.mount_target],
-        }
+        return _failure_result(
+            "widget bundle fetch failed: resolved to host origin",
+            related_files=[plan.host_frontend.mount_target],
+            failure_origin="generated_runtime",
+            failure_code="widget_resolved_to_host_origin",
+            target_url=target_url,
+        )
 
-    server_fastapi = _get_server_fastapi_module()
+    try:
+        server_fastapi, _, _, _, module_origins = _load_runtime_validation_modules(
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+        )
+    except Exception as exc:
+        return _failure_result(
+            f"widget bundle fetch failed: {exc}",
+            related_files=[plan.host_frontend.mount_target],
+            failure_origin="platform_validation",
+            failure_code=_platform_validation_failure_code(exc),
+            target_url=target_url,
+        )
     client = TestClient(server_fastapi.app, base_url=chatbot_base_url)
     response = client.get(widget_path)
     passed = (
@@ -857,13 +1162,15 @@ def validate_widget_bundle_fetch(
         and "javascript" in response.headers.get("content-type", "").lower()
         and "order-cs-widget" in response.text
     )
-    return {
+    result = {
         "passed": passed,
         "failure_summary": (
             "widget bundle fetch passed"
             if passed
             else f"widget bundle fetch failed with status {response.status_code}"
         ),
+        "failure_origin": None if passed else "generated_runtime",
+        "failure_code": None if passed else "widget_bundle_fetch_http_status_failed",
         "target_url": target_url,
         "status_code": response.status_code,
         "content_type": response.headers.get("content-type", ""),
@@ -873,9 +1180,49 @@ def validate_widget_bundle_fetch(
             "chatbot/frontend/shared_widget/web-component.tsx",
         ],
     }
+    if module_origins:
+        result["module_origins"] = module_origins
+    return result
 
 
-def validate_widget_order_e2e(
+def validate_widget_bundle_fetch(
+    *,
+    chatbot_runtime_workspace: Path,
+    runtime_plan: BackendRuntimePlan,
+    plan: IntegrationPlan,
+) -> dict[str, Any]:
+    try:
+        envelope = _run_runtime_validation_subprocess(
+            action="widget_bundle_fetch",
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+            runtime_plan=runtime_plan,
+            plan=plan,
+            payload={},
+        )
+    except _RuntimeValidationSubprocessError as exc:
+        return _failure_result(
+            f"widget bundle fetch failed: {exc}",
+            related_files=[plan.host_frontend.mount_target],
+            failure_origin=exc.failure_origin,
+            failure_code=exc.failure_code,
+            target_url="/widget.js",
+            **exc.diagnostics,
+        )
+    except Exception as exc:
+        return _failure_result(
+            f"widget bundle fetch failed: {exc}",
+            related_files=[plan.host_frontend.mount_target],
+            failure_origin="platform_validation",
+            failure_code="runtime_validation_subprocess_failed",
+            target_url="/widget.js",
+        )
+    result = dict(envelope.get("result") or {})
+    if "related_files" not in result:
+        result["related_files"] = [plan.host_frontend.mount_target]
+    return result
+
+
+def _validate_widget_order_e2e_inprocess(
     *,
     chatbot_runtime_workspace: Path,
     runtime_plan: BackendRuntimePlan,
@@ -888,20 +1235,41 @@ def validate_widget_order_e2e(
         return WidgetOrderE2EResult(
             passed=False,
             failure_summary="widget order e2e skipped because host auth bootstrap failed",
+            failure_origin="host_contract",
+            failure_code="host_auth_bootstrap_failed",
             related_files=[],
         )
     if not adapter_auth_result.get("passed"):
         return WidgetOrderE2EResult(
             passed=False,
             failure_summary="widget order e2e skipped because chatbot adapter auth failed",
+            failure_origin=str(adapter_auth_result.get("failure_origin") or "generated_runtime"),
+            failure_code=str(adapter_auth_result.get("failure_code") or "chatbot_adapter_auth_failed"),
             related_files=[],
         )
 
-    adapter = _load_generated_adapter(
-        chatbot_runtime_workspace=chatbot_runtime_workspace,
-        runtime_plan=runtime_plan,
-        plan=plan,
-    )
+    try:
+        runtime_server_fastapi, runtime_chat_endpoint, adapter_setup, _, module_origins = _load_runtime_validation_modules(
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+        )
+    except Exception as exc:
+        return WidgetOrderE2EResult(
+            passed=False,
+            failure_summary=f"widget order e2e failed: {exc}",
+            failure_origin="platform_validation",
+            failure_code=_platform_validation_failure_code(exc),
+            related_files=_widget_order_related_files(plan),
+        )
+    try:
+        adapter = adapter_setup.resolve_site_adapter(plan.chatbot_bridge.site_key)
+    except Exception as exc:
+        return WidgetOrderE2EResult(
+            passed=False,
+            failure_summary=f"widget order e2e failed: {exc}",
+            failure_origin="generated_runtime",
+            failure_code="runtime_registry_resolution_failed",
+            related_files=_widget_order_related_files(plan),
+        )
     auth_context, auth_failure = _build_bridge_auth_context(
         bootstrap_result=bootstrap_result,
         plan=plan,
@@ -913,6 +1281,8 @@ def validate_widget_order_e2e(
         return WidgetOrderE2EResult(
             passed=False,
             failure_summary=auth_failure or "widget order e2e auth context failed",
+            failure_origin="host_contract",
+            failure_code="bridge_auth_context_missing",
             related_files=_widget_order_related_files(plan),
         )
     try:
@@ -925,6 +1295,8 @@ def validate_widget_order_e2e(
         return WidgetOrderE2EResult(
             passed=False,
             failure_summary=f"widget order sample acquisition failed: {exc}",
+            failure_origin="upstream_fixture",
+            failure_code="widget_order_sample_acquisition_failed",
             scenario_mode="sample_acquisition_failed",
             related_files=_widget_order_related_files(plan),
         )
@@ -941,18 +1313,97 @@ def validate_widget_order_e2e(
         auth_context=auth_context,
         plan=plan,
         sample_context=sample_context,
-        server_fastapi=_get_server_fastapi_module(),
-        chat_endpoint=_get_chat_endpoint_module(),
+        server_fastapi=runtime_server_fastapi,
+        chat_endpoint=runtime_chat_endpoint,
     )
-    return _evaluate_widget_order_flow_report(
+    result = _evaluate_widget_order_flow_report(
         plan=plan,
         flow_reports=flow_reports,
         capability_contract=capability_contract,
         sample_context=sample_context,
     )
+    return result.model_copy(
+        update={
+            "failure_origin": None if result.passed else "generated_runtime",
+            "failure_code": None if result.passed else "widget_order_flow_failed",
+            "module_origins": module_origins,
+        }
+    )
 
 
-def validate_conversation_runtime(
+def validate_widget_order_e2e(
+    *,
+    chatbot_runtime_workspace: Path,
+    runtime_plan: BackendRuntimePlan,
+    bootstrap_result: dict[str, Any],
+    adapter_auth_result: dict[str, Any],
+    plan: IntegrationPlan,
+) -> WidgetOrderE2EResult:
+    if not bootstrap_result.get("passed"):
+        return WidgetOrderE2EResult(
+            passed=False,
+            failure_summary="widget order e2e skipped because host auth bootstrap failed",
+            failure_origin="host_contract",
+            failure_code="host_auth_bootstrap_failed",
+            related_files=_widget_order_related_files(plan),
+        )
+    if not adapter_auth_result.get("passed"):
+        return WidgetOrderE2EResult(
+            passed=False,
+            failure_summary="widget order e2e skipped because chatbot adapter auth failed",
+            failure_origin=str(adapter_auth_result.get("failure_origin") or "generated_runtime"),
+            failure_code=str(adapter_auth_result.get("failure_code") or "chatbot_adapter_auth_failed"),
+            related_files=_widget_order_related_files(plan),
+        )
+    try:
+        envelope = _run_runtime_validation_subprocess(
+            action="widget_order_e2e",
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+            runtime_plan=runtime_plan,
+            plan=plan,
+            payload={
+                "bootstrap_result": bootstrap_result,
+                "adapter_auth_result": adapter_auth_result,
+            },
+        )
+    except _RuntimeValidationSubprocessError as exc:
+        return WidgetOrderE2EResult(
+            passed=False,
+            failure_summary=f"widget order e2e failed: {exc}",
+            failure_origin=exc.failure_origin,
+            failure_code=exc.failure_code,
+            module_origins=dict(exc.diagnostics.get("module_origins") or {})
+            if isinstance(exc.diagnostics, dict)
+            else {},
+            resolved_chatbot_runtime_workspace=_optional_text(
+                (exc.diagnostics or {}).get("resolved_chatbot_runtime_workspace")
+            )
+            if isinstance(exc.diagnostics, dict)
+            else None,
+            runtime_harness_path=_optional_text(
+                (exc.diagnostics or {}).get("runtime_harness_path")
+            )
+            if isinstance(exc.diagnostics, dict)
+            else None,
+            runtime_harness_origin=_optional_text(
+                (exc.diagnostics or {}).get("runtime_harness_origin")
+            )
+            if isinstance(exc.diagnostics, dict)
+            else None,
+            related_files=_widget_order_related_files(plan),
+        )
+    except Exception as exc:
+        return WidgetOrderE2EResult(
+            passed=False,
+            failure_summary=f"widget order e2e failed: {exc}",
+            failure_origin="platform_validation",
+            failure_code="runtime_validation_subprocess_failed",
+            related_files=_widget_order_related_files(plan),
+        )
+    return _coerce_widget_order_e2e_result(envelope.get("result") or {})
+
+
+def _validate_conversation_runtime_inprocess(
     *,
     run_root: Path,
     chatbot_runtime_workspace: Path,
@@ -971,6 +1422,8 @@ def validate_conversation_runtime(
         return ConversationValidationResult(
             passed=False,
             failure_summary="conversation validation skipped because host auth bootstrap failed",
+            failure_origin="host_contract",
+            failure_code="host_auth_bootstrap_failed",
             fixture_manifest=dict(prep_result.fixture_manifest or {}),
             related_files=_widget_order_related_files(plan),
         )
@@ -978,6 +1431,8 @@ def validate_conversation_runtime(
         return ConversationValidationResult(
             passed=False,
             failure_summary="conversation validation skipped because chatbot adapter auth failed",
+            failure_origin=str(adapter_auth_result.get("failure_origin") or "generated_runtime"),
+            failure_code=str(adapter_auth_result.get("failure_code") or "chatbot_adapter_auth_failed"),
             fixture_manifest=dict(prep_result.fixture_manifest or {}),
             related_files=_widget_order_related_files(plan),
         )
@@ -1008,15 +1463,32 @@ def validate_conversation_runtime(
         return ConversationValidationResult(
             passed=False,
             failure_summary=str(fixture_manifest.get("reason") or "fixture_unavailable"),
+            failure_origin=_optional_text(fixture_manifest.get("failure_origin")),
+            failure_code=_optional_text(fixture_manifest.get("failure_code")),
             fixture_manifest=fixture_manifest,
             validation_capability_contract=capability_contract.model_dump(mode="json"),
             related_files=_widget_order_related_files(plan),
         )
 
-    with _patched_chatbot_runtime_env(runtime_plan=runtime_plan, plan=plan):
-        runtime_server_fastapi, runtime_chat_endpoint = _load_runtime_chat_modules(
-            chatbot_runtime_workspace=chatbot_runtime_workspace
+    try:
+        with _patched_chatbot_runtime_env(runtime_plan=runtime_plan, plan=plan):
+            runtime_server_fastapi, runtime_chat_endpoint, _, _, module_origins = _load_runtime_validation_modules(
+                chatbot_runtime_workspace=chatbot_runtime_workspace
+            )
+    except Exception as exc:
+        fixture_manifest["failure_origin"] = "platform_validation"
+        fixture_manifest["failure_code"] = _platform_validation_failure_code(exc)
+        return ConversationValidationResult(
+            passed=False,
+            failure_summary=f"conversation validation failed: {exc}",
+            failure_origin="platform_validation",
+            failure_code=_platform_validation_failure_code(exc),
+            fixture_manifest=fixture_manifest,
+            validation_capability_contract=capability_contract.model_dump(mode="json"),
+            related_files=_widget_order_related_files(plan),
         )
+    with _patched_chatbot_runtime_env(runtime_plan=runtime_plan, plan=plan):
+        fixture_manifest["module_origins"] = module_origins
 
         transcripts_dir = run_root / "conversation-validation"
         transcripts_dir.mkdir(parents=True, exist_ok=True)
@@ -1140,6 +1612,8 @@ def validate_conversation_runtime(
         return ConversationValidationResult(
             passed=passed,
             failure_summary=failure_summary,
+            failure_origin=None if passed else "generated_runtime",
+            failure_code=None if passed else "conversation_scenarios_failed",
             fixture_manifest=fixture_manifest,
             validation_capability_contract=capability_contract.model_dump(mode="json"),
             scenarios=results,
@@ -1147,6 +1621,89 @@ def validate_conversation_runtime(
             trace_contents=trace_contents,
             related_files=_widget_order_related_files(plan),
         )
+
+
+def validate_conversation_runtime(
+    *,
+    run_root: Path,
+    chatbot_runtime_workspace: Path,
+    runtime_plan: BackendRuntimePlan,
+    snapshot: AnalysisSnapshot,
+    plan: IntegrationPlan,
+    prep_result: BackendRuntimePrepResult,
+    bootstrap_result: dict[str, Any],
+    adapter_auth_result: dict[str, Any],
+    widget_order_e2e_result: WidgetOrderE2EResult | None = None,
+    onboarding_credentials: dict[str, str] | None = None,
+    event_callback: Any | None = None,
+    live_logs_root: str | Path | None = None,
+) -> ConversationValidationResult:
+    if not bootstrap_result.get("passed"):
+        return ConversationValidationResult(
+            passed=False,
+            failure_summary="conversation validation skipped because host auth bootstrap failed",
+            failure_origin="host_contract",
+            failure_code="host_auth_bootstrap_failed",
+            fixture_manifest=dict(prep_result.fixture_manifest or {}),
+            related_files=_widget_order_related_files(plan),
+        )
+    if not adapter_auth_result.get("passed"):
+        return ConversationValidationResult(
+            passed=False,
+            failure_summary="conversation validation skipped because chatbot adapter auth failed",
+            failure_origin=str(adapter_auth_result.get("failure_origin") or "generated_runtime"),
+            failure_code=str(adapter_auth_result.get("failure_code") or "chatbot_adapter_auth_failed"),
+            fixture_manifest=dict(prep_result.fixture_manifest or {}),
+            related_files=_widget_order_related_files(plan),
+        )
+    try:
+        envelope = _run_runtime_validation_subprocess(
+            action="conversation_runtime",
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+            runtime_plan=runtime_plan,
+            plan=plan,
+            payload={
+                "run_root": str(run_root),
+                "snapshot": snapshot.model_dump(mode="json"),
+                "prep_result": prep_result.model_dump(mode="json"),
+                "bootstrap_result": bootstrap_result,
+                "adapter_auth_result": adapter_auth_result,
+                "widget_order_e2e_result": widget_order_e2e_result.model_dump(mode="json")
+                if widget_order_e2e_result is not None
+                else None,
+                "onboarding_credentials": dict(onboarding_credentials or {}),
+                "live_logs_root": str(live_logs_root) if live_logs_root is not None else None,
+            },
+        )
+    except _RuntimeValidationSubprocessError as exc:
+        fixture_manifest = dict(prep_result.fixture_manifest or {})
+        fixture_manifest.update(dict(exc.diagnostics or {}))
+        return ConversationValidationResult(
+            passed=False,
+            failure_summary=f"conversation validation failed: {exc}",
+            failure_origin=exc.failure_origin,
+            failure_code=exc.failure_code,
+            fixture_manifest=fixture_manifest,
+            related_files=_widget_order_related_files(plan),
+        )
+    except Exception as exc:
+        return ConversationValidationResult(
+            passed=False,
+            failure_summary=f"conversation validation failed: {exc}",
+            failure_origin="platform_validation",
+            failure_code="runtime_validation_subprocess_failed",
+            fixture_manifest=dict(prep_result.fixture_manifest or {}),
+            related_files=_widget_order_related_files(plan),
+        )
+    for payload in list(envelope.get("events") or []):
+        _emit_validation_event(event_callback, **dict(payload))
+    result_payload = dict(envelope.get("result") or {})
+    runtime_context = _pop_runtime_context_fields(result_payload)
+    if runtime_context:
+        fixture_manifest = dict(result_payload.get("fixture_manifest") or {})
+        fixture_manifest.update(runtime_context)
+        result_payload["fixture_manifest"] = fixture_manifest
+    return ConversationValidationResult.model_validate(result_payload)
 
 
 async def _run_unauthenticated_conversation_scenario(
@@ -1410,6 +1967,7 @@ def _build_runtime_fixture_manifest(
     onboarding_credentials: dict[str, str] | None,
 ) -> dict[str, Any]:
     manifest = dict(prep_result.fixture_manifest or {})
+    module_origins: dict[str, str] = {}
     auth = dict(manifest.get("auth") or {})
     seed_source = dict(manifest.get("seed_source") or {})
     credentials = {
@@ -1436,6 +1994,9 @@ def _build_runtime_fixture_manifest(
     if auth_failure:
         manifest["available"] = False
         manifest["reason"] = auth_failure
+        manifest["error_summary"] = auth_failure
+        manifest["failure_origin"] = "host_contract"
+        manifest["failure_code"] = "bridge_auth_material_missing"
         manifest["validation_capability_contract"] = build_validation_capability_contract(
             plan=plan,
             fixture_manifest=manifest,
@@ -1445,11 +2006,43 @@ def _build_runtime_fixture_manifest(
         return manifest
 
     try:
-        adapter = _load_generated_adapter(
+        _, _, adapter_setup, _, module_origins = _load_runtime_validation_modules(
             chatbot_runtime_workspace=chatbot_runtime_workspace,
-            runtime_plan=runtime_plan,
-            plan=plan,
         )
+    except Exception as exc:
+        error_summary = str(exc)
+        manifest["available"] = False
+        manifest["reason"] = "runtime fixture bootstrap failed"
+        manifest["error_summary"] = error_summary
+        manifest["failure_origin"] = "platform_validation"
+        manifest["failure_code"] = _platform_validation_failure_code(exc)
+        manifest["orders"] = dict(manifest.get("orders") or {})
+        manifest["seed_source"] = seed_source
+        if module_origins:
+            manifest["module_origins"] = module_origins
+        manifest["validation_capability_contract"] = build_validation_capability_contract(
+            plan=plan,
+            fixture_manifest=manifest,
+        ).model_dump(mode="json")
+        return manifest
+    try:
+        adapter = adapter_setup.resolve_site_adapter(plan.chatbot_bridge.site_key)
+    except Exception as exc:
+        error_summary = str(exc)
+        manifest["available"] = False
+        manifest["reason"] = "runtime adapter registry resolution failed"
+        manifest["error_summary"] = error_summary
+        manifest["failure_origin"] = "generated_runtime"
+        manifest["failure_code"] = "runtime_registry_resolution_failed"
+        manifest["orders"] = dict(manifest.get("orders") or {})
+        manifest["seed_source"] = seed_source
+        manifest["module_origins"] = module_origins
+        manifest["validation_capability_contract"] = build_validation_capability_contract(
+            plan=plan,
+            fixture_manifest=manifest,
+        ).model_dump(mode="json")
+        return manifest
+    try:
         response_contract = getattr(adapter, "response_contract", None) or plan.chatbot_bridge.response_contract
         auth_context = _auth_context_from_material(
             auth_material=auth_material or {},
@@ -1480,19 +2073,33 @@ def _build_runtime_fixture_manifest(
                 "exchange_new_option_id": str(option_ids[0] if option_ids else "synthetic-option-1"),
             }
             manifest.pop("reason", None)
+            manifest.pop("error_summary", None)
+            manifest.pop("failure_origin", None)
+            manifest.pop("failure_code", None)
         else:
             manifest["available"] = False
-            manifest["reason"] = "fixture_unavailable"
+            manifest["reason"] = "runtime fixtures unavailable: no orders returned"
+            manifest["failure_origin"] = "upstream_fixture"
+            manifest["failure_code"] = "fixture_orders_missing"
+            manifest["error_summary"] = "adapter.client.list_orders returned no usable orders"
+            manifest["orders"] = dict(manifest.get("orders") or {})
         manifest["seed_source"] = seed_source
+        manifest["module_origins"] = module_origins
         manifest["validation_capability_contract"] = build_validation_capability_contract(
             plan=plan,
             fixture_manifest=manifest,
         ).model_dump(mode="json")
     except Exception as exc:
+        error_summary = str(exc)
         manifest["available"] = False
-        manifest["reason"] = f"fixture_unavailable: {exc}"
+        manifest["reason"] = "runtime fixtures unavailable: upstream order seed failed"
+        manifest["error_summary"] = error_summary
+        manifest["failure_origin"] = "upstream_fixture"
+        manifest["failure_code"] = "fixture_upstream_list_orders_failed"
         manifest["orders"] = dict(manifest.get("orders") or {})
         manifest["seed_source"] = seed_source
+        if module_origins:
+            manifest["module_origins"] = module_origins
         manifest["validation_capability_contract"] = build_validation_capability_contract(
             plan=plan,
             fixture_manifest=manifest,
@@ -2225,23 +2832,36 @@ def _evaluate_replay_workspaces(
     }
 
 
-def _skipped_runtime_state(*, framework: str, reason: str) -> BackendRuntimeState:
+def _skipped_runtime_state(
+    *,
+    framework: str,
+    reason: str,
+    upstream: Any | None = None,
+) -> BackendRuntimeState:
+    failure_origin, failure_code = _failure_metadata_from_context(upstream)
     return BackendRuntimeState(
         framework=framework,
         passed=False,
         failure_summary=reason,
+        failure_origin=failure_origin,
+        failure_code=failure_code,
         related_files=["backend/manage.py", "backend/chat_auth.py"]
         if framework == "django"
         else ["chat_auth.py"],
     )
 
 
-def _skipped_result(reason: str) -> dict[str, Any]:
-    return {
-        "passed": False,
-        "failure_summary": reason,
-        "related_files": [],
-    }
+def _pop_runtime_context_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_context: dict[str, Any] = {}
+    for key in (
+        "resolved_chatbot_runtime_workspace",
+        "runtime_harness_path",
+        "runtime_harness_origin",
+    ):
+        value = payload.pop(key, None)
+        if value is not None:
+            runtime_context[key] = value
+    return runtime_context
 
 
 def _coerce_widget_order_e2e_result(
@@ -2250,8 +2870,18 @@ def _coerce_widget_order_e2e_result(
     if isinstance(value, WidgetOrderE2EResult):
         return value
     payload = dict(value or {})
+    runtime_context = _pop_runtime_context_fields(payload)
+    flow_reports = dict(payload.get("flow_reports") or {})
+    legacy_module_origins = flow_reports.pop("module_origins", None)
     payload.setdefault("covered_flows", [])
-    payload.setdefault("flow_reports", {})
+    payload["flow_reports"] = flow_reports
+    if runtime_context:
+        payload.update(runtime_context)
+    if isinstance(legacy_module_origins, dict) and "module_origins" not in payload:
+        payload["module_origins"] = {
+            str(key): str(item) for key, item in legacy_module_origins.items()
+        }
+    payload.setdefault("module_origins", {})
     payload.setdefault("related_files", [])
     payload.setdefault("failure_summary", "widget order e2e failed")
     payload.setdefault("passed", False)
@@ -2507,12 +3137,202 @@ def _patched_chatbot_runtime_env(
         yield overrides
 
 
+def _resolve_runtime_validation_harness_path(*, chatbot_runtime_workspace: Path) -> Path:
+    chatbot_runtime_workspace = chatbot_runtime_workspace.resolve()
+    workspace_harness = (
+        chatbot_runtime_workspace
+        / "src"
+        / "onboarding_v2"
+        / "validation"
+        / "runtime_harness.py"
+    )
+    if workspace_harness.exists():
+        return workspace_harness.resolve()
+    return Path(__file__).resolve().with_name("runtime_harness.py")
+
+
+def _run_runtime_validation_subprocess(
+    *,
+    action: str,
+    chatbot_runtime_workspace: Path,
+    runtime_plan: BackendRuntimePlan,
+    plan: IntegrationPlan,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    chatbot_runtime_workspace = chatbot_runtime_workspace.resolve()
+    harness_path = _resolve_runtime_validation_harness_path(
+        chatbot_runtime_workspace=chatbot_runtime_workspace,
+    )
+    runtime_context = _runtime_context_payload(
+        chatbot_runtime_workspace=chatbot_runtime_workspace,
+        harness_path=harness_path,
+    )
+    payload_path = Path("/tmp") / f"runtime-validation-{uuid4().hex}.json"
+    payload_path.write_text(
+        json.dumps(
+            {
+                "action": action,
+                "chatbot_runtime_workspace": str(chatbot_runtime_workspace),
+                "runtime_plan": runtime_plan.model_dump(mode="json"),
+                "plan": plan.model_dump(mode="json"),
+                "payload": payload,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(chatbot_runtime_workspace)
+    env.update(_chatbot_runtime_env_overrides(runtime_plan=runtime_plan, plan=plan))
+    command = [sys.executable, str(harness_path), "--payload", str(payload_path)]
+    try:
+        result = subprocess.run(
+            command,
+            cwd=str(chatbot_runtime_workspace),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        payload_path.unlink(missing_ok=True)
+    marker = "__RUNTIME_VALIDATION_JSON__"
+    envelope: dict[str, Any] | None = None
+    for line in reversed(result.stdout.splitlines()):
+        if line.startswith(marker):
+            envelope = json.loads(line[len(marker) :])
+            break
+    if result.returncode != 0:
+        failure = (
+            envelope.get("error") if envelope else result.stderr.strip() or result.stdout.strip()
+        )
+        traceback_text = (
+            str(envelope.get("traceback") or "").strip() if isinstance(envelope, dict) else ""
+        )
+        message = failure or f"runtime validation subprocess failed: exit {result.returncode}"
+        if traceback_text:
+            message = f"{message}\n{traceback_text}"
+        raise _RuntimeValidationSubprocessError(
+            message,
+            failure_origin="platform_validation",
+            failure_code=_subprocess_failure_code(message),
+            diagnostics=runtime_context,
+        )
+    if envelope is None:
+        message = "runtime validation subprocess returned no structured result"
+        raise _RuntimeValidationSubprocessError(
+            message,
+            failure_origin="platform_validation",
+            failure_code=_subprocess_failure_code(message),
+            diagnostics=runtime_context,
+        )
+    if not envelope.get("ok", False):
+        message = str(envelope.get("error") or "runtime validation subprocess failed")
+        traceback_text = str(envelope.get("traceback") or "").strip()
+        if traceback_text:
+            message = f"{message}\n{traceback_text}"
+        raise _RuntimeValidationSubprocessError(
+            message,
+            failure_origin="platform_validation",
+            failure_code=_subprocess_failure_code(message),
+            diagnostics=runtime_context,
+        )
+    result_payload = envelope.get("result")
+    if isinstance(result_payload, dict):
+        for key, value in runtime_context.items():
+            result_payload.setdefault(key, value)
+    return envelope
+
+
+def _runtime_module_origin(module: Any) -> str:
+    origin = getattr(module, "__file__", None)
+    return str(Path(origin).resolve()) if origin else "<unknown>"
+
+
+def _assert_runtime_module_origin(
+    *,
+    label: str,
+    module: Any,
+    chatbot_runtime_workspace: Path,
+) -> str:
+    origin = _runtime_module_origin(module)
+    if origin == "<unknown>":
+        raise RuntimeError(f"{label} resolved without a file origin")
+    workspace_root = chatbot_runtime_workspace.resolve()
+    origin_path = Path(origin)
+    if workspace_root != origin_path and workspace_root not in origin_path.parents:
+        raise RuntimeError(
+            f"{label} resolved outside runtime workspace: {origin}"
+        )
+    return origin
+
+
+def _drop_runtime_validation_import_cache() -> None:
+    prefixes = [
+        "server_fastapi",
+        "src.api",
+        "src.adapters.setup",
+        "src.adapters.base",
+        "src.runtime_auth",
+        "chatbot.src.api",
+        "chatbot.src.adapters.setup",
+        "chatbot.src.adapters.base",
+        "chatbot.src.runtime_auth",
+    ]
+    for prefix in prefixes:
+        _drop_import_cache(prefix)
+
+
+def _load_runtime_validation_modules(
+    *,
+    chatbot_runtime_workspace: Path,
+) -> tuple[Any, Any, Any, Any, dict[str, str]]:
+    chatbot_runtime_workspace = chatbot_runtime_workspace.resolve()
+    with _prepend_path(chatbot_runtime_workspace):
+        _drop_runtime_validation_import_cache()
+        _repair_runtime_src_namespace(chatbot_runtime_workspace=chatbot_runtime_workspace)
+        runtime_server_fastapi = importlib.import_module("server_fastapi")
+        runtime_chat_endpoint = importlib.import_module("src.api.v1.endpoints.chat")
+        adapter_setup = importlib.import_module("src.adapters.setup")
+        adapter_base = importlib.import_module("src.adapters.base")
+        _repair_runtime_src_namespace(chatbot_runtime_workspace=chatbot_runtime_workspace)
+    module_origins = {
+        "server_fastapi": _assert_runtime_module_origin(
+            label="server_fastapi",
+            module=runtime_server_fastapi,
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+        ),
+        "chat_endpoint": _assert_runtime_module_origin(
+            label="src.api.v1.endpoints.chat",
+            module=runtime_chat_endpoint,
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+        ),
+        "adapter_setup": _assert_runtime_module_origin(
+            label="src.adapters.setup",
+            module=adapter_setup,
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+        ),
+        "adapter_base": _assert_runtime_module_origin(
+            label="src.adapters.base",
+            module=adapter_base,
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+        ),
+    }
+    return (
+        runtime_server_fastapi,
+        runtime_chat_endpoint,
+        adapter_setup,
+        adapter_base,
+        module_origins,
+    )
+
+
 def _load_runtime_chat_modules(*, chatbot_runtime_workspace: Path) -> tuple[Any, Any]:
+    chatbot_runtime_workspace = chatbot_runtime_workspace.resolve()
     with _prepend_path(chatbot_runtime_workspace):
         _drop_runtime_chat_import_cache()
         _repair_runtime_src_namespace(chatbot_runtime_workspace=chatbot_runtime_workspace)
         runtime_server_fastapi = importlib.import_module("server_fastapi")
-        runtime_chat_endpoint = importlib.import_module("src.api.v1.endpoints.chat")
+        runtime_chat_endpoint = importlib.import_module("chatbot.src.api.v1.endpoints.chat")
         _repair_runtime_src_namespace(chatbot_runtime_workspace=chatbot_runtime_workspace)
     return runtime_server_fastapi, runtime_chat_endpoint
 
@@ -2623,6 +3443,7 @@ def _drop_runtime_chat_import_cache() -> None:
 
 
 def _repair_runtime_src_namespace(*, chatbot_runtime_workspace: Path) -> None:
+    chatbot_runtime_workspace = chatbot_runtime_workspace.resolve()
     workspace_src = str((chatbot_runtime_workspace / "src").resolve())
     repo_src = str(Path(__file__).resolve().parents[2])
     workspace_adapters = str((chatbot_runtime_workspace / "src" / "adapters").resolve())

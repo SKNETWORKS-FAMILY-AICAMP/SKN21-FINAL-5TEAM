@@ -45,6 +45,7 @@ const state = {
   displayStages: [],
   targetStages: [],
   rawLogOpen: false,
+  rawLogScrollTop: 0,
 };
 
 const ACTIVE_RUN_STORAGE_KEY = "onmo.active-run";
@@ -167,6 +168,7 @@ function persistRunUiState() {
     selectedStage: state.selectedStage,
     selectionPinned: Boolean(state.selectionPinned),
     rawLogOpen: Boolean(state.rawLogOpen),
+    rawLogScrollTop: Math.max(0, Number(state.rawLogScrollTop) || 0),
   });
 }
 
@@ -178,6 +180,7 @@ function restoreRunUiState(run = state.currentRun) {
   }
   state.selectionPinned = Boolean(stored.selectionPinned);
   state.rawLogOpen = Boolean(stored.rawLogOpen);
+  state.rawLogScrollTop = Math.max(0, Number(stored.rawLogScrollTop) || 0);
 }
 
 async function request(path, options = {}) {
@@ -258,6 +261,145 @@ function compactText(value, max = 120) {
     return text;
   }
   return `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
+function describeLivePhase(live = {}) {
+  const phaseLabel = localizeUiText(live.phase_label || "");
+  if (!phaseLabel) {
+    return "";
+  }
+  if (live.status === "fallback") {
+    return `${phaseLabel} fallback 사용`;
+  }
+  if (live.status === "failed") {
+    return `${phaseLabel} 실패`;
+  }
+  if (live.status === "completed") {
+    return `${phaseLabel} 완료`;
+  }
+  return `${phaseLabel} 진행 중`;
+}
+
+function livePhaseHeading(live = {}) {
+  const phaseLabel = localizeUiText(live.phase_label || "");
+  if (!phaseLabel) {
+    return "";
+  }
+  if (live.status === "fallback") {
+    return `${phaseLabel} · fallback 사용`;
+  }
+  if (live.status === "failed") {
+    return `${phaseLabel} · 실패`;
+  }
+  if (live.status === "completed") {
+    return `${phaseLabel} · 완료`;
+  }
+  return `${phaseLabel} · 진행`;
+}
+
+function formatElapsedMs(value) {
+  const ms = Number(value);
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return "";
+  }
+  if (ms >= 1000) {
+    return `${(ms / 1000).toFixed(ms >= 10000 ? 0 : 1)}초`;
+  }
+  return `${Math.round(ms)}ms`;
+}
+
+function renderInlineMetrics(metrics = []) {
+  const items = Array.isArray(metrics) ? metrics.filter((item) => item && item.label && item.value) : [];
+  if (!items.length) {
+    return "";
+  }
+  return `
+    <div class="stage-live-metrics">
+      ${items
+        .map(
+          (item) => `
+            <span class="stage-live-metric">
+              <strong>${escapeHtml(localizeUiText(item.label))}</strong>
+              <small>${escapeHtml(localizeUiText(item.value))}</small>
+            </span>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderLiveEvents(live = {}) {
+  const phaseText = describeLivePhase(live);
+  const events = Array.isArray(live.events) ? live.events : [];
+  const visibleEvents = events.filter((event) => {
+    const summary = localizeUiText(event.display_summary || event.summary || "");
+    return summary && summary !== phaseText;
+  });
+  if (!visibleEvents.length) {
+    return "";
+  }
+  return `
+    <div class="stage-live-events">
+      ${visibleEvents
+        .map(
+          (event) => `
+            <div class="stage-live-event">
+              <span>${escapeHtml(formatTimestamp(event.timestamp))}</span>
+              <small>${escapeHtml(localizeUiText(event.display_summary || event.summary || ""))}</small>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderLiveTechnicalDetail(live = {}) {
+  const meta = [
+    live.provider ? `모델 공급자: ${localizeUiText(live.provider)}` : "",
+    live.model ? `모델: ${localizeUiText(live.model)}` : "",
+    live.attempt ? `시도: ${escapeHtml(String(live.attempt))}` : "",
+    formatElapsedMs(live.elapsed_ms) ? `경과: ${formatElapsedMs(live.elapsed_ms)}` : "",
+  ].filter(Boolean);
+  const issue = compactText(live.issue || "", 180);
+  if (!meta.length && !issue) {
+    return "";
+  }
+  return `
+    <details class="stage-live-tech">
+      <summary>기술 상세</summary>
+      ${meta.length ? `<small>${escapeHtml(meta.join(" / "))}</small>` : ""}
+      ${issue ? `<p>${escapeHtml(issue)}</p>` : ""}
+    </details>
+  `;
+}
+
+function renderLiveStagePanel(live = {}) {
+  if (!live.active_phase) {
+    return "";
+  }
+  return `
+    <section class="stage-live-shell">
+      <div class="stage-live-head">
+        <span>${escapeHtml(livePhaseHeading(live))}</span>
+        ${live.issue ? `<small>${escapeHtml(compactText(live.issue, 110))}</small>` : ""}
+      </div>
+      ${renderInlineMetrics(live.metrics || [])}
+      ${renderLiveEvents(live)}
+      ${renderLiveTechnicalDetail(live)}
+    </section>
+  `;
+}
+
+function renderRawLogMeta(event = {}) {
+  const bits = [
+    event.phase_label ? localizeUiText(event.phase_label) : "",
+    event.details?.status ? localizeUiText(event.details.status) : "",
+    Number.isFinite(Number(event.details?.tool_call_count)) ? `도구 ${event.details.tool_call_count}회` : "",
+    event.details?.fallback_reason ? compactText(event.details.fallback_reason, 90) : "",
+  ].filter(Boolean);
+  return bits.join(" / ");
 }
 
 function statusClass(status) {
@@ -696,7 +838,17 @@ function renderRepairStory(repairStory = {}, repair = {}, options = {}) {
               <div class="repair-fact ${escapeHtml(card.key === "diagnosis" ? "rewind" : card.key === "rewind" ? "current" : "fail")}">
                 <span>${escapeHtml(localizeUiText(card.title || ""))}</span>
                 <strong>${escapeHtml(localizeUiText(card.headline || "-"))}</strong>
-                <small>${escapeHtml(localizeUiText(card.detail || ""))}${card.timestamp ? ` · ${escapeHtml(formatTimestamp(card.timestamp))}` : ""}</small>
+                ${
+                  [card.detail, card.timestamp].some(Boolean)
+                    ? `<small>${
+                        card.detail ? escapeHtml(localizeUiText(card.detail || "")) : ""
+                      }${
+                        card.detail && card.timestamp ? " · " : ""
+                      }${
+                        card.timestamp ? escapeHtml(formatTimestamp(card.timestamp)) : ""
+                      }</small>`
+                    : ""
+                }
               </div>
             `
           )
@@ -730,7 +882,7 @@ function renderRawEventLog(payload) {
           <span>개발자 로그</span>
           <small>${events.length ? `최근 이벤트 ${events.length}개` : "최근 이벤트 없음"}</small>
         </summary>
-        <div class="raw-log-body">
+        <div class="raw-log-body" data-raw-log-body>
           ${
             logPath
               ? `<div class="raw-log-meta"><strong>로그 파일</strong><small>${escapeHtml(logPath)}</small></div>`
@@ -745,7 +897,14 @@ function renderRawEventLog(payload) {
                         <div class="raw-log-row">
                           <span>${escapeHtml(formatTimestamp(event.timestamp))}</span>
                           <strong>${escapeHtml(stageLabel(event.stage, localizeUiText(event.stage || "-")))}</strong>
-                          <small>${escapeHtml(localizeUiText(event.display_summary || event.summary || event.event_type || "-"))}</small>
+                          <div class="raw-log-copy">
+                            <small class="raw-log-primary">${escapeHtml(localizeUiText(event.display_summary || event.summary || event.event_type || "-"))}</small>
+                            ${
+                              renderRawLogMeta(event)
+                                ? `<small class="raw-log-secondary">${escapeHtml(renderRawLogMeta(event))}</small>`
+                                : ""
+                            }
+                          </div>
                         </div>
                       `
                     )
@@ -761,9 +920,17 @@ function renderRawEventLog(payload) {
 
 function bindStoryInteractions() {
   const rawPanel = refs.stageDetail.querySelector("[data-raw-log-panel]");
+  const rawBody = refs.stageDetail.querySelector("[data-raw-log-body]");
   if (rawPanel) {
     rawPanel.addEventListener("toggle", () => {
       state.rawLogOpen = rawPanel.open;
+      persistRunUiState();
+    });
+  }
+  if (rawBody) {
+    rawBody.scrollTop = Math.max(0, Number(state.rawLogScrollTop) || 0);
+    rawBody.addEventListener("scroll", () => {
+      state.rawLogScrollTop = Math.max(0, Number(rawBody.scrollTop) || 0);
       persistRunUiState();
     });
   }
@@ -967,6 +1134,9 @@ function renderStageMenu(stages = []) {
 
 function renderAnalysis(details = {}, compact = false) {
   const limits = viewLimits(compact);
+  if (details.live?.active_phase) {
+    return renderLiveStagePanel(details.live);
+  }
   return `
     ${renderCards(details.cards, limits)}
     ${renderHighlights(details.highlights, limits)}
@@ -982,6 +1152,9 @@ function renderAnalysis(details = {}, compact = false) {
 
 function renderPlanning(details = {}, compact = false) {
   const limits = viewLimits(compact);
+  if (details.live?.active_phase) {
+    return renderLiveStagePanel(details.live);
+  }
   return `
     ${renderCards(details.cards, limits)}
     ${renderList(details.target_bindings || [], (item) => `
@@ -1210,6 +1383,10 @@ function stopPolling() {
 }
 
 function renderSelectedStage(payload) {
+  const existingRawBody = refs.stageDetail.querySelector("[data-raw-log-body]");
+  if (existingRawBody) {
+    state.rawLogScrollTop = Math.max(0, Number(existingRawBody.scrollTop) || 0);
+  }
   renderRunStoryPanel(payload);
   const selected = state.selectedStage;
   const details = payload.details || {};
@@ -1223,6 +1400,8 @@ function renderSelectedStage(payload) {
   const failedLabel = repairStory.failed_stage_label || repair.failed_stage_label || repairStory.failed_stage || "";
   const rewindLabel = repairStory.rewind_to_label || repair.effective_rewind_label || repairStory.rewind_to || "";
   const detailStageKey = repairStory.active ? String(focusStage.stage || selected || "analysis") : selected;
+  const stageDetails = details[detailStageKey] || {};
+  const liveDetail = !repairStory.active ? (stageDetails.live || {}) : {};
   const copy = STAGE_COPY[detailStageKey] || STAGE_COPY.analysis;
   const panelStatus = repairStory.active
     ? {
@@ -1239,7 +1418,7 @@ function renderSelectedStage(payload) {
     : stageLabel(detailStageKey, localizeUiText(focusStage.label || stageView?.label || copy.title));
   refs.detailDescription.textContent = repairStory.active
     ? `${stageLabel(detailStageKey, localizeUiText(focusStage.label || copy.title))} 단계를 다시 기준으로 확인 중입니다.`
-    : localizeUiText(storyUi.headline || story.headline || copy.description);
+    : localizeUiText(describeLivePhase(liveDetail) || story.summary || storyUi.headline || story.headline || copy.description);
   refs.detailStatus.textContent = localizeUiText(panelStatus.label || "대기");
   refs.detailStatus.className = `status-badge ${statusClass(panelStatus.status || "pending")}`;
 
@@ -1271,6 +1450,7 @@ function renderSelectedStage(payload) {
       </div>
     `;
   bindStoryInteractions();
+  persistRunUiState();
 }
 
 function currentProjectOption() {
@@ -1333,6 +1513,7 @@ function beginRunTracking(payload, preferredStage = "import") {
   state.targetStages = [];
   state.lastError = null;
   state.rawLogOpen = false;
+  state.rawLogScrollTop = 0;
   if (state.playbackTimer) {
     window.clearTimeout(state.playbackTimer);
     state.playbackTimer = null;

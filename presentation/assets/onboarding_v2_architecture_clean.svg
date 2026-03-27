@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Onboarding V2 Architecture</title>
+  <desc id="desc">A clean box-and-arrow architecture diagram for the onboarding v2 system.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f9fbff"/>
+      <stop offset="100%" stop-color="#eff3ff"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.92"/>
+      <stop offset="100%" stop-color="#f7f9ff" stop-opacity="0.98"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3f47d7"/>
+      <stop offset="100%" stop-color="#5b63f6"/>
+    </linearGradient>
+    <linearGradient id="soft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbfcff"/>
+      <stop offset="100%" stop-color="#eef2ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#2f3e9f" flood-opacity="0.12"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#2f3e9f" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="10" refY="7" orient="auto">
+      <path d="M 0 0 L 14 7 L 0 14 z" fill="#3f47d7"/>
+    </marker>
+    <marker id="arrowSoft" markerWidth="14" markerHeight="14" refX="10" refY="7" orient="auto">
+      <path d="M 0 0 L 14 7 L 0 14 z" fill="#7d86eb"/>
+    </marker>
+    <style>
+      .eyebrow { font: 800 12px 'Plus Jakarta Sans','Noto Sans KR',sans-serif; letter-spacing: 0.16em; text-transform: uppercase; fill: #5964e8; }
+      .headline { font: 800 42px 'Plus Jakarta Sans','Noto Sans KR',sans-serif; letter-spacing: -0.05em; fill: #181c31; }
+      .subline { font: 500 15px 'Plus Jakarta Sans','Noto Sans KR',sans-serif; fill: #6f789c; }
+      .section { font: 800 11px 'Plus Jakarta Sans','Noto Sans KR',sans-serif; letter-spacing: 0.16em; text-transform: uppercase; fill: #5964e8; }
+      .label { font: 800 21px 'Plus Jakarta Sans','Noto Sans KR',sans-serif; letter-spacing: -0.03em; fill: #181c31; }
+      .labelAccent { font: 800 22px 'Plus Jakarta Sans','Noto Sans KR',sans-serif; letter-spacing: -0.03em; fill: #ffffff; }
+      .body { font: 500 12px 'Plus Jakarta Sans','Noto Sans KR',sans-serif; fill: #6f789c; }
+      .bodyAccent { font: 500 12px 'Plus Jakarta Sans','Noto Sans KR',sans-serif; fill: rgba(255,255,255,0.88); }
+      .mini { font: 700 11px 'Plus Jakarta Sans','Noto Sans KR',sans-serif; fill: #5964e8; }
+      .legend { font: 700 11px 'Plus Jakarta Sans','Noto Sans KR',sans-serif; fill: #4050d5; }
+      .lineGen { fill: none; stroke: #3f47d7; stroke-width: 2.8; marker-end: url(#arrow); }
+      .lineRuntime { fill: none; stroke: #7d86eb; stroke-width: 2.2; marker-end: url(#arrowSoft); }
+      .lineGuide { fill: none; stroke: rgba(63,71,215,0.26); stroke-width: 2; stroke-dasharray: 8 8; }
+      .lineBoundary { fill: none; stroke: rgba(63,71,215,0.24); stroke-width: 2.2; stroke-dasharray: 9 8; }
+    </style>
+  </defs>
+
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <rect x="22" y="22" width="1236" height="676" rx="38" fill="url(#panel)" stroke="rgba(255,255,255,0.7)" filter="url(#shadow)"/>
+
+  <text class="eyebrow" x="72" y="86">Onboarding V2 Architecture</text>
+  <text class="headline" x="72" y="134">Host 서비스와 Chatbot 서버를 연결하는 실행 엔진</text>
+  <text class="subline" x="72" y="165">먼저 구성도를 보여주고, 그다음 generation 파이프라인과 repair 흐름으로 넘어가면 처음 보는 사람도 빠르게 따라옵니다.</text>
+
+  <rect x="60" y="208" width="116" height="74" rx="24" fill="url(#soft)" stroke="rgba(37,49,109,0.12)" filter="url(#softShadow)"/>
+  <text class="label" x="89" y="239">Operator</text>
+  <text class="body" x="86" y="259">발표자 / 운영자</text>
+
+  <rect x="60" y="326" width="116" height="108" rx="24" fill="url(#soft)" stroke="rgba(37,49,109,0.12)" filter="url(#softShadow)"/>
+  <text class="label" x="88" y="360">Onmo UI</text>
+  <text class="body" x="84" y="383">start button</text>
+  <text class="body" x="84" y="402">run dashboard</text>
+  <text class="body" x="84" y="421">progress view</text>
+
+  <path class="lineRuntime" d="M 118 283 L 118 323"/>
+
+  <rect x="220" y="196" width="996" height="420" rx="34" class="lineBoundary"/>
+  <text class="section" x="248" y="226">Execution Boundary</text>
+
+  <rect x="270" y="258" width="220" height="92" rx="24" fill="#ffffff" stroke="rgba(37,49,109,0.12)" filter="url(#softShadow)"/>
+  <text class="label" x="308" y="292">Host Source Repo</text>
+  <text class="body" x="293" y="315">backend / frontend / auth / order</text>
+  <text class="body" x="306" y="334">retrieval source candidates</text>
+
+  <rect x="270" y="440" width="220" height="108" rx="24" fill="#ffffff" stroke="rgba(37,49,109,0.12)" filter="url(#softShadow)"/>
+  <text class="label" x="284" y="476">Chatbot Repo / Server</text>
+  <text class="body" x="298" y="499">/widget.js and /api/chat</text>
+  <text class="body" x="304" y="518">generated adapter runtime</text>
+
+  <rect x="556" y="324" width="248" height="126" rx="28" fill="url(#accent)" stroke="rgba(255,255,255,0.12)" filter="url(#shadow)"/>
+  <text class="labelAccent" x="594" y="360">Onboarding V2 Engine</text>
+  <text class="bodyAccent" x="588" y="385">run_onboarding_generation --engine v2</text>
+  <text class="bodyAccent" x="620" y="408">analysis · planning · repair</text>
+
+  <rect x="514" y="496" width="332" height="82" rx="24" class="lineGuide"/>
+  <text class="section" x="543" y="520">Isolated Runtime Workspace</text>
+
+  <rect x="536" y="536" width="134" height="28" rx="14" fill="#eef2ff" stroke="rgba(37,49,109,0.08)"/>
+  <rect x="688" y="536" width="136" height="28" rx="14" fill="#eef2ff" stroke="rgba(37,49,109,0.08)"/>
+  <text class="mini" x="572" y="555">Host runtime</text>
+  <text class="mini" x="716" y="555">Chatbot runtime</text>
+
+  <rect x="908" y="248" width="218" height="88" rx="24" fill="#ffffff" stroke="rgba(37,49,109,0.12)" filter="url(#softShadow)"/>
+  <text class="label" x="984" y="282">Qdrant</text>
+  <text class="body" x="953" y="305">FAQ / policy / discovery_image</text>
+
+  <rect x="908" y="370" width="218" height="88" rx="24" fill="#ffffff" stroke="rgba(37,49,109,0.12)" filter="url(#softShadow)"/>
+  <text class="label" x="962" y="404">OpenAI / LLM</text>
+  <text class="body" x="939" y="427">analysis / planning / repair / vision</text>
+
+  <rect x="908" y="492" width="218" height="88" rx="24" fill="url(#soft)" stroke="rgba(37,49,109,0.12)" filter="url(#softShadow)"/>
+  <text class="label" x="953" y="526">Final Artifacts</text>
+  <text class="body" x="969" y="549">host patch / chatbot patch</text>
+  <text class="body" x="960" y="568">validation evidence / run log</text>
+
+  <path class="lineGen" d="M 176 380 L 268 380"/>
+  <text class="mini" x="184" y="369">/api/onboarding/start</text>
+
+  <path class="lineRuntime" d="M 490 302 L 554 352"/>
+  <path class="lineRuntime" d="M 490 486 L 554 420"/>
+
+  <path class="lineGen" d="M 680 451 L 680 532"/>
+  <text class="mini" x="695" y="495">compile / apply</text>
+
+  <path class="lineGen" d="M 804 360 L 906 292"/>
+  <text class="mini" x="820" y="289">retrieval indexing</text>
+
+  <path class="lineGen" d="M 804 390 L 906 414"/>
+  <text class="mini" x="822" y="437">analysis / planning / repair</text>
+
+  <path class="lineGen" d="M 846 536 L 906 536"/>
+  <text class="mini" x="850" y="525">export / replay / report</text>
+
+  <path class="lineRuntime" d="M 490 474 C 620 458, 756 342, 906 292"/>
+  <text class="mini" x="598" y="287">runtime retrieval also uses Qdrant</text>
+
+  <rect x="72" y="626" width="236" height="38" rx="19" fill="#eef2ff" stroke="rgba(63,71,215,0.1)"/>
+  <path class="lineGen" d="M 96 645 L 132 645"/>
+  <text class="legend" x="144" y="649">solid arrow = generation path</text>
+
+  <rect x="332" y="626" width="252" height="38" rx="19" fill="#f3f5ff" stroke="rgba(125,134,235,0.1)"/>
+  <path class="lineRuntime" d="M 356 645 L 392 645"/>
+  <text class="legend" x="404" y="649">soft arrow = runtime / retrieval</text>
+
+  <rect x="612" y="626" width="330" height="38" rx="19" fill="#ffffff" stroke="rgba(37,49,109,0.08)"/>
+  <text class="legend" x="636" y="649">start point: Onmo UI  output: host patch + chatbot patch</text>
+</svg>

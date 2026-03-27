@@ -211,6 +211,7 @@ def load_run_dashboard(*, run_root: str | Path, process: ProcessSnapshot | None 
 
     overall_status = str(summary.get("status") or _derive_overall_status(events=events, process=process))
     stages = _build_stage_views(root=root, events=events, process=process)
+    compact_events = [_compact_event(event) for event in events]
     validation_checks = list((validation_bundle or {}).get("checks") or [])
     repair = _build_repair_details(
         summary=summary,
@@ -218,6 +219,8 @@ def load_run_dashboard(*, run_root: str | Path, process: ProcessSnapshot | None 
         failure_bundle=repair_failure_bundle,
         repair_decision=repair_decision,
     )
+    analysis_status = next((item.get("status") for item in stages if str(item.get("stage")) == "analysis"), "pending")
+    planning_status = next((item.get("status") for item in stages if str(item.get("stage")) == "planning"), "pending")
 
     return {
         "run": {
@@ -247,11 +250,21 @@ def load_run_dashboard(*, run_root: str | Path, process: ProcessSnapshot | None 
         },
         "stages": stages,
         "repair": repair,
-        "recent_events": [_compact_event(event) for event in events[-14:]],
-        "repair_events": [_compact_event(event) for event in events if str(event.get("stage")) == "repair"][-8:],
+        "recent_events": compact_events,
+        "repair_events": [event for event in compact_events if str(event.get("stage")) == "repair"][-8:],
         "details": {
-            "analysis": _build_analysis_details(analysis_snapshot=analysis_snapshot, analysis_bundle=analysis_bundle),
-            "planning": _build_planning_details(plan=integration_plan, planning_bundle=planning_bundle),
+            "analysis": _build_analysis_details(
+                analysis_snapshot=analysis_snapshot,
+                analysis_bundle=analysis_bundle,
+                recent_events=compact_events,
+                stage_status=str(analysis_status or "pending"),
+            ),
+            "planning": _build_planning_details(
+                plan=integration_plan,
+                planning_bundle=planning_bundle,
+                recent_events=compact_events,
+                stage_status=str(planning_status or "pending"),
+            ),
             "compile": _build_compile_details(
                 host_edit_program=host_edit_program,
                 chatbot_edit_program=chatbot_edit_program,
@@ -333,20 +346,22 @@ def _build_stage_views(
         terminal_events = [event for event in relevant if _is_terminal_stage_event(event)]
         last_terminal_event = terminal_events[-1] if terminal_events else None
         last_event = relevant[-1] if relevant else None
+        latest_stage_event = stage_events[-1] if stage_events else None
         status = "pending"
-        summary_source = last_terminal_event if last_terminal_event is not None else last_event
-        summary = "" if summary_source is None else str(summary_source.get("summary") or "")
+        summary = "" if last_terminal_event is None else str(last_terminal_event.get("summary") or "")
         if last_terminal_event is not None:
             event_type = str(last_terminal_event.get("event_type") or "")
             if event_type in {"stage_completed", "compile_preflight_completed"}:
                 status = "completed"
             else:
                 status = "failed"
-        elif last_event is not None:
-            event_type = str(last_event.get("event_type") or "")
+        elif latest_stage_event is not None:
+            event_type = str(latest_stage_event.get("event_type") or "")
             status = _resolve_incomplete_stage_status(process=process)
             if status == "failed":
                 summary = _interrupted_stage_summary(stage=stage, event_type=event_type, fallback=summary)
+            else:
+                summary = _running_stage_summary_ko(latest_stage_event)
         views.append(
             {
                 "stage": stage,
@@ -658,7 +673,13 @@ def _localize_stage_names_ko(text: str) -> str:
     return localized
 
 
-def _build_analysis_details(*, analysis_snapshot: dict[str, Any] | None, analysis_bundle: dict[str, Any] | None) -> dict[str, Any]:
+def _build_analysis_details(
+    *,
+    analysis_snapshot: dict[str, Any] | None,
+    analysis_bundle: dict[str, Any] | None,
+    recent_events: list[dict[str, Any]] | None = None,
+    stage_status: str = "pending",
+) -> dict[str, Any]:
     snapshot = analysis_snapshot or {}
     bundle = analysis_bundle or {}
     repo_profile = snapshot.get("repo_profile") or {}
@@ -702,10 +723,21 @@ def _build_analysis_details(*, analysis_snapshot: dict[str, Any] | None, analysi
         "highlights": highlights,
         "candidates": candidates,
         "confidence_notes": [str(item) for item in (framework_profile.get("confidence_notes") or [])[:5]],
+        "live": _build_live_stage_payload(
+            stage="analysis",
+            events=recent_events or [],
+            stage_status=stage_status,
+        ),
     }
 
 
-def _build_planning_details(*, plan: dict[str, Any] | None, planning_bundle: dict[str, Any] | None) -> dict[str, Any]:
+def _build_planning_details(
+    *,
+    plan: dict[str, Any] | None,
+    planning_bundle: dict[str, Any] | None,
+    recent_events: list[dict[str, Any]] | None = None,
+    stage_status: str = "pending",
+) -> dict[str, Any]:
     integration_plan = plan or {}
     planning = planning_bundle or {}
     host_backend = integration_plan.get("host_backend") or {}
@@ -746,6 +778,11 @@ def _build_planning_details(*, plan: dict[str, Any] | None, planning_bundle: dic
             }
             for item in risks[:4]
         ],
+        "live": _build_live_stage_payload(
+            stage="planning",
+            events=recent_events or [],
+            stage_status=stage_status,
+        ),
     }
 
 
@@ -937,6 +974,20 @@ def _build_validation_details(
 
     covered_flows = [str(item) for item in (widget_e2e.get("covered_flows") or [])]
     flow_reports = widget_e2e.get("flow_reports") or {}
+    normalized_flow_reports: list[dict[str, Any]] = []
+    if isinstance(flow_reports, dict):
+        for name, report in flow_reports.items():
+            if not isinstance(report, dict):
+                continue
+            if not any(key in report for key in ("passed", "failure_summary", "steps", "fragments")):
+                continue
+            normalized_flow_reports.append(
+                {
+                    "name": str(name),
+                    "passed": bool(report.get("passed")),
+                    "summary": str(report.get("failure_summary") or "flow passed"),
+                }
+            )
 
     return {
         "passed": bool(bundle.get("passed")),
@@ -956,14 +1007,7 @@ def _build_validation_details(
         ],
         "proofs": proofs,
         "covered_flows": covered_flows,
-        "flow_reports": [
-            {
-                "name": name,
-                "passed": bool((report or {}).get("passed")),
-                "summary": str((report or {}).get("failure_summary") or "flow passed"),
-            }
-            for name, report in flow_reports.items()
-        ],
+        "flow_reports": normalized_flow_reports,
         "sampled_order_id": str(widget_e2e.get("sampled_order_id") or ""),
         "validated_user_id": str((adapter_auth.get("validated_user") or {}).get("id") or ""),
     }
@@ -1025,15 +1069,151 @@ def _operation_mix(operations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{"operation": key, "count": value} for key, value in sorted(counts.items())]
 
 
+def _build_live_stage_payload(
+    *,
+    stage: str,
+    events: list[dict[str, Any]],
+    stage_status: str,
+) -> dict[str, Any]:
+    if str(stage_status or "") != "running":
+        return {}
+
+    stage_events = [event for event in events if str(event.get("stage") or "") == stage]
+    if not stage_events:
+        return {}
+
+    latest = stage_events[-1]
+    active_phase = str(latest.get("phase") or "").strip()
+    if not active_phase:
+        return {}
+
+    phase_events = [event for event in stage_events if str(event.get("phase") or "").strip() == active_phase]
+    details = dict(latest.get("details") or {})
+    status = str(details.get("status") or _live_status_from_event(latest) or "running")
+    provider = _last_stage_detail_value(stage_events, "provider")
+    model = _last_stage_detail_value(stage_events, "model")
+    elapsed_ms = _last_stage_detail_value(stage_events, "elapsed_ms")
+
+    return {
+        "active_phase": active_phase,
+        "phase_label": _phase_label_ko(stage, active_phase),
+        "status": status,
+        "attempt": int(latest.get("attempt") or 1),
+        "elapsed_ms": int(elapsed_ms) if str(elapsed_ms or "").strip().isdigit() else elapsed_ms,
+        "metrics": _collect_live_metrics(stage=stage, stage_events=stage_events),
+        "issue": _build_live_issue(stage_events),
+        "provider": str(provider or "").strip(),
+        "model": str(model or "").strip(),
+        "events": [
+            {
+                "timestamp": str(event.get("timestamp") or ""),
+                "phase": str(event.get("phase") or ""),
+                "display_summary": str(event.get("display_summary") or ""),
+                "details": dict(event.get("details") or {}),
+                "event_type": str(event.get("event_type") or ""),
+            }
+            for event in stage_events[-4:]
+            if str(event.get("display_summary") or "").strip()
+        ],
+    }
+
+
+def _collect_live_metrics(*, stage: str, stage_events: list[dict[str, Any]]) -> list[dict[str, str]]:
+    metric_specs = {
+        "analysis": [
+            ("candidate_count", "후보"),
+            ("verified_endpoint_count", "검증 엔드포인트"),
+            ("unresolved_ambiguity_count", "모호성"),
+            ("tool_call_count", "도구 호출"),
+        ],
+        "planning": [
+            ("tool_call_count", "도구 호출"),
+        ],
+    }
+    metrics: list[dict[str, str]] = []
+    for key, label in metric_specs.get(stage, []):
+        value = _last_stage_detail_value(stage_events, key)
+        if value in (None, "", []):
+            continue
+        metrics.append({"label": label, "value": str(value)})
+    return metrics
+
+
+def _build_live_issue(stage_events: list[dict[str, Any]]) -> str:
+    for event in reversed(stage_events):
+        details = dict(event.get("details") or {})
+        fallback_reason = str(details.get("fallback_reason") or "").strip()
+        if fallback_reason:
+            return _summarize_fallback_reason(fallback_reason)
+    return ""
+
+
+def _summarize_fallback_reason(reason: str) -> str:
+    normalized = " ".join(str(reason or "").split())
+    if not normalized:
+        return ""
+    if "validation errors for" in normalized:
+        segments = [segment.strip() for segment in str(reason or "").splitlines() if segment.strip()]
+        field = next(
+            (
+                segment
+                for segment in segments
+                if "." in segment and "validation errors for" not in segment and "Input should" not in segment
+            ),
+            "",
+        )
+        if field:
+            return f"{field} 형식 오류로 fallback 결과 사용"
+        return "응답 형식 오류로 fallback 결과 사용"
+    if "Expecting ',' delimiter" in normalized:
+        return "JSON 구문 오류로 fallback 결과 사용"
+    return (normalized[:117].rstrip() + "…") if len(normalized) > 118 else normalized
+
+
+def _last_stage_detail_value(stage_events: list[dict[str, Any]], key: str) -> Any:
+    for event in reversed(stage_events):
+        details = dict(event.get("details") or {})
+        if key in details and details.get(key) not in (None, ""):
+            return details.get(key)
+    return None
+
+
+def _live_status_from_event(event: dict[str, Any]) -> str:
+    event_type = str(event.get("event_type") or "")
+    if event_type == "llm_phase_fallback":
+        return "fallback"
+    if event_type.endswith("_failed"):
+        return "failed"
+    if event_type.endswith("_completed"):
+        return "completed"
+    return "running"
+
+
+def _running_stage_summary_ko(event: dict[str, Any]) -> str:
+    summary = _event_display_summary_ko(event)
+    if summary:
+        return summary
+    return _localize_stage_names_ko(str(event.get("summary") or "").strip())
+
+
 def _compact_event(event: dict[str, Any]) -> dict[str, Any]:
+    details = event.get("details")
+    artifact_refs = list(event.get("artifact_refs") or [])
+    input_refs = list(event.get("input_refs") or [])
     return {
         "timestamp": str(event.get("timestamp") or ""),
         "stage": str(event.get("stage") or ""),
         "phase": str(event.get("phase") or ""),
+        "phase_label": _phase_label_ko(str(event.get("stage") or ""), str(event.get("phase") or "")),
         "event_type": str(event.get("event_type") or ""),
+        "attempt": int(event.get("attempt") or 1),
         "summary": str(event.get("summary") or ""),
         "display_summary": _event_display_summary_ko(event),
         "severity": str(event.get("severity") or "info"),
+        "source": str(event.get("source") or "deterministic"),
+        "details": dict(details or {}) if isinstance(details, dict) else {},
+        "artifact_ref_count": len(artifact_refs),
+        "input_ref_count": len(input_refs),
     }
 
 
@@ -1233,7 +1413,7 @@ def _build_repair_story_payload(
                     "key": "failure",
                     "title": "문제 발생",
                     "headline": f"{failed_label} 단계",
-                    "detail": f"{failed_label} 단계 실패 감지",
+                    "detail": "",
                     "timestamp": str((failure_event or {}).get("timestamp") or ""),
                 },
                 {
@@ -1247,14 +1427,20 @@ def _build_repair_story_payload(
                     "key": "diagnosis",
                     "title": "진단 판단",
                     "headline": diagnosis or "원인 분석 중",
-                    "detail": _event_display_summary_ko(decision_event or diagnosis_event) or ("원인 진단 완료" if diagnosis_status == "completed" else "원인 진단 중"),
+                    "detail": ""
+                    if diagnosis and diagnosis == (_event_display_summary_ko(decision_event or diagnosis_event) or "").strip()
+                    else (
+                        _event_display_summary_ko(decision_event or diagnosis_event)
+                        or ("원인 진단 완료" if diagnosis_status == "completed" else "원인 진단 중")
+                    ),
                     "timestamp": str((decision_event or diagnosis_event or {}).get("timestamp") or ""),
                 },
                 {
                     "key": "rewind",
                     "title": "되돌아감",
                     "headline": f"{rewind_label} 단계",
-                    "detail": _event_display_summary_ko(rewind_event)
+                    "detail": current_action
+                    or _event_display_summary_ko(rewind_event)
                     or ("자동 복구 중단" if stop_reason_text else f"{rewind_label} 단계로 되돌리기로 결정했습니다."),
                     "timestamp": str((rewind_event or stopped_event or decision_event or {}).get("timestamp") or ""),
                 },
@@ -1363,6 +1549,7 @@ def _event_display_summary_ko(event: dict[str, Any] | None) -> str:
     payload = event or {}
     event_type = str(payload.get("event_type") or "").strip()
     stage = str(payload.get("stage") or "").strip()
+    phase = str(payload.get("phase") or "").strip()
     if event_type == "stage_started":
         return f"{_stage_label_ko(stage)} 단계 시작"
     if event_type == "stage_completed":
@@ -1384,8 +1571,62 @@ def _event_display_summary_ko(event: dict[str, Any] | None) -> str:
         return f"{_stage_label_ko(rewind_to)} 단계로 되돌아감"
     if event_type == "repair_stopped":
         return "자동 복구 중단"
+    if event_type == "llm_phase_started":
+        return f"{_phase_label_ko(stage, phase)} 시작"
+    if event_type == "llm_phase_progress":
+        return f"{_phase_label_ko(stage, phase)} 진행 중"
+    if event_type == "llm_phase_completed":
+        return f"{_phase_label_ko(stage, phase)} 완료"
+    if event_type == "llm_phase_failed":
+        return f"{_phase_label_ko(stage, phase)} 실패"
+    if event_type == "llm_phase_fallback":
+        return f"{_phase_label_ko(stage, phase)} fallback 사용"
+    if event_type == "llm_tool_called":
+        return f"{_phase_label_ko(stage, phase)} 도구 호출"
+    if event_type.startswith("analysis_candidate_harvest_"):
+        return {
+            "analysis_candidate_harvest_started": "후보 수집 시작",
+            "analysis_candidate_harvest_progress": "후보 수집 진행 중",
+            "analysis_candidate_harvest_completed": "후보 수집 완료",
+            "analysis_candidate_harvest_failed": "후보 수집 실패",
+        }.get(event_type, "후보 수집")
+    if event_type.startswith("analysis_contract_verification_"):
+        return {
+            "analysis_contract_verification_started": "계약 검증 시작",
+            "analysis_contract_verification_progress": "계약 검증 진행 중",
+            "analysis_contract_verification_completed": "계약 검증 완료",
+            "analysis_contract_verification_failed": "계약 검증 실패",
+        }.get(event_type, "계약 검증")
     summary = str(payload.get("summary") or "").strip()
     return _localize_stage_names_ko(summary)
+
+
+def _phase_label_ko(stage: str, phase: str) -> str:
+    normalized_stage = str(stage or "").strip()
+    normalized_phase = str(phase or "").strip()
+    if normalized_phase in {"", "start"}:
+        return "준비"
+    if normalized_stage == "analysis":
+        if normalized_phase == "candidate_harvest":
+            return "후보 수집"
+        if normalized_phase == "retrieval-plan":
+            return "탐색 계획"
+        if normalized_phase.startswith("read-queue"):
+            return "읽기 대상 선정"
+        if normalized_phase.startswith("evidence-reading"):
+            return "근거 읽기"
+        if normalized_phase.startswith("contract-extraction"):
+            return "계약 추출"
+        if normalized_phase == "contract_verification":
+            return "계약 검증"
+    if normalized_stage == "planning":
+        if normalized_phase == "strategy-synthesis":
+            return "전략 후보 정리"
+        if normalized_phase == "binding-selection":
+            return "대상 연결"
+        if normalized_phase == "risk-and-repair":
+            return "위험 검토"
+    return _localize_stage_names_ko(normalized_phase.replace("-", " "))
 
 
 def _corpus_label(corpus: str) -> str:

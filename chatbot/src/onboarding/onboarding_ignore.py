@@ -18,9 +18,68 @@ DEFAULT_IGNORED_PARTS = {
     "coverage",
 }
 
+_CHATBOT_RUNTIME_ROOT_IGNORED_NAMES = {
+    "chatbot_eval",
+    "tests",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".coverage",
+    ".cache",
+}
+_CHATBOT_SRC_IGNORED_NAMES = {
+    "chatbot_logs",
+}
 
-def runtime_copy_ignored_names(_: str, names: list[str]) -> set[str]:
-    return {name for name in names if name in DEFAULT_IGNORED_PARTS}
+
+def _resolve_chatbot_runtime_root(current_dir: str | Path) -> Path | None:
+    current = Path(current_dir)
+    for candidate in (current, *current.parents):
+        if (
+            (candidate / "server_fastapi.py").is_file()
+            and (candidate / "src").is_dir()
+            and (candidate / "frontend").is_dir()
+        ):
+            return candidate
+    return None
+
+
+def _preserve_runtime_directory(current_dir: str | Path, candidate_name: str) -> bool:
+    path = Path(current_dir)
+    if candidate_name != "dist":
+        return False
+    return tuple(path.parts[-2:]) == ("frontend", "shared_widget")
+
+
+def _context_specific_runtime_ignored_names(
+    current_dir: str | Path,
+    names: list[str],
+) -> set[str]:
+    chatbot_root = _resolve_chatbot_runtime_root(current_dir)
+    if chatbot_root is None:
+        return set()
+    current = Path(current_dir)
+    try:
+        relative_parts = current.relative_to(chatbot_root).parts
+    except ValueError:
+        return set()
+    available_names = set(names)
+    if not relative_parts:
+        return _CHATBOT_RUNTIME_ROOT_IGNORED_NAMES & available_names
+    if relative_parts == ("src",):
+        return _CHATBOT_SRC_IGNORED_NAMES & available_names
+    return set()
+
+
+def runtime_copy_ignored_names(current_dir: str, names: list[str]) -> set[str]:
+    ignored = {
+        name
+        for name in names
+        if name in DEFAULT_IGNORED_PARTS
+        and not _preserve_runtime_directory(current_dir, name)
+    }
+    ignored.update(_context_specific_runtime_ignored_names(current_dir, names))
+    return ignored
 
 
 class OnboardingIgnoreMatcher:

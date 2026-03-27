@@ -521,6 +521,81 @@ def test_prepare_backend_runtime_loads_source_root_dotenv_when_workspace_lacks_d
     assert prep.env_source["source_dotenv_path"].endswith("/source/.env")
 
 
+def test_prepare_backend_runtime_classifies_oracle_reset_failure_as_host_contract(
+    tmp_path: Path,
+    monkeypatch,
+):
+    workspace = tmp_path / "workspace"
+    backend_root = workspace / "backend"
+    scripts_root = workspace / "scripts"
+    backend_root.mkdir(parents=True)
+    scripts_root.mkdir(parents=True)
+    (backend_root / "manage.py").write_text("print('django')\n", encoding="utf-8")
+    (scripts_root / "reset_db.py").write_text("print('reset')\n", encoding="utf-8")
+    (scripts_root / "seed.py").write_text("print('seed')\n", encoding="utf-8")
+    (workspace / ".env").write_text(
+        "ORACLE_HOST=DESKTOP-IMG07LN\nORACLE_PORT=1521\nORACLE_SERVICE_NAME=xe\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("ORACLE_USER", raising=False)
+    monkeypatch.delenv("ORACLE_PASSWORD", raising=False)
+
+    def _ok_command(*, name: str, command: list[str], cwd: Path, log_path: Path | None = None, **kwargs):
+        del kwargs
+        return backend_runtime_module.BackendRuntimeCommandResult(
+            name=name,
+            command=command,
+            cwd=str(cwd),
+            returncode=0,
+            stdout=f"{name} ok",
+            stderr="",
+            passed=True,
+            log_path=str(log_path) if log_path is not None else None,
+        )
+
+    def _run_command(*, name: str, command: list[str], cwd: Path, log_path: Path | None = None, **kwargs):
+        if name != "reset":
+            return _ok_command(name=name, command=command, cwd=cwd, log_path=log_path, **kwargs)
+        return backend_runtime_module.BackendRuntimeCommandResult(
+            name=name,
+            command=command,
+            cwd=str(cwd),
+            returncode=1,
+            stdout="socket.gaierror: [Errno 8] nodename nor servname provided, or not known",
+            stderr="oracledb.exceptions.OperationalError: DPY-6005: cannot connect to database",
+            passed=False,
+            log_path=str(log_path) if log_path is not None else None,
+        )
+
+    monkeypatch.setattr(backend_runtime_module, "_create_venv", lambda *args, **kwargs: _ok_command(name="create_venv", command=["python", "-m", "venv"], cwd=tmp_path))
+    monkeypatch.setattr(backend_runtime_module, "_install_backend_requirements", lambda **kwargs: _ok_command(name="install", command=["pip", "install"], cwd=backend_root))
+    monkeypatch.setattr(backend_runtime_module, "_run_django_migrate", lambda **kwargs: _ok_command(name="migrate", command=["manage.py", "migrate"], cwd=backend_root))
+    monkeypatch.setattr(backend_runtime_module, "_run_command", _run_command)
+
+    prep = prepare_backend_runtime(
+        workspace=workspace,
+        snapshot=_snapshot(backend_framework="django"),
+    )
+
+    assert prep.passed is False
+    assert prep.failure_origin == "host_contract"
+    assert prep.failure_code == "backend_runtime_prep_external_dependency_unavailable"
+    assert prep.dependency_kind == "oracle"
+    assert prep.required_env_keys == [
+        "ORACLE_USER",
+        "ORACLE_PASSWORD",
+        "ORACLE_HOST",
+        "ORACLE_PORT",
+        "ORACLE_SERVICE_NAME",
+    ]
+    assert prep.dependency_diagnostics["missing_env_keys"] == [
+        "ORACLE_USER",
+        "ORACLE_PASSWORD",
+    ]
+    assert prep.fixture_manifest["failure_origin"] == "host_contract"
+    assert prep.fixture_manifest["failure_code"] == "backend_runtime_prep_external_dependency_unavailable"
+
+
 def test_prepare_backend_runtime_uses_five_second_default_heartbeats(tmp_path: Path, monkeypatch):
     workspace = tmp_path / "workspace"
     backend_root = workspace / "backend"

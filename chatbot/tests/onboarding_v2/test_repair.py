@@ -397,6 +397,134 @@ def test_diagnose_failure_prefers_validation_for_host_auth_bootstrap_failure(tmp
     assert "bootstrap" in decision.diagnosis.lower()
 
 
+def test_diagnose_failure_stops_on_platform_validation_bug(tmp_path: Path):
+    debug_store = DebugStore(tmp_path / "generated" / "food" / "food-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="validation",
+        failure_signature="widget_bundle_fetch_runtime_module_origin_error",
+        failure_summary="widget bundle fetch failed: runtime module origin drift",
+        trigger_event_id="evt-platform-validation",
+        related_artifacts=[],
+        related_files=["server_fastapi.py"],
+        related_file_samples=[],
+        input_artifact_versions={"validation": 1},
+        attempt_number=1,
+        repeat_count=1,
+    )
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
+        snapshot_payload={"repo_profile": {"site": "food"}},
+        planning_bundle_payload={},
+        plan_payload={},
+        edit_program_payload={},
+        validation_payload={
+            "failure_origin": "platform_validation",
+            "failure_code": "runtime_module_origin_error",
+        },
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+        llm_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("LLM should not be called for platform validation heuristic")
+        ),
+    )
+
+    assert decision.stop is True
+    assert decision.stop_reason == "platform_validation_bug"
+    assert decision.rewind_to == "validation"
+    assert decision.preserve_artifacts == ["analysis", "planning", "compile", "apply", "export"]
+
+
+def test_diagnose_failure_prefers_structured_host_contract_failures(tmp_path: Path):
+    debug_store = DebugStore(tmp_path / "generated" / "food" / "food-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="validation",
+        failure_signature="validation_failed",
+        failure_summary="validation failed",
+        trigger_event_id="evt-structured-host-auth",
+        related_artifacts=[],
+        related_files=["backend/chat_auth.py"],
+        related_file_samples=[],
+        input_artifact_versions={"validation": 1},
+        attempt_number=1,
+        repeat_count=1,
+    )
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
+        snapshot_payload={"repo_profile": {"site": "food"}},
+        planning_bundle_payload={},
+        plan_payload={},
+        edit_program_payload={},
+        validation_payload={
+            "checks": [
+                {
+                    "name": "host_auth_bootstrap",
+                    "passed": False,
+                    "summary": "host auth bootstrap failed",
+                    "details": {
+                        "failure_origin": "host_contract",
+                        "failure_code": "bootstrap_contract_missing_access_token",
+                    },
+                }
+            ]
+        },
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+        llm_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("LLM should not be called for structured host auth heuristic")
+        ),
+    )
+
+    assert decision.stop is False
+    assert decision.rewind_to == "validation"
+    assert decision.required_rechecks == ["host_auth_bootstrap"]
+
+
+def test_diagnose_failure_stops_on_host_external_dependency_unavailable(tmp_path: Path):
+    debug_store = DebugStore(tmp_path / "generated" / "bilyeo" / "bilyeo-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="validation",
+        failure_signature="backend_runtime_prep_external_dependency_unavailable",
+        failure_summary="reset failed: oracle unavailable",
+        trigger_event_id="evt-host-dependency",
+        related_artifacts=[],
+        related_files=["backend/config.py"],
+        related_file_samples=[],
+        input_artifact_versions={"validation": 1},
+        attempt_number=1,
+        repeat_count=1,
+    )
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
+        snapshot_payload={"repo_profile": {"site": "bilyeo"}},
+        planning_bundle_payload={},
+        plan_payload={},
+        edit_program_payload={},
+        validation_payload={
+            "failure_origin": "host_contract",
+            "failure_code": "backend_runtime_prep_external_dependency_unavailable",
+        },
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+        llm_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("LLM should not be called for host dependency heuristic")
+        ),
+    )
+
+    assert decision.stop is True
+    assert decision.stop_reason == "host_external_dependency_unavailable"
+    assert decision.rewind_to == "validation"
+    assert decision.required_rechecks == ["backend_runtime_prep"]
+
+
 def test_diagnose_failure_routes_non_heuristic_cases_through_shared_llm_runtime(tmp_path: Path, monkeypatch):
     debug_store = DebugStore(tmp_path / "generated" / "food" / "food-run-v2")
     failure_bundle = FailureBundle(

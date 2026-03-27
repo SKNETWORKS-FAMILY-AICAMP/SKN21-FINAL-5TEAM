@@ -27,26 +27,6 @@ def _bootstrap_legacy_import_alias() -> None:
     if repo_root not in sys.path:
         sys.path.append(repo_root)
 
-    chatbot_src = importlib.import_module("src")
-
-    def _install_lazy_alias(module: types.ModuleType, *, alias_base: str, import_base: str) -> None:
-        if getattr(module, "__codex_lazy_alias__", False):
-            return
-
-        def _lazy_getattr(name: str) -> Any:
-            imported = importlib.import_module(f"{import_base}.{name}")
-            _install_lazy_alias(
-                imported,
-                alias_base=f"{alias_base}.{name}",
-                import_base=f"{import_base}.{name}",
-            )
-            setattr(module, name, imported)
-            sys.modules[f"{alias_base}.{name}"] = imported
-            return imported
-
-        setattr(module, "__getattr__", _lazy_getattr)
-        setattr(module, "__codex_lazy_alias__", True)
-
     # ecommerce 네임스페이스 보장
     try:
         ecommerce_pkg = importlib.import_module("ecommerce")
@@ -62,10 +42,10 @@ def _bootstrap_legacy_import_alias() -> None:
         chatbot_ns.__path__ = [workspace_root]
         sys.modules["chatbot"] = chatbot_ns
 
+    alias_module = importlib.import_module("src._module_alias")
+    alias_module.install_chatbot_src_aliases(chatbot_ns=chatbot_ns)
+
     setattr(ecommerce_pkg, "chatbot", chatbot_ns)
-    setattr(chatbot_ns, "src", chatbot_src)
-    _install_lazy_alias(chatbot_src, alias_base="chatbot.src", import_base="src")
-    sys.modules["chatbot.src"] = chatbot_src
 
 
 _bootstrap_legacy_import_alias()

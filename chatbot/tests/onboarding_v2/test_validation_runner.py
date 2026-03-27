@@ -1,4 +1,6 @@
+import importlib
 import os
+import shutil
 import sys
 import types
 import pytest
@@ -13,7 +15,7 @@ from chatbot.src.onboarding_v2.analysis import build_analysis_bundle
 from chatbot.src.onboarding_v2.apply import apply_edit_program
 from chatbot.src.onboarding_v2.compile import compile_plan
 from chatbot.src.onboarding_v2.export import export_and_replay
-from chatbot.src.onboarding_v2.models.validation import BackendRuntimePlan, BackendRuntimePrepResult, BackendRuntimeState
+from chatbot.src.onboarding_v2.models.validation import BackendRuntimePlan, BackendRuntimePrepResult, BackendRuntimeState, ReplayResult
 from chatbot.src.onboarding_v2.models.planning import (
     ChatbotBridgePlan,
     HostBackendPlan,
@@ -26,21 +28,24 @@ from chatbot.src.onboarding_v2.models.planning import (
 )
 from chatbot.src.onboarding_v2.planning import build_planning_bundle
 from chatbot.src.onboarding_v2.storage import ArtifactStore
-from chatbot.src.adapters.schema import User
+from chatbot.src.adapters.schema import AdapterError, User
 from chatbot.src.onboarding_v2.validation.runner import (
     ConversationScenarioResult,
     ConversationValidationResult,
     _collect_widget_order_flow_report,
     _build_runtime_fixture_manifest,
+    _coerce_widget_order_e2e_result,
     _evaluate_conversation_deterministic_failures,
     _finalize_conversation_scenario_result,
     _evaluate_widget_order_flow_report,
     _enforce_required_rechecks,
     _load_generated_adapter,
     _load_runtime_chat_modules,
+    _run_runtime_validation_subprocess,
     _resolve_bridge_auth_material,
     _run_conversation_llm_judge,
     _runtime_base_url,
+    _validate_chatbot_adapter_auth_inprocess,
     run_validation,
     validate_chatbot_adapter_auth,
     validate_host_auth_bootstrap,
@@ -55,6 +60,73 @@ def _disable_onboarding_v2_llm(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setenv("ONBOARDING_V2_ENABLE_LLM", "0")
+
+
+@pytest.fixture(autouse=True)
+def _reset_runtime_import_state():
+    yield
+    prefixes = (
+        "server_fastapi",
+        "src.api",
+        "src.adapters.generated",
+        "src.adapters.setup",
+        "src.adapters.base",
+        "src.runtime_auth",
+        "src.graph",
+        "chatbot.src.api",
+        "chatbot.src.adapters.generated",
+        "chatbot.src.adapters.setup",
+        "chatbot.src.adapters.base",
+        "chatbot.src.runtime_auth",
+        "chatbot.src.graph",
+    )
+    for module_name in list(sys.modules):
+        if any(
+            module_name == prefix or module_name.startswith(f"{prefix}.")
+            for prefix in prefixes
+        ):
+            sys.modules.pop(module_name, None)
+
+    def _detach_child(parent_name: str, attr_name: str) -> None:
+        parent = sys.modules.get(parent_name)
+        if parent is None:
+            return
+        child_name = f"{parent_name}.{attr_name}"
+        if child_name not in sys.modules:
+            parent.__dict__.pop(attr_name, None)
+
+    def _restore_package_path(module_name: str, *paths: str) -> None:
+        module = sys.modules.get(module_name)
+        if module is None:
+            return
+        normalized = [str(Path(path).resolve()) for path in paths]
+        module.__path__ = normalized
+        spec = getattr(module, "__spec__", None)
+        if spec is not None and getattr(spec, "submodule_search_locations", None) is not None:
+            spec.submodule_search_locations[:] = normalized
+
+    repo_src = str((ROOT / "chatbot" / "src").resolve())
+    repo_api = str((ROOT / "chatbot" / "src" / "api").resolve())
+    repo_adapters = str((ROOT / "chatbot" / "src" / "adapters").resolve())
+
+    _detach_child("src", "api")
+    _detach_child("src", "adapters")
+    _detach_child("chatbot.src", "api")
+    _detach_child("chatbot.src", "adapters")
+
+    _restore_package_path("src", repo_src)
+    _restore_package_path("chatbot.src", repo_src)
+    _restore_package_path("src.api", repo_api)
+    _restore_package_path("chatbot.src.api", repo_api)
+    _restore_package_path("src.adapters", repo_adapters)
+    _restore_package_path("chatbot.src.adapters", repo_adapters)
+
+    chatbot_src_module = sys.modules.get("chatbot.src")
+    chatbot_pkg = sys.modules.get("chatbot")
+    if chatbot_src_module is not None and chatbot_pkg is not None:
+        setattr(chatbot_pkg, "src", chatbot_src_module)
+
+    importlib.invalidate_caches()
 
 
 def _build_food_runtime_artifacts(tmp_path: Path):
@@ -695,56 +767,34 @@ def test_validate_conversation_runtime_emits_scenario_events(monkeypatch, tmp_pa
         "orders": {},
     }
 
-    async def _fake_unauthenticated(**kwargs):
-        scenario = kwargs["scenario"]
-        result = ConversationScenarioResult(
-            scenario_id=scenario["scenario_id"],
-            mode=scenario["mode"],
-            conversation_id="conv-unauth",
-            deterministic_passed=True,
-            llm_passed=True,
-            final_verdict="pass",
-            transcript_path=str(tmp_path / "unauth.json"),
-            trace_path=None,
-        )
-        return result, "{}"
-
-    async def _fake_authenticated(**kwargs):
-        scenario = kwargs["scenario"]
-        result = ConversationScenarioResult(
-            scenario_id=scenario["scenario_id"],
-            mode=scenario["mode"],
-            conversation_id="conv-auth",
-            deterministic_passed=True,
-            llm_passed=True,
-            final_verdict="pass",
-            transcript_path=str(tmp_path / f"{scenario['scenario_id']}.json"),
-            trace_path=str(tmp_path / f"{scenario['scenario_id']}.jsonl"),
-        )
-        return result, "{}", "{}", {"conversation_id": "conv-auth"}
-
-    monkeypatch.setattr(
-        "chatbot.src.onboarding_v2.validation.runner._build_runtime_fixture_manifest",
-        lambda **kwargs: fixture_manifest,
-    )
-    monkeypatch.setattr(
-        "chatbot.src.onboarding_v2.validation.runner._load_runtime_chat_modules",
-        lambda **kwargs: (object(), object()),
-    )
-    monkeypatch.setattr(
-        "chatbot.src.onboarding_v2.validation.runner._build_conversation_scenarios",
-        lambda **kwargs: [
-            {"scenario_id": "unauthenticated_chat_request", "mode": "auth", "prompt": "hi"},
-            {"scenario_id": "authenticated_list_orders", "mode": "read_only", "prompt": "orders"},
-        ],
-    )
-    monkeypatch.setattr(
-        "chatbot.src.onboarding_v2.validation.runner._run_unauthenticated_conversation_scenario",
-        _fake_unauthenticated,
-    )
-    monkeypatch.setattr(
-        "chatbot.src.onboarding_v2.validation.runner._run_authenticated_conversation_scenario",
-        _fake_authenticated,
+    monkeypatch.setitem(
+        validate_conversation_runtime.__globals__,
+        "_run_runtime_validation_subprocess",
+        lambda **kwargs: {
+            "result": ConversationValidationResult(
+                passed=True,
+                failure_summary=None,
+                fixture_manifest=fixture_manifest,
+            ).model_dump(mode="json"),
+            "events": [
+                {
+                    "phase": "conversation_scenario_start",
+                    "scenario_id": "unauthenticated_chat_request",
+                },
+                {
+                    "phase": "conversation_scenario_finish",
+                    "scenario_id": "unauthenticated_chat_request",
+                },
+                {
+                    "phase": "conversation_scenario_start",
+                    "scenario_id": "authenticated_list_orders",
+                },
+                {
+                    "phase": "conversation_scenario_finish",
+                    "scenario_id": "authenticated_list_orders",
+                },
+            ],
+        },
     )
 
     result = validate_conversation_runtime(
@@ -781,7 +831,6 @@ def test_validate_conversation_runtime_emits_scenario_events(monkeypatch, tmp_pa
 
 def test_validate_chatbot_adapter_auth_uses_real_session_cookie_for_food(monkeypatch, tmp_path: Path):
     captured: dict[str, object] = {}
-    real_import_module = validate_chatbot_adapter_auth.__globals__["importlib"].import_module
     plan = _build_food_plan()
 
     class _FakeClient:
@@ -796,20 +845,24 @@ def test_validate_chatbot_adapter_auth_uses_real_session_cookie_for_food(monkeyp
             captured["ctx"] = ctx
             return User(id="7", siteId="food")
 
-    def _fake_import_module(name: str):
-        if name == "src.adapters.generated.food.adapter":
-            return types.SimpleNamespace(GeneratedFoodAdapter=_FakeAdapter)
-        if name == "src.adapters.generated.food.client":
-            return types.SimpleNamespace(GeneratedFoodClient=_FakeClient)
-        return real_import_module(name)
+    class _FakeAdapterSetup:
+        def resolve_site_adapter(self, site_id: str):
+            assert site_id == "food"
+            return _FakeAdapter(client=_FakeClient(base_url="http://127.0.0.1:8123"))
 
-    monkeypatch.setattr(
-        validate_chatbot_adapter_auth.__globals__["importlib"],
-        "import_module",
-        _fake_import_module,
+    monkeypatch.setitem(
+        _validate_chatbot_adapter_auth_inprocess.__globals__,
+        "_load_runtime_validation_modules",
+        lambda **kwargs: (
+            object(),
+            object(),
+            _FakeAdapterSetup(),
+            object(),
+            {"server_fastapi": str(tmp_path / "chatbot" / "server_fastapi.py")},
+        ),
     )
 
-    result = validate_chatbot_adapter_auth(
+    result = _validate_chatbot_adapter_auth_inprocess(
         chatbot_runtime_workspace=tmp_path,
         runtime_plan=BackendRuntimePlan(
             framework="django",
@@ -835,13 +888,114 @@ def test_validate_chatbot_adapter_auth_uses_real_session_cookie_for_food(monkeyp
     assert getattr(ctx, "cookies", None) == {"session_token": "real-session-token"}
 
 
+def test_validate_chatbot_adapter_auth_uses_runtime_validation_subprocess(monkeypatch, tmp_path: Path):
+    calls: dict[str, object] = {}
+
+    class _FakeAdapter:
+        async def validate_auth(self, ctx):
+            return User(id="7", siteId="food")
+
+    def _fake_runtime_subprocess(**kwargs):
+        calls.update(kwargs)
+        return {
+            "result": {
+                "passed": True,
+                "failure_summary": "chatbot adapter auth passed",
+                "validated_user": {"id": "7", "siteId": "food"},
+                "module_origins": {
+                    "server_fastapi": str(tmp_path / "chatbot" / "server_fastapi.py"),
+                },
+                "related_files": [],
+            },
+            "events": [],
+        }
+
+    monkeypatch.setitem(
+        validate_chatbot_adapter_auth.__globals__,
+        "_run_runtime_validation_subprocess",
+        _fake_runtime_subprocess,
+    )
+    monkeypatch.setitem(
+        validate_chatbot_adapter_auth.__globals__,
+        "_load_generated_adapter",
+        lambda **kwargs: _FakeAdapter(),
+    )
+
+    result = validate_chatbot_adapter_auth(
+        chatbot_runtime_workspace=tmp_path / "chatbot",
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path / "backend"),
+            command=["python", "manage.py", "runserver"],
+            readiness_url="http://127.0.0.1:8123/api/chat/auth-token",
+            listen_port=8123,
+        ),
+        bootstrap_result={"passed": True},
+        plan=_build_food_plan(),
+    )
+
+    assert calls["action"] == "adapter_auth"
+    assert result["passed"] is True
+    assert result["module_origins"]["server_fastapi"].endswith("server_fastapi.py")
+
+
+def test_validate_chatbot_adapter_auth_inprocess_prefers_registry_resolution_over_direct_generated_import(
+    monkeypatch, tmp_path: Path
+):
+    class _FakeAdapterSetup:
+        def resolve_site_adapter(self, site_id: str):
+            assert site_id == "food"
+            raise AdapterError("NOT_FOUND", "site_id=food 에 대한 adapter를 찾을 수 없습니다.")
+
+    class _FakeGeneratedAdapter:
+        async def validate_auth(self, ctx):
+            return User(id="7", siteId="food")
+
+    monkeypatch.setitem(
+        _validate_chatbot_adapter_auth_inprocess.__globals__,
+        "_load_runtime_validation_modules",
+        lambda **kwargs: (
+            object(),
+            object(),
+            _FakeAdapterSetup(),
+            object(),
+            {"server_fastapi": str(tmp_path / "chatbot" / "server_fastapi.py")},
+        ),
+    )
+    monkeypatch.setitem(
+        _validate_chatbot_adapter_auth_inprocess.__globals__,
+        "_load_generated_adapter",
+        lambda **kwargs: _FakeGeneratedAdapter(),
+    )
+
+    result = _validate_chatbot_adapter_auth_inprocess(
+        chatbot_runtime_workspace=tmp_path / "chatbot",
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path / "backend"),
+            command=["python", "manage.py", "runserver"],
+            readiness_url="http://127.0.0.1:8123/api/chat/auth-token",
+            listen_port=8123,
+        ),
+        bootstrap_result={
+            "passed": True,
+            "bootstrap_payload": {"user": {"id": "7"}},
+            "session_cookies": {"session_token": "real-session-token"},
+        },
+        plan=_build_food_plan(),
+    )
+
+    assert result["passed"] is False
+    assert "site_id=food 에 대한 adapter를 찾을 수 없습니다." in result["failure_summary"]
+
+
 def test_validate_chatbot_adapter_auth_repairs_generated_src_namespace(tmp_path: Path, monkeypatch):
+    plan = _build_food_plan()
     chatbot_workspace = tmp_path / "chatbot"
+    shutil.copytree(ROOT / "chatbot", chatbot_workspace)
     generated_root = chatbot_workspace / "src" / "adapters" / "generated" / "food"
     generated_root.mkdir(parents=True, exist_ok=True)
     for package_path in [
-        chatbot_workspace / "src" / "__init__.py",
-        chatbot_workspace / "src" / "adapters" / "__init__.py",
         generated_root / "__init__.py",
     ]:
         package_path.parent.mkdir(parents=True, exist_ok=True)
@@ -852,7 +1006,21 @@ def test_validate_chatbot_adapter_auth_repairs_generated_src_namespace(tmp_path:
         "        self.base_url = base_url\n",
         encoding="utf-8",
     )
+    (generated_root / "auth.py").write_text(
+        "from typing import Dict\n"
+        "from src.adapters.schema import AuthenticatedContext\n"
+        "from src.onboarding_v2.models.planning import ResolvedAuthContract\n"
+        "\n"
+        "SITE_KEY = 'food'\n"
+        "AUTH_CONTRACT = ResolvedAuthContract(transport='session_cookie', session_cookie_name='session_token')\n"
+        "\n"
+        "def build_generated_auth_headers(ctx: AuthenticatedContext) -> Dict[str, str]:\n"
+        "    return {}\n",
+        encoding="utf-8",
+    )
     (generated_root / "adapter.py").write_text(
+        "from src.onboarding_v2.models.planning import ResolvedAuthContract, ResolvedOrderActionContract, ResolvedResponseContract\n"
+        "\n"
         "class _ValidatedUser:\n"
         "    def __init__(self):\n"
         "        self.id = '7'\n"
@@ -863,10 +1031,54 @@ def test_validate_chatbot_adapter_auth_repairs_generated_src_namespace(tmp_path:
         "class GeneratedFoodAdapter:\n"
         "    def __init__(self, client):\n"
         "        self.client = client\n"
+        "        self._site_id = 'food'\n"
+        "        self._auth_contract = ResolvedAuthContract(transport='session_cookie', session_cookie_name='session_token')\n"
+        "        self._response_contract = ResolvedResponseContract()\n"
+        "        self._order_action_contract = ResolvedOrderActionContract()\n"
+        "    @property\n"
+        "    def site_id(self):\n"
+        "        return self._site_id\n"
+        "    @property\n"
+        "    def auth_contract(self):\n"
+        "        return self._auth_contract\n"
+        "    @property\n"
+        "    def response_contract(self):\n"
+        "        return self._response_contract\n"
+        "    @property\n"
+        "    def order_action_contract(self):\n"
+        "        return self._order_action_contract\n"
         "    async def validate_auth(self, ctx):\n"
         "        return _ValidatedUser()\n",
         encoding="utf-8",
     )
+    setup_path = chatbot_workspace / "src" / "adapters" / "setup.py"
+    setup_text = setup_path.read_text(encoding="utf-8")
+    setup_text = setup_text.replace(
+        "from .site_c.adapter import SiteCAdapter\n",
+        "from .site_c.adapter import SiteCAdapter\n"
+        "from .generated.food.client import GeneratedFoodClient\n"
+        "from .generated.food.adapter import GeneratedFoodAdapter\n",
+    )
+    setup_text = setup_text.replace(
+        "    ecommerce_client = SiteCClient(base_url=ecommerce_url)\n"
+        "    ecommerce_adapter = SiteCAdapter(client=ecommerce_client)\n",
+        "    ecommerce_client = SiteCClient(base_url=ecommerce_url)\n"
+        "    ecommerce_adapter = SiteCAdapter(client=ecommerce_client)\n"
+        "    generated_food_url = os.environ.get('GENERATED_FOOD_API_URL') or os.environ.get('FOOD_API_URL') or locals().get('food_url', '')\n"
+        "    generated_food_client = GeneratedFoodClient(base_url=generated_food_url)\n"
+        "    generated_food_adapter = GeneratedFoodAdapter(client=generated_food_client)\n",
+    )
+    setup_text = setup_text.replace(
+        "    AdapterRegistry.register_many([food_adapter, bilyeo_adapter, ecommerce_adapter])\n",
+        "    AdapterRegistry.register_many([\n"
+        "        food_adapter,\n"
+        "        bilyeo_adapter,\n"
+        "        ecommerce_adapter,\n"
+        "        generated_food_adapter,\n"
+        "    ])\n",
+    )
+    setup_path.write_text(setup_text, encoding="utf-8")
+    monkeypatch.setenv("CHATBOT_SKIP_MODEL_PRELOAD", "1")
 
     stale_src = types.ModuleType("src")
     stale_src.__path__ = [str(tmp_path / "stale-src")]
@@ -899,10 +1111,11 @@ def test_validate_chatbot_adapter_auth_repairs_generated_src_namespace(tmp_path:
             },
             "session_cookies": {"session_token": "real-session-token"},
         },
-        plan=_build_food_plan(),
-    )
+            plan=plan,
+        )
 
     assert result["passed"] is True
+    assert str(chatbot_workspace) in result["module_origins"]["server_fastapi"]
     assert result["validated_user"]["id"] == "7"
 
 
@@ -911,9 +1124,9 @@ def test_validate_chatbot_adapter_auth_returns_failure_on_generated_import_error
 ):
     monkeypatch.setitem(
         validate_chatbot_adapter_auth.__globals__,
-        "_load_generated_adapter",
+        "_run_runtime_validation_subprocess",
         lambda **kwargs: (_ for _ in ()).throw(
-            ModuleNotFoundError("No module named 'src.adapters.generated'")
+            RuntimeError("No module named 'src.adapters.generated'")
         ),
     )
 
@@ -953,10 +1166,21 @@ def test_runtime_fixture_manifest_reuses_transport_aware_food_auth_context(monke
         def __init__(self):
             self.client = _FakeClient()
 
+    class _FakeAdapterSetup:
+        def resolve_site_adapter(self, site_id: str):
+            assert site_id == "food"
+            return _FakeAdapter()
+
     monkeypatch.setitem(
         _build_runtime_fixture_manifest.__globals__,
-        "_load_generated_adapter",
-        lambda **kwargs: _FakeAdapter(),
+        "_load_runtime_validation_modules",
+        lambda **kwargs: (
+            object(),
+            object(),
+            _FakeAdapterSetup(),
+            object(),
+            {"server_fastapi": str(tmp_path / "chatbot" / "server_fastapi.py")},
+        ),
     )
 
     def _fake_build_generated_auth_headers(*, adapter, auth_context):
@@ -1027,13 +1251,24 @@ def test_runtime_fixture_manifest_uses_nested_response_contract_for_visible_orde
             self.order_action_contract = ResolvedOrderActionContract(
                 submission_mode="per_action_query_endpoint",
                 supported_actions=["list_orders", "get_order_status", "cancel", "refund"],
-                request_fields=ResolvedRequestFieldContract(),
-            )
+                    request_fields=ResolvedRequestFieldContract(),
+                )
+
+    class _FakeAdapterSetup:
+        def resolve_site_adapter(self, site_id: str):
+            assert site_id == "site-c"
+            return _FakeAdapter()
 
     monkeypatch.setitem(
         _build_runtime_fixture_manifest.__globals__,
-        "_load_generated_adapter",
-        lambda **kwargs: _FakeAdapter(),
+        "_load_runtime_validation_modules",
+        lambda **kwargs: (
+            object(),
+            object(),
+            _FakeAdapterSetup(),
+            object(),
+            {"server_fastapi": str(tmp_path / "chatbot" / "server_fastapi.py")},
+        ),
     )
     monkeypatch.setitem(
         _build_runtime_fixture_manifest.__globals__,
@@ -1466,16 +1701,20 @@ def test_validate_chatbot_runtime_boot_injects_generated_host_base_url_env(
     monkeypatch, tmp_path: Path
 ):
     captured: dict[str, object] = {}
+    relative_workspace = Path("runtime-v2") / "bilyeo" / "workspace" / "chatbot"
+    chatbot_workspace = tmp_path / relative_workspace
+    chatbot_workspace.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(tmp_path)
 
     def _fake_run(command, cwd, env, capture_output, text):
-        captured["command"] = command
+        captured["command"] = list(command)
         captured["cwd"] = cwd
         captured["env"] = dict(env)
         captured["capture_output"] = capture_output
         captured["text"] = text
         return types.SimpleNamespace(
             returncode=0,
-            stdout="chatbot runtime boot passed\n",
+            stdout='__RUNTIME_VALIDATION_JSON__{"ok": true, "result": {"passed": true, "failure_summary": "chatbot runtime boot passed", "module_origins": {"server_fastapi": "/tmp/chatbot/server_fastapi.py"}}, "events": []}\n',
             stderr="",
         )
 
@@ -1522,18 +1761,60 @@ def test_validate_chatbot_runtime_boot_injects_generated_host_base_url_env(
     )
 
     result = validate_chatbot_runtime_boot(
-        chatbot_runtime_workspace=tmp_path,
+        chatbot_runtime_workspace=relative_workspace,
         runtime_plan=runtime_plan,
         plan=plan,
     )
 
     assert result["passed"] is True
+    assert result["module_origins"]["server_fastapi"] == "/tmp/chatbot/server_fastapi.py"
     env = captured["env"]
     assert isinstance(env, dict)
     assert env["GENERATED_BILYEO_API_URL"] == "http://127.0.0.1:8128"
+    assert env["PYTHONPATH"] == str(chatbot_workspace.resolve())
+    assert captured["cwd"] == str(chatbot_workspace.resolve())
 
 
-def test_validate_conversation_runtime_injects_generated_host_base_url_env(
+def test_validate_chatbot_runtime_boot_uses_runtime_validation_subprocess(monkeypatch, tmp_path: Path):
+    calls: dict[str, object] = {}
+
+    def _fake_runtime_subprocess(**kwargs):
+        calls.update(kwargs)
+        return {
+            "result": {
+                "passed": True,
+                "failure_summary": "chatbot runtime boot passed",
+                "module_origins": {
+                    "server_fastapi": str(tmp_path / "chatbot" / "server_fastapi.py"),
+                },
+            },
+            "events": [],
+        }
+
+    monkeypatch.setitem(
+        validate_chatbot_runtime_boot.__globals__,
+        "_run_runtime_validation_subprocess",
+        _fake_runtime_subprocess,
+    )
+
+    result = validate_chatbot_runtime_boot(
+        chatbot_runtime_workspace=tmp_path / "chatbot",
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path / "backend"),
+            command=["python", "manage.py", "runserver"],
+            readiness_url="http://127.0.0.1:8128/api/chat/auth-token",
+            listen_port=8128,
+        ),
+        plan=_build_food_plan(),
+    )
+
+    assert calls["action"] == "chatbot_runtime_boot"
+    assert result["passed"] is True
+    assert result["module_origins"]["server_fastapi"].endswith("server_fastapi.py")
+
+
+def test_run_runtime_validation_subprocess_injects_generated_host_base_url_env(
     monkeypatch, tmp_path: Path
 ):
     runtime_plan = BackendRuntimePlan(
@@ -1573,110 +1854,314 @@ def test_validate_conversation_runtime_injects_generated_host_base_url_env(
             order_action_endpoint="/api/orders/{order_id}/exchange",
         ),
     )
-    prep_fixture_manifest = {"seed_source": {}, "auth": {}}
+    chatbot_workspace = tmp_path / "chatbot"
+    chatbot_workspace.mkdir(parents=True, exist_ok=True)
+    captured: dict[str, object] = {}
 
+    def _fake_subprocess_run(command, cwd, env, capture_output, text):
+        captured["command"] = command
+        captured["cwd"] = cwd
+        captured["env"] = dict(env)
+        return types.SimpleNamespace(
+            returncode=0,
+            stdout='__RUNTIME_VALIDATION_JSON__{"ok": true, "result": {"passed": true}, "events": []}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr(
+        _run_runtime_validation_subprocess.__globals__["subprocess"],
+        "run",
+        _fake_subprocess_run,
+    )
+
+    result = _run_runtime_validation_subprocess(
+        action="conversation_runtime",
+        chatbot_runtime_workspace=chatbot_workspace,
+        runtime_plan=runtime_plan,
+        plan=plan,
+        payload={},
+    )
+
+    assert result["result"]["passed"] is True
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert env["GENERATED_BILYEO_API_URL"] == "http://127.0.0.1:8129"
+    assert env["PYTHONPATH"] == str(chatbot_workspace)
+
+
+def test_run_runtime_validation_subprocess_resolves_relative_workspace_paths(
+    monkeypatch, tmp_path: Path
+):
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "backend"),
+        command=["python", "manage.py", "runserver"],
+        readiness_url="http://127.0.0.1:8130/api/chat/auth-token",
+        listen_port=8130,
+    )
+    plan = _build_food_plan()
+    relative_workspace = Path("runtime-v2") / "food" / "workspace" / "chatbot"
+    chatbot_workspace = tmp_path / relative_workspace
+    chatbot_workspace.mkdir(parents=True, exist_ok=True)
+    harness_path = chatbot_workspace / "src" / "onboarding_v2" / "validation" / "runtime_harness.py"
+    harness_path.parent.mkdir(parents=True, exist_ok=True)
+    harness_path.write_text("print('ok')\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    captured: dict[str, object] = {}
+
+    def _fake_subprocess_run(command, cwd, env, capture_output, text):
+        captured["command"] = list(command)
+        captured["cwd"] = cwd
+        captured["env"] = dict(env)
+        return types.SimpleNamespace(
+            returncode=0,
+            stdout='__RUNTIME_VALIDATION_JSON__{"ok": true, "result": {"passed": true}, "events": []}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr(
+        _run_runtime_validation_subprocess.__globals__["subprocess"],
+        "run",
+        _fake_subprocess_run,
+    )
+
+    result = _run_runtime_validation_subprocess(
+        action="widget_bundle_fetch",
+        chatbot_runtime_workspace=relative_workspace,
+        runtime_plan=runtime_plan,
+        plan=plan,
+        payload={},
+    )
+
+    assert result["result"]["passed"] is True
+    command = captured["command"]
+    assert isinstance(command, list)
+    assert command[1] == str(harness_path.resolve())
+    assert captured["cwd"] == str(chatbot_workspace.resolve())
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert env["PYTHONPATH"] == str(chatbot_workspace.resolve())
+
+
+def test_runtime_fixture_manifest_marks_registry_resolution_failures_as_generated_runtime(
+    monkeypatch, tmp_path: Path
+):
+    class _FakeAdapterSetup:
+        def resolve_site_adapter(self, site_id: str):
+            assert site_id == "food"
+            raise AdapterError("NOT_FOUND", "site_id=food 에 대한 adapter를 찾을 수 없습니다.")
+
+    module_origins = {
+        "server_fastapi": str(tmp_path / "chatbot" / "server_fastapi.py"),
+    }
+    monkeypatch.setitem(
+        _build_runtime_fixture_manifest.__globals__,
+        "_load_runtime_validation_modules",
+        lambda **kwargs: (
+            object(),
+            object(),
+            _FakeAdapterSetup(),
+            object(),
+            module_origins,
+        ),
+    )
+
+    manifest = _build_runtime_fixture_manifest(
+        chatbot_runtime_workspace=tmp_path / "chatbot",
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path / "backend"),
+            command=["python"],
+            readiness_url="http://127.0.0.1:8123/api/chat/auth-token",
+            listen_port=8123,
+        ),
+        plan=_build_food_plan(),
+        prep_result=BackendRuntimePrepResult(
+            framework="django",
+            passed=True,
+            fixture_manifest={"available": True, "seed_source": {}, "auth": {}},
+        ),
+        bootstrap_result={
+            "passed": True,
+            "bootstrap_payload": {"user": {"id": "7"}},
+            "session_cookies": {"session_token": "real-session-token"},
+        },
+        adapter_auth_result={"passed": True, "validated_user": {"id": "7"}},
+        onboarding_credentials=None,
+    )
+
+    assert manifest["available"] is False
+    assert manifest["failure_origin"] == "generated_runtime"
+    assert manifest["failure_code"] == "runtime_registry_resolution_failed"
+    assert manifest["module_origins"] == module_origins
+
+
+def test_runtime_fixture_manifest_marks_upstream_order_seed_failures_separately(
+    monkeypatch, tmp_path: Path
+):
     class _FakeClient:
         async def list_orders(self, headers):
-            assert headers["Authorization"] == "Bearer 1"
-            return [
-                {"order_id": "7", "option_id": "synthetic-option-1"},
-                {"order_id": "6"},
-                {"order_id": "5"},
-                {"order_id": "4"},
-                {"order_id": "3"},
-            ]
+            raise RuntimeError("list orders exploded")
 
     class _FakeAdapter:
         def __init__(self):
             self.client = _FakeClient()
+            self.response_contract = ResolvedResponseContract()
 
+    class _FakeAdapterSetup:
+        def resolve_site_adapter(self, site_id: str):
+            assert site_id == "food"
+            return _FakeAdapter()
+
+    module_origins = {
+        "server_fastapi": str(tmp_path / "chatbot" / "server_fastapi.py"),
+    }
     monkeypatch.setitem(
-        validate_conversation_runtime.__globals__,
-        "_load_generated_adapter",
-        lambda **kwargs: _FakeAdapter(),
+        _build_runtime_fixture_manifest.__globals__,
+        "_load_runtime_validation_modules",
+        lambda **kwargs: (
+            object(),
+            object(),
+            _FakeAdapterSetup(),
+            object(),
+            module_origins,
+        ),
     )
     monkeypatch.setitem(
-        validate_conversation_runtime.__globals__,
+        _build_runtime_fixture_manifest.__globals__,
         "_build_generated_auth_headers",
         lambda **kwargs: {"Authorization": "Bearer 1"},
     )
 
-    def _fake_load_runtime_chat_modules(**kwargs):
-        assert os.environ.get("GENERATED_BILYEO_API_URL") == "http://127.0.0.1:8129"
-        return object(), object()
-
-    async def _fake_unauthenticated(**kwargs):
-        result = ConversationScenarioResult(
-            scenario_id="unauthenticated_chat_request",
-            mode="auth",
-            conversation_id="conv-unauth",
-            deterministic_passed=True,
-            llm_passed=True,
-            final_verdict="pass",
-            transcript_path=str(tmp_path / "unauth.json"),
-            trace_path=None,
-        )
-        return result, "{}"
-
-    async def _fake_authenticated(**kwargs):
-        assert os.environ.get("GENERATED_BILYEO_API_URL") == "http://127.0.0.1:8129"
-        scenario = kwargs["scenario"]
-        result = ConversationScenarioResult(
-            scenario_id=scenario["scenario_id"],
-            mode=scenario["mode"],
-            conversation_id="conv-auth",
-            deterministic_passed=True,
-            llm_passed=True,
-            final_verdict="pass",
-            transcript_path=str(tmp_path / f"{scenario['scenario_id']}.json"),
-            trace_path=str(tmp_path / f"{scenario['scenario_id']}.jsonl"),
-        )
-        return result, "{}", "{}", {"conversation_id": "conv-auth"}
-
-    monkeypatch.setitem(
-        validate_conversation_runtime.__globals__,
-        "_load_runtime_chat_modules",
-        _fake_load_runtime_chat_modules,
+    manifest = _build_runtime_fixture_manifest(
+        chatbot_runtime_workspace=tmp_path / "chatbot",
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path / "backend"),
+            command=["python"],
+            readiness_url="http://127.0.0.1:8123/api/chat/auth-token",
+            listen_port=8123,
+        ),
+        plan=_build_food_plan(),
+        prep_result=BackendRuntimePrepResult(
+            framework="django",
+            passed=True,
+            fixture_manifest={"available": True, "seed_source": {}, "auth": {}},
+        ),
+        bootstrap_result={
+            "passed": True,
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "validation-food",
+                "user": {"id": "7"},
+            },
+            "session_cookies": {"session_token": "fixture-session"},
+        },
+        adapter_auth_result={"passed": True, "validated_user": {"id": "7"}},
+        onboarding_credentials=None,
     )
+
+    assert manifest["available"] is False
+    assert manifest["failure_origin"] == "upstream_fixture"
+    assert manifest["failure_code"] == "fixture_upstream_list_orders_failed"
+    assert manifest["module_origins"] == module_origins
+
+
+def test_validate_conversation_runtime_replays_runtime_subprocess_events(
+    monkeypatch, tmp_path: Path
+):
+    observed_events: list[dict[str, object]] = []
+    calls: dict[str, object] = {}
+    fixture_manifest = {
+        "available": True,
+        "seed_source": {},
+        "auth": {"email": "test1@example.com", "password": "password123"},
+    }
+
+    def _fake_runtime_subprocess(**kwargs):
+        calls.update(kwargs)
+        return {
+            "result": ConversationValidationResult(
+                passed=True,
+                failure_summary=None,
+                fixture_manifest={
+                    **fixture_manifest,
+                    "module_origins": {
+                        "server_fastapi": str(tmp_path / "chatbot" / "server_fastapi.py"),
+                    },
+                },
+            ).model_dump(mode="json"),
+            "events": [
+                {"phase": "conversation_scenario_start", "scenario_id": "unauthenticated_chat_request"},
+                {"phase": "conversation_scenario_finish", "scenario_id": "unauthenticated_chat_request"},
+            ],
+        }
+
     monkeypatch.setitem(
         validate_conversation_runtime.__globals__,
-        "_build_conversation_scenarios",
+        "_run_runtime_validation_subprocess",
+        _fake_runtime_subprocess,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner._build_runtime_fixture_manifest",
+        lambda **kwargs: fixture_manifest,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner._load_runtime_chat_modules",
+        lambda **kwargs: (object(), object()),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner._build_conversation_scenarios",
         lambda **kwargs: [
             {"scenario_id": "unauthenticated_chat_request", "mode": "auth", "prompt": "hi"},
-            {"scenario_id": "authenticated_list_orders", "mode": "read_only", "prompt": "orders"},
         ],
     )
-    monkeypatch.setitem(
-        validate_conversation_runtime.__globals__,
-        "_run_unauthenticated_conversation_scenario",
-        _fake_unauthenticated,
-    )
-    monkeypatch.setitem(
-        validate_conversation_runtime.__globals__,
-        "_run_authenticated_conversation_scenario",
-        _fake_authenticated,
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner._run_unauthenticated_conversation_scenario",
+        lambda **kwargs: (
+            ConversationScenarioResult(
+                scenario_id="unauthenticated_chat_request",
+                mode="auth",
+                conversation_id="conv-unauth",
+                deterministic_passed=True,
+                llm_passed=True,
+                final_verdict="pass",
+                transcript_path=str(tmp_path / "unauth.json"),
+                trace_path=None,
+            ),
+            "{}",
+        ),
     )
 
     result = validate_conversation_runtime(
         run_root=tmp_path,
-        chatbot_runtime_workspace=tmp_path,
-        runtime_plan=runtime_plan,
-        snapshot=build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo").snapshot,
-        plan=plan,
-        prep_result=BackendRuntimePrepResult(
-            framework="flask",
-            passed=True,
-            fixture_manifest=prep_fixture_manifest,
+        chatbot_runtime_workspace=tmp_path / "chatbot",
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path / "backend"),
+            command=["python"],
+            readiness_url="http://127.0.0.1:8123/api/chat/auth-token",
+            listen_port=8123,
         ),
-        bootstrap_result={
-            "passed": True,
-            "bootstrap_payload": {"user": {"id": "1"}, "access_token": "1"},
-            "session_cookies": {},
-        },
-        adapter_auth_result={"passed": True, "validated_user": {"id": "1"}},
+        snapshot=build_analysis_bundle(site="food", source_root=ROOT / "food").snapshot,
+        plan=_build_food_plan(),
+        prep_result=BackendRuntimePrepResult(
+            framework="django",
+            passed=True,
+            fixture_manifest=fixture_manifest,
+        ),
+        bootstrap_result={"passed": True},
+        adapter_auth_result={"passed": True},
+        event_callback=lambda payload: observed_events.append(payload),
     )
 
+    assert calls["action"] == "conversation_runtime"
     assert result.passed is True
+    assert [event["phase"] for event in observed_events] == [
+        "conversation_scenario_start",
+        "conversation_scenario_finish",
+    ]
 
 
 def test_observed_tool_names_fall_back_to_metadata_last_tool():
@@ -1834,6 +2319,137 @@ def test_validation_runner_fails_when_chatbot_runtime_boot_fails(monkeypatch, tm
     assert bundle.failure_signature == "chatbot_runtime_boot_chatbot_runtime_boot_failed_no_module_named_ecommerce_backend"
 
 
+def test_validation_runner_propagates_blocking_failure_metadata_to_bundle(monkeypatch, tmp_path: Path):
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
+        readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
+    )
+    runtime_state = BackendRuntimeState(
+        framework="django",
+        passed=True,
+        pid=1234,
+        command=runtime_plan.command,
+        readiness_url=runtime_plan.readiness_url,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.prepare_backend_runtime",
+        lambda **kwargs: BackendRuntimePrepResult(framework="django", passed=True),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.build_backend_runtime_plan",
+        lambda **kwargs: runtime_plan,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
+        lambda plan, **kwargs: runtime_state,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
+        lambda state: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": False,
+            "failure_summary": "widget bundle fetch failed: runtime module origin drift",
+            "failure_origin": "platform_validation",
+            "failure_code": "runtime_module_origin_error",
+            "module_origins": {
+                "server_fastapi": str(tmp_path / "chatbot" / "server_fastapi.py"),
+            },
+            "target_url": "http://localhost:8100/widget.js",
+            "related_files": ["frontend/src/App.js"],
+        },
+    )
+    runtime_context = _build_food_runtime_artifacts(tmp_path)
+
+    bundle = run_validation(
+        run_root=runtime_context["generated_root"],
+        host_runtime_workspace=runtime_context["apply_result"].host_workspace_path,
+        chatbot_runtime_workspace=runtime_context["apply_result"].chatbot_workspace_path,
+        snapshot=runtime_context["snapshot"],
+        plan=runtime_context["plan"],
+        replay_result=runtime_context["replay_result"],
+        artifact_refs=runtime_context["artifact_refs"],
+    )
+
+    assert bundle.passed is False
+    assert bundle.failure_origin == "platform_validation"
+    assert bundle.failure_code == "runtime_module_origin_error"
+
+
+def test_validation_runner_propagates_prep_host_contract_failure_to_skipped_checks(
+    monkeypatch,
+    tmp_path: Path,
+):
+    analysis_bundle = build_analysis_bundle(site="food", source_root=ROOT / "food")
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.prepare_backend_runtime",
+        lambda **kwargs: BackendRuntimePrepResult(
+            framework="django",
+            passed=False,
+            failure_summary="reset failed: oracle unavailable",
+            failure_origin="host_contract",
+            failure_code="backend_runtime_prep_external_dependency_unavailable",
+            fixture_manifest={
+                "available": False,
+                "reason": "reset failed: oracle unavailable",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner._evaluate_replay_workspaces",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": None,
+            "related_files": [],
+        },
+    )
+
+    bundle = run_validation(
+        run_root=tmp_path / "generated" / "food" / "food-run-v2",
+        host_runtime_workspace=tmp_path / "runtime" / "host",
+        chatbot_runtime_workspace=tmp_path / "runtime" / "chatbot",
+        snapshot=analysis_bundle.snapshot,
+        plan=_build_food_plan(),
+        replay_result=ReplayResult(
+            replay_workspace_path=str(tmp_path / "replay"),
+            host_replay_workspace_path=str(tmp_path / "replay" / "host"),
+            chatbot_replay_workspace_path=str(tmp_path / "replay" / "chatbot"),
+            host_patch_path=str(tmp_path / "replay" / "host.patch"),
+            chatbot_patch_path=str(tmp_path / "replay" / "chatbot.patch"),
+            passed=True,
+        ),
+        artifact_refs={},
+    )
+
+    check_map = {check.name: check for check in bundle.checks}
+    assert bundle.failure_origin == "host_contract"
+    assert bundle.failure_code == "backend_runtime_prep_external_dependency_unavailable"
+    assert check_map["backend_runtime_prep"].details["failure_origin"] == "host_contract"
+    assert check_map["backend_runtime_boot"].details["failure_origin"] == "host_contract"
+    assert check_map["chatbot_runtime_boot"].details["failure_origin"] == "host_contract"
+    assert check_map["widget_bundle_fetch"].details["failure_origin"] == "host_contract"
+    assert check_map["host_auth_bootstrap"].details["failure_origin"] == "host_contract"
+    assert check_map["chatbot_adapter_auth"].details["failure_origin"] == "host_contract"
+    assert check_map["widget_order_e2e"].details["failure_origin"] == "host_contract"
+    assert check_map["conversation_validation"].details["failure_origin"] == "host_contract"
+    assert (
+        check_map["conversation_validation"].details["fixture_manifest"]["failure_code"]
+        == "backend_runtime_prep_external_dependency_unavailable"
+    )
+
+
 def test_validation_runner_fails_when_widget_bundle_fetch_uses_host_origin(monkeypatch, tmp_path: Path):
     runtime_plan = BackendRuntimePlan(
         framework="django",
@@ -1949,6 +2565,31 @@ def test_widget_order_e2e_report_marks_missing_exchange_option_step_as_failure()
 
     assert result.passed is False
     assert result.failure_summary == "show_option_list missing"
+
+
+def test_coerce_widget_order_e2e_result_keeps_runtime_provenance_outside_flow_reports():
+    result = _coerce_widget_order_e2e_result(
+        {
+            "passed": True,
+            "failure_summary": "widget order e2e passed",
+            "covered_flows": ["list_orders"],
+            "flow_reports": {
+                "list_orders": {"passed": True, "steps": ["show_order_list"]},
+                "module_origins": {"server_fastapi": "/tmp/runtime/server_fastapi.py"},
+            },
+            "resolved_chatbot_runtime_workspace": "/tmp/runtime/chatbot",
+            "runtime_harness_path": "/tmp/runtime/chatbot/src/onboarding_v2/validation/runtime_harness.py",
+            "runtime_harness_origin": "workspace",
+        }
+    )
+
+    assert "module_origins" not in result.flow_reports
+    assert result.flow_reports["list_orders"]["passed"] is True
+    assert result.module_origins == {
+        "server_fastapi": "/tmp/runtime/server_fastapi.py"
+    }
+    assert result.resolved_chatbot_runtime_workspace == "/tmp/runtime/chatbot"
+    assert result.runtime_harness_origin == "workspace"
 
 
 def test_validation_runner_uses_explicit_credentials_without_manifest(monkeypatch, tmp_path: Path):

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>처음 보는 사람용 온보딩 구성도</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="theme.css">
+    <style>
+        .diagram-card {
+            margin-top: 14px;
+            padding: 12px 14px 14px;
+        }
+
+        .diagram-card img {
+            display: block;
+            width: 100%;
+            height: auto;
+            border-radius: 24px;
+        }
+
+        .bottom-notes {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            margin-top: 14px;
+        }
+
+        .bottom-notes .card {
+            min-height: 118px;
+        }
+    </style>
+</head>
+<body>
+<main class="slide">
+    <div class="topbar">
+        <p class="eyebrow">5-Minute Explain Mode</p>
+        <span class="page-badge">14</span>
+    </div>
+    <section class="hero compact">
+        <h1>처음 보는 사람에게는<br>이런 박스-화살표형 구성이 더 빠릅니다</h1>
+        <div class="accent-line"></div>
+        <p class="lead">온보딩 V2를 “여러 코드베이스와 서버를 엮어 최종 patch와 retrieval runtime을 만드는 엔진”으로 먼저 보여주고, 그다음 stage 흐름으로 넘어가면 이해가 빠릅니다.</p>
+    </section>
+    <section class="card diagram-card">
+        <img alt="온보딩 V2 구성도" src="../assets/onboarding_v2_architecture_clean.svg">
+    </section>
+    <section class="bottom-notes">
+        <article class="card">
+            <p class="kicker">Why This View Works</p>
+            <h3>구성부터 보여주고 stage는 다음 장에서</h3>
+            <p>처음 보는 사람은 `analysis`보다 “어떤 서버와 저장소가 연결되는가”를 먼저 봐야 전체 시스템을 빠르게 이해합니다.</p>
+        </article>
+        <article class="card soft">
+            <p class="kicker">Must Mention</p>
+            <h3>`/api/onboarding/start`, `/widget.js`, `/api/chat`</h3>
+            <p>이 세 인터페이스와 `host patch + chatbot patch` 산출물을 짚어주면 시스템의 시작점, 운영점, 결과물이 한 번에 정리됩니다.</p>
+        </article>
+    </section>
+</main>
+</body>
+</html>

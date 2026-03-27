@@ -68,9 +68,97 @@ def _build_compile_import_graph_decision(failure_bundle: FailureBundle) -> Repai
     )
 
 
-def _is_host_auth_bootstrap_failure(failure_bundle: FailureBundle) -> bool:
+def _iter_validation_contexts(
+    validation_payload: dict[str, Any],
+) -> list[tuple[str | None, dict[str, Any]]]:
+    if not isinstance(validation_payload, dict):
+        return []
+    contexts: list[tuple[str | None, dict[str, Any]]] = [(None, validation_payload)]
+    for raw_check in list(validation_payload.get("checks") or []):
+        if not isinstance(raw_check, dict):
+            continue
+        details = raw_check.get("details")
+        if not isinstance(details, dict):
+            continue
+        check_name = str(raw_check.get("name") or "").strip() or None
+        contexts.append((check_name, details))
+    return contexts
+
+
+def _is_platform_validation_failure(
+    failure_bundle: FailureBundle,
+    validation_payload: dict[str, Any],
+) -> bool:
     if failure_bundle.failed_stage != "validation":
         return False
+    return any(
+        str(context.get("failure_origin") or "").strip() == "platform_validation"
+        for _, context in _iter_validation_contexts(validation_payload)
+    )
+
+
+def _build_platform_validation_decision(failure_bundle: FailureBundle) -> RepairDecision:
+    return RepairDecision(
+        failure_signature=failure_bundle.failure_signature,
+        diagnosis=(
+            "validation platform defect detected from structured failure metadata; "
+            "stop repair and preserve generated artifacts for validator fixes"
+        ),
+        rewind_to="validation",
+        preserve_artifacts=["analysis", "planning", "compile", "apply", "export"],
+        required_rechecks=[],
+        additional_discovery=[],
+        artifact_overrides={},
+        stop=True,
+        stop_reason="platform_validation_bug",
+    )
+
+
+def _is_host_external_dependency_failure(
+    failure_bundle: FailureBundle,
+    validation_payload: dict[str, Any],
+) -> bool:
+    if failure_bundle.failed_stage != "validation":
+        return False
+    return any(
+        str(context.get("failure_origin") or "").strip() == "host_contract"
+        and str(context.get("failure_code") or "").strip()
+        == "backend_runtime_prep_external_dependency_unavailable"
+        for _, context in _iter_validation_contexts(validation_payload)
+    )
+
+
+def _build_host_external_dependency_decision(
+    failure_bundle: FailureBundle,
+) -> RepairDecision:
+    return RepairDecision(
+        failure_signature=failure_bundle.failure_signature,
+        diagnosis=(
+            "external host dependency unavailable during backend fixture prep; "
+            "stop repair and preserve generated artifacts until the host contract is satisfied"
+        ),
+        rewind_to="validation",
+        preserve_artifacts=["analysis", "planning", "compile", "apply", "export", "indexing"],
+        required_rechecks=["backend_runtime_prep"],
+        additional_discovery=[],
+        artifact_overrides={},
+        stop=True,
+        stop_reason="host_external_dependency_unavailable",
+    )
+
+
+def _is_host_auth_bootstrap_failure(
+    failure_bundle: FailureBundle,
+    validation_payload: dict[str, Any],
+) -> bool:
+    if failure_bundle.failed_stage != "validation":
+        return False
+    for check_name, context in _iter_validation_contexts(validation_payload):
+        if (
+            check_name == "host_auth_bootstrap"
+            and str(context.get("failure_origin") or "").strip() == "host_contract"
+        ):
+            return True
     haystack = (
         f"{failure_bundle.failure_signature}\n"
         f"{failure_bundle.failure_summary}"
@@ -144,7 +232,35 @@ def diagnose_failure(
             ),
         )
         return decision
-    if _is_host_auth_bootstrap_failure(failure_bundle):
+    if _is_platform_validation_failure(failure_bundle, validation_payload):
+        decision = _build_platform_validation_decision(failure_bundle)
+        debug_store.write_record(
+            stage="repair",
+            record=DebugRecord(
+                stage="repair",
+                prompt=payload,
+                response={"heuristic": "platform_validation_failure"},
+                normalized_response=decision.model_dump(mode="json"),
+                parse_result={"status": "heuristic"},
+                artifact_refs=failure_bundle.related_artifacts,
+            ),
+        )
+        return decision
+    if _is_host_external_dependency_failure(failure_bundle, validation_payload):
+        decision = _build_host_external_dependency_decision(failure_bundle)
+        debug_store.write_record(
+            stage="repair",
+            record=DebugRecord(
+                stage="repair",
+                prompt=payload,
+                response={"heuristic": "host_external_dependency_failure"},
+                normalized_response=decision.model_dump(mode="json"),
+                parse_result={"status": "heuristic"},
+                artifact_refs=failure_bundle.related_artifacts,
+            ),
+        )
+        return decision
+    if _is_host_auth_bootstrap_failure(failure_bundle, validation_payload):
         decision = _build_host_auth_bootstrap_decision(failure_bundle)
         debug_store.write_record(
             stage="repair",

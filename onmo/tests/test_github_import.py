@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -186,6 +187,175 @@ def test_dashboard_returns_synthetic_import_stage(monkeypatch, tmp_path: Path):
     assert payload["story"]["current_stage"]["stage"] == "import"
     assert payload["story"]["focus_stage"]["stage"] == "import"
     assert payload["repair_story"]["active"] is False
+
+
+def test_launch_onboarding_process_starts_demo_autostart_watcher(monkeypatch, tmp_path: Path):
+    source_root = tmp_path / "food"
+    source_root.mkdir(parents=True, exist_ok=True)
+
+    class _FakeProcess:
+        pid = 4321
+        returncode = None
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(app_module.subprocess, "Popen", lambda *args, **kwargs: _FakeProcess())
+    watched: list[tuple[str, str, bool]] = []
+    monkeypatch.setattr(
+        app_module,
+        "_start_demo_autostart_watcher",
+        lambda record: watched.append((record.site, record.run_id, record.demo_enabled)),
+    )
+
+    payload = app_module._launch_onboarding_process(
+        site="food",
+        source_root_arg=str(source_root),
+        generated_root_arg=str(tmp_path / "generated-v2"),
+        runtime_root_arg=str(tmp_path / "runtime-v2"),
+        run_id="food-demo-20260328",
+        preview_url="http://127.0.0.1:3000/food/",
+        demo_enabled=True,
+    )
+
+    assert payload["status"] == "running"
+    assert watched == [("food", "food-demo-20260328", True)]
+    record = app_module._RUN_REGISTRY["food:food-demo-20260328"]
+    record.log_handle.close()
+
+
+def test_maybe_autostart_demo_services_starts_services_for_exported_demo_run(
+    monkeypatch,
+    tmp_path: Path,
+):
+    generated_root = tmp_path / "generated-v2"
+    run_root = generated_root / "food" / "food-demo-exported"
+    (run_root / "views").mkdir(parents=True, exist_ok=True)
+    (run_root / "views" / "run-summary.json").write_text(
+        json.dumps({"status": "exported"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    source_root = tmp_path / "food"
+    source_root.mkdir(parents=True, exist_ok=True)
+
+    class _FinishedProcess:
+        pid = 9876
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+    load_calls: list[Path] = []
+    ensure_calls: list[dict[str, object]] = []
+
+    def _fake_load_run_dashboard(*, run_root: Path, process=None):
+        del process
+        load_calls.append(Path(run_root))
+        return {
+            "run": {"source_root": str(source_root)},
+            "process": {"preview_url": None},
+            "details": {"validation": {"passed": True}},
+        }
+
+    def _fake_ensure_demo_services(**kwargs):
+        ensure_calls.append(kwargs)
+        return [{"service_name": "backend", "status": "ready"}]
+
+    monkeypatch.setattr(app_module, "load_run_dashboard", _fake_load_run_dashboard)
+    monkeypatch.setattr(app_module, "_ensure_demo_services", _fake_ensure_demo_services)
+
+    log_path = tmp_path / "onmo.log"
+    record = app_module.RunProcessRecord(
+        site="food",
+        run_id="food-demo-exported",
+        generated_root=str(generated_root),
+        runtime_root=str(tmp_path / "runtime-v2"),
+        source_root=str(source_root),
+        preview_url="http://127.0.0.1:3000/food/",
+        demo_enabled=True,
+        command=["python", "-m", "chatbot.scripts.run_onboarding_generation"],
+        process=_FinishedProcess(),
+        log_path=log_path,
+        log_handle=log_path.open("w", encoding="utf-8"),
+        started_at="2026-03-28T00:30:00+00:00",
+    )
+
+    services = app_module._maybe_autostart_demo_services(record)
+
+    assert load_calls == [run_root]
+    assert services == [{"service_name": "backend", "status": "ready"}]
+    assert ensure_calls and ensure_calls[0]["site"] == "food"
+    assert ensure_calls[0]["run_id"] == "food-demo-exported"
+    assert ensure_calls[0]["preview_url"] == "http://127.0.0.1:3000/food/"
+
+
+def test_maybe_autostart_demo_services_skips_disabled_or_non_exported_runs(
+    monkeypatch,
+    tmp_path: Path,
+):
+    generated_root = tmp_path / "generated-v2"
+    run_root = generated_root / "food" / "food-demo-review"
+    (run_root / "views").mkdir(parents=True, exist_ok=True)
+    (run_root / "views" / "run-summary.json").write_text(
+        json.dumps({"status": "failed_human_review"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    class _FinishedProcess:
+        pid = 6543
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+    ensure_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        app_module,
+        "_ensure_demo_services",
+        lambda **kwargs: ensure_calls.append(kwargs) or [],
+    )
+
+    first_log = tmp_path / "review.log"
+    review_record = app_module.RunProcessRecord(
+        site="food",
+        run_id="food-demo-review",
+        generated_root=str(generated_root),
+        runtime_root=str(tmp_path / "runtime-v2"),
+        source_root=str(tmp_path / "food"),
+        preview_url="http://127.0.0.1:3000/food/",
+        demo_enabled=True,
+        command=["python"],
+        process=_FinishedProcess(),
+        log_path=first_log,
+        log_handle=first_log.open("w", encoding="utf-8"),
+        started_at="2026-03-28T00:31:00+00:00",
+    )
+    exported_run_root = generated_root / "food" / "food-demo-disabled"
+    (exported_run_root / "views").mkdir(parents=True, exist_ok=True)
+    (exported_run_root / "views" / "run-summary.json").write_text(
+        json.dumps({"status": "exported"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    second_log = tmp_path / "disabled.log"
+    disabled_record = app_module.RunProcessRecord(
+        site="food",
+        run_id="food-demo-disabled",
+        generated_root=str(generated_root),
+        runtime_root=str(tmp_path / "runtime-v2"),
+        source_root=str(tmp_path / "food"),
+        preview_url="http://127.0.0.1:3000/food/",
+        demo_enabled=False,
+        command=["python"],
+        process=_FinishedProcess(),
+        log_path=second_log,
+        log_handle=second_log.open("w", encoding="utf-8"),
+        started_at="2026-03-28T00:32:00+00:00",
+    )
+
+    assert app_module._maybe_autostart_demo_services(review_record) == []
+    assert app_module._maybe_autostart_demo_services(disabled_record) == []
+    assert ensure_calls == []
+    disabled_record.log_handle.close()
 
 
 def test_probe_github_repository_accepts_tree_subdir_url(monkeypatch):

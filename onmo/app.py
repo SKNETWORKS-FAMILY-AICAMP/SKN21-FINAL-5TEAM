@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import shutil
@@ -465,6 +466,81 @@ def _lookup_record(site: str, run_id: str) -> RunProcessRecord | None:
         return _sync_record(record)
 
 
+def _run_root_from_record(record: RunProcessRecord) -> Path:
+    return Path(record.generated_root) / record.site / record.run_id
+
+
+def _read_run_summary(run_root: Path) -> dict[str, Any]:
+    summary_path = run_root / "views" / "run-summary.json"
+    if not summary_path.exists():
+        return {}
+    try:
+        return json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _maybe_autostart_demo_services(record: RunProcessRecord) -> list[dict[str, Any]]:
+    if not record.demo_enabled:
+        return []
+    synced = _lookup_record(record.site, record.run_id) or _sync_record(record)
+    if synced.returncode is None or synced.returncode != 0:
+        return []
+    run_root = _run_root_from_record(synced)
+    summary = _read_run_summary(run_root)
+    if str(summary.get("status") or "").strip() != "exported":
+        return []
+    payload = load_run_dashboard(
+        run_root=run_root,
+        process=_snapshot_from_record(synced),
+    )
+    payload = _decorate_dashboard_with_github_import(payload, synced.run_id)
+    preview_url = (
+        (synced.preview_url or "").strip()
+        or str((payload.get("process") or {}).get("preview_url") or "").strip()
+        or DEFAULT_PREVIEW_URL
+    )
+    return _ensure_demo_services(
+        site=synced.site,
+        run_id=synced.run_id,
+        run_payload=payload,
+        preview_url=preview_url,
+    )
+
+
+def _wait_and_autostart_demo_services(
+    *,
+    site: str,
+    run_id: str,
+    process: subprocess.Popen[str],
+) -> None:
+    try:
+        process.wait()
+    except Exception:
+        return
+    with _REGISTRY_LOCK:
+        record = _RUN_REGISTRY.get(f"{site}:{run_id}")
+    if record is None or record.process is not process:
+        return
+    _maybe_autostart_demo_services(record)
+
+
+def _start_demo_autostart_watcher(record: RunProcessRecord) -> None:
+    if not record.demo_enabled:
+        return
+    worker = Thread(
+        target=_wait_and_autostart_demo_services,
+        kwargs={
+            "site": record.site,
+            "run_id": record.run_id,
+            "process": record.process,
+        },
+        daemon=True,
+        name=f"onmo-demo-autostart-{record.run_id}",
+    )
+    worker.start()
+
+
 def _remove_run_tree(*, root: Path, site: str, run_id: str) -> None:
     site_root = (root / site).resolve()
     run_root = (site_root / run_id).resolve()
@@ -636,6 +712,7 @@ def _launch_onboarding_process(
     )
     with _REGISTRY_LOCK:
         _RUN_REGISTRY[f"{site}:{run_id}"] = record
+    _start_demo_autostart_watcher(record)
 
     return {
         "run_id": run_id,

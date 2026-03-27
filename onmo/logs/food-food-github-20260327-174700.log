@@ -1,0 +1,175 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/scripts/run_onboarding_generation.py", line 218, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/scripts/run_onboarding_generation.py", line 125, in main
+    result = _get_v2_runner()(
+        site=args.site,
+    ...<12 lines>...
+        max_repair_attempts=2,
+    )
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/src/onboarding_v2/engine.py", line 199, in run_onboarding_generation_v2
+    _run_from_stage(
+    ~~~~~~~~~~~~~~~^
+        start_stage=next_stage,
+        ^^^^^^^^^^^^^^^^^^^^^^^
+    ...<21 lines>...
+        planning_llm_builder=planning_llm_builder,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/src/onboarding_v2/engine.py", line 620, in _run_from_stage
+    run_analysis_stage(
+    ~~~~~~~~~~~~~~~~~~^
+        site=site,
+        ^^^^^^^^^^
+    ...<11 lines>...
+        llm_builder=analysis_llm_builder,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/src/onboarding_v2/engine.py", line 766, in run_analysis_stage
+    analysis_bundle = build_analysis_bundle(
+        site=site,
+    ...<8 lines>...
+        event_callback=analysis_event_callback,
+    )
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/src/onboarding_v2/analysis/analyzer.py", line 200, in build_analysis_bundle
+    read_queue_response = invoke_structured_stage(
+        stage="analysis",
+    ...<19 lines>...
+        heartbeat_interval_s=heartbeat_interval_s,
+    )
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/src/onboarding_v2/llm_runtime.py", line 74, in invoke_structured_stage
+    response, tool_trace, token_usage = _invoke_with_optional_tools(
+                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        llm=llm,
+        ^^^^^^^^
+    ...<9 lines>...
+        started_at=started_at,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/src/onboarding_v2/llm_runtime.py", line 216, in _invoke_with_optional_tools
+    response = _invoke_llm_once(
+        llm=bound_llm,
+    ...<9 lines>...
+        tool_runtime=tool_runtime,
+    )
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/src/onboarding_v2/llm_runtime.py", line 295, in _invoke_llm_once
+    return llm.invoke(messages)
+           ~~~~~~~~~~^^^^^^^^^^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/langchain_core/runnables/base.py", line 5691, in invoke
+    return self.bound.invoke(
+           ~~~~~~~~~~~~~~~~~^
+        input,
+        ^^^^^^
+        self._merge_configs(config),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        **{**self.kwargs, **kwargs},
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/langchain_core/language_models/chat_models.py", line 402, in invoke
+    self.generate_prompt(
+    ~~~~~~~~~~~~~~~~~~~~^
+        [self._convert_input(input)],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ).generations[0][0],
+    ^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/langchain_core/language_models/chat_models.py", line 1121, in generate_prompt
+    return self.generate(prompt_messages, stop=stop, callbacks=callbacks, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/langchain_core/language_models/chat_models.py", line 931, in generate
+    self._generate_with_cache(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        m,
+        ^^
+    ...<2 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/langchain_core/language_models/chat_models.py", line 1233, in _generate_with_cache
+    result = self._generate(
+        messages, stop=stop, run_manager=run_manager, **kwargs
+    )
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/langchain_openai/chat_models/base.py", line 1381, in _generate
+    raw_response = self.client.with_raw_response.create(**payload)
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/openai/_legacy_response.py", line 364, in wrapped
+    return cast(LegacyAPIResponse[R], func(*args, **kwargs))
+                                      ~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/openai/_utils/_utils.py", line 286, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/openai/resources/chat/completions/completions.py", line 1192, in create
+    return self._post(
+           ~~~~~~~~~~^
+        "/chat/completions",
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<47 lines>...
+        stream_cls=Stream[ChatCompletionChunk],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/openai/_base_client.py", line 1294, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/openai/_base_client.py", line 1002, in request
+    response = self._client.send(
+        request,
+        stream=stream or self._should_stream_response_body(request=request),
+        **kwargs,
+    )
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+        request,
+    ...<2 lines>...
+        history=[],
+    )
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+        request,
+        follow_redirects=follow_redirects,
+        history=history,
+    )
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+        pool_request.request
+    )
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/httpcore/_sync/connection.py", line 103, in handle_request
+    return self._connection.handle_request(request)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/httpcore/_sync/http11.py", line 136, in handle_request
+    raise exc
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/httpcore/_sync/http11.py", line 106, in handle_request
+    ) = self._receive_response_headers(**kwargs)
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/httpcore/_sync/http11.py", line 177, in _receive_response_headers
+    event = self._receive_event(timeout=timeout)
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/httpcore/_sync/http11.py", line 217, in _receive_event
+    data = self._network_stream.read(
+        self.READ_NUM_BYTES, timeout=timeout
+    )
+  File "/Users/junseok/Projects/SKN21-FINAL-5TEAM/.venv/lib/python3.13/site-packages/httpcore/_backends/sync.py", line 128, in read
+    return self._sock.recv(max_bytes)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/ssl.py", line 1285, in recv
+    return self.read(buflen)
+           ~~~~~~~~~^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/ssl.py", line 1140, in read
+    return self._sslobj.read(len)
+           ~~~~~~~~~~~~~~~~~^^^^^
+KeyboardInterrupt

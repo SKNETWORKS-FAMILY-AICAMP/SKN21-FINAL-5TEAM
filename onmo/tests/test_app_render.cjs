@@ -6,21 +6,38 @@ const vm = require("node:vm");
 
 function createElement(id = "") {
   const listeners = {};
-  const panels = {};
+  const nodes = {};
   let html = "";
+  let version = 0;
+
+  function ensureNode(key, factory) {
+    const existing = nodes[key];
+    if (existing && existing.version === version) {
+      return existing.node;
+    }
+    const node = factory();
+    nodes[key] = { version, node };
+    return node;
+  }
 
   function ensurePanel(key, openPattern) {
-    if (!panels[key]) {
-      panels[key] = {
-        open: false,
-        listeners: {},
-        addEventListener(type, handler) {
-          this.listeners[type] = handler;
-        },
-      };
-    }
-    panels[key].open = openPattern.test(html);
-    return panels[key];
+    return ensureNode(key, () => ({
+      open: openPattern.test(html),
+      listeners: {},
+      addEventListener(type, handler) {
+        this.listeners[type] = handler;
+      },
+    }));
+  }
+
+  function ensureScrollContainer(key) {
+    return ensureNode(key, () => ({
+      scrollTop: 0,
+      listeners: {},
+      addEventListener(type, handler) {
+        this.listeners[type] = handler;
+      },
+    }));
   }
 
   return {
@@ -32,6 +49,7 @@ function createElement(id = "") {
     },
     set innerHTML(value) {
       html = String(value || "");
+      version += 1;
     },
     className: "",
     disabled: false,
@@ -47,6 +65,9 @@ function createElement(id = "") {
       }
       if (selector === "[data-story-snapshot-panel]" && html.includes("data-story-snapshot-panel")) {
         return ensurePanel("story", /data-story-snapshot-panel[^>]*\sopen(?=[\s>])/);
+      }
+      if (selector === "[data-raw-log-body]" && html.includes("data-raw-log-body")) {
+        return ensureScrollContainer("raw-log-body");
       }
       return null;
     },
@@ -695,6 +716,81 @@ test("rerun lane removes dashed framing so nodes align with the original columns
   assert.doesNotMatch(styles, /\.story-rewind-connector::before[\s\S]*border-top:\s*1px dashed/s);
 });
 
+test("developer log renders the full event count and uses an internal scroll area", async () => {
+  const api = loadApp();
+  const payload = dashboardPayload();
+  payload.recent_events = Array.from({ length: 20 }, (_, index) => ({
+    timestamp: `2026-03-27T20:${String(index).padStart(2, "0")}:00+09:00`,
+    stage: "analysis",
+    summary: `analysis event ${index}`,
+    display_summary: `분석 이벤트 ${index}`,
+  }));
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "analysis";
+
+  api.renderSelectedStage(payload);
+
+  const rowCount = (api.refs.stageDetail.innerHTML.match(/raw-log-row/g) || []).length;
+  const stylesPath = path.resolve(__dirname, "../static/styles.css");
+  const styles = fs.readFileSync(stylesPath, "utf8");
+
+  assert.equal(rowCount, 20);
+  assert.match(api.refs.stageDetail.innerHTML, /최근 이벤트 20개/);
+  assert.match(styles, /\.raw-log-body\s*\{[^}]*max-height:/s);
+  assert.match(styles, /\.raw-log-body\s*\{[^}]*overflow-y:\s*auto/s);
+});
+
+test("developer log keeps scroll position across rerenders while polling", async () => {
+  const api = loadApp({
+    sessionStorage: {
+      "onmo.active-run": JSON.stringify({
+        site: "bilyeo",
+        run_id: "bilyeo-v2-repair-009",
+        generated_root: "generated-v2",
+      }),
+      "onmo.run-ui:bilyeo:bilyeo-v2-repair-009": JSON.stringify({
+        selectedStage: "analysis",
+        selectionPinned: true,
+        rawLogOpen: true,
+      }),
+    },
+  });
+  const payload = dashboardPayload();
+  payload.recent_events = Array.from({ length: 30 }, (_, index) => ({
+    timestamp: `2026-03-27T20:${String(index).padStart(2, "0")}:00+09:00`,
+    stage: "analysis",
+    summary: `analysis event ${index}`,
+    display_summary: `분석 이벤트 ${index}`,
+  }));
+
+  api.state.currentRun = {
+    site: "bilyeo",
+    run_id: "bilyeo-v2-repair-009",
+    generated_root: "generated-v2",
+  };
+  api.state.lastPayload = payload;
+  api.restoreRunFromQuery();
+  api.renderSelectedStage(payload);
+
+  const firstBody = api.refs.stageDetail.querySelector("[data-raw-log-body]");
+  firstBody.scrollTop = 240;
+  firstBody.listeners.scroll();
+
+  api.renderSelectedStage(payload);
+
+  const rerenderedBody = api.refs.stageDetail.querySelector("[data-raw-log-body]");
+  assert.equal(rerenderedBody.scrollTop, 240);
+  assert.equal(
+    api.sessionStorage.getItem("onmo.run-ui:bilyeo:bilyeo-v2-repair-009"),
+    JSON.stringify({
+      selectedStage: "analysis",
+      selectionPinned: true,
+      rawLogOpen: true,
+      rawLogScrollTop: 240,
+    })
+  );
+});
+
 test("repair layout keeps information ownership split between panels", async () => {
   const api = loadApp();
   const payload = repairPayload();
@@ -722,4 +818,171 @@ test("running stage visuals use live animations for emphasis", async () => {
   assert.match(styles, /\.stage-link\.stage-link-live\s*\{[^}]*animation:\s*liveCardPulse/s);
   assert.match(styles, /\.status-badge\.warn\s*\{[^}]*animation:\s*liveChipPulse/s);
   assert.match(styles, /\.story-step\.current \.story-step-node\s*\{[^}]*animation:\s*liveDotPulse/s);
+});
+
+test("running analysis renders a single live progress surface instead of summary cards", async () => {
+  const api = loadApp();
+  const payload = dashboardPayload();
+  payload.story.headline = "현재 Analysis 단계가 진행 중입니다.";
+  payload.story.summary = "계약 추출 진행 중";
+  payload.details.analysis = {
+    cards: [{ label: "Backend", value: "django" }],
+    live: {
+      active_phase: "contract-extraction-r0",
+      phase_label: "계약 추출",
+      status: "running",
+      attempt: 1,
+      elapsed_ms: 5425,
+      provider: "openai",
+      model: "gpt-5.2",
+      issue: "",
+      metrics: [
+        { label: "후보", value: "32" },
+        { label: "도구 호출", value: "9" },
+      ],
+      events: [
+        {
+          timestamp: "2026-03-27T20:10:00+09:00",
+          phase: "candidate_harvest",
+          display_summary: "후보 수집 완료",
+          details: { status: "completed", candidate_count: 32 },
+        },
+        {
+          timestamp: "2026-03-27T20:10:05+09:00",
+          phase: "contract-extraction-r0",
+          display_summary: "계약 추출 진행 중",
+          details: { status: "running", tool_call_count: 9 },
+        },
+      ],
+    },
+  };
+  payload.recent_events = [
+    {
+      timestamp: "2026-03-27T20:10:05+09:00",
+      stage: "analysis",
+      phase: "contract-extraction-r0",
+      event_type: "llm_phase_progress",
+      display_summary: "계약 추출 진행 중",
+      details: { status: "running", tool_call_count: 9 },
+    },
+  ];
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "analysis";
+
+  api.renderSelectedStage(payload);
+
+  assert.equal(api.refs.detailDescription.textContent, "계약 추출 진행 중");
+  assert.match(api.refs.stageDetail.innerHTML, /stage-live-shell/);
+  assert.match(api.refs.stageDetail.innerHTML, /계약 추출 · 진행/);
+  assert.match(api.refs.stageDetail.innerHTML, /후보/);
+  assert.match(api.refs.stageDetail.innerHTML, /도구 호출/);
+  assert.match(api.refs.stageDetail.innerHTML, /후보 수집 완료/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /fact-card/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /분석 단계 진행 중/);
+});
+
+test("running planning updates live phase text on rerender without waiting for completion", async () => {
+  const api = loadApp();
+  const payload = dashboardPayload();
+  payload.story.current_stage = { stage: "planning", label: "Planning", status: "running", status_label: "Running" };
+  payload.story.focus_stage = { stage: "planning", label: "Planning", status: "running", status_label: "Running" };
+  payload.story.steps = [
+    { stage: "analysis", label: "Analysis", status: "completed", status_label: "Completed", emphasis: "default" },
+    { stage: "planning", label: "Planning", status: "running", status_label: "Running", emphasis: "current" },
+  ];
+  payload.stages = [
+    { stage: "analysis", label: "Analysis", status: "completed", status_label: "Completed" },
+    { stage: "planning", label: "Planning", status: "running", status_label: "Running" },
+  ];
+  payload.details = {
+    planning: {
+      live: {
+        active_phase: "strategy-synthesis",
+        phase_label: "전략 후보 정리",
+        status: "running",
+        attempt: 1,
+        elapsed_ms: 8884,
+        provider: "openai",
+        model: "gpt-5.2",
+        issue: "",
+        metrics: [{ label: "응답", value: "초안" }],
+        events: [
+          {
+            timestamp: "2026-03-27T20:15:00+09:00",
+            phase: "strategy-synthesis",
+            display_summary: "전략 후보 정리 진행 중",
+            details: { status: "running" },
+          },
+        ],
+      },
+    },
+  };
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "planning";
+  api.renderSelectedStage(payload);
+
+  assert.equal(api.refs.detailDescription.textContent, "전략 후보 정리 진행 중");
+  assert.match(api.refs.stageDetail.innerHTML, /전략 후보 정리 · 진행/);
+
+  payload.details.planning.live = {
+    ...payload.details.planning.live,
+    active_phase: "binding-selection",
+    phase_label: "대상 연결",
+    elapsed_ms: 5424,
+    metrics: [{ label: "응답", value: "선택 완료" }],
+    events: [
+      {
+        timestamp: "2026-03-27T20:15:06+09:00",
+        phase: "binding-selection",
+        display_summary: "대상 연결 진행 중",
+        details: { status: "running" },
+      },
+    ],
+  };
+  payload.recent_events = [
+    {
+      timestamp: "2026-03-27T20:15:06+09:00",
+      stage: "planning",
+      phase: "binding-selection",
+      event_type: "llm_phase_progress",
+      display_summary: "대상 연결 진행 중",
+      details: { status: "running" },
+    },
+  ];
+  api.renderSelectedStage(payload);
+
+  assert.equal(api.refs.detailDescription.textContent, "대상 연결 진행 중");
+  assert.match(api.refs.stageDetail.innerHTML, /대상 연결 · 진행/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /전략 후보 정리 · 진행/);
+});
+
+test("selection auto-follows the live running stage until the user pins another stage", async () => {
+  const api = loadApp();
+  const payload = dashboardPayload();
+  payload.stages = [
+    { stage: "analysis", label: "Analysis", status: "running", status_label: "Running" },
+    { stage: "planning", label: "Planning", status: "pending", status_label: "Waiting" },
+  ];
+  api.state.lastPayload = payload;
+  api.state.displayStages = [
+    { stage: "analysis", label: "Analysis", status: "pending", status_label: "Waiting", summary: "" },
+    { stage: "planning", label: "Planning", status: "pending", status_label: "Waiting", summary: "" },
+  ];
+  api.state.targetStages = payload.stages;
+  api.state.selectionPinned = false;
+  api.state.selectedStage = "planning";
+
+  api.stepStagePlayback();
+  assert.equal(api.state.selectedStage, "analysis");
+
+  api.state.selectionPinned = true;
+  api.state.selectedStage = "planning";
+  api.state.displayStages = [
+    { stage: "analysis", label: "Analysis", status: "pending", status_label: "Waiting", summary: "" },
+    { stage: "planning", label: "Planning", status: "pending", status_label: "Waiting", summary: "" },
+  ];
+  api.state.targetStages = payload.stages;
+
+  api.stepStagePlayback();
+  assert.equal(api.state.selectedStage, "planning");
 });

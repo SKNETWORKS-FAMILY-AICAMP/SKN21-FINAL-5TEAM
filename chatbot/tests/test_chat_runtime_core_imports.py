@@ -28,8 +28,11 @@ def _block_optional_ecommerce_imports(monkeypatch) -> None:
 def test_chat_core_router_imports_without_optional_ecommerce_backend(monkeypatch) -> None:
     _purge_modules(
         "chatbot.src.api.v1.endpoints.chat",
+        "src.api.v1.endpoints.chat",
         "chatbot.src.api.v1.endpoints.chat_extensions_ecommerce",
+        "src.api.v1.endpoints.chat_extensions_ecommerce",
         "chatbot.src.tools.service_tools",
+        "src.tools.service_tools",
         "ecommerce",
     )
     _block_optional_ecommerce_imports(monkeypatch)
@@ -42,9 +45,18 @@ def test_chat_core_router_imports_without_optional_ecommerce_backend(monkeypatch
 def test_server_fastapi_imports_core_routes_without_optional_ecommerce_backend(monkeypatch) -> None:
     _purge_modules(
         "chatbot.server_fastapi",
+        "chatbot.src.runtime_auth",
+        "src.runtime_auth",
+        "chatbot.src.adapters.setup",
+        "src.adapters.setup",
+        "chatbot.src.adapters.base",
+        "src.adapters.base",
         "chatbot.src.api.v1.endpoints.chat",
+        "src.api.v1.endpoints.chat",
         "chatbot.src.api.v1.endpoints.chat_extensions_ecommerce",
+        "src.api.v1.endpoints.chat_extensions_ecommerce",
         "chatbot.src.tools.service_tools",
+        "src.tools.service_tools",
         "ecommerce",
     )
     _block_optional_ecommerce_imports(monkeypatch)
@@ -57,3 +69,37 @@ def test_server_fastapi_imports_core_routes_without_optional_ecommerce_backend(m
     assert "/api/v1/chat/stream" in route_paths
     assert "/api/v1/chat/auth-token" not in route_paths
     assert extension_state["ecommerce_chat"]["enabled"] is False
+
+
+def test_server_fastapi_bootstrap_unifies_src_runtime_singletons(monkeypatch) -> None:
+    _purge_modules(
+        "chatbot.server_fastapi",
+        "chatbot.src.runtime_auth",
+        "src.runtime_auth",
+        "chatbot.src.adapters.setup",
+        "src.adapters.setup",
+        "chatbot.src.adapters.base",
+        "src.adapters.base",
+        "chatbot.src.api.v1.endpoints.chat",
+        "src.api.v1.endpoints.chat",
+        "chatbot.src.api.v1.endpoints.chat_extensions_ecommerce",
+        "src.api.v1.endpoints.chat_extensions_ecommerce",
+        "chatbot.src.tools.service_tools",
+        "src.tools.service_tools",
+        "ecommerce",
+    )
+    _block_optional_ecommerce_imports(monkeypatch)
+    monkeypatch.setenv("CHATBOT_SKIP_MODEL_PRELOAD", "1")
+
+    importlib.import_module("chatbot.server_fastapi")
+    chatbot_runtime_auth = importlib.import_module("chatbot.src.runtime_auth")
+    src_runtime_auth = importlib.import_module("src.runtime_auth")
+    chatbot_adapter_setup = importlib.import_module("chatbot.src.adapters.setup")
+    src_adapter_setup = importlib.import_module("src.adapters.setup")
+    chatbot_adapter_base = importlib.import_module("chatbot.src.adapters.base")
+    src_adapter_base = importlib.import_module("src.adapters.base")
+
+    assert chatbot_runtime_auth is src_runtime_auth
+    assert chatbot_adapter_setup is src_adapter_setup
+    assert chatbot_adapter_base is src_adapter_base
+    assert chatbot_adapter_base.AdapterRegistry is src_adapter_base.AdapterRegistry
