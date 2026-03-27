@@ -37,7 +37,52 @@ function createElement(id = "") {
   };
 }
 
-function loadApp() {
+function createStorage(initial = {}) {
+  const store = new Map(Object.entries(initial));
+  return {
+    getItem(key) {
+      return store.has(key) ? store.get(key) : null;
+    },
+    setItem(key, value) {
+      store.set(key, String(value));
+    },
+    removeItem(key) {
+      store.delete(key);
+    },
+    clear() {
+      store.clear();
+    },
+  };
+}
+
+function dashboardPayload() {
+  return {
+    run: { site: "bilyeo", run_id: "bilyeo-v2-repair-009", status: "running", status_label: "Running" },
+    process: { running: true, log_path: "/tmp/onmo.log" },
+    demo: { status: "disabled", status_label: "GitHub Mode" },
+    story: {
+      headline: "현재 Analysis 단계가 진행 중입니다.",
+      summary: "기존 이벤트를 불러오는 중입니다.",
+      current_stage: { stage: "analysis", label: "Analysis", status: "running", status_label: "Running" },
+      focus_stage: { stage: "analysis", label: "Analysis", status: "running", status_label: "Running" },
+      steps: [
+        { stage: "import", label: "Import", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "analysis", label: "Analysis", status: "running", status_label: "Running", emphasis: "current" },
+      ],
+      retrieval: { active: false, headline: "", summary: "", items: [] },
+    },
+    repair_story: { active: false, headline: "", summary: "", steps: [], failed_stage: "", rewind_to: "" },
+    repair: { active: false },
+    details: { analysis: { cards: [], highlights: [] } },
+    recent_events: [{ timestamp: "2026-03-27T10:10:00+09:00", stage: "analysis", summary: "analysis rerun started" }],
+    stages: [
+      { stage: "import", label: "Import", status: "completed", status_label: "Completed" },
+      { stage: "analysis", label: "Analysis", status: "running", status_label: "Running" },
+    ],
+  };
+}
+
+function loadApp(options = {}) {
   const elements = new Map();
   const ids = [
     "start-form",
@@ -55,23 +100,38 @@ function loadApp() {
     "repo-url",
   ];
   ids.forEach((id) => elements.set(id, createElement(id)));
+  const sessionStorage = createStorage(options.sessionStorage || {});
+  const location = {
+    search: options.search || "",
+    pathname: "/",
+    hash: "",
+    assign() {},
+  };
+  const historyCalls = [];
 
   const context = {
     console,
     URLSearchParams,
-    setTimeout,
-    clearTimeout,
-    setInterval,
-    clearInterval,
-    fetch: async () => ({
+    setTimeout() {
+      return 1;
+    },
+    clearTimeout() {},
+    setInterval() {
+      return 1;
+    },
+    clearInterval() {},
+    fetch: async (url) => ({
       ok: true,
       async json() {
-        return {
-          project_options: [{ site: "bilyeo", source_root: "bilyeo", generated_root: "generated-v2", runtime_root: "runtime-v2" }],
-          generated_root_default: "generated-v2",
-          runtime_root_default: "runtime-v2",
-          preview_url_default: "http://127.0.0.1:3000",
-        };
+        if (String(url).includes("/api/config")) {
+          return {
+            project_options: [{ site: "bilyeo", source_root: "bilyeo", generated_root: "generated-v2", runtime_root: "runtime-v2" }],
+            generated_root_default: "generated-v2",
+            runtime_root_default: "runtime-v2",
+            preview_url_default: "http://127.0.0.1:3000",
+          };
+        }
+        return options.dashboardPayload || dashboardPayload();
       },
     }),
     document: {
@@ -79,28 +139,39 @@ function loadApp() {
         return elements.get(id) || createElement(id);
       },
     },
+    sessionStorage,
     window: {
-      setTimeout,
-      clearTimeout,
-      setInterval,
-      clearInterval,
-      location: {
-        search: "",
-        pathname: "/",
-        hash: "",
-        assign() {},
+      setTimeout() {
+        return 1;
       },
+      clearTimeout() {},
+      setInterval() {
+        return 1;
+      },
+      clearInterval() {},
+      location,
+      sessionStorage,
       history: {
-        replaceState() {},
+        replaceState(_state, _title, url = "") {
+          historyCalls.push(url);
+          if (!url) {
+            location.search = "";
+            return;
+          }
+          const parsed = new URL(url, "http://localhost");
+          location.pathname = parsed.pathname;
+          location.search = parsed.search;
+          location.hash = parsed.hash;
+        },
       },
     },
   };
   context.globalThis = context;
 
   const scriptPath = path.resolve(__dirname, "../static/app.js");
-  const source = `${fs.readFileSync(scriptPath, "utf8")}\n;globalThis.__test_api__ = { renderSelectedStage, renderStageMenu, pickDefaultStage, stepStagePlayback, refs, state };`;
+  const source = `${fs.readFileSync(scriptPath, "utf8")}\n;globalThis.__test_api__ = { renderSelectedStage, renderStageMenu, pickDefaultStage, stepStagePlayback, restoreRunFromQuery, beginRunTracking, refs, state };`;
   vm.runInNewContext(source, context, { filename: scriptPath });
-  return context.__test_api__;
+  return { ...context.__test_api__, sessionStorage, window: context.window, historyCalls };
 }
 
 function repairPayload() {
@@ -214,4 +285,61 @@ test("repair mode keeps rewind target selected during playback and rail labels t
   assert.match(api.refs.stageTimeline.innerHTML, /failed here/);
   assert.match(api.refs.stageTimeline.innerHTML, /re-enter here/);
   assert.match(api.refs.stageTimeline.innerHTML, /stage-link-muted/);
+});
+
+test("restoreRunFromQuery falls back to persisted active run and restores panel state", async () => {
+  const api = loadApp({
+    sessionStorage: {
+      "onmo.active-run": JSON.stringify({
+        site: "bilyeo",
+        run_id: "bilyeo-v2-repair-009",
+        generated_root: "generated-v2",
+      }),
+      "onmo.run-ui:bilyeo:bilyeo-v2-repair-009": JSON.stringify({
+        selectedStage: "planning",
+        selectionPinned: true,
+        rawLogOpen: true,
+      }),
+    },
+  });
+
+  const restored = api.restoreRunFromQuery();
+
+  assert.equal(restored, true);
+  assert.equal(
+    JSON.stringify(api.state.currentRun),
+    JSON.stringify({
+      site: "bilyeo",
+      run_id: "bilyeo-v2-repair-009",
+      generated_root: "generated-v2",
+    })
+  );
+  assert.equal(api.state.selectedStage, "planning");
+  assert.equal(api.state.selectionPinned, true);
+  assert.equal(api.state.rawLogOpen, true);
+});
+
+test("beginRunTracking persists the active run in the URL and session storage", async () => {
+  const api = loadApp();
+
+  api.beginRunTracking(
+    {
+      site: "food",
+      run_id: "food-run-001",
+      generated_root: "generated-v2",
+    },
+    "import"
+  );
+
+  assert.equal(
+    api.sessionStorage.getItem("onmo.active-run"),
+    JSON.stringify({
+      site: "food",
+      run_id: "food-run-001",
+      generated_root: "generated-v2",
+    })
+  );
+  assert.match(api.window.location.search, /site=food/);
+  assert.match(api.window.location.search, /run_id=food-run-001/);
+  assert.match(api.window.location.search, /generated_root=generated-v2/);
 });

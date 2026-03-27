@@ -43,6 +43,8 @@ const state = {
   rawLogOpen: false,
 };
 
+const ACTIVE_RUN_STORAGE_KEY = "onmo.active-run";
+
 const LIMITS = {
   cards: 4,
   highlights: 2,
@@ -85,6 +87,95 @@ const refs = {
   siteSelect: document.getElementById("site"),
   repoUrlInput: document.getElementById("repo-url"),
 };
+
+function storage() {
+  try {
+    return window.sessionStorage || null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function readStoredJson(key) {
+  const activeStorage = storage();
+  if (!activeStorage || !key) {
+    return null;
+  }
+  try {
+    const raw = activeStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function writeStoredJson(key, value) {
+  const activeStorage = storage();
+  if (!activeStorage || !key) {
+    return;
+  }
+  try {
+    activeStorage.setItem(key, JSON.stringify(value));
+  } catch (_error) {
+    // Ignore storage write failures and continue with in-memory state.
+  }
+}
+
+function runUiStateKey(run = state.currentRun) {
+  const site = String(run?.site || "").trim();
+  const runId = String(run?.run_id || "").trim();
+  if (!site || !runId) {
+    return "";
+  }
+  return `onmo.run-ui:${site}:${runId}`;
+}
+
+function syncRunLocation(run = state.currentRun) {
+  if (!run || !window.history?.replaceState) {
+    return;
+  }
+  const params = new URLSearchParams();
+  params.set("site", run.site);
+  params.set("run_id", run.run_id);
+  params.set("generated_root", run.generated_root || state.config?.generated_root_default || "generated-v2");
+  const search = params.toString();
+  const nextUrl = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash || ""}`;
+  window.history.replaceState({}, "", nextUrl);
+}
+
+function persistRunContext(run = state.currentRun) {
+  if (!run) {
+    return;
+  }
+  writeStoredJson(ACTIVE_RUN_STORAGE_KEY, {
+    site: run.site,
+    run_id: run.run_id,
+    generated_root: run.generated_root || state.config?.generated_root_default || "generated-v2",
+  });
+  syncRunLocation(run);
+}
+
+function persistRunUiState() {
+  const key = runUiStateKey();
+  if (!key) {
+    return;
+  }
+  writeStoredJson(key, {
+    selectedStage: state.selectedStage,
+    selectionPinned: Boolean(state.selectionPinned),
+    rawLogOpen: Boolean(state.rawLogOpen),
+  });
+}
+
+function restoreRunUiState(run = state.currentRun) {
+  const key = runUiStateKey(run);
+  const stored = readStoredJson(key) || {};
+  if (typeof stored.selectedStage === "string" && stored.selectedStage.trim()) {
+    state.selectedStage = stored.selectedStage;
+  }
+  state.selectionPinned = Boolean(stored.selectionPinned);
+  state.rawLogOpen = Boolean(stored.rawLogOpen);
+}
 
 async function request(path, options = {}) {
   const response = await fetch(path, {
@@ -484,6 +575,7 @@ function bindStoryInteractions() {
   }
   rawPanel.addEventListener("toggle", () => {
     state.rawLogOpen = rawPanel.open;
+    persistRunUiState();
   });
 }
 
@@ -646,6 +738,7 @@ function renderStageMenu(stages = []) {
     button.addEventListener("click", () => {
       state.selectedStage = button.dataset.stage || "analysis";
       state.selectionPinned = true;
+      persistRunUiState();
       if (state.lastPayload) {
         renderSelectedStage(state.lastPayload);
         renderStageMenu(state.lastPayload.stages || []);
@@ -1021,6 +1114,8 @@ function beginRunTracking(payload, preferredStage = "import") {
     window.clearTimeout(state.playbackTimer);
     state.playbackTimer = null;
   }
+  persistRunContext();
+  persistRunUiState();
   startPolling();
 }
 
@@ -1041,21 +1136,25 @@ function resolveHeroStatus(payload) {
 
 function restoreRunFromQuery() {
   const params = new URLSearchParams(window.location.search);
-  const site = params.get("site");
-  const runId = params.get("run_id");
+  const persistedRun = readStoredJson(ACTIVE_RUN_STORAGE_KEY) || {};
+  const site = params.get("site") || persistedRun.site || "";
+  const runId = params.get("run_id") || persistedRun.run_id || "";
   if (!site || !runId) {
     return false;
   }
   state.currentRun = {
     site,
     run_id: runId,
-    generated_root: params.get("generated_root") || state.config?.generated_root_default || "generated-v2",
+    generated_root:
+      params.get("generated_root")
+      || persistedRun.generated_root
+      || state.config?.generated_root_default
+      || "generated-v2",
   };
   state.selectedStage = "import";
-  state.selectionPinned = false;
-  state.rawLogOpen = false;
-  const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
-  window.history.replaceState({}, "", cleanUrl);
+  restoreRunUiState(state.currentRun);
+  persistRunContext();
+  persistRunUiState();
   startPolling();
   return true;
 }
@@ -1075,6 +1174,7 @@ async function refreshDashboard() {
   if (!state.selectionPinned) {
     state.selectedStage = pickDefaultStage(state.displayStages.length ? state.displayStages : payload.stages || [], payload);
   }
+  persistRunUiState();
 
   refs.heroStatusText.textContent = resolveHeroStatus(payload);
   renderRunMeta(payload.run, payload.demo || {}, payload.repair_story || {}, payload.repair || {});
