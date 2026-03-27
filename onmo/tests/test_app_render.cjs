@@ -358,17 +358,18 @@ test("repair mode renders a dedicated hero and uses focus stage details", async 
   api.renderSelectedStage(payload);
 
   assert.equal(api.refs.detailTitle.textContent, "분석");
-  assert.match(api.refs.stageDetail.innerHTML, /repair-summary-block/);
-  assert.match(api.refs.stageDetail.innerHTML, /복구 요약/);
+  assert.match(api.refs.stageDetail.innerHTML, /repair-summary-grid/);
   assert.match(api.refs.stageDetail.innerHTML, /문제 발생/);
   assert.match(api.refs.stageDetail.innerHTML, /오류 상세/);
   assert.match(api.refs.stageDetail.innerHTML, /진단 판단/);
   assert.match(api.refs.stageDetail.innerHTML, /되돌아감/);
+  assert.match(api.refs.stageDetail.innerHTML, /현재 상태/);
   assert.match(api.refs.stageDetail.innerHTML, /Analysis focus card/);
   assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Validation card/);
   assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Why It Failed/);
   assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Re-enter Here/);
   assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Now Running/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /진행 흐름/);
 });
 
 test("repair mode keeps rewind target selected during playback and rail labels the anchors", async () => {
@@ -553,6 +554,9 @@ test("repair snapshot renders a rerun lane and rewind connector", async () => {
   assert.match(api.refs.runStoryShell.innerHTML, /분석부터 다시 실행/);
   assert.match(api.refs.runStoryShell.innerHTML, /분석 단계로 되돌아감/);
   assert.match(api.refs.runStoryShell.innerHTML, /검증/);
+  assert.doesNotMatch(api.refs.runStoryShell.innerHTML, /오류 상세/);
+  assert.doesNotMatch(api.refs.runStoryShell.innerHTML, /진단 판단/);
+  assert.doesNotMatch(api.refs.runStoryShell.innerHTML, /현재 상태/);
 });
 
 test("left rail marks the live current stage separately from the selected stage", async () => {
@@ -583,11 +587,29 @@ test("cleanup pass removes redundant site and repair status surfaces", async () 
   api.state.lastPayload = payload;
   api.renderSelectedStage(payload);
 
-  assert.match(api.refs.stageDetail.innerHTML, /복구 요약/);
   assert.match(indexHtml, /id="run-story-shell"/);
   assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Repair Focus Detail/);
   assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Narrative Summary/);
   assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Current Work/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Run Story Snapshot/);
+});
+
+test("repair layout keeps information ownership split between panels", async () => {
+  const api = loadApp();
+  const payload = repairPayload();
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "analysis";
+
+  api.renderSelectedStage(payload);
+
+  assert.match(api.refs.runStoryShell.innerHTML, /처음 실행/);
+  assert.match(api.refs.runStoryShell.innerHTML, /분석 단계로 되돌아감/);
+  assert.doesNotMatch(api.refs.runStoryShell.innerHTML, /복구 요약/);
+  assert.doesNotMatch(api.refs.runStoryShell.innerHTML, /오류 상세/);
+  assert.match(api.refs.stageDetail.innerHTML, /오류 상세/);
+  assert.match(api.refs.stageDetail.innerHTML, /진단 판단/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /처음 실행/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, /분석 단계로 되돌아감/);
 });
 
 test("running stage visuals use live animations for emphasis", async () => {

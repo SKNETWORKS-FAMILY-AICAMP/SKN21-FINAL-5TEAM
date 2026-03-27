@@ -390,16 +390,75 @@ function statusLabelForStep(status, fallback = "") {
   return "대기";
 }
 
+function shortRepairStatusLabel(repair = {}) {
+  const status = String(repair.status || "").trim();
+  if (status === "failed") {
+    return "중단됨";
+  }
+  if (status === "running") {
+    return "복구 중";
+  }
+  return localizeUiText(repair.status_label || "대기");
+}
+
+function repairStepTimestamp(steps = [], kind = "") {
+  const match = Array.isArray(steps)
+    ? steps.find((step) => String(step.kind || "").trim() === String(kind || "").trim())
+    : null;
+  return match?.timestamp || "";
+}
+
+function fallbackRepairSummaryCards(repairStory = {}, repair = {}) {
+  const steps = Array.isArray(repairStory.steps) ? repairStory.steps : [];
+  const failedLabel = localizeUiText(repairStory.failed_stage_label || repair.failed_stage_label || repairStory.failed_stage || "오류 지점");
+  const rewindLabel = localizeUiText(repairStory.rewind_to_label || repair.effective_rewind_label || repairStory.rewind_to || "-");
+  const problemDetail = localizeUiText(repairStory.problem || repair.problem_explanation || repair.failure_summary || "문제가 발생했습니다.");
+  const errorHeadline = localizeUiText(repair.failure_signature || repairStory.failure_signature || repair.failure_summary || repairStory.failure_summary || "-");
+  const diagnosisText = localizeUiText(repairStory.diagnosis || repair.diagnosis_summary || "원인을 분석 중입니다.");
+  const rewindDetail = localizeUiText(repairStory.current_action || repair.current_action || `${rewindLabel} 단계로 되돌아갑니다.`);
+  return [
+    {
+      key: "failure",
+      title: "문제 발생",
+      headline: failedLabel || "-",
+      detail: `${failedLabel || "오류 지점"} 실패 감지`,
+      timestamp: repairStepTimestamp(steps, "failure"),
+    },
+    {
+      key: "error",
+      title: "오류 상세",
+      headline: errorHeadline,
+      detail: problemDetail,
+      timestamp: repairStepTimestamp(steps, "failure"),
+    },
+    {
+      key: "diagnosis",
+      title: "진단 판단",
+      headline: diagnosisText,
+      detail: diagnosisText,
+      timestamp: repairStepTimestamp(steps, "diagnosis"),
+    },
+    {
+      key: "rewind",
+      title: "되돌아감",
+      headline: rewindLabel ? `${rewindLabel} 단계` : "-",
+      detail: rewindLabel ? `${rewindLabel} 단계로 되돌리기로 결정했습니다.` : rewindDetail,
+      timestamp: repairStepTimestamp(steps, "rewind"),
+    },
+  ];
+}
+
 function renderStoryLane(title, subtitle, steps, laneClass = "") {
   if (!Array.isArray(steps) || !steps.length) {
     return "";
   }
   return `
     <div class="story-lane ${laneClass}">
+      ${title || subtitle ? `
       <div class="story-lane-head">
-        <span>${escapeHtml(title)}</span>
+        ${title ? `<span>${escapeHtml(title)}</span>` : ""}
         ${subtitle ? `<small>${escapeHtml(subtitle)}</small>` : ""}
-      </div>
+      </div>` : ""}
       <div class="story-strip ${laneClass}">
         ${steps
           .map(
@@ -502,35 +561,30 @@ function renderRepairStoryStrip(story = {}, repairStory = {}) {
   if (!steps.length) {
     return "";
   }
+  const storyUi = story.ui || {};
   const rewindIndex = steps.findIndex((step) => String(step.stage || "") === String(repairStory.rewind_to || ""));
   const rewindLabel = rewindIndex >= 0
     ? stageLabel(steps[rewindIndex].stage, steps[rewindIndex].label || repairStory.rewind_to_label || repairStory.rewind_to || "되돌아감")
     : stageLabel(repairStory.rewind_to, repairStory.rewind_to_label || repairStory.rewind_to || "되돌아감");
-  const problem = localizeUiText(repairStory.problem || story.headline || "처음 실행에서 문제가 발생했습니다.");
   const currentAction = localizeUiText(repairStory.current_action || repairStory.summary || `${rewindLabel} 단계 재실행 진행 중입니다.`);
   const primarySteps = buildPrimaryAttemptSteps(steps, repairStory);
   const rerunSteps = buildRerunSteps(story, repairStory);
 
   if (!rerunSteps.length) {
-    return renderStoryLane("전체 흐름", localizeUiText(story.headline || ""), steps, "story-strip-primary");
+    return renderStoryLane("", "", storyUi.steps || steps, "story-strip-primary");
   }
 
   return `
     <section class="run-story-block story-rewind-section">
-      <div class="story-section-head">
-        <span class="section-kicker">진행 흐름</span>
-        <small>${escapeHtml(localizeUiText(story.headline || ""))}</small>
-      </div>
       <div class="story-rewind-graph">
-        ${renderStoryLane("처음 실행", problem, primarySteps, "story-strip-primary")}
+        ${renderStoryLane(storyUi.primary_lane_label || "처음 실행", "", storyUi.steps ? buildPrimaryAttemptSteps(storyUi.steps, repairStory) : primarySteps, "story-strip-primary")}
         <div class="story-rewind-connector">
           <span class="story-rewind-arrow">↺</span>
           <div class="story-rewind-copy">
-            <strong>${escapeHtml(rewindLabel)} 단계로 되돌아감</strong>
-            <small>${escapeHtml(currentAction)}</small>
+            <strong>${escapeHtml(localizeUiText(storyUi.connector_label || `${rewindLabel} 단계로 되돌아감`))}</strong>
           </div>
         </div>
-        ${renderStoryLane(`${rewindLabel}부터 다시 실행`, currentAction, rerunSteps, "story-strip-rerun")}
+        ${renderStoryLane(storyUi.rerun_lane_label || `${rewindLabel}부터 다시 실행`, "", storyUi.steps ? buildRerunSteps({ ...story, steps: storyUi.steps }, repairStory) : rerunSteps, "story-strip-rerun")}
       </div>
     </section>
   `;
@@ -544,13 +598,10 @@ function renderStoryStrip(story = {}, repairStory = {}) {
   if (!steps.length) {
     return "";
   }
+  const storyUi = story.ui || {};
   return `
     <section class="run-story-block">
-      <div class="story-section-head">
-        <span class="section-kicker">진행 흐름</span>
-        <small>${escapeHtml(localizeUiText(story.headline || ""))}</small>
-      </div>
-      ${renderStoryLane("전체 흐름", localizeUiText(story.summary || story.headline || ""), steps, "story-strip-primary")}
+      ${renderStoryLane("", "", storyUi.steps || steps, "story-strip-primary")}
     </section>
   `;
 }
@@ -608,61 +659,39 @@ function renderRepairStory(repairStory = {}, repair = {}, options = {}) {
   if (!repairStory.active) {
     return "";
   }
+  const repairUi = repairStory.ui || {};
   const focusTitle = options.focusTitle || "Focus";
   const focusHtml = options.focusHtml || '<div class="empty-state">표시할 세부 내용이 없습니다.</div>';
-  const steps = Array.isArray(repairStory.steps) ? repairStory.steps : [];
-  const failedLabel = repairStory.failed_stage_label || repair.failed_stage_label || repairStory.failed_stage || "-";
-  const rewindLabel = repairStory.rewind_to_label || repair.effective_rewind_label || repairStory.rewind_to || "-";
-  const diagnosis = repairStory.diagnosis || repair.diagnosis_summary || "원인을 분석 중입니다.";
-  const currentAction = repairStory.current_action || repair.current_action || repair.stop_reason_text || "재실행 단계를 준비 중입니다.";
-  const problem = repairStory.problem || repair.problem_explanation || repair.failure_summary || repairStory.summary || "문제 원인을 정리하는 중입니다.";
-  const failureStep = steps.find((step) => step.kind === "failure") || {};
-  const diagnosisStep = steps.find((step) => step.kind === "diagnosis") || {};
-  const rewindStep = steps.find((step) => step.kind === "rewind") || {};
-  const statusTitle = repair.status_label || repairStory.status_label || repairStory.summary || "복구 판단 진행 중";
-  const errorDetail = compactText(repair.failure_signature || repair.failure_summary || problem, 140);
+  const summaryCards = Array.isArray(repairUi.summary_cards) && repairUi.summary_cards.length
+    ? repairUi.summary_cards
+    : fallbackRepairSummaryCards(repairStory, repair);
+  const statusLine = repairUi.status_line || repairStory.current_action || repair.current_action || repair.stop_reason_text || "재실행 단계를 준비 중입니다.";
   return `
     <section class="repair-summary-block">
-      <div class="repair-hero-head">
-        <div class="repair-head-copy repair-hero-copy">
-          <span class="section-kicker">복구 요약</span>
-          <strong>${escapeHtml(localizeUiText(`${failedLabel} 단계에서 문제가 발생했습니다.`))}</strong>
-        </div>
-      </div>
-      <p class="repair-summary-text">${escapeHtml(localizeUiText(currentAction))}</p>
-      <div class="repair-facts">
-        <div class="repair-fact fail">
-          <span>문제 발생</span>
-          <strong>${escapeHtml(localizeUiText(`${failedLabel} 단계`))}</strong>
-          <small>${escapeHtml(localizeUiText(failureStep.label || problem))}${failureStep.timestamp ? ` · ${escapeHtml(formatTimestamp(failureStep.timestamp))}` : ""}</small>
-        </div>
-        <div class="repair-fact fail">
-          <span>오류 상세</span>
-          <strong>${escapeHtml(errorDetail || localizeUiText(problem))}</strong>
-          <small>${escapeHtml(localizeUiText(problem))}</small>
-        </div>
-        <div class="repair-fact rewind">
-          <span>진단 판단</span>
-          <strong>${escapeHtml(compactText(diagnosis, 140))}</strong>
-          <small>${escapeHtml(localizeUiText(diagnosisStep.label || "원인 분석 완료"))}${diagnosisStep.timestamp ? ` · ${escapeHtml(formatTimestamp(diagnosisStep.timestamp))}` : ""}</small>
-        </div>
-        <div class="repair-fact current">
-          <span>되돌아감</span>
-          <strong>${escapeHtml(localizeUiText(`${rewindLabel} 단계`))}</strong>
-          <small>${escapeHtml(localizeUiText(rewindStep.label || currentAction))}${rewindStep.timestamp ? ` · ${escapeHtml(formatTimestamp(rewindStep.timestamp))}` : ""}</small>
-        </div>
+      <div class="repair-summary-grid">
+        ${summaryCards
+          .map(
+            (card) => `
+              <div class="repair-fact ${escapeHtml(card.key === "diagnosis" ? "rewind" : card.key === "rewind" ? "current" : "fail")}">
+                <span>${escapeHtml(localizeUiText(card.title || ""))}</span>
+                <strong>${escapeHtml(localizeUiText(card.headline || "-"))}</strong>
+                <small>${escapeHtml(localizeUiText(card.detail || ""))}${card.timestamp ? ` · ${escapeHtml(formatTimestamp(card.timestamp))}` : ""}</small>
+              </div>
+            `
+          )
+          .join("")}
       </div>
       <div class="repair-status-strip">
         <span>현재 상태</span>
-        <strong>${escapeHtml(localizeUiText(statusTitle))}</strong>
-        <small>${escapeHtml(localizeUiText(currentAction))}</small>
+        <strong>${escapeHtml(localizeUiText(shortRepairStatusLabel(repair)))}</strong>
+        <small>${escapeHtml(localizeUiText(statusLine))}</small>
       </div>
       <div class="repair-focus-shell">
-        <div class="repair-focus-head">
-          <span class="section-kicker">선택한 단계 상세</span>
-          <small>${escapeHtml(localizeUiText(focusTitle))}</small>
-        </div>
         <div class="repair-focus-body">
+          <div class="story-section-head">
+            <span class="section-kicker">선택한 단계 상세</span>
+            <small>${escapeHtml(localizeUiText(focusTitle))}</small>
+          </div>
           ${focusHtml}
         </div>
       </div>
@@ -677,7 +706,7 @@ function renderRawEventLog(payload) {
     <section class="story-section raw-log-shell">
       <details class="raw-log-panel" data-raw-log-panel ${state.rawLogOpen ? "open" : ""}>
         <summary>
-          <span>이벤트 기록</span>
+          <span>개발자 로그</span>
           <small>${events.length ? `최근 이벤트 ${events.length}개` : "최근 이벤트 없음"}</small>
         </summary>
         <div class="raw-log-body">
@@ -695,7 +724,7 @@ function renderRawEventLog(payload) {
                         <div class="raw-log-row">
                           <span>${escapeHtml(formatTimestamp(event.timestamp))}</span>
                           <strong>${escapeHtml(stageLabel(event.stage, localizeUiText(event.stage || "-")))}</strong>
-                          <small>${escapeHtml(localizeUiText(event.summary || event.event_type || "-"))}</small>
+                          <small>${escapeHtml(localizeUiText(event.display_summary || event.summary || event.event_type || "-"))}</small>
                         </div>
                       `
                     )
@@ -757,7 +786,7 @@ function renderImport(details = {}, compact = false) {
 }
 
 function renderIndexing(details = {}, compact = false) {
-  const limits = viewLimits(compact);
+  const limits = { ...viewLimits(compact), list: 2 };
   const summaryHtml = details.summary
     ? `<div class="fact-list"><div class="fact-list-item"><strong>요약</strong><small>${escapeHtml(localizeUiText(details.summary))}</small></div></div>`
     : "";
@@ -1168,6 +1197,7 @@ function renderSelectedStage(payload) {
   const story = payload.story || {};
   const repairStory = payload.repair_story || {};
   const repair = payload.repair || {};
+  const storyUi = story.ui || {};
   const focusStage = story.focus_stage || story.current_stage || {};
   const failedLabel = repairStory.failed_stage_label || repair.failed_stage_label || repairStory.failed_stage || "";
   const rewindLabel = repairStory.rewind_to_label || repair.effective_rewind_label || repairStory.rewind_to || "";
@@ -1175,7 +1205,7 @@ function renderSelectedStage(payload) {
   const copy = STAGE_COPY[detailStageKey] || STAGE_COPY.analysis;
   const panelStatus = repairStory.active
     ? {
-        label: repair.status_label || payload.run.status_label,
+        label: shortRepairStatusLabel(repair),
         status: repair.status || payload.run.status,
       }
     : {
@@ -1187,8 +1217,8 @@ function renderSelectedStage(payload) {
     ? stageLabel(detailStageKey, localizeUiText(focusStage.label || stageView?.label || copy.title))
     : stageLabel(detailStageKey, localizeUiText(focusStage.label || stageView?.label || copy.title));
   refs.detailDescription.textContent = repairStory.active
-    ? localizeUiText(repairStory.current_action || repair.current_action || `${failedLabel} 단계 문제로 ${rewindLabel} 단계부터 다시 확인하고 있습니다.`)
-    : localizeUiText(story.headline || copy.description);
+    ? `${stageLabel(detailStageKey, localizeUiText(focusStage.label || copy.title))} 단계를 다시 기준으로 확인 중입니다.`
+    : localizeUiText(storyUi.headline || story.headline || copy.description);
   refs.detailStatus.textContent = localizeUiText(panelStatus.label || "대기");
   refs.detailStatus.className = `status-badge ${statusClass(panelStatus.status || "pending")}`;
 
@@ -1207,7 +1237,6 @@ function renderSelectedStage(payload) {
         ${renderRepairStory(repairStory, repair, {
           focusTitle: stageLabel(detailStageKey, localizeUiText(focusStage.label || copy.title)),
           focusHtml: html || '<div class="empty-state">이 단계에서 표시할 내용이 아직 없습니다.</div>',
-          retrieval: story.retrieval || {},
         })}
         ${state.lastError ? renderErrorPane(state.lastError) : ""}
         ${renderRawEventLog(payload)}
@@ -1217,7 +1246,6 @@ function renderSelectedStage(payload) {
       <div class="story-panel">
         ${state.lastError ? renderErrorPane(state.lastError) : ""}
         ${stageDetailSection}
-        ${renderRetrievalLane(story.retrieval || {})}
         ${renderRawEventLog(payload)}
       </div>
     `;
@@ -1314,12 +1342,22 @@ function renderRunStoryPanel(payload) {
   }
   if (!payload) {
     refs.runStoryShell.className = "run-story-shell empty-state";
-    refs.runStoryShell.innerHTML = "온보딩을 시작하면 전체 진행 흐름 그래프가 이 영역에 고정 표시됩니다.";
+    refs.runStoryShell.innerHTML = `
+      <div class="story-flow-head">
+        <span class="section-kicker">진행 흐름</span>
+      </div>
+      <div class="empty-state">온보딩을 시작하면 전체 진행 흐름 그래프가 이 영역에 고정 표시됩니다.</div>
+    `;
     return;
   }
   const content = renderStoryStrip(payload.story || {}, payload.repair_story || {});
   refs.runStoryShell.className = "run-story-shell";
-  refs.runStoryShell.innerHTML = content || '<div class="empty-state">표시할 진행 흐름이 아직 없습니다.</div>';
+  refs.runStoryShell.innerHTML = `
+    <div class="story-flow-head">
+      <span class="section-kicker">진행 흐름</span>
+    </div>
+    ${content || '<div class="empty-state">표시할 진행 흐름이 아직 없습니다.</div>'}
+  `;
 }
 
 function restoreRunFromQuery() {

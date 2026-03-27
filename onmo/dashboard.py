@@ -23,9 +23,9 @@ STAGE_LABELS_KO = {
     "import": "가져오기",
     "analysis": "분석",
     "planning": "계획",
-    "compile": "컴파일",
+    "compile": "생성",
     "apply": "적용",
-    "export": "내보내기",
+    "export": "추출",
     "indexing": "인덱싱",
     "validation": "검증",
     "repair": "복구",
@@ -40,6 +40,17 @@ STATUS_LABELS = {
     "failed_human_review": "Needs Review",
     "process_failed": "Process Failed",
     "unknown": "Unknown",
+}
+STATUS_LABELS_KO = {
+    "pending": "대기",
+    "running": "진행 중",
+    "completed": "완료",
+    "failed": "실패",
+    "disabled": "비활성",
+    "exported": "준비 완료",
+    "failed_human_review": "검토 필요",
+    "process_failed": "프로세스 실패",
+    "unknown": "알 수 없음",
 }
 
 
@@ -112,8 +123,8 @@ def decorate_dashboard_payload(payload: dict[str, Any]) -> dict[str, Any]:
     run_payload = dict(updated.get("run") or {})
     repair_payload = dict(updated.get("repair") or {})
     stages = list(updated.get("stages") or [])
-    recent_events = list(updated.get("recent_events") or [])
-    repair_events = list(updated.get("repair_events") or [])
+    recent_events = [_compact_event(event) for event in list(updated.get("recent_events") or [])]
+    repair_events = [_compact_event(event) for event in list(updated.get("repair_events") or [])]
 
     story = _build_story_payload(
         run=run_payload,
@@ -129,6 +140,8 @@ def decorate_dashboard_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
     updated["story"] = story
     updated["repair_story"] = repair_story
+    updated["recent_events"] = recent_events
+    updated["repair_events"] = repair_events
     return updated
 
 
@@ -1019,6 +1032,7 @@ def _compact_event(event: dict[str, Any]) -> dict[str, Any]:
         "phase": str(event.get("phase") or ""),
         "event_type": str(event.get("event_type") or ""),
         "summary": str(event.get("summary") or ""),
+        "display_summary": _event_display_summary_ko(event),
         "severity": str(event.get("severity") or "info"),
     }
 
@@ -1033,6 +1047,7 @@ def _build_story_payload(
     current_stage = _select_story_current_stage(stages)
     current_label = str(current_stage.get("label") or current_stage.get("stage") or "-")
     current_status = str(current_stage.get("status") or "pending")
+    current_stage_key = str(current_stage.get("stage") or "").strip()
     repair_active = bool(repair.get("active"))
     failed_stage = str(repair.get("failed_stage") or "").strip()
     rewind_to = str(repair.get("effective_rewind_to") or repair.get("requested_rewind_to") or "").strip()
@@ -1041,6 +1056,7 @@ def _build_story_payload(
         focus_stage = next((stage for stage in stages if str(stage.get("stage") or "") == rewind_to), current_stage)
 
     story_steps = []
+    story_ui_steps = []
     for stage in stages:
         stage_key = str(stage.get("stage") or "")
         emphasis = "default"
@@ -1056,6 +1072,15 @@ def _build_story_payload(
                 "label": str(stage.get("label") or stage_key),
                 "status": str(stage.get("status") or "pending"),
                 "status_label": str(stage.get("status_label") or STATUS_LABELS.get(str(stage.get("status") or "pending"), "Unknown")),
+                "emphasis": emphasis,
+            }
+        )
+        story_ui_steps.append(
+            {
+                "stage": stage_key,
+                "label": _stage_label_ko(stage_key),
+                "status": str(stage.get("status") or "pending"),
+                "status_label": STATUS_LABELS_KO.get(str(stage.get("status") or "pending"), "알 수 없음"),
                 "emphasis": emphasis,
             }
         )
@@ -1086,10 +1111,24 @@ def _build_story_payload(
             summary = "현재 실행 흐름을 준비 중입니다."
 
     retrieval_story = _build_retrieval_story(run=run, repair=repair)
+    current_label_ko = _stage_label_ko(current_stage_key)
+    ui_headline = _story_ui_headline_ko(
+        current_stage=current_stage_key,
+        current_status=current_status,
+        repair=repair,
+    )
 
     return {
         "headline": headline,
         "summary": summary,
+        "ui": {
+            "headline": ui_headline,
+            "steps": story_ui_steps,
+            "current_stage_label": current_label_ko,
+            "primary_lane_label": "처음 실행" if repair_active else "전체 흐름",
+            "rerun_lane_label": f"{_stage_label_ko(rewind_to)}부터 다시 실행" if repair_active and rewind_to else "",
+            "connector_label": f"{_stage_label_ko(rewind_to)} 단계로 되돌아감" if repair_active and rewind_to else "",
+        },
         "steps": story_steps,
         "current_stage": {
             "stage": str(current_stage.get("stage") or ""),
@@ -1143,11 +1182,14 @@ def _build_repair_story_payload(
     rewind_status = "failed" if stop_reason_text else ("completed" if rewind_to else "running")
     rerun_status = "failed" if stop_reason_text else ("running" if rerun_event or rewind_to else "pending")
     rerun_label = "사용자 확인 대기" if stop_reason_text else f"{rewind_label} 재실행 시작"
+    problem = str(repair.get("problem_explanation") or repair.get("failure_summary") or "").strip()
+    diagnosis = str(repair.get("diagnosis_summary") or "").strip()
+    current_action = str(repair.get("current_action") or stop_reason_text or "").strip()
 
     return {
         "active": True,
         "headline": "Repair Rewind",
-        "summary": str(repair.get("problem_explanation") or repair.get("current_action") or "").strip(),
+        "summary": problem or current_action,
         "status_label": str(repair.get("status_label") or "").strip(),
         "steps": [
             {
@@ -1179,9 +1221,45 @@ def _build_repair_story_payload(
         "failed_stage_label": failed_label,
         "rewind_to": rewind_to,
         "rewind_to_label": rewind_label,
-        "problem": str(repair.get("problem_explanation") or repair.get("failure_summary") or "").strip(),
-        "diagnosis": str(repair.get("diagnosis_summary") or "").strip(),
-        "current_action": str(repair.get("current_action") or stop_reason_text or "").strip(),
+        "problem": problem,
+        "diagnosis": diagnosis,
+        "current_action": current_action,
+        "ui": {
+            "failed_label": failed_label,
+            "rewind_label": rewind_label,
+            "status_line": current_action,
+            "summary_cards": [
+                {
+                    "key": "failure",
+                    "title": "문제 발생",
+                    "headline": f"{failed_label} 단계",
+                    "detail": f"{failed_label} 단계 실패 감지",
+                    "timestamp": str((failure_event or {}).get("timestamp") or ""),
+                },
+                {
+                    "key": "error",
+                    "title": "오류 상세",
+                    "headline": str(repair.get("failure_signature") or repair.get("failure_summary") or problem or "").strip(),
+                    "detail": problem,
+                    "timestamp": str((failure_event or {}).get("timestamp") or ""),
+                },
+                {
+                    "key": "diagnosis",
+                    "title": "진단 판단",
+                    "headline": diagnosis or "원인 분석 중",
+                    "detail": _event_display_summary_ko(decision_event or diagnosis_event) or ("원인 진단 완료" if diagnosis_status == "completed" else "원인 진단 중"),
+                    "timestamp": str((decision_event or diagnosis_event or {}).get("timestamp") or ""),
+                },
+                {
+                    "key": "rewind",
+                    "title": "되돌아감",
+                    "headline": f"{rewind_label} 단계",
+                    "detail": _event_display_summary_ko(rewind_event)
+                    or ("자동 복구 중단" if stop_reason_text else f"{rewind_label} 단계로 되돌리기로 결정했습니다."),
+                    "timestamp": str((rewind_event or stopped_event or decision_event or {}).get("timestamp") or ""),
+                },
+            ],
+        },
     }
 
 
@@ -1215,22 +1293,22 @@ def _build_retrieval_story(*, run: dict[str, Any], repair: dict[str, Any]) -> di
             }
         )
 
-    summary = "Retrieval 준비 대기 중입니다."
+    summary = "인덱싱 준비 대기 중입니다."
     if all(item["status"] in {"ready", "skipped"} for item in items):
-        summary = "Retrieval 준비가 완료되었습니다."
+        summary = "인덱싱 준비가 완료되었습니다."
     elif any(item["status"] == "indexing" for item in items):
-        summary = f"{len(items)}개 corpus 중 {ready_count}개 준비됨. Validation 전에 retrieval 사용 가능 상태를 맞추는 중입니다."
+        summary = f"{len(items)}개 corpus 중 {ready_count}개 준비됨. 검증 전에 retrieval 사용 가능 상태를 맞추는 중입니다."
     elif any(item["status"] == "failed" for item in items):
-        summary = "일부 retrieval 준비가 실패했습니다."
+        summary = "일부 인덱싱 준비가 실패했습니다."
 
     rewind_note = ""
     rewind_to = str(repair.get("effective_rewind_to") or "").strip()
     if rewind_to and rewind_to in {"analysis", "planning", "compile", "apply", "export"}:
-        rewind_note = "되감기로 인해 retrieval 준비도 다시 수행될 수 있습니다."
+        rewind_note = "되감기로 인해 인덱싱 준비도 다시 수행될 수 있습니다."
 
     return {
         "active": True,
-        "headline": "Retrieval Ready",
+        "headline": "인덱싱 준비",
         "summary": summary,
         "items": items,
         "rewind_note": rewind_note,
@@ -1250,6 +1328,22 @@ def _select_story_current_stage(stages: list[dict[str, Any]]) -> dict[str, Any]:
     return stages[0] if stages else {"stage": "", "label": "", "status": "pending", "status_label": "Waiting"}
 
 
+def _story_ui_headline_ko(*, current_stage: str, current_status: str, repair: dict[str, Any]) -> str:
+    if bool(repair.get("active")):
+        rewind_to = str(repair.get("effective_rewind_to") or repair.get("requested_rewind_to") or "").strip()
+        stop_reason_text = str(repair.get("stop_reason_text") or "").strip()
+        if stop_reason_text:
+            return "자동 복구 중단"
+        if rewind_to:
+            return f"{_stage_label_ko(rewind_to)} 단계 다시 실행"
+        return "복구 경로 확인 중"
+    if current_status == "failed":
+        return f"{_stage_label_ko(current_stage)} 단계 실패"
+    if current_status == "completed":
+        return "온보딩 완료"
+    return f"{_stage_label_ko(current_stage)} 단계 진행 중"
+
+
 def _find_event(
     events: list[dict[str, Any]],
     *,
@@ -1263,6 +1357,35 @@ def _find_event(
             continue
         return event
     return None
+
+
+def _event_display_summary_ko(event: dict[str, Any] | None) -> str:
+    payload = event or {}
+    event_type = str(payload.get("event_type") or "").strip()
+    stage = str(payload.get("stage") or "").strip()
+    if event_type == "stage_started":
+        return f"{_stage_label_ko(stage)} 단계 시작"
+    if event_type == "stage_completed":
+        return f"{_stage_label_ko(stage)} 단계 완료"
+    if event_type == "stage_failed":
+        return f"{_stage_label_ko(stage)} 단계 실패"
+    if event_type == "stage_rerun_started":
+        return f"{_stage_label_ko(stage)} 단계 재실행 시작"
+    if event_type == "compile_preflight_started":
+        return "생성 전 점검 시작"
+    if event_type == "compile_preflight_completed":
+        return "생성 전 점검 완료"
+    if event_type == "repair_diagnosis_started":
+        return "원인 진단 시작"
+    if event_type == "repair_decision_emitted":
+        return "복구 판단 완료"
+    if event_type == "rewind_requested":
+        rewind_to = str(payload.get("effective_rewind_to") or payload.get("requested_rewind_to") or "").strip()
+        return f"{_stage_label_ko(rewind_to)} 단계로 되돌아감"
+    if event_type == "repair_stopped":
+        return "자동 복구 중단"
+    summary = str(payload.get("summary") or "").strip()
+    return _localize_stage_names_ko(summary)
 
 
 def _corpus_label(corpus: str) -> str:

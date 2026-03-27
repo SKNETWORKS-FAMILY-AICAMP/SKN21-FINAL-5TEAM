@@ -70,6 +70,9 @@ def test_decorate_dashboard_payload_builds_story_without_repair():
     assert enriched["story"]["steps"][1]["stage"] == "planning"
     assert enriched["story"]["steps"][1]["emphasis"] == "current"
     assert enriched["story"]["headline"] == "현재 Planning 단계가 진행 중입니다."
+    assert enriched["story"]["ui"]["headline"] == "계획 단계 진행 중"
+    assert enriched["story"]["ui"]["steps"][1]["label"] == "계획"
+    assert enriched["recent_events"][0]["display_summary"] == "계획 단계 시작"
     assert enriched["repair_story"]["active"] is False
 
 
@@ -186,6 +189,17 @@ def test_decorate_dashboard_payload_builds_repair_story_with_rewind():
     assert enriched["repair_story"]["problem"] == "컴파일 단계에서 문제가 발생했습니다. 시스템은 분석 단계로 되감아 다시 확인하려고 합니다."
     assert enriched["repair_story"]["diagnosis"] == "컴파일 입력이 불완전해 분석 단계부터 다시 보는 것이 안전합니다."
     assert enriched["repair_story"]["current_action"] == "분석 단계부터 다시 실행하도록 결정했습니다."
+    assert enriched["story"]["ui"]["connector_label"] == "분석 단계로 되돌아감"
+    assert enriched["story"]["ui"]["rerun_lane_label"] == "분석부터 다시 실행"
+    assert [card["key"] for card in enriched["repair_story"]["ui"]["summary_cards"]] == [
+        "failure",
+        "error",
+        "diagnosis",
+        "rewind",
+    ]
+    assert enriched["repair_story"]["ui"]["summary_cards"][0]["title"] == "문제 발생"
+    assert enriched["repair_story"]["ui"]["summary_cards"][2]["title"] == "진단 판단"
+    assert enriched["repair_story"]["ui"]["status_line"] == "분석 단계부터 다시 실행하도록 결정했습니다."
     assert [step["kind"] for step in enriched["repair_story"]["steps"]] == [
         "failure",
         "diagnosis",
@@ -236,7 +250,7 @@ def test_decorate_dashboard_payload_builds_retrieval_story():
     enriched = dashboard.decorate_dashboard_payload(payload)
 
     assert enriched["story"]["retrieval"]["active"] is True
-    assert enriched["story"]["retrieval"]["headline"] == "Retrieval Ready"
+    assert enriched["story"]["retrieval"]["headline"] == "인덱싱 준비"
     assert enriched["story"]["retrieval"]["items"][0]["corpus"] == "faq"
     assert enriched["story"]["retrieval"]["items"][0]["status"] == "ready"
     assert enriched["story"]["retrieval"]["items"][1]["status"] == "indexing"
