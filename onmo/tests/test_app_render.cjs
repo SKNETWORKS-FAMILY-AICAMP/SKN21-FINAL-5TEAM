@@ -684,6 +684,14 @@ test("cleanup pass removes redundant site and repair status surfaces", async () 
   assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Run Story Snapshot/);
 });
 
+test("rerun lane removes dashed framing so nodes align with the original columns", async () => {
+  const stylesPath = path.resolve(__dirname, "../static/styles.css");
+  const styles = fs.readFileSync(stylesPath, "utf8");
+
+  assert.doesNotMatch(styles, /\.story-strip-rerun\s*\{[^}]*border:\s*1px dashed/s);
+  assert.doesNotMatch(styles, /\.story-rewind-connector::before[\s\S]*border-top:\s*1px dashed/s);
+});
+
 test("repair layout keeps information ownership split between panels", async () => {
   const api = loadApp();
   const payload = repairPayload();
