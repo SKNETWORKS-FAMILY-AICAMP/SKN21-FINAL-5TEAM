@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import re
+import argparse
 from pathlib import Path
 
 # 경로 설정 (로컬 환경에 맞게 유지)
@@ -19,8 +20,8 @@ if str(current_dir) not in sys.path:
 
 from paths import DATA_DIR, PROJECT_ROOT, TOOLS_PATH
 
-INPUT_PATH = DATA_DIR / "intermediate_queries_v1_verified.jsonl"
-OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialogs.jsonl"
+INPUT_PATH = DATA_DIR / "intermediate_queries_verified.jsonl"
+DEFAULT_OUTPUT_PATH = DATA_DIR / "my_eval_arg_accuracy_dialogs.jsonl"
 
 # 허용 가능한 정답 베리에이션 (채점 시 활용) - reason은 아래에서 그룹별로 동적 처리
 ACCEPTABLE = {
@@ -283,16 +284,16 @@ def format_simplified_tools(openai_tools: list, relevant_names: list) -> list:
             })
     return res
 
-def main():
+def main(input_path: Path, output_path: Path):
     print("=" * 60)
     print("2단계: 질문 기반 Ground Truth 생성 및 최종 Dataset 완성 (Rule-based 최적화)")
     print("=" * 60)
     
-    if not INPUT_PATH.exists():
-        print(f"[ERROR] {INPUT_PATH} 파일이 없습니다. 1단계를 먼저 실행해주세요.")
+    if not input_path.exists():
+        print(f"[ERROR] {input_path} 파일이 없습니다. 1단계를 먼저 실행해주세요.")
         return
         
-    with open(INPUT_PATH, "r", encoding="utf-8") as f:
+    with open(input_path, "r", encoding="utf-8") as f:
         queries = [json.loads(line) for line in f if line.strip()]
         
     all_openai_tools = load_tools()
@@ -376,16 +377,23 @@ def main():
         }
         results.append(flat_item)
 
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
         for it in results:
             f.write(json.dumps(it, ensure_ascii=False) + "\n")
             
     print("\n" + "=" * 60)
     print(f"✅ 완료! 최적화된 평가 데이터셋(JSONL)이 성공적으로 생성되었습니다.")
-    print(f"   저장 경로: {OUTPUT_PATH}")
+    print(f"   저장 경로: {output_path}")
     print(f"   총 평가 항목 수: {len(results)}개")
     print("=" * 60)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", dest="input_path", type=Path, default=None)
+    parser.add_argument("--output", dest="output_path", type=Path, default=None)
+    args = parser.parse_args()
+
+    input_path = args.input_path or INPUT_PATH
+    output_path = args.output_path or DEFAULT_OUTPUT_PATH
+    main(input_path, output_path)
