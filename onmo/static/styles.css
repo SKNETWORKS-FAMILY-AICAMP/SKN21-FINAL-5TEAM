@@ -1,17 +1,17 @@
 :root {
-  --bg: #f5f3ed;
-  --bg-2: #ece8df;
-  --panel: rgba(255, 255, 255, 0.94);
+  --bg: #f4f4f1;
+  --bg-2: #ecece8;
+  --panel: rgba(255, 255, 255, 0.96);
   --panel-strong: #ffffff;
-  --line: rgba(90, 102, 117, 0.16);
-  --text: #1f2937;
-  --muted: #5f6b7a;
-  --soft: #7d8896;
-  --teal: #0f9f8c;
-  --amber: #d08728;
-  --rose: #d64d64;
-  --lime: #4f9b42;
-  --shadow: 0 18px 50px rgba(74, 63, 48, 0.08);
+  --line: rgba(67, 74, 84, 0.12);
+  --text: #20252c;
+  --muted: #69707a;
+  --soft: #8a919a;
+  --teal: #516977;
+  --amber: #7d705e;
+  --rose: #8d6c75;
+  --lime: #667565;
+  --shadow: 0 12px 28px rgba(18, 24, 33, 0.05);
   --font-ui: "Pretendard Variable", "SUIT Variable", "Noto Sans KR", sans-serif;
   --font-display: "S-Core Dream", "Pretendard Variable", "Noto Sans KR", sans-serif;
 }
@@ -22,25 +22,14 @@ html, body {
   margin: 0;
   width: 100%;
   height: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(15, 159, 140, 0.09), transparent 30%),
-    radial-gradient(circle at top right, rgba(208, 135, 40, 0.08), transparent 28%),
-    linear-gradient(180deg, #fbfaf6 0%, var(--bg) 52%, var(--bg-2) 100%);
+  background: linear-gradient(180deg, #f8f8f6 0%, var(--bg) 100%);
   color: var(--text);
   font-family: var(--font-ui);
   overflow: hidden;
 }
 
 body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(31, 41, 55, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(31, 41, 55, 0.025) 1px, transparent 1px);
-  background-size: 28px 28px;
-  opacity: 0.5;
-  pointer-events: none;
+  content: none;
 }
 
 body {
@@ -88,9 +77,7 @@ body {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   padding: 18px 22px;
-  background:
-    radial-gradient(circle at top right, rgba(208, 135, 40, 0.10), transparent 32%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(250, 248, 242, 0.92));
+  background: var(--panel);
 }
 
 .stage-panel {
@@ -101,7 +88,7 @@ body {
 
 .box-label {
   margin: 0 0 12px;
-  color: var(--amber);
+  color: var(--soft);
   font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -158,13 +145,13 @@ body {
   gap: 8px;
   margin-top: 8px;
   padding: 10px 12px;
-  border: 1px solid rgba(208, 135, 40, 0.16);
+  border: 1px solid var(--line);
   border-radius: 16px;
-  background: rgba(208, 135, 40, 0.08);
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .run-repair-meta span {
-  color: var(--amber);
+  color: var(--soft);
   font-size: 0.67rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -193,13 +180,13 @@ body {
 }
 
 .run-repair-pill.fail {
-  border-color: rgba(214, 77, 100, 0.18);
-  background: rgba(214, 77, 100, 0.08);
+  border-color: rgba(141, 108, 117, 0.18);
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .run-repair-pill.rewind {
-  border-color: rgba(208, 135, 40, 0.18);
-  background: rgba(208, 135, 40, 0.10);
+  border-color: rgba(125, 112, 94, 0.18);
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .stage-menu {
@@ -228,19 +215,19 @@ body {
 
 .stage-link:hover {
   transform: translateY(-1px);
-  border-color: rgba(15, 159, 140, 0.24);
+  border-color: rgba(67, 74, 84, 0.2);
 }
 
 .stage-link.active {
-  border-color: rgba(15, 159, 140, 0.30);
-  background: linear-gradient(180deg, #ffffff, #f7fbfa);
-  box-shadow: 0 10px 22px rgba(15, 159, 140, 0.10);
+  border-color: rgba(67, 74, 84, 0.2);
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(18, 24, 33, 0.04);
 }
 
 .stage-link.active.marker-rewind {
-  border-color: rgba(208, 135, 40, 0.26);
-  background: linear-gradient(180deg, #fffdf8, #fff7eb);
-  box-shadow: 0 10px 22px rgba(208, 135, 40, 0.12);
+  border-color: rgba(125, 112, 94, 0.2);
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(18, 24, 33, 0.04);
 }
 
 .stage-link.stage-link-muted {
@@ -252,13 +239,13 @@ body {
 }
 
 .stage-link.anchor-fail {
-  border-color: rgba(214, 77, 100, 0.22);
-  background: linear-gradient(180deg, #fffafa, #fff3f5);
+  border-color: rgba(141, 108, 117, 0.18);
+  background: #ffffff;
 }
 
 .stage-link.anchor-rewind {
-  border-color: rgba(208, 135, 40, 0.22);
-  background: linear-gradient(180deg, #fffdf8, #fff8ed);
+  border-color: rgba(125, 112, 94, 0.18);
+  background: #ffffff;
 }
 
 .stage-link.marker-fail {
@@ -300,12 +287,12 @@ body {
 }
 
 .stage-mini-flag.fail {
-  background: rgba(214, 77, 100, 0.12);
+  background: rgba(141, 108, 117, 0.1);
   color: var(--rose);
 }
 
 .stage-mini-flag.rewind {
-  background: rgba(208, 135, 40, 0.14);
+  background: rgba(125, 112, 94, 0.1);
   color: var(--amber);
 }
 
@@ -395,8 +382,8 @@ body {
 }
 
 .launch-button {
-  border: 0;
-  background: linear-gradient(135deg, #0f9f8c 0%, #4da4ff 44%, #e4a23a 100%);
+  border: 1px solid rgba(67, 74, 84, 0.18);
+  background: #2f3942;
   color: #ffffff;
 }
 
@@ -408,13 +395,13 @@ body {
 }
 
 .secondary-launch-button:hover {
-  border-color: rgba(15, 159, 140, 0.24);
-  color: var(--teal);
+  border-color: rgba(67, 74, 84, 0.2);
+  color: var(--text);
 }
 
 .github-row input:focus,
 .launch-form select:focus {
-  outline: 2px solid rgba(15, 159, 140, 0.18);
+  outline: 2px solid rgba(81, 105, 119, 0.14);
   outline-offset: 1px;
 }
 
@@ -445,9 +432,9 @@ body {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid rgba(15, 159, 140, 0.18);
+  border: 1px solid var(--line);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.96);
   white-space: nowrap;
 }
 
@@ -455,15 +442,8 @@ body {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--amber);
-  box-shadow: 0 0 0 0 rgba(208, 135, 40, 0.4);
-  animation: pulse 1.8s infinite;
-}
-
-@keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(208, 135, 40, 0.42); }
-  70% { box-shadow: 0 0 0 18px rgba(208, 135, 40, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(208, 135, 40, 0); }
+  background: #7f8790;
+  box-shadow: none;
 }
 
 .stage-top {
@@ -497,10 +477,10 @@ body {
   font-weight: 700;
 }
 
-.status-badge.ok { background: rgba(79, 155, 66, 0.14); color: var(--lime); }
-.status-badge.warn { background: rgba(208, 135, 40, 0.14); color: var(--amber); }
-.status-badge.fail { background: rgba(214, 77, 100, 0.12); color: var(--rose); }
-.status-badge.neutral { background: rgba(125, 136, 150, 0.12); color: var(--soft); }
+.status-badge.ok { background: rgba(102, 117, 101, 0.1); color: var(--lime); }
+.status-badge.warn { background: rgba(125, 112, 94, 0.1); color: var(--amber); }
+.status-badge.fail { background: rgba(141, 108, 117, 0.1); color: var(--rose); }
+.status-badge.neutral { background: rgba(138, 145, 154, 0.12); color: var(--soft); }
 
 .detail-description {
   margin: 8px 0 0;
@@ -602,9 +582,9 @@ body {
   gap: 8px;
   height: 100%;
   padding: 14px 16px;
-  border: 1px solid rgba(214, 77, 100, 0.16);
+  border: 1px solid rgba(141, 108, 117, 0.16);
   border-radius: 18px;
-  background: rgba(214, 77, 100, 0.08);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .stage-error-head {
@@ -710,23 +690,23 @@ body {
 }
 
 .demo-banner.ok {
-  border-color: rgba(79, 155, 66, 0.18);
-  background: rgba(79, 155, 66, 0.08);
+  border-color: rgba(102, 117, 101, 0.16);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .demo-banner.warn {
-  border-color: rgba(208, 135, 40, 0.18);
-  background: rgba(208, 135, 40, 0.08);
+  border-color: rgba(125, 112, 94, 0.16);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .demo-banner.fail {
-  border-color: rgba(214, 77, 100, 0.16);
-  background: rgba(214, 77, 100, 0.08);
+  border-color: rgba(141, 108, 117, 0.16);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .demo-banner.neutral {
   border-color: rgba(95, 107, 122, 0.14);
-  background: rgba(125, 136, 150, 0.08);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .repair-banner {
@@ -770,18 +750,18 @@ body {
 }
 
 .repair-banner.ok {
-  border-color: rgba(79, 155, 66, 0.18);
-  background: rgba(79, 155, 66, 0.08);
+  border-color: rgba(102, 117, 101, 0.16);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .repair-banner.warn {
-  border-color: rgba(208, 135, 40, 0.18);
-  background: rgba(208, 135, 40, 0.08);
+  border-color: rgba(125, 112, 94, 0.16);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .repair-banner.fail {
-  border-color: rgba(214, 77, 100, 0.16);
-  background: rgba(214, 77, 100, 0.08);
+  border-color: rgba(141, 108, 117, 0.16);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .service-grid {
@@ -845,7 +825,7 @@ body {
   align-items: center;
   padding: 7px 10px;
   border-radius: 999px;
-  background: rgba(15, 159, 140, 0.12);
+  background: rgba(81, 105, 119, 0.08);
   color: var(--teal);
   font-size: 0.76rem;
 }
@@ -910,11 +890,9 @@ body {
 }
 
 .primary-rewind {
-  border-color: rgba(208, 135, 40, 0.18);
-  background:
-    linear-gradient(180deg, rgba(255, 252, 246, 0.98), rgba(255, 255, 255, 0.95)),
-    rgba(255, 255, 255, 0.96);
-  box-shadow: 0 16px 36px rgba(208, 135, 40, 0.08);
+  border-color: rgba(125, 112, 94, 0.16);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: none;
 }
 
 .repair-hero {
@@ -991,18 +969,18 @@ body {
 }
 
 .repair-fact.fail {
-  border-color: rgba(214, 77, 100, 0.18);
-  background: rgba(214, 77, 100, 0.08);
+  border-color: rgba(141, 108, 117, 0.16);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .repair-fact.rewind {
-  border-color: rgba(208, 135, 40, 0.18);
-  background: rgba(208, 135, 40, 0.08);
+  border-color: rgba(125, 112, 94, 0.16);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .repair-fact.current {
-  border-color: rgba(15, 159, 140, 0.16);
-  background: rgba(15, 159, 140, 0.07);
+  border-color: rgba(81, 105, 119, 0.14);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .repair-retrieval-strip {
@@ -1012,7 +990,8 @@ body {
   align-items: center;
   padding: 8px 10px;
   border-radius: 14px;
-  background: rgba(15, 159, 140, 0.06);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .repair-retrieval-strip span {
@@ -1154,29 +1133,29 @@ body {
 }
 
 .repair-sequence-step.ok {
-  border-color: rgba(79, 155, 66, 0.16);
+  border-color: rgba(102, 117, 101, 0.14);
 }
 
 .repair-sequence-step.ok .repair-sequence-count {
-  background: rgba(79, 155, 66, 0.14);
+  background: rgba(102, 117, 101, 0.1);
   color: var(--lime);
 }
 
 .repair-sequence-step.warn {
-  border-color: rgba(208, 135, 40, 0.16);
+  border-color: rgba(125, 112, 94, 0.14);
 }
 
 .repair-sequence-step.warn .repair-sequence-count {
-  background: rgba(208, 135, 40, 0.14);
+  background: rgba(125, 112, 94, 0.1);
   color: var(--amber);
 }
 
 .repair-sequence-step.fail {
-  border-color: rgba(214, 77, 100, 0.16);
+  border-color: rgba(141, 108, 117, 0.14);
 }
 
 .repair-sequence-step.fail .repair-sequence-count {
-  background: rgba(214, 77, 100, 0.12);
+  background: rgba(141, 108, 117, 0.1);
   color: var(--rose);
 }
 
@@ -1215,18 +1194,18 @@ body {
 }
 
 .repair-narrative-row.fail {
-  border-color: rgba(214, 77, 100, 0.18);
-  background: rgba(214, 77, 100, 0.08);
+  border-color: rgba(141, 108, 117, 0.16);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .repair-narrative-row.rewind {
-  border-color: rgba(208, 135, 40, 0.18);
-  background: rgba(208, 135, 40, 0.08);
+  border-color: rgba(125, 112, 94, 0.16);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .repair-narrative-row.current {
-  border-color: rgba(15, 159, 140, 0.16);
-  background: rgba(15, 159, 140, 0.07);
+  border-color: rgba(81, 105, 119, 0.14);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .story-strip {
@@ -1275,25 +1254,25 @@ body {
 }
 
 .story-step.current .story-step-node {
-  border-color: rgba(15, 159, 140, 0.32);
-  background: rgba(15, 159, 140, 0.94);
+  border-color: rgba(81, 105, 119, 0.24);
+  background: rgba(81, 105, 119, 0.88);
 }
 
 .story-step.rewind .story-step-node,
 .story-step.warn .story-step-node {
-  border-color: rgba(208, 135, 40, 0.26);
-  background: rgba(208, 135, 40, 0.94);
+  border-color: rgba(125, 112, 94, 0.22);
+  background: rgba(125, 112, 94, 0.86);
 }
 
 .story-step.failed .story-step-node,
 .story-step.fail .story-step-node {
-  border-color: rgba(214, 77, 100, 0.26);
-  background: rgba(214, 77, 100, 0.92);
+  border-color: rgba(141, 108, 117, 0.22);
+  background: rgba(141, 108, 117, 0.84);
 }
 
 .story-step.ok .story-step-node {
-  border-color: rgba(79, 155, 66, 0.22);
-  background: rgba(79, 155, 66, 0.9);
+  border-color: rgba(102, 117, 101, 0.2);
+  background: rgba(102, 117, 101, 0.82);
 }
 
 .retrieval-chip-list {
@@ -1322,23 +1301,23 @@ body {
 }
 
 .retrieval-chip.ready {
-  border-color: rgba(79, 155, 66, 0.16);
-  background: rgba(79, 155, 66, 0.08);
+  border-color: rgba(102, 117, 101, 0.14);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .retrieval-chip.indexing {
-  border-color: rgba(208, 135, 40, 0.18);
-  background: rgba(208, 135, 40, 0.08);
+  border-color: rgba(125, 112, 94, 0.14);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .retrieval-chip.failed {
-  border-color: rgba(214, 77, 100, 0.18);
-  background: rgba(214, 77, 100, 0.08);
+  border-color: rgba(141, 108, 117, 0.14);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .retrieval-chip.skipped,
 .retrieval-chip.queued {
-  background: rgba(125, 136, 150, 0.08);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .rewind-lane {
@@ -1376,13 +1355,13 @@ body {
 }
 
 .repair-chip.fail {
-  border-color: rgba(214, 77, 100, 0.18);
-  background: rgba(214, 77, 100, 0.08);
+  border-color: rgba(141, 108, 117, 0.14);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .repair-chip.rewind {
-  border-color: rgba(208, 135, 40, 0.18);
-  background: rgba(208, 135, 40, 0.08);
+  border-color: rgba(125, 112, 94, 0.14);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .repair-link-arrow {
