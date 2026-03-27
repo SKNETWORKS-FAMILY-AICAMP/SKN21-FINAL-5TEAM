@@ -351,3 +351,66 @@ test("site panel row is not locked to a clipping fixed height", async () => {
   assert.doesNotMatch(styles, /\.main-panel\s*\{[^}]*grid-template-rows:\s*104px minmax\(0,\s*1fr\)/s);
   assert.match(styles, /\.main-panel\s*\{[^}]*grid-template-rows:\s*minmax\(\d+px,\s*auto\)\s+minmax\(0,\s*1fr\)/s);
 });
+
+test("indexing renders as a formal stage detail instead of only retrieval chips", async () => {
+  const api = loadApp();
+  const payload = {
+    run: { site: "food", run_id: "food-demo-004", status: "running", status_label: "Running" },
+    process: { running: true, log_path: "/tmp/onmo.log" },
+    demo: { status: "disabled", status_label: "GitHub Mode" },
+    story: {
+      headline: "현재 Indexing 단계가 진행 중입니다.",
+      summary: "retrieval corpus를 준비하는 중입니다.",
+      current_stage: { stage: "indexing", label: "Indexing", status: "running", status_label: "Running" },
+      focus_stage: { stage: "indexing", label: "Indexing", status: "running", status_label: "Running" },
+      steps: [
+        { stage: "export", label: "Export", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "indexing", label: "Indexing", status: "running", status_label: "Running", emphasis: "current" },
+        { stage: "validation", label: "Validation", status: "pending", status_label: "Waiting", emphasis: "default" },
+      ],
+      retrieval: {
+        active: true,
+        headline: "Retrieval Ready",
+        summary: "2개 corpus 중 1개 준비됨.",
+        items: [
+          { label: "FAQ", status: "ready", status_label: "Ready" },
+          { label: "Policy", status: "indexing", status_label: "Indexing" },
+        ],
+      },
+    },
+    repair_story: { active: false, headline: "", summary: "", steps: [], failed_stage: "", rewind_to: "" },
+    repair: { active: false },
+    details: {
+      indexing: {
+        cards: [
+          { label: "Corpora", value: "2" },
+          { label: "Ready", value: "1" },
+        ],
+        corpora: [
+          { label: "FAQ", value: "ready / 12 docs" },
+          { label: "Policy", value: "indexing / 0 docs" },
+        ],
+        smoke_checks: [
+          { label: "FAQ smoke", value: "passed" },
+          { label: "Policy smoke", value: "pending" },
+        ],
+      },
+    },
+    recent_events: [],
+    stages: [
+      { stage: "export", label: "Export", status: "completed", status_label: "Completed" },
+      { stage: "indexing", label: "Indexing", status: "running", status_label: "Running" },
+      { stage: "validation", label: "Validation", status: "pending", status_label: "Waiting" },
+    ],
+  };
+
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "indexing";
+  api.renderStageMenu(payload.stages);
+  api.renderSelectedStage(payload);
+
+  assert.match(api.refs.stageTimeline.innerHTML, /Indexing/);
+  assert.match(api.refs.stageDetail.innerHTML, /Current Stage Detail/);
+  assert.match(api.refs.stageDetail.innerHTML, /FAQ smoke/);
+  assert.match(api.refs.stageDetail.innerHTML, /Policy/);
+});

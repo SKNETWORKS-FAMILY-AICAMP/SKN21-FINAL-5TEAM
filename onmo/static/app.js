@@ -23,6 +23,10 @@ const STAGE_COPY = {
     title: "Export",
     description: "적용 결과를 패치로 다시 추출하고 재현 가능한지 확인하는 단계입니다.",
   },
+  indexing: {
+    title: "Indexing",
+    description: "retrieval corpus를 준비하고 smoke 결과를 확인하는 단계입니다.",
+  },
   validation: {
     title: "Validation",
     description: "검증이 끝나면 실제 bilyeo와 챗봇 서버가 올라와 정상 동작 준비가 됩니다.",
@@ -600,6 +604,7 @@ function renderStageDetailContent(stageKey, details, payload, compact = true) {
   if (stageKey === "compile") return renderCompile(details.compile || {}, compact);
   if (stageKey === "apply") return renderApply(details.apply || {}, compact);
   if (stageKey === "export") return renderExport(details.export || {}, compact);
+  if (stageKey === "indexing") return renderIndexing(details.indexing || {}, compact);
   if (stageKey === "validation") return renderValidation(details.validation || {}, payload.services || [], payload.demo || {}, compact);
   return "";
 }
@@ -611,6 +616,29 @@ function renderImport(details = {}, compact = false) {
     : "";
   return `
     ${renderCards(details.cards, limits)}
+    ${summaryHtml}
+  `;
+}
+
+function renderIndexing(details = {}, compact = false) {
+  const limits = viewLimits(compact);
+  const summaryHtml = details.summary
+    ? `<div class="fact-list"><div class="fact-list-item"><strong>Summary</strong><small>${escapeHtml(details.summary)}</small></div></div>`
+    : "";
+  return `
+    ${renderCards(details.cards, limits)}
+    ${renderList(details.corpora || [], (item) => `
+      <div class="fact-list-item">
+        <strong>${escapeHtml(item.label)}</strong>
+        <small>${escapeHtml(item.value)}${item.caption ? ` / ${escapeHtml(item.caption)}` : ""}</small>
+      </div>
+    `, limits)}
+    ${renderList(details.smoke_checks || [], (item) => `
+      <div class="fact-list-item">
+        <strong>${escapeHtml(item.label)}</strong>
+        <small>${escapeHtml(item.value)}${item.caption ? ` / ${escapeHtml(item.caption)}` : ""}</small>
+      </div>
+    `, limits)}
     ${summaryHtml}
   `;
 }
@@ -1275,7 +1303,7 @@ refs.githubForm.addEventListener("submit", async (event) => {
 });
 
 function renderInitialStageMenu() {
-  state.displayStages = ["import", "analysis", "planning", "compile", "apply", "export", "validation"].map((stage) => ({
+  state.displayStages = ["import", "analysis", "planning", "compile", "apply", "export", "indexing", "validation"].map((stage) => ({
       stage,
       label: STAGE_COPY[stage].title,
       status: "pending",

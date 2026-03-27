@@ -7,7 +7,7 @@ from typing import Any
 
 from chatbot.src.onboarding_v2.storage.artifact_store import STAGE_DIRECTORY_MAP
 
-STAGE_ORDER = ["analysis", "planning", "compile", "apply", "export", "validation"]
+STAGE_ORDER = ["analysis", "planning", "compile", "apply", "export", "indexing", "validation"]
 DISPLAY_STAGE_ORDER = ["import", *STAGE_ORDER]
 STAGE_LABELS = {
     "import": "Import",
@@ -16,6 +16,7 @@ STAGE_LABELS = {
     "compile": "Compile",
     "apply": "Apply",
     "export": "Export",
+    "indexing": "Indexing",
     "validation": "Validation",
 }
 STAGE_LABELS_KO = {
@@ -25,6 +26,7 @@ STAGE_LABELS_KO = {
     "compile": "컴파일",
     "apply": "적용",
     "export": "내보내기",
+    "indexing": "인덱싱",
     "validation": "검증",
     "repair": "복구",
 }
@@ -183,6 +185,8 @@ def load_run_dashboard(*, run_root: str | Path, process: ProcessSnapshot | None 
     compile_preflight = _read_artifact_payload(root, "compile", "compile-preflight")
     apply_result = _read_artifact_payload(root, "apply", "apply-result")
     replay_result = _read_artifact_payload(root, "export", "replay-result")
+    indexing_result = _read_artifact_payload(root, "indexing", "indexing-result")
+    retrieval_smoke = _read_artifact_payload(root, "indexing", "retrieval-smoke")
     validation_bundle = _read_artifact_payload(root, "validation", "validation-bundle")
     backend_runtime_state = _read_artifact_payload(root, "validation", "backend-runtime-state")
     widget_bundle_fetch = _read_artifact_payload(root, "validation", "widget-bundle-fetch")
@@ -242,6 +246,7 @@ def load_run_dashboard(*, run_root: str | Path, process: ProcessSnapshot | None 
             ),
             "apply": _build_apply_details(apply_result=apply_result),
             "export": _build_export_details(root=root, replay_result=replay_result),
+            "indexing": _build_indexing_details(indexing_result=indexing_result, retrieval_smoke=retrieval_smoke),
             "validation": _build_validation_details(
                 validation_bundle=validation_bundle,
                 validation_checks=validation_checks,
@@ -632,6 +637,7 @@ def _localize_stage_names_ko(text: str) -> str:
         "Compile": "컴파일",
         "Apply": "적용",
         "Export": "내보내기",
+        "Indexing": "인덱싱",
         "Validation": "검증",
     }
     for english, korean in replacements.items():
@@ -818,6 +824,73 @@ def _build_export_details(*, root: Path, replay_result: dict[str, Any] | None) -
             if entry is not None
         ],
         "failure_summary": str(payload.get("static_validation_summary") or ""),
+    }
+
+
+def _build_indexing_details(
+    *,
+    indexing_result: dict[str, Any] | None,
+    retrieval_smoke: dict[str, Any] | None,
+) -> dict[str, Any]:
+    result_payload = indexing_result or {}
+    corpora_payload = dict(result_payload.get("corpora") or {})
+    smoke_payload = retrieval_smoke or {}
+    smoke_results = {
+        str(item.get("corpus") or ""): dict(item)
+        for item in (smoke_payload.get("results") or [])
+        if isinstance(item, dict) and str(item.get("corpus") or "").strip()
+    }
+    corpora = list(dict.fromkeys([*corpora_payload.keys(), *smoke_results.keys()]))
+
+    ready_count = 0
+    indexing_count = 0
+    failed_count = 0
+    total_documents = 0
+    corpus_rows: list[dict[str, str]] = []
+    smoke_rows: list[dict[str, str]] = []
+
+    for corpus in corpora:
+        payload = dict(corpora_payload.get(corpus) or {})
+        status = _retrieval_chip_status(payload)
+        status_label = _retrieval_status_label(status)
+        documents_indexed = int(payload.get("documents_indexed") or 0)
+        total_documents += documents_indexed
+        if status == "ready":
+            ready_count += 1
+        elif status == "indexing":
+            indexing_count += 1
+        elif status == "failed":
+            failed_count += 1
+
+        smoke = smoke_results.get(corpus) or {}
+        smoke_summary = str(smoke.get("summary") or "").strip()
+        corpus_rows.append(
+            {
+                "label": _corpus_label(corpus),
+                "value": f"{status_label} / {documents_indexed} docs",
+                "caption": smoke_summary or "-",
+            }
+        )
+        if smoke:
+            smoke_rows.append(
+                {
+                    "label": f"{_corpus_label(corpus)} smoke",
+                    "value": "passed" if bool(smoke.get("passed")) else "failed",
+                    "caption": smoke_summary or "-",
+                }
+            )
+
+    return {
+        "cards": [
+            _card("Corpora", len(corpora), "planned"),
+            _card("Ready", ready_count, "available"),
+            _card("Indexing", indexing_count, "in progress"),
+            _card("Documents", total_documents, "indexed"),
+        ],
+        "corpora": corpus_rows,
+        "smoke_checks": smoke_rows,
+        "failed_count": failed_count,
+        "summary": "인덱싱 결과가 아직 없습니다." if not corpora else "",
     }
 
 

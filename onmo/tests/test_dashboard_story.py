@@ -240,3 +240,72 @@ def test_decorate_dashboard_payload_builds_retrieval_story():
     assert enriched["story"]["retrieval"]["items"][0]["corpus"] == "faq"
     assert enriched["story"]["retrieval"]["items"][0]["status"] == "ready"
     assert enriched["story"]["retrieval"]["items"][1]["status"] == "indexing"
+
+
+def test_decorate_dashboard_payload_promotes_indexing_to_formal_stage():
+    payload = {
+        "run": {
+            "run_id": "food-demo-004",
+            "site": "food",
+            "status": "running",
+            "status_label": "Running",
+            "retrieval_status": {
+                "faq": {"status": "completed", "documents_indexed": 12, "smoke_passed": True},
+                "policy": {"status": "running", "documents_indexed": 0, "smoke_passed": False},
+            },
+            "enabled_retrieval_corpora": ["faq", "policy"],
+        },
+        "process": {
+            "running": True,
+            "log_path": "/tmp/onmo.log",
+        },
+        "stages": [
+            {
+                "stage": "export",
+                "label": "Export",
+                "status": "completed",
+                "status_label": "Completed",
+                "summary": "export completed",
+            },
+            {
+                "stage": "indexing",
+                "label": "Indexing",
+                "status": "running",
+                "status_label": "Running",
+                "summary": "indexing started",
+            },
+            {
+                "stage": "validation",
+                "label": "Validation",
+                "status": "pending",
+                "status_label": "Waiting",
+                "summary": "",
+            },
+        ],
+        "repair": {"active": False},
+        "recent_events": [
+            {
+                "timestamp": "2026-03-27T12:00:00+00:00",
+                "stage": "indexing",
+                "event_type": "stage_started",
+                "summary": "indexing started",
+                "severity": "info",
+            }
+        ],
+        "repair_events": [],
+        "details": {
+            "indexing": {
+                "cards": [{"label": "Corpora", "value": 2}],
+                "corpora": [],
+                "smoke_checks": [],
+            }
+        },
+    }
+
+    enriched = dashboard.decorate_dashboard_payload(payload)
+
+    assert [step["stage"] for step in enriched["story"]["steps"]] == ["export", "indexing", "validation"]
+    assert enriched["story"]["current_stage"]["stage"] == "indexing"
+    assert enriched["story"]["focus_stage"]["stage"] == "indexing"
+    assert enriched["story"]["steps"][1]["label"] == "Indexing"
+    assert enriched["story"]["steps"][1]["emphasis"] == "current"
