@@ -1,20 +1,22 @@
 from __future__ import annotations
 
 import os
+import secrets
 import shutil
 import socket
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from typing import Any, TextIO
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,7 +26,18 @@ from onmo.dashboard import (
     STAGE_ORDER,
     STATUS_LABELS,
     discover_runs,
+    inject_import_stage,
     load_run_dashboard,
+)
+from onmo.github_imports import (
+    GitHubImportError,
+    GitHubRepoProbe,
+    build_github_authorize_url,
+    download_github_archive,
+    exchange_github_code_for_token,
+    normalize_site_slug,
+    probe_github_repository,
+    resolve_github_source_root,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +55,45 @@ SERVICE_STATUS_LABELS = {
     "failed": "Failed",
     "blocked": "Blocked",
 }
+GITHUB_IMPORT_ROOT_NAME = "_github_imports"
+GITHUB_IMPORT_TTL = timedelta(hours=12)
+GITHUB_OAUTH_STATE_TTL = timedelta(minutes=15)
+GITHUB_MODE_MESSAGE = "GitHub 가져오기 런은 라이브 프리뷰를 실행하지 않습니다."
+
+
+@dataclass(slots=True)
+class GitHubImportRun:
+    run_id: str
+    site: str
+    repo_url: str
+    owner: str
+    repo: str
+    default_branch: str
+    generated_root: str
+    runtime_root: str
+    created_at: str
+    updated_at: str
+    status: str
+    summary: str = ""
+    error_message: str = ""
+    source_subdir: str = ""
+    source_root: str = ""
+    workdir_root: str = ""
+    finished_at: str | None = None
+    demo_enabled: bool = False
+
+
+@dataclass(slots=True)
+class GitHubOAuthState:
+    state: str
+    run_id: str
+    expires_at: str
+
+
+class GitHubImportRequest(BaseModel):
+    repo_url: str = Field(..., min_length=1)
+
+    model_config = ConfigDict(extra="ignore")
 
 
 def _utcnow() -> str:
@@ -50,6 +102,141 @@ def _utcnow() -> str:
 
 def _timestamp_slug() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def _parse_iso8601(value: str | None) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _github_import_root(runtime_root: str | Path) -> Path:
+    return Path(runtime_root) / GITHUB_IMPORT_ROOT_NAME
+
+
+def _github_workdir_root(*, runtime_root: str | Path, site: str, run_id: str) -> Path:
+    return _github_import_root(runtime_root) / site / run_id
+
+
+def _github_public_base_url(request: Request | None = None) -> str:
+    configured = str(os.getenv("ONMO_PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    if configured:
+        return configured
+    if request is not None:
+        return str(request.base_url).rstrip("/")
+    return "http://127.0.0.1:8899"
+
+
+def _github_callback_url(request: Request | None = None) -> str:
+    return f"{_github_public_base_url(request)}/auth/github/callback"
+
+
+def _cleanup_expired_github_imports() -> None:
+    now = datetime.now(UTC)
+    expired_runs: list[str] = []
+    expired_states: list[str] = []
+    with _REGISTRY_LOCK:
+        for run_id, record in _GITHUB_IMPORT_REGISTRY.items():
+            terminal = record.status in {"completed", "failed"}
+            anchor = _parse_iso8601(record.finished_at if terminal else record.updated_at)
+            if not terminal or anchor is None:
+                continue
+            if now - anchor >= GITHUB_IMPORT_TTL:
+                expired_runs.append(run_id)
+        for state_key, state_record in _GITHUB_OAUTH_STATE_REGISTRY.items():
+            expires_at = _parse_iso8601(state_record.expires_at)
+            if expires_at is not None and now >= expires_at:
+                expired_states.append(state_key)
+
+        stale_records = [(_GITHUB_IMPORT_REGISTRY.pop(run_id, None)) for run_id in expired_runs]
+        for state_key in expired_states:
+            _GITHUB_OAUTH_STATE_REGISTRY.pop(state_key, None)
+
+    for record in stale_records:
+        if record is None:
+            continue
+        workdir = Path(str(record.workdir_root or "").strip())
+        if workdir.exists():
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _lookup_github_import_run(run_id: str) -> GitHubImportRun | None:
+    with _REGISTRY_LOCK:
+        return _GITHUB_IMPORT_REGISTRY.get(run_id)
+
+
+def _store_github_import_run(record: GitHubImportRun) -> GitHubImportRun:
+    with _REGISTRY_LOCK:
+        _GITHUB_IMPORT_REGISTRY[record.run_id] = record
+    return record
+
+
+def _update_github_import_run(run_id: str, **updates: Any) -> GitHubImportRun | None:
+    with _REGISTRY_LOCK:
+        record = _GITHUB_IMPORT_REGISTRY.get(run_id)
+        if record is None:
+            return None
+        for key, value in updates.items():
+            setattr(record, key, value)
+        record.updated_at = _utcnow()
+        return record
+
+
+def _new_github_import_run(*, repo_probe: GitHubRepoProbe) -> GitHubImportRun:
+    site_hint = repo_probe.source_subdir.rsplit("/", 1)[-1] if repo_probe.source_subdir else repo_probe.repo
+    site = normalize_site_slug(site_hint)
+    timestamp = _timestamp_slug()
+    run_id = f"{site}-github-{timestamp}"
+    return GitHubImportRun(
+        run_id=run_id,
+        site=site,
+        repo_url=repo_probe.repo_url,
+        owner=repo_probe.owner,
+        repo=repo_probe.repo,
+        default_branch=repo_probe.default_branch,
+        generated_root=DEFAULT_GENERATED_ROOT_ARG,
+        runtime_root=DEFAULT_RUNTIME_ROOT_ARG,
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+        status="pending_auth" if repo_probe.requires_auth else "importing",
+        summary=(
+            "GitHub 인증이 필요합니다."
+            if repo_probe.requires_auth
+            else "GitHub 저장소 소스를 내려받는 중입니다."
+        ),
+        source_subdir=repo_probe.source_subdir,
+        demo_enabled=False,
+    )
+
+
+def _github_import_stage_status(record: GitHubImportRun) -> str:
+    if record.status == "failed":
+        return "failed"
+    if record.status == "completed":
+        return "completed"
+    return "running"
+
+
+def _github_import_summary(record: GitHubImportRun) -> str:
+    if str(record.summary or "").strip():
+        return record.summary
+    if record.status == "pending_auth":
+        return "GitHub 인증 승인을 기다리는 중입니다."
+    if record.status == "failed":
+        return record.error_message or "GitHub 가져오기에 실패했습니다."
+    if record.status == "completed":
+        return "GitHub 소스를 가져온 뒤 온보딩을 시작했습니다."
+    return "GitHub 저장소 소스를 내려받는 중입니다."
+
+
+def _github_oauth_configured() -> bool:
+    return bool(str(os.getenv("GITHUB_CLIENT_ID") or "").strip()) and bool(
+        str(os.getenv("GITHUB_CLIENT_SECRET") or "").strip()
+    )
 
 
 def _resolve_repo_path(value: str, *, default: Path | None = None) -> Path:
@@ -141,6 +328,7 @@ class RunProcessRecord:
     runtime_root: str
     source_root: str
     preview_url: str | None
+    demo_enabled: bool
     command: list[str]
     process: subprocess.Popen[str]
     log_path: Path
@@ -209,6 +397,8 @@ app.mount("/static", StaticFiles(directory=str(STATIC_ROOT)), name="static")
 _REGISTRY_LOCK = Lock()
 _RUN_REGISTRY: dict[str, RunProcessRecord] = {}
 _SERVICE_REGISTRY: dict[str, ServiceProcessRecord] = {}
+_GITHUB_IMPORT_REGISTRY: dict[str, GitHubImportRun] = {}
+_GITHUB_OAUTH_STATE_REGISTRY: dict[str, GitHubOAuthState] = {}
 
 
 def _sync_record(record: RunProcessRecord) -> RunProcessRecord:
@@ -330,6 +520,212 @@ def _project_options() -> list[dict[str, str]]:
             continue
         items.append(dict(preset))
     return items
+
+
+def _probe_github_repository(repo_url: str, access_token: str | None = None) -> GitHubRepoProbe:
+    return probe_github_repository(repo_url, access_token=access_token)
+
+
+def _start_github_import_background(intent: GitHubImportRun, access_token: str | None = None) -> None:
+    worker = Thread(
+        target=_run_github_import_job,
+        kwargs={"run_id": intent.run_id, "access_token": access_token},
+        daemon=True,
+        name=f"onmo-github-import-{intent.run_id}",
+    )
+    worker.start()
+
+
+def _oauth_state_redirect_target(request: Request, run_id: str) -> str:
+    import_run = _lookup_github_import_run(run_id)
+    site = import_run.site if import_run is not None else ""
+    generated_root = import_run.generated_root if import_run is not None else DEFAULT_GENERATED_ROOT_ARG
+    base_url = _github_public_base_url(request)
+    return f"{base_url}/?{urllib.parse.urlencode({'site': site, 'run_id': run_id, 'generated_root': generated_root})}"
+
+
+def _launch_onboarding_process(
+    *,
+    site: str,
+    source_root_arg: str,
+    generated_root_arg: str,
+    runtime_root_arg: str,
+    run_id: str,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+    chatbot_server_base_url: str | None = None,
+    preview_url: str | None = None,
+    smoke_username: str | None = None,
+    smoke_email: str | None = None,
+    smoke_password: str | None = None,
+    demo_enabled: bool = True,
+) -> dict[str, object]:
+    source_root = _resolve_repo_path(source_root_arg)
+    generated_root = _resolve_repo_path(generated_root_arg, default=DEFAULT_GENERATED_ROOT)
+    runtime_root = _resolve_repo_path(runtime_root_arg, default=DEFAULT_RUNTIME_ROOT)
+
+    if not source_root.exists():
+        raise HTTPException(status_code=404, detail=f"Source root not found: {source_root}")
+
+    generated_root.mkdir(parents=True, exist_ok=True)
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    _clear_previous_run_state(
+        site=site,
+        run_id=run_id,
+        generated_root=generated_root,
+        runtime_root=runtime_root,
+    )
+    _clear_site_services(site)
+
+    log_dir = ROOT / "onmo" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{site}-{run_id}.log"
+    log_handle = log_path.open("w", encoding="utf-8")
+
+    command = [
+        sys.executable,
+        "-m",
+        "chatbot.scripts.run_onboarding_generation",
+        "--site",
+        site,
+        "--source-root",
+        source_root_arg,
+        "--generated-root",
+        generated_root_arg,
+        "--runtime-root",
+        runtime_root_arg,
+        "--run-id",
+        run_id,
+    ]
+    if llm_provider and llm_provider.strip():
+        command.extend(["--llm-provider", llm_provider.strip()])
+    if llm_model and llm_model.strip():
+        command.extend(["--llm-model", llm_model.strip()])
+    if chatbot_server_base_url and chatbot_server_base_url.strip():
+        command.extend(["--chatbot-server-base-url", chatbot_server_base_url.strip()])
+    if smoke_username:
+        command.extend(["--smoke-username", smoke_username])
+    if smoke_email:
+        command.extend(["--smoke-email", smoke_email])
+    if smoke_password:
+        command.extend(["--smoke-password", smoke_password])
+
+    process = subprocess.Popen(
+        command,
+        cwd=str(ROOT),
+        stdout=log_handle,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=_build_child_env(),
+        creationflags=_subprocess_creationflags(),
+    )
+    record = RunProcessRecord(
+        site=site,
+        run_id=run_id,
+        generated_root=str(generated_root),
+        runtime_root=str(runtime_root),
+        source_root=str(source_root),
+        preview_url=(preview_url or "").strip() or None,
+        demo_enabled=demo_enabled,
+        command=command,
+        process=process,
+        log_path=log_path,
+        log_handle=log_handle,
+        started_at=_utcnow(),
+    )
+    with _REGISTRY_LOCK:
+        _RUN_REGISTRY[f"{site}:{run_id}"] = record
+
+    return {
+        "run_id": run_id,
+        "site": site,
+        "run_root": str((generated_root / site / run_id).resolve()),
+        "log_path": str(log_path.resolve()),
+        "generated_root": str(generated_root.resolve()),
+        "runtime_root": str(runtime_root.resolve()),
+        "command": command,
+        "status": "running",
+    }
+
+
+def _run_github_import_job(*, run_id: str, access_token: str | None = None) -> None:
+    record = _lookup_github_import_run(run_id)
+    if record is None:
+        return
+
+    try:
+        _update_github_import_run(run_id, status="importing", summary="GitHub 저장소 정보를 확인하는 중입니다.")
+        probe = _probe_github_repository(record.repo_url, access_token=access_token)
+        workdir_root = _github_workdir_root(
+            runtime_root=record.runtime_root,
+            site=record.site,
+            run_id=record.run_id,
+        )
+        if workdir_root.exists():
+            shutil.rmtree(workdir_root, ignore_errors=True)
+        archive_root = workdir_root / "archive"
+        extracted_root = download_github_archive(
+            owner=probe.owner,
+            repo=probe.repo,
+            branch=probe.default_branch,
+            destination_root=archive_root,
+            access_token=access_token,
+        )
+        selected_source_root = resolve_github_source_root(extracted_root, probe.source_subdir or record.source_subdir)
+        source_root = workdir_root / "source"
+        source_root.parent.mkdir(parents=True, exist_ok=True)
+        if source_root.exists():
+            shutil.rmtree(source_root, ignore_errors=True)
+        shutil.move(str(selected_source_root), str(source_root))
+        _update_github_import_run(
+            run_id,
+            owner=probe.owner,
+            repo=probe.repo,
+            default_branch=probe.default_branch,
+            source_subdir=probe.source_subdir,
+            source_root=str(source_root.resolve()),
+            workdir_root=str(workdir_root.resolve()),
+            summary="GitHub 소스를 가져왔습니다. 온보딩을 시작합니다.",
+        )
+        _launch_onboarding_process(
+            site=record.site,
+            source_root_arg=str(source_root.resolve()),
+            generated_root_arg=record.generated_root,
+            runtime_root_arg=record.runtime_root,
+            run_id=record.run_id,
+            preview_url=None,
+            demo_enabled=False,
+        )
+        _update_github_import_run(
+            run_id,
+            status="completed",
+            summary="GitHub 소스를 가져온 뒤 온보딩을 시작했습니다.",
+            finished_at=_utcnow(),
+        )
+    except HTTPException as exc:
+        _update_github_import_run(
+            run_id,
+            status="failed",
+            error_message=str(exc.detail),
+            summary=str(exc.detail),
+            finished_at=_utcnow(),
+        )
+    except GitHubImportError as exc:
+        _update_github_import_run(
+            run_id,
+            status="failed",
+            error_message=str(exc),
+            summary=str(exc),
+            finished_at=_utcnow(),
+        )
+    except Exception:
+        _update_github_import_run(
+            run_id,
+            status="failed",
+            error_message="GitHub 가져오기 중 알 수 없는 오류가 발생했습니다.",
+            summary="GitHub 가져오기 중 알 수 없는 오류가 발생했습니다.",
+            finished_at=_utcnow(),
+        )
 
 
 def _build_pending_run_dashboard(
@@ -807,6 +1203,31 @@ def _build_demo_payload(*, run_payload: dict[str, Any], service_snapshots: list[
     }
 
 
+def _build_disabled_demo_payload() -> dict[str, Any]:
+    return {
+        "status": "disabled",
+        "status_label": "GitHub Mode",
+        "message": GITHUB_MODE_MESSAGE,
+        "ready": False,
+        "preview_url": None,
+        "services": [],
+    }
+
+
+def _github_mode_enabled_for_run(
+    *,
+    site: str,
+    run_id: str,
+    process_record: RunProcessRecord | None,
+) -> bool:
+    import_run = _lookup_github_import_run(run_id)
+    if import_run is not None:
+        return not import_run.demo_enabled
+    if process_record is not None:
+        return not process_record.demo_enabled
+    return False
+
+
 def _ensure_demo_services(*, site: str, run_id: str, run_payload: dict[str, Any], preview_url: str) -> list[dict[str, Any]]:
     details = run_payload.get("details") or {}
     validation_details = details.get("validation") or {}
@@ -855,6 +1276,45 @@ def _ensure_demo_services(*, site: str, run_id: str, run_payload: dict[str, Any]
     return blocked + live
 
 
+def _decorate_dashboard_with_github_import(payload: dict[str, Any], run_id: str) -> dict[str, Any]:
+    import_run = _lookup_github_import_run(run_id)
+    if import_run is None:
+        return payload
+
+    stage_status = _github_import_stage_status(import_run)
+    summary = _github_import_summary(import_run)
+    updated = inject_import_stage(
+        payload,
+        status=stage_status,
+        summary=summary,
+        started_at=import_run.created_at,
+        finished_at=str(import_run.finished_at or ""),
+    )
+    details = dict(updated.get("details") or {})
+    import_details = dict(details.get("import") or {})
+    import_details["cards"] = [
+        {"label": "Repo", "value": f"{import_run.owner}/{import_run.repo}"},
+        {"label": "Branch", "value": import_run.default_branch or "-"},
+        {"label": "Path", "value": import_run.source_subdir or "/"},
+        {"label": "Status", "value": import_details.get("status_label") or STATUS_LABELS.get(stage_status, "Unknown")},
+        {"label": "Source", "value": import_run.source_root or "-"},
+    ]
+    import_details["summary"] = summary
+    details["import"] = import_details
+    updated["details"] = details
+    run_payload = dict(updated.get("run") or {})
+    if not str(run_payload.get("source_root") or "").strip() and str(import_run.source_root or "").strip():
+        run_payload["source_root"] = import_run.source_root
+    if stage_status == "failed":
+        run_payload["status"] = "failed"
+        run_payload["status_label"] = STATUS_LABELS.get("failed", "Failed")
+    elif run_payload.get("status") in {"pending", "unknown"}:
+        run_payload["status"] = "running"
+        run_payload["status_label"] = STATUS_LABELS.get("running", "Running")
+    updated["run"] = run_payload
+    return updated
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(STATIC_ROOT / "index.html")
@@ -879,6 +1339,8 @@ def config() -> dict[str, object]:
         "project_options": _project_options(),
         "llm_provider_default": "openai",
         "llm_model_default": "gpt-5.2",
+        "github_import_enabled": True,
+        "github_oauth_configured": _github_oauth_configured(),
     }
 
 
@@ -896,94 +1358,109 @@ def list_runs(
 def start_onboarding(request: StartRunRequest) -> dict[str, object]:
     site = request.site.strip()
     run_id = (request.run_id or f"{site}-demo-{_timestamp_slug()}").strip()
-    source_root_arg = request.source_root.strip()
-    generated_root_arg = (request.generated_root or "").strip() or DEFAULT_GENERATED_ROOT_ARG
-    runtime_root_arg = (request.runtime_root or "").strip() or DEFAULT_RUNTIME_ROOT_ARG
-
-    source_root = _resolve_repo_path(source_root_arg)
-    generated_root = _resolve_repo_path(generated_root_arg, default=DEFAULT_GENERATED_ROOT)
-    runtime_root = _resolve_repo_path(runtime_root_arg, default=DEFAULT_RUNTIME_ROOT)
-
-    if not source_root.exists():
-        raise HTTPException(status_code=404, detail=f"Source root not found: {source_root}")
-
-    generated_root.mkdir(parents=True, exist_ok=True)
-    runtime_root.mkdir(parents=True, exist_ok=True)
-    _clear_previous_run_state(
+    return _launch_onboarding_process(
         site=site,
+        source_root_arg=request.source_root.strip(),
+        generated_root_arg=(request.generated_root or "").strip() or DEFAULT_GENERATED_ROOT_ARG,
+        runtime_root_arg=(request.runtime_root or "").strip() or DEFAULT_RUNTIME_ROOT_ARG,
         run_id=run_id,
-        generated_root=generated_root,
-        runtime_root=runtime_root,
-    )
-    _clear_site_services(site)
-    log_dir = ROOT / "onmo" / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"{site}-{run_id}.log"
-    log_handle = log_path.open("w", encoding="utf-8")
-
-    command = [
-        sys.executable,
-        "-m",
-        "chatbot.scripts.run_onboarding_generation",
-        "--site",
-        site,
-        "--source-root",
-        source_root_arg,
-        "--generated-root",
-        generated_root_arg,
-        "--runtime-root",
-        runtime_root_arg,
-        "--run-id",
-        run_id,
-    ]
-    if request.llm_provider and request.llm_provider.strip():
-        command.extend(["--llm-provider", request.llm_provider.strip()])
-    if request.llm_model and request.llm_model.strip():
-        command.extend(["--llm-model", request.llm_model.strip()])
-    if request.chatbot_server_base_url and request.chatbot_server_base_url.strip():
-        command.extend(["--chatbot-server-base-url", request.chatbot_server_base_url.strip()])
-    if request.smoke_username:
-        command.extend(["--smoke-username", request.smoke_username])
-    if request.smoke_email:
-        command.extend(["--smoke-email", request.smoke_email])
-    if request.smoke_password:
-        command.extend(["--smoke-password", request.smoke_password])
-
-    process = subprocess.Popen(
-        command,
-        cwd=str(ROOT),
-        stdout=log_handle,
-        stderr=subprocess.STDOUT,
-        text=True,
-        env=_build_child_env(),
-        creationflags=_subprocess_creationflags(),
-    )
-    record = RunProcessRecord(
-        site=site,
-        run_id=run_id,
-        generated_root=str(generated_root),
-        runtime_root=str(runtime_root),
-        source_root=str(source_root),
+        llm_provider=request.llm_provider,
+        llm_model=request.llm_model,
+        chatbot_server_base_url=request.chatbot_server_base_url,
         preview_url=(request.preview_url or "").strip() or None,
-        command=command,
-        process=process,
-        log_path=log_path,
-        log_handle=log_handle,
-        started_at=_utcnow(),
+        smoke_username=request.smoke_username,
+        smoke_email=request.smoke_email,
+        smoke_password=request.smoke_password,
+        demo_enabled=True,
     )
-    with _REGISTRY_LOCK:
-        _RUN_REGISTRY[f"{site}:{run_id}"] = record
 
+
+@app.post("/api/onboarding/github/imports")
+def create_github_import(request: GitHubImportRequest, http_request: Request) -> dict[str, object]:
+    _cleanup_expired_github_imports()
+    try:
+        repo_probe = _probe_github_repository(request.repo_url.strip())
+    except GitHubImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    import_run = _store_github_import_run(_new_github_import_run(repo_probe=repo_probe))
+    if repo_probe.requires_auth:
+        return {
+            "status": "auth_required",
+            "run_id": import_run.run_id,
+            "site": import_run.site,
+            "authorize_url": (
+                f"{_github_public_base_url(http_request)}/auth/github/start?"
+                f"{urllib.parse.urlencode({'run_id': import_run.run_id})}"
+            ),
+        }
+    _start_github_import_background(import_run)
     return {
-        "run_id": run_id,
-        "site": site,
-        "run_root": str((generated_root / site / run_id).resolve()),
-        "log_path": str(log_path.resolve()),
-        "generated_root": str(generated_root.resolve()),
-        "runtime_root": str(runtime_root.resolve()),
-        "command": command,
-        "status": "running",
+        "status": "importing",
+        "run_id": import_run.run_id,
+        "site": import_run.site,
     }
+
+
+@app.get("/auth/github/start")
+def start_github_oauth(request: Request, run_id: str = Query(..., min_length=1)) -> RedirectResponse:
+    _cleanup_expired_github_imports()
+    import_run = _lookup_github_import_run(run_id)
+    if import_run is None:
+        raise HTTPException(status_code=404, detail="GitHub import run not found")
+    if not str(os.getenv("GITHUB_CLIENT_ID") or "").strip():
+        raise HTTPException(status_code=503, detail="GitHub OAuth is not configured")
+
+    state = secrets.token_urlsafe(24)
+    expires_at = datetime.now(UTC) + GITHUB_OAUTH_STATE_TTL
+    with _REGISTRY_LOCK:
+        _GITHUB_OAUTH_STATE_REGISTRY[state] = GitHubOAuthState(
+            state=state,
+            run_id=run_id,
+            expires_at=expires_at.isoformat(),
+        )
+    authorize_url = build_github_authorize_url(
+        client_id=str(os.getenv("GITHUB_CLIENT_ID") or "").strip(),
+        redirect_uri=_github_callback_url(request),
+        state=state,
+    )
+    _update_github_import_run(run_id, status="pending_auth", summary="GitHub 인증 승인을 기다리는 중입니다.")
+    return RedirectResponse(authorize_url)
+
+
+@app.get("/auth/github/callback")
+def github_oauth_callback(
+    request: Request,
+    state: str = Query(..., min_length=1),
+    code: str = Query(..., min_length=1),
+) -> RedirectResponse:
+    _cleanup_expired_github_imports()
+    with _REGISTRY_LOCK:
+        oauth_state = _GITHUB_OAUTH_STATE_REGISTRY.pop(state, None)
+    if oauth_state is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired GitHub OAuth state")
+
+    import_run = _lookup_github_import_run(oauth_state.run_id)
+    if import_run is None:
+        raise HTTPException(status_code=404, detail="GitHub import run not found")
+    if not _github_oauth_configured():
+        raise HTTPException(status_code=503, detail="GitHub OAuth is not configured")
+
+    try:
+        token = exchange_github_code_for_token(
+            code=code,
+            client_id=str(os.getenv("GITHUB_CLIENT_ID") or "").strip(),
+            client_secret=str(os.getenv("GITHUB_CLIENT_SECRET") or "").strip(),
+            redirect_uri=_github_callback_url(request),
+        )
+    except GitHubImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _update_github_import_run(
+        import_run.run_id,
+        status="importing",
+        summary="GitHub 인증이 완료되었습니다. 저장소를 가져오는 중입니다.",
+    )
+    _start_github_import_background(import_run, access_token=token)
+    return RedirectResponse(_oauth_state_redirect_target(request, import_run.run_id))
 
 
 @app.get("/api/onboarding/runs/{run_id}")
@@ -992,11 +1469,13 @@ def get_run_dashboard(
     site: str = Query(..., min_length=1),
     generated_root: str = Query(default=str(DEFAULT_GENERATED_ROOT)),
 ) -> dict[str, object]:
+    _cleanup_expired_github_imports()
     generated_path = _resolve_repo_path(generated_root, default=DEFAULT_GENERATED_ROOT)
     run_root = generated_path / site / run_id
-    process = _snapshot_from_record(_lookup_record(site, run_id))
+    process_record = _lookup_record(site, run_id)
+    process = _snapshot_from_record(process_record)
     if not run_root.exists():
-        if process is None:
+        if process is None and _lookup_github_import_run(run_id) is None:
             raise HTTPException(status_code=404, detail=f"Run root not found: {run_root}")
         payload = _build_pending_run_dashboard(
             site=site,
@@ -1006,6 +1485,13 @@ def get_run_dashboard(
         )
     else:
         payload = load_run_dashboard(run_root=run_root, process=process)
+    payload = _decorate_dashboard_with_github_import(payload, run_id)
+    github_mode = _github_mode_enabled_for_run(site=site, run_id=run_id, process_record=process_record)
+    if github_mode:
+        payload["services"] = []
+        payload["demo"] = _build_disabled_demo_payload()
+        return payload
+
     preview_url = (
         (process.preview_url if process is not None else None)
         or str((payload.get("process") or {}).get("preview_url") or "").strip()

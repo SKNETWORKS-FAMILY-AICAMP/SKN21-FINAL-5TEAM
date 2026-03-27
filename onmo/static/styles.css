@@ -154,7 +154,7 @@ body {
 
 .stage-menu {
   display: grid;
-  grid-template-rows: repeat(6, minmax(0, 1fr));
+  grid-template-rows: repeat(7, minmax(0, 1fr));
   gap: 8px;
   min-height: 0;
 }
@@ -221,17 +221,46 @@ body {
   display: flex;
   justify-content: space-between;
   gap: 14px;
-  align-items: center;
+  align-items: start;
   min-height: 0;
 }
 
+.launch-stack {
+  display: grid;
+  gap: 12px;
+  width: min(620px, 100%);
+}
+
+.github-form,
+.preset-launch {
+  display: grid;
+  gap: 8px;
+}
+
+.field-caption {
+  color: var(--soft);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.field-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.github-row,
 .launch-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 90px;
   gap: 10px;
-  width: min(460px, 100%);
+  width: 100%;
 }
 
+.github-row input,
 .launch-form select {
   width: 100%;
   height: 42px;
@@ -243,20 +272,63 @@ body {
   font: inherit;
 }
 
-.launch-button {
+.github-row input::placeholder {
+  color: rgba(95, 107, 122, 0.7);
+}
+
+.launch-button,
+.secondary-launch-button {
   height: 42px;
-  border: 0;
   border-radius: 14px;
-  background: linear-gradient(135deg, #0f9f8c 0%, #4da4ff 44%, #e4a23a 100%);
-  color: #ffffff;
   font: inherit;
   font-weight: 800;
   cursor: pointer;
 }
 
-.launch-button:disabled {
+.launch-button {
+  border: 0;
+  background: linear-gradient(135deg, #0f9f8c 0%, #4da4ff 44%, #e4a23a 100%);
+  color: #ffffff;
+}
+
+.secondary-launch-button {
+  border: 1px solid rgba(95, 107, 122, 0.16);
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.secondary-launch-button:hover {
+  border-color: rgba(15, 159, 140, 0.24);
+  color: var(--teal);
+}
+
+.github-row input:focus,
+.launch-form select:focus {
+  outline: 2px solid rgba(15, 159, 140, 0.18);
+  outline-offset: 1px;
+}
+
+.github-row input,
+.launch-form select,
+.launch-button,
+.secondary-launch-button {
+  font: inherit;
+}
+
+.preset-launch {
+  padding-top: 6px;
+  border-top: 1px solid rgba(95, 107, 122, 0.12);
+}
+
+.launch-button:disabled,
+.secondary-launch-button:disabled {
   cursor: wait;
   opacity: 0.72;
+}
+
+.launch-button:disabled {
+  filter: saturate(0.9);
 }
 
 .hero-status {
@@ -543,6 +615,11 @@ body {
   background: rgba(214, 77, 100, 0.08);
 }
 
+.demo-banner.neutral {
+  border-color: rgba(95, 107, 122, 0.14);
+  background: rgba(125, 136, 150, 0.08);
+}
+
 .repair-banner {
   display: grid;
   gap: 8px;
@@ -700,6 +777,7 @@ body {
     align-items: stretch;
   }
 
+  .github-row,
   .launch-form,
   .service-grid,
   .facts-grid,

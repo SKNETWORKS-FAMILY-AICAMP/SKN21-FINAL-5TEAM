@@ -1,4 +1,8 @@
 const STAGE_COPY = {
+  import: {
+    title: "Import",
+    description: "GitHub 저장소 접근을 확인하고 임시 source workspace를 준비하는 단계입니다.",
+  },
   analysis: {
     title: "Analysis",
     description: "저장소 구조를 읽고 인증, 주문, 마운트 후보를 추려내는 단계입니다.",
@@ -30,7 +34,7 @@ const state = {
   pollingTimer: null,
   playbackTimer: null,
   config: null,
-  selectedStage: "analysis",
+  selectedStage: "import",
   selectionPinned: false,
   lastPayload: null,
   lastError: null,
@@ -58,8 +62,10 @@ const COMPACT_LIMITS = {
 
 const refs = {
   form: document.getElementById("start-form"),
+  githubForm: document.getElementById("github-form"),
   heroStatusText: document.getElementById("hero-status-text"),
   launchButton: document.getElementById("launch-button"),
+  githubLaunchButton: document.getElementById("github-launch-button"),
   runMeta: document.getElementById("run-meta"),
   stageTimeline: document.getElementById("stage-timeline"),
   detailTitle: document.getElementById("detail-title"),
@@ -67,6 +73,7 @@ const refs = {
   detailDescription: document.getElementById("detail-description"),
   stageDetail: document.getElementById("stage-detail"),
   siteSelect: document.getElementById("site"),
+  repoUrlInput: document.getElementById("repo-url"),
 };
 
 async function request(path, options = {}) {
@@ -171,13 +178,25 @@ function renderList(items = [], formatter, limits = LIMITS) {
 }
 
 function renderRunMeta(run, demo = {}) {
+  const modeLabel = demo.status === "disabled" ? "mode" : "bilyeo";
   refs.runMeta.innerHTML = `
     <div class="run-summary">
       <span><strong>site</strong><small>${escapeHtml(run.site)}</small></span>
       <span><strong>run</strong><small title="${escapeHtml(run.run_id)}">${escapeHtml(run.run_id)}</small></span>
       <span><strong>status</strong><small>${escapeHtml(run.status_label)}</small></span>
-      <span><strong>bilyeo</strong><small>${escapeHtml(demo.status_label || "Waiting")}</small></span>
+      <span><strong>${escapeHtml(modeLabel)}</strong><small>${escapeHtml(demo.status_label || "Waiting")}</small></span>
     </div>
+  `;
+}
+
+function renderImport(details = {}, compact = false) {
+  const limits = viewLimits(compact);
+  const summaryHtml = details.summary
+    ? `<div class="fact-list"><div class="fact-list-item"><strong>Summary</strong><small>${escapeHtml(details.summary)}</small></div></div>`
+    : "";
+  return `
+    ${renderCards(details.cards, limits)}
+    ${summaryHtml}
   `;
 }
 
@@ -556,7 +575,8 @@ function renderSelectedStage(payload) {
   refs.detailStatus.className = `status-badge ${statusClass(stageView ? stageView.status : "pending")}`;
 
   let html = "";
-  if (selected === "analysis") html = renderAnalysis(details.analysis || {}, compactView);
+  if (selected === "import") html = renderImport(details.import || {}, compactView);
+  else if (selected === "analysis") html = renderAnalysis(details.analysis || {}, compactView);
   else if (selected === "planning") html = renderPlanning(details.planning || {}, compactView);
   else if (selected === "compile") html = renderCompile(details.compile || {}, compactView);
   else if (selected === "apply") html = renderApply(details.apply || {}, compactView);
@@ -612,6 +632,69 @@ function serializeForm() {
   };
 }
 
+function serializeGithubImportForm() {
+  return {
+    repo_url: formValue("repo-url"),
+  };
+}
+
+function resetActionButtons() {
+  refs.launchButton.disabled = false;
+  refs.launchButton.textContent = "프리셋 실행";
+  refs.githubLaunchButton.disabled = false;
+  refs.githubLaunchButton.textContent = "가져오기";
+}
+
+function beginRunTracking(payload, preferredStage = "import") {
+  state.currentRun = {
+    site: payload.site,
+    run_id: payload.run_id,
+    generated_root: payload.generated_root || state.config?.generated_root_default || "generated-v2",
+  };
+  state.selectionPinned = false;
+  state.selectedStage = preferredStage;
+  state.displayStages = [];
+  state.targetStages = [];
+  state.lastError = null;
+  if (state.playbackTimer) {
+    window.clearTimeout(state.playbackTimer);
+    state.playbackTimer = null;
+  }
+  startPolling();
+}
+
+function resolveHeroStatus(payload) {
+  const stages = (state.displayStages && state.displayStages.length ? state.displayStages : payload.stages) || [];
+  const importStage = stages.find((item) => item.stage === "import");
+  if (importStage && ["running", "failed"].includes(importStage.status)) {
+    return importStage.status_label;
+  }
+  if (payload.demo?.status && payload.demo.status !== "disabled") {
+    return payload.demo.status_label;
+  }
+  return payload.run.status_label;
+}
+
+function restoreRunFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const site = params.get("site");
+  const runId = params.get("run_id");
+  if (!site || !runId) {
+    return false;
+  }
+  state.currentRun = {
+    site,
+    run_id: runId,
+    generated_root: params.get("generated_root") || state.config?.generated_root_default || "generated-v2",
+  };
+  state.selectedStage = "import";
+  state.selectionPinned = false;
+  const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
+  window.history.replaceState({}, "", cleanUrl);
+  startPolling();
+  return true;
+}
+
 async function refreshDashboard() {
   if (!state.currentRun) return;
 
@@ -628,14 +711,15 @@ async function refreshDashboard() {
     state.selectedStage = pickDefaultStage(state.displayStages.length ? state.displayStages : payload.stages || []);
   }
 
-  refs.heroStatusText.textContent = payload.demo?.status_label || payload.run.status_label;
+  refs.heroStatusText.textContent = resolveHeroStatus(payload);
   renderRunMeta(payload.run, payload.demo || {});
   renderStageMenu(state.displayStages.length ? state.displayStages : payload.stages || []);
   renderSelectedStage(payload);
 
-  if (!(payload.process || {}).running) {
-    refs.launchButton.disabled = false;
-    refs.launchButton.textContent = "실행";
+  const activeStages = state.displayStages.length ? state.displayStages : payload.stages || [];
+  const importRunning = activeStages.some((item) => item.stage === "import" && item.status === "running");
+  if (!(payload.process || {}).running && !importRunning) {
+    resetActionButtons();
   }
 
   if (!shouldContinuePolling(payload)) {
@@ -666,8 +750,7 @@ function showError(error) {
       <div class="stage-detail-error">${renderErrorPane(state.lastError)}</div>
     `;
   }
-  refs.launchButton.disabled = false;
-  refs.launchButton.textContent = "실행";
+  resetActionButtons();
 }
 
 refs.form.addEventListener("submit", async (event) => {
@@ -690,19 +773,44 @@ refs.form.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify(serializeForm()),
     });
-    state.currentRun = {
-      site: payload.site,
-      run_id: payload.run_id,
-      generated_root: payload.generated_root || state.config?.generated_root_default || "generated-v2",
-    };
-    startPolling();
+    beginRunTracking(payload, "analysis");
+  } catch (error) {
+    showError(error);
+  }
+});
+
+refs.githubForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  refs.githubLaunchButton.disabled = true;
+  refs.githubLaunchButton.textContent = "가져오는 중";
+  refs.heroStatusText.textContent = "GitHub 저장소 확인 중";
+  state.selectionPinned = false;
+  state.selectedStage = "import";
+  state.displayStages = [];
+  state.targetStages = [];
+  state.lastError = null;
+  if (state.playbackTimer) {
+    window.clearTimeout(state.playbackTimer);
+    state.playbackTimer = null;
+  }
+
+  try {
+    const payload = await request("/api/onboarding/github/imports", {
+      method: "POST",
+      body: JSON.stringify(serializeGithubImportForm()),
+    });
+    if (payload.status === "auth_required" && payload.authorize_url) {
+      window.location.assign(payload.authorize_url);
+      return;
+    }
+    beginRunTracking(payload, "import");
   } catch (error) {
     showError(error);
   }
 });
 
 function renderInitialStageMenu() {
-  state.displayStages = ["analysis", "planning", "compile", "apply", "export", "validation"].map((stage) => ({
+  state.displayStages = ["import", "analysis", "planning", "compile", "apply", "export", "validation"].map((stage) => ({
       stage,
       label: STAGE_COPY[stage].title,
       status: "pending",
@@ -715,6 +823,7 @@ async function boot() {
   renderInitialStageMenu();
   try {
     await loadConfig();
+    restoreRunFromQuery();
   } catch (error) {
     showError(error);
   }

@@ -8,7 +8,9 @@ from typing import Any
 from chatbot.src.onboarding_v2.storage.artifact_store import STAGE_DIRECTORY_MAP
 
 STAGE_ORDER = ["analysis", "planning", "compile", "apply", "export", "validation"]
+DISPLAY_STAGE_ORDER = ["import", *STAGE_ORDER]
 STAGE_LABELS = {
+    "import": "Import",
     "analysis": "Analysis",
     "planning": "Planning",
     "compile": "Compile",
@@ -17,6 +19,7 @@ STAGE_LABELS = {
     "validation": "Validation",
 }
 STAGE_LABELS_KO = {
+    "import": "가져오기",
     "analysis": "분석",
     "planning": "계획",
     "compile": "컴파일",
@@ -30,6 +33,7 @@ STATUS_LABELS = {
     "running": "Running",
     "completed": "Completed",
     "failed": "Failed",
+    "disabled": "Disabled",
     "exported": "Ready",
     "failed_human_review": "Needs Review",
     "process_failed": "Process Failed",
@@ -47,6 +51,58 @@ class ProcessSnapshot:
     finished_at: str | None = None
     returncode: int | None = None
     preview_url: str | None = None
+
+
+def build_import_stage_view(
+    *,
+    status: str,
+    summary: str = "",
+    started_at: str = "",
+    finished_at: str = "",
+) -> dict[str, Any]:
+    return {
+        "stage": "import",
+        "label": STAGE_LABELS["import"],
+        "status": status,
+        "status_label": STATUS_LABELS.get(status, "Unknown"),
+        "summary": summary,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "artifact_count": 0,
+        "artifact_types": [],
+    }
+
+
+def inject_import_stage(
+    payload: dict[str, Any],
+    *,
+    status: str,
+    summary: str = "",
+    started_at: str = "",
+    finished_at: str = "",
+) -> dict[str, Any]:
+    stage_view = build_import_stage_view(
+        status=status,
+        summary=summary,
+        started_at=started_at,
+        finished_at=finished_at,
+    )
+    updated = dict(payload)
+    stages = [stage for stage in list(payload.get("stages") or []) if str(stage.get("stage") or "") != "import"]
+    updated["stages"] = [stage_view, *stages]
+    details = dict(payload.get("details") or {})
+    details["import"] = {
+        "status": status,
+        "status_label": STATUS_LABELS.get(status, "Unknown"),
+        "summary": summary,
+        "cards": [
+            {"label": "Status", "value": STATUS_LABELS.get(status, "Unknown")},
+            {"label": "Started", "value": started_at or "-"},
+            {"label": "Finished", "value": finished_at or "-"},
+        ],
+    }
+    updated["details"] = details
+    return updated
 
 
 def discover_runs(*, generated_root: str | Path, site: str | None = None, limit: int = 12) -> list[dict[str, Any]]:
