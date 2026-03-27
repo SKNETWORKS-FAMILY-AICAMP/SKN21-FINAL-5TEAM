@@ -1172,6 +1172,11 @@ body {
   padding-right: 8px;
 }
 
+.story-step-placeholder {
+  min-height: 0;
+  padding: 0;
+}
+
 .story-step-node {
   width: 12px;
   height: 12px;
@@ -1224,6 +1229,12 @@ body {
 .story-step.ok .story-step-node {
   border-color: rgba(102, 117, 101, 0.2);
   background: rgba(102, 117, 101, 0.82);
+}
+
+.story-step-placeholder .story-step-node,
+.story-step-placeholder .story-step-copy,
+.story-step-placeholder .story-step-line {
+  display: none;
 }
 
 @keyframes liveDotPulse {

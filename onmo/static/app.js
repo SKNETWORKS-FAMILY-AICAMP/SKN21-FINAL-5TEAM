@@ -463,6 +463,7 @@ function renderStoryLane(title, subtitle, steps, laneClass = "") {
         ${steps
           .map(
             (step, index) => `
+              ${step?.placeholder ? '<div class="story-step story-step-placeholder" aria-hidden="true"></div>' : `
               <div class="story-step ${statusClass(step.status)} ${escapeHtml(step.emphasis || "default")}">
                 <div class="story-step-node"></div>
                 <div class="story-step-copy">
@@ -471,6 +472,7 @@ function renderStoryLane(title, subtitle, steps, laneClass = "") {
                 </div>
                 ${index < steps.length - 1 ? '<div class="story-step-line"></div>' : ""}
               </div>
+              `}
             `
           )
           .join("")}
@@ -525,8 +527,14 @@ function buildRerunSteps(story = {}, repairStory = {}) {
     ? repairStory.steps.find((step) => step.kind === "rerun") || {}
     : {};
 
-  return steps.slice(rewindIndex).map((step, offset) => {
-    const absoluteIndex = rewindIndex + offset;
+  return steps.map((step, absoluteIndex) => {
+    if (absoluteIndex < rewindIndex) {
+      return {
+        placeholder: true,
+        stage: String(step.stage || ""),
+      };
+    }
+
     let status = "pending";
     let statusLabel = statusLabelForStep("pending");
     let emphasis = "default";

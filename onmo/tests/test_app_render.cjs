@@ -349,6 +349,78 @@ function repairRerunGraphPayload() {
   };
 }
 
+function compileRewindGraphPayload() {
+  return {
+    run: {
+      site: "food",
+      run_id: "food-v2-repair-graph-011",
+      status: "running",
+      status_label: "Running",
+    },
+    process: { running: true, log_path: "/tmp/onmo.log" },
+    demo: { status: "disabled", status_label: "GitHub Mode" },
+    services: [],
+    story: {
+      headline: "현재 Compile 단계가 다시 진행 중입니다.",
+      summary: "Validation 실패 이후 Compile 단계부터 다시 실행 중입니다.",
+      current_stage: { stage: "compile", label: "Compile", status: "running", status_label: "Running" },
+      focus_stage: { stage: "compile", label: "Compile", status: "running", status_label: "Running" },
+      steps: [
+        { stage: "analysis", label: "Analysis", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "planning", label: "Planning", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "compile", label: "Compile", status: "running", status_label: "Running", emphasis: "current" },
+        { stage: "apply", label: "Apply", status: "pending", status_label: "Waiting", emphasis: "default" },
+        { stage: "export", label: "Export", status: "pending", status_label: "Waiting", emphasis: "default" },
+        { stage: "indexing", label: "Indexing", status: "pending", status_label: "Waiting", emphasis: "default" },
+        { stage: "validation", label: "Validation", status: "failed", status_label: "Failed", emphasis: "failed" },
+      ],
+      retrieval: { active: false, headline: "", summary: "", items: [] },
+    },
+    repair_story: {
+      active: true,
+      headline: "Repair Rewind",
+      summary: "Validation 단계에서 실패해 Compile부터 다시 진행 중입니다.",
+      status_label: "생성 단계로 되감기",
+      failed_stage: "validation",
+      failed_stage_label: "검증",
+      rewind_to: "compile",
+      rewind_to_label: "생성",
+      problem: "Validation 단계에서 문제를 감지했습니다.",
+      diagnosis: "생성 산출물부터 다시 점검해야 합니다.",
+      current_action: "생성 단계 재실행 진행 중입니다.",
+      steps: [
+        { kind: "failure", label: "검증 실패 감지", status: "completed", timestamp: "2026-03-27T20:33:01+09:00" },
+        { kind: "diagnosis", label: "원인 진단 완료", status: "completed", timestamp: "2026-03-27T20:33:12+09:00" },
+        { kind: "rewind", label: "생성으로 되감기 결정", status: "completed", timestamp: "2026-03-27T20:33:18+09:00" },
+        { kind: "rerun", label: "생성 재실행 시작", status: "running", timestamp: "2026-03-27T20:33:19+09:00" },
+      ],
+    },
+    repair: {
+      active: true,
+      status: "running",
+      status_label: "생성 단계로 되감기",
+      failed_stage_label: "검증",
+      effective_rewind_label: "생성",
+      current_action: "생성 단계 재실행 진행 중입니다.",
+    },
+    details: {
+      compile: {
+        cards: [{ label: "Current", value: "compile rerun active" }],
+      },
+    },
+    recent_events: [],
+    stages: [
+      { stage: "analysis", label: "Analysis", status: "completed", status_label: "Completed" },
+      { stage: "planning", label: "Planning", status: "completed", status_label: "Completed" },
+      { stage: "compile", label: "Compile", status: "running", status_label: "Running" },
+      { stage: "apply", label: "Apply", status: "pending", status_label: "Waiting" },
+      { stage: "export", label: "Export", status: "pending", status_label: "Waiting" },
+      { stage: "indexing", label: "Indexing", status: "pending", status_label: "Waiting" },
+      { stage: "validation", label: "Validation", status: "failed", status_label: "Failed" },
+    ],
+  };
+}
+
 test("repair mode renders a dedicated hero and uses focus stage details", async () => {
   const api = loadApp();
   const payload = repairPayload();
@@ -557,6 +629,24 @@ test("repair snapshot renders a rerun lane and rewind connector", async () => {
   assert.doesNotMatch(api.refs.runStoryShell.innerHTML, /오류 상세/);
   assert.doesNotMatch(api.refs.runStoryShell.innerHTML, /진단 판단/);
   assert.doesNotMatch(api.refs.runStoryShell.innerHTML, /현재 상태/);
+});
+
+test("rerun lane keeps original stage columns and starts from the rewind stage", async () => {
+  const api = loadApp();
+  const payload = compileRewindGraphPayload();
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "compile";
+
+  api.renderSelectedStage(payload);
+
+  const rerunHtml = api.refs.runStoryShell.innerHTML;
+  const placeholderCount = (rerunHtml.match(/story-step-placeholder/g) || []).length;
+
+  assert.equal(placeholderCount, 2);
+  assert.match(rerunHtml, /생성부터 다시 실행/);
+  assert.match(rerunHtml, /생성/);
+  assert.match(rerunHtml, /적용/);
+  assert.match(rerunHtml, /추출/);
 });
 
 test("left rail marks the live current stage separately from the selected stage", async () => {
