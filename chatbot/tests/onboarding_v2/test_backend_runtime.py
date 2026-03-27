@@ -19,11 +19,16 @@ from chatbot.src.onboarding_v2.validation import backend_runtime as backend_runt
 from chatbot.src.onboarding_v2.validation.backend_runtime import build_backend_runtime_plan, prepare_backend_runtime
 
 
-def _snapshot(*, backend_framework: str, backend_entrypoints: list[str] | None = None) -> AnalysisSnapshot:
+def _snapshot(
+    *,
+    backend_framework: str,
+    backend_entrypoints: list[str] | None = None,
+    source_root: str = "/tmp/demo",
+) -> AnalysisSnapshot:
     return AnalysisSnapshot(
         repo_profile=RepoProfile(
             site="demo",
-            source_root="/tmp/demo",
+            source_root=source_root,
             backend_framework=backend_framework,
             frontend_framework="react",
             auth_style="session_cookie",
@@ -459,6 +464,61 @@ def test_prepare_backend_runtime_loads_workspace_dotenv_into_prep_script_env_wit
     assert captured_envs["seed"]["ONLY_IN_DOTENV"] == "1"
     assert prep.env_source["loaded_workspace_dotenv"] is True
     assert prep.env_source["workspace_dotenv_path"].endswith("/workspace/.env")
+
+
+def test_prepare_backend_runtime_loads_source_root_dotenv_when_workspace_lacks_dotenv(
+    tmp_path: Path,
+    monkeypatch,
+):
+    workspace = tmp_path / "workspace"
+    backend_root = workspace / "backend"
+    scripts_root = workspace / "scripts"
+    source_root = tmp_path / "source"
+    backend_root.mkdir(parents=True)
+    scripts_root.mkdir(parents=True)
+    source_root.mkdir(parents=True)
+    (backend_root / "manage.py").write_text("print('django')\n", encoding="utf-8")
+    (source_root / ".env").write_text(
+        "ORACLE_HOST=source-host\nORACLE_SERVICE_NAME=sourcepdb\nONLY_IN_SOURCE=1\n",
+        encoding="utf-8",
+    )
+    (scripts_root / "reset_db.py").write_text("print('reset ok')\n", encoding="utf-8")
+    (scripts_root / "seed.py").write_text("print('seed ok')\n", encoding="utf-8")
+    monkeypatch.delenv("ORACLE_HOST", raising=False)
+
+    captured_envs: dict[str, dict[str, str]] = {}
+
+    def _ok_command(*, name: str, command: list[str], cwd: Path, log_path: Path | None = None, env=None, **kwargs):
+        del kwargs
+        if name in {"reset", "seed"}:
+            captured_envs[name] = dict(env or {})
+        return backend_runtime_module.BackendRuntimeCommandResult(
+            name=name,
+            command=command,
+            cwd=str(cwd),
+            returncode=0,
+            stdout=f"{name} ok",
+            stderr="",
+            passed=True,
+            log_path=str(log_path) if log_path is not None else None,
+        )
+
+    monkeypatch.setattr(backend_runtime_module, "_create_venv", lambda *args, **kwargs: _ok_command(name="create_venv", command=["python", "-m", "venv"], cwd=tmp_path))
+    monkeypatch.setattr(backend_runtime_module, "_install_backend_requirements", lambda **kwargs: _ok_command(name="install", command=["pip", "install"], cwd=backend_root))
+    monkeypatch.setattr(backend_runtime_module, "_run_django_migrate", lambda **kwargs: _ok_command(name="migrate", command=["manage.py", "migrate"], cwd=backend_root))
+    monkeypatch.setattr(backend_runtime_module, "_run_command", _ok_command)
+
+    prep = prepare_backend_runtime(
+        workspace=workspace,
+        snapshot=_snapshot(backend_framework="django", source_root=str(source_root)),
+    )
+
+    assert prep.passed is True
+    assert captured_envs["reset"]["ORACLE_HOST"] == "source-host"
+    assert captured_envs["reset"]["ORACLE_SERVICE_NAME"] == "sourcepdb"
+    assert captured_envs["seed"]["ONLY_IN_SOURCE"] == "1"
+    assert prep.env_source["loaded_source_dotenv"] is True
+    assert prep.env_source["source_dotenv_path"].endswith("/source/.env")
 
 
 def test_prepare_backend_runtime_uses_five_second_default_heartbeats(tmp_path: Path, monkeypatch):

@@ -8,6 +8,10 @@ import os
 # backend 디렉토리를 path에 추가
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "backend"))
 
+from env_bootstrap import ensure_backend_env_loaded
+
+ensure_backend_env_loaded()
+
 from werkzeug.security import generate_password_hash
 from models import get_connection, init_db
 from faq_crawling import main as faq_crawling_main

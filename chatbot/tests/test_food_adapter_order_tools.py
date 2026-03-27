@@ -10,6 +10,7 @@ from chatbot.src.tools import adapter_order_tools
 from chatbot.src.adapters import setup as adapter_setup
 from chatbot.src.adapters.site_a.mappers import map_site_a_delivery, map_site_a_order
 from chatbot.src.adapters.schema import DeliveryStatus, OrderStatus
+from chatbot.src.onboarding_v2.models.planning import ResolvedAuthContract
 
 
 class FakeFoodClient:
@@ -23,6 +24,10 @@ class FakeFoodClient:
 
 class FakeFoodAdapter:
     site_id = "site-a"
+    auth_contract = ResolvedAuthContract(
+        transport="session_cookie",
+        session_cookie_name="session_token",
+    )
 
     def __init__(self, orders=None):
         self.client = FakeFoodClient(orders or [])
@@ -162,9 +167,10 @@ def test_get_user_orders_for_site_supports_bilyeo_order_shape(monkeypatch):
     ]
     adapter = FakeFoodAdapter([])
     adapter.site_id = "bilyeo"
+    adapter.auth_contract = ResolvedAuthContract(transport="bearer_token")
 
     async def fake_list_orders(headers):
-        assert headers == {}
+        assert headers == {"Authorization": "Bearer 1"}
         return orders
 
     adapter.client = SimpleNamespace(list_orders=fake_list_orders)
@@ -193,6 +199,42 @@ def test_get_user_orders_for_site_supports_bilyeo_order_shape(monkeypatch):
     assert payload["ui_data"][0]["status"] == "delivered"
     assert payload["ui_data"][0]["delivered_at"] == "2026-03-26"
     assert payload["ui_data"][0]["can_exchange"] is True
+
+
+def test_get_user_orders_for_generated_food_site_uses_auth_contract_headers(monkeypatch):
+    orders = [
+        {
+            "id": 21,
+            "status": "delivered",
+            "payment_status": "paid",
+            "created_at": "2026-03-18T10:00:00",
+            "total_price": "15000.00",
+            "product": {"name": "짬뽕"},
+        }
+    ]
+    adapter = FakeFoodAdapter([])
+    adapter.site_id = "food"
+    adapter.auth_contract = ResolvedAuthContract(
+        transport="session_cookie",
+        session_cookie_name="session_token",
+    )
+
+    async def fake_list_orders(headers):
+        assert headers["Cookie"] == "session_token=food-token"
+        return orders
+
+    adapter.client = SimpleNamespace(list_orders=fake_list_orders)
+    monkeypatch.setattr(adapter_order_tools, "_get_site_adapter", lambda site_id: adapter)
+
+    payload = adapter_order_tools.get_user_orders_for_site(
+        user_id=1,
+        site_id="food",
+        cookies={"session_token": "food-token"},
+        requires_selection=False,
+    )
+
+    assert payload["total_orders"] == 1
+    assert payload["ui_data"][0]["order_id"] == "21"
 
 
 def test_site_a_mappers_support_bilyeo_wrapped_order_payload():

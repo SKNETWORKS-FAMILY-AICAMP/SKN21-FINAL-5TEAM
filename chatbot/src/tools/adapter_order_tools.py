@@ -25,6 +25,7 @@ from chatbot.src.adapters.schema import (
     ProductSearchFilter,
     SubmitOrderActionInput,
 )
+from chatbot.src.adapters.auth_headers import build_auth_headers_from_contract
 from chatbot.src.adapters.setup import ORDER_CS_BRIDGE_OPERATIONS, get_adapter
 
 
@@ -179,20 +180,8 @@ def _get_site_adapter(site_id: str | None):
     return get_adapter(effective_site_id)
 
 
-def _build_auth_headers(ctx: AuthenticatedContext) -> dict[str, str]:
-    if ctx.siteId == "site-a":
-        from chatbot.src.adapters.site_a.auth import build_site_a_auth_headers
-
-        return build_site_a_auth_headers(ctx)
-    if ctx.siteId == "site-b":
-        from chatbot.src.adapters.site_b.auth import build_site_b_auth_headers
-
-        return build_site_b_auth_headers(ctx)
-    if ctx.siteId == "site-c":
-        from chatbot.src.adapters.site_c.auth import build_site_c_auth_headers
-
-        return build_site_c_auth_headers(ctx)
-    return {}
+def _build_auth_headers(adapter, ctx: AuthenticatedContext) -> dict[str, str]:
+    return build_auth_headers_from_contract(adapter.auth_contract, ctx)
 
 
 def _build_order_list_message(action_context: str | None, days: int) -> str:
@@ -276,7 +265,7 @@ def _list_orders_via_adapter(
     if hasattr(adapter, "list_orders") and callable(getattr(adapter, "list_orders")):
         raw_orders = _run(adapter.list_orders(ctx, limit=limit))
     elif hasattr(adapter, "client") and hasattr(adapter.client, "list_orders"):
-        raw_orders = _run(adapter.client.list_orders(_build_auth_headers(ctx)))
+        raw_orders = _run(adapter.client.list_orders(_build_auth_headers(adapter, ctx)))
     else:
         raise AdapterError(
             "NOT_SUPPORTED",

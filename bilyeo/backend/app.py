@@ -1,19 +1,17 @@
 import os
 import time
-from pathlib import Path
-
-from dotenv import load_dotenv
 from flask import Flask
 from flask_cors import CORS
+
+from env_bootstrap import ensure_backend_env_loaded
+
+ensure_backend_env_loaded()
 
 from chat_auth import chat_auth_bp
 from models import init_db
 from routes.auth import auth_bp
 from routes.order import order_bp
 from routes.product import product_bp
-
-env_path = Path(__file__).resolve().parent.parent.parent / ".env"
-load_dotenv(env_path)
 
 
 def init_db_with_retry(max_attempts: int = 30, delay_seconds: int = 5):

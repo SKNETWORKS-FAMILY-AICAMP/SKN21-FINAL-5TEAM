@@ -34,7 +34,11 @@ def prepare_backend_runtime(
 ) -> BackendRuntimePrepResult:
     workspace = Path(workspace).resolve()
     backend_root = _resolve_backend_root(workspace)
-    backend_env_defaults, env_source = _load_backend_env_defaults(backend_root)
+    source_root = Path(snapshot.repo_profile.source_root).resolve()
+    backend_env_defaults, env_source = _load_backend_env_defaults(
+        backend_root,
+        source_root=source_root,
+    )
     framework = snapshot.repo_profile.backend_framework
     runtime_root = _resolve_validation_support_root(workspace)
     live_logs_root_path = (
@@ -560,19 +564,31 @@ def build_backend_subprocess_env(
     return environment
 
 
-def _load_backend_env_defaults(backend_root: Path) -> tuple[dict[str, str], dict[str, Any]]:
+def _load_backend_env_defaults(
+    backend_root: Path,
+    *,
+    source_root: Path | None = None,
+) -> tuple[dict[str, str], dict[str, Any]]:
     workspace_root = backend_root.parent if backend_root.name == "backend" else backend_root
     env_source: dict[str, Any] = {
         "loaded_workspace_dotenv": False,
         "workspace_dotenv_path": None,
         "loaded_backend_dotenv": False,
         "backend_dotenv_path": None,
+        "loaded_source_dotenv": False,
+        "source_dotenv_path": None,
     }
     defaults: dict[str, str] = {}
-    for label, path in (
-        ("workspace", workspace_root / ".env"),
-        ("backend", backend_root / ".env"),
-    ):
+    candidates: list[tuple[str, Path]] = []
+    if source_root is not None:
+        candidates.append(("source", source_root / ".env"))
+    candidates.extend(
+        (
+            ("backend", backend_root / ".env"),
+            ("workspace", workspace_root / ".env"),
+        )
+    )
+    for label, path in candidates:
         if not path.exists():
             continue
         defaults.update(_parse_dotenv_file(path))

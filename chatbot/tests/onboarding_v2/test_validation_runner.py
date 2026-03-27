@@ -30,6 +30,7 @@ from chatbot.src.adapters.schema import User
 from chatbot.src.onboarding_v2.validation.runner import (
     ConversationScenarioResult,
     ConversationValidationResult,
+    _collect_widget_order_flow_report,
     _build_runtime_fixture_manifest,
     _evaluate_conversation_deterministic_failures,
     _finalize_conversation_scenario_result,
@@ -781,6 +782,7 @@ def test_validate_conversation_runtime_emits_scenario_events(monkeypatch, tmp_pa
 def test_validate_chatbot_adapter_auth_uses_real_session_cookie_for_food(monkeypatch, tmp_path: Path):
     captured: dict[str, object] = {}
     real_import_module = validate_chatbot_adapter_auth.__globals__["importlib"].import_module
+    plan = _build_food_plan()
 
     class _FakeClient:
         def __init__(self, base_url: str):
@@ -824,13 +826,119 @@ def test_validate_chatbot_adapter_auth_uses_real_session_cookie_for_food(monkeyp
             },
             "session_cookies": {"session_token": "real-session-token"},
         },
-        plan=_build_food_plan(),
+        plan=plan,
     )
 
     assert result["passed"] is True
     ctx = captured["ctx"]
     assert getattr(ctx, "accessToken", None) in (None, "")
     assert getattr(ctx, "cookies", None) == {"session_token": "real-session-token"}
+
+
+def test_validate_chatbot_adapter_auth_repairs_generated_src_namespace(tmp_path: Path, monkeypatch):
+    chatbot_workspace = tmp_path / "chatbot"
+    generated_root = chatbot_workspace / "src" / "adapters" / "generated" / "food"
+    generated_root.mkdir(parents=True, exist_ok=True)
+    for package_path in [
+        chatbot_workspace / "src" / "__init__.py",
+        chatbot_workspace / "src" / "adapters" / "__init__.py",
+        generated_root / "__init__.py",
+    ]:
+        package_path.parent.mkdir(parents=True, exist_ok=True)
+        package_path.write_text("", encoding="utf-8")
+    (generated_root / "client.py").write_text(
+        "class GeneratedFoodClient:\n"
+        "    def __init__(self, base_url):\n"
+        "        self.base_url = base_url\n",
+        encoding="utf-8",
+    )
+    (generated_root / "adapter.py").write_text(
+        "class _ValidatedUser:\n"
+        "    def __init__(self):\n"
+        "        self.id = '7'\n"
+        "        self.siteId = 'food'\n"
+        "    def model_dump(self, mode='json'):\n"
+        "        return {'id': self.id, 'siteId': self.siteId}\n"
+        "\n"
+        "class GeneratedFoodAdapter:\n"
+        "    def __init__(self, client):\n"
+        "        self.client = client\n"
+        "    async def validate_auth(self, ctx):\n"
+        "        return _ValidatedUser()\n",
+        encoding="utf-8",
+    )
+
+    stale_src = types.ModuleType("src")
+    stale_src.__path__ = [str(tmp_path / "stale-src")]
+    stale_adapters = types.ModuleType("src.adapters")
+    stale_adapters.__path__ = [str(tmp_path / "stale-src" / "adapters")]
+    stale_chatbot_src = types.ModuleType("chatbot.src")
+    stale_chatbot_src.__path__ = list(stale_src.__path__)
+    stale_chatbot_adapters = types.ModuleType("chatbot.src.adapters")
+    stale_chatbot_adapters.__path__ = list(stale_adapters.__path__)
+
+    monkeypatch.setitem(sys.modules, "src", stale_src)
+    monkeypatch.setitem(sys.modules, "src.adapters", stale_adapters)
+    monkeypatch.setitem(sys.modules, "chatbot.src", stale_chatbot_src)
+    monkeypatch.setitem(sys.modules, "chatbot.src.adapters", stale_chatbot_adapters)
+
+    result = validate_chatbot_adapter_auth(
+        chatbot_runtime_workspace=chatbot_workspace,
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path / "backend"),
+            command=["python", "manage.py", "runserver"],
+            readiness_url="http://127.0.0.1:8128/api/chat/auth-token",
+            listen_port=8128,
+        ),
+        bootstrap_result={
+            "passed": True,
+            "bootstrap_payload": {
+                "access_token": "validation-food",
+                "user": {"id": "7"},
+            },
+            "session_cookies": {"session_token": "real-session-token"},
+        },
+        plan=_build_food_plan(),
+    )
+
+    assert result["passed"] is True
+    assert result["validated_user"]["id"] == "7"
+
+
+def test_validate_chatbot_adapter_auth_returns_failure_on_generated_import_error(
+    monkeypatch, tmp_path: Path
+):
+    monkeypatch.setitem(
+        validate_chatbot_adapter_auth.__globals__,
+        "_load_generated_adapter",
+        lambda **kwargs: (_ for _ in ()).throw(
+            ModuleNotFoundError("No module named 'src.adapters.generated'")
+        ),
+    )
+
+    result = validate_chatbot_adapter_auth(
+        chatbot_runtime_workspace=tmp_path,
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path / "backend"),
+            command=["python", "manage.py", "runserver"],
+            readiness_url="http://127.0.0.1:8129/api/chat/auth-token",
+            listen_port=8129,
+        ),
+        bootstrap_result={
+            "passed": True,
+            "bootstrap_payload": {
+                "access_token": "validation-food",
+                "user": {"id": "7"},
+            },
+            "session_cookies": {"session_token": "real-session-token"},
+        },
+        plan=_build_food_plan(),
+    )
+
+    assert result["passed"] is False
+    assert "src.adapters.generated" in result["failure_summary"]
 
 
 def test_runtime_fixture_manifest_reuses_transport_aware_food_auth_context(monkeypatch, tmp_path: Path):
@@ -1006,6 +1114,86 @@ def test_runtime_fixture_manifest_uses_nested_response_contract_for_visible_orde
     assert manifest["available"] is True
     assert manifest["orders"]["lookup_order_id"] == "ORD-9001"
     assert manifest["orders"]["status_order_id"] == "ORD-9001"
+
+
+def test_collect_widget_order_flow_report_patches_runtime_auth_without_chat_endpoint_adapter_setup(
+    monkeypatch,
+):
+    import chatbot.src.runtime_auth as runtime_auth
+
+    observed: dict[str, object] = {}
+    real_import_module = _collect_widget_order_flow_report.__globals__["importlib"].import_module
+    plan = _build_food_plan()
+
+    class _FakeStatus:
+        value = "paid"
+
+    class _FakeOrder:
+        status = _FakeStatus()
+
+    class _FakeOrderStatus:
+        order = _FakeOrder()
+
+    class _FakeAdapter:
+        site_id = "food"
+
+        async def get_order_status(self, auth_context, status_input):
+            observed["status_auth_context"] = auth_context
+            observed["status_input"] = status_input
+            return _FakeOrderStatus()
+
+    fake_adapter = _FakeAdapter()
+    fake_server_fastapi = types.SimpleNamespace(app=object())
+    fake_client = types.SimpleNamespace()
+    fake_chat_endpoint = types.SimpleNamespace(
+        resolve_runtime_auth=runtime_auth.resolve_runtime_auth,
+    )
+
+    monkeypatch.setitem(
+        _collect_widget_order_flow_report.__globals__,
+        "TestClient",
+        lambda app: fake_client,
+    )
+
+    def _fake_exercise_widget_order_flow(**kwargs):
+        resolved = runtime_auth._resolve_adapter("food")
+        observed.setdefault("resolved_adapters", []).append(resolved)
+        return {"passed": True, "steps": []}
+
+    monkeypatch.setitem(
+        _collect_widget_order_flow_report.__globals__,
+        "_exercise_widget_order_flow",
+        _fake_exercise_widget_order_flow,
+    )
+    monkeypatch.setattr(
+        _collect_widget_order_flow_report.__globals__["importlib"],
+        "import_module",
+        lambda name: types.SimpleNamespace(
+            GetOrderStatusInput=lambda **kwargs: types.SimpleNamespace(**kwargs)
+        )
+        if name == "src.adapters.schema"
+        else real_import_module(name),
+    )
+
+    reports = _collect_widget_order_flow_report(
+        adapter=fake_adapter,
+        auth_context=types.SimpleNamespace(
+            accessToken="",
+            cookies={"session_token": "real-session-token"},
+        ),
+        plan=plan,
+        sample_context={
+            "sampled_order_id": "ORD-1",
+            "sampled_order_ui_item": {"order_id": "ORD-1"},
+            "sampled_option_id": "OPT-1",
+        },
+        server_fastapi=fake_server_fastapi,
+        chat_endpoint=fake_chat_endpoint,
+    )
+
+    assert reports["get_order_status"]["passed"] is True
+    assert reports["list_orders"]["passed"] is True
+    assert all(item is fake_adapter for item in observed["resolved_adapters"])
 
 
 def test_resolve_bridge_auth_material_prefers_nested_auth_contract_over_legacy_fields():

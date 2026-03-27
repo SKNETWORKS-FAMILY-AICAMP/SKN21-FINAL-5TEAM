@@ -1,5 +1,9 @@
 import os
 
+from env_bootstrap import ensure_backend_env_loaded
+
+ensure_backend_env_loaded()
+
 # Oracle DB 설정
 ORACLE_USER = os.environ.get("ORACLE_USER", "bilyeo")
 ORACLE_PASSWORD = os.environ.get("ORACLE_PASSWORD", "0310")

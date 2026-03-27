@@ -151,6 +151,44 @@ def test_conversation_scenario_builder_allows_selection_first_bilyeo_paths():
     assert ["get_order_status"] in followup_scenario["allowed_paths"]
 
 
+def test_conversation_scenario_builder_emits_valid_nested_contract_payload():
+    from chatbot.src.onboarding_v2.validation.flow_contracts import (
+        build_conversation_scenarios,
+        build_validation_capability_contract,
+    )
+
+    fixture_manifest = {
+        "orders": {
+            "lookup_order_id": "7",
+            "status_order_id": "7",
+            "cancel_order_id": "7",
+            "refund_order_id": "7",
+            "exchange_order_id": "7",
+            "exchange_new_option_id": "option-7",
+        }
+    }
+    contract = build_validation_capability_contract(
+        plan=_build_bilyeo_plan(),
+        fixture_manifest=fixture_manifest,
+        sample_context={"sampled_option_id": "option-7"},
+    )
+
+    scenarios = build_conversation_scenarios(
+        fixture_manifest=fixture_manifest,
+        capability_contract=contract,
+    )
+
+    authenticated_list_orders = next(
+        item for item in scenarios if item["scenario_id"] == "authenticated_list_orders"
+    )
+    nested = ConversationScenarioContract.model_validate(
+        authenticated_list_orders["scenario_contract"]
+    )
+
+    assert nested.scenario_id == "authenticated_list_orders"
+    assert "expected_tool_names" not in authenticated_list_orders["scenario_contract"]
+
+
 def test_flow_evaluator_accepts_selection_first_path_without_direct_mutation_tool():
     from chatbot.src.onboarding_v2.validation.flow_evaluator import (
         evaluate_conversation_deterministic_failures,

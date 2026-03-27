@@ -728,36 +728,19 @@ def validate_chatbot_adapter_auth(
             "related_files": related_files,
         }
 
-    module_prefix = f"src.adapters.generated.{plan.chatbot_bridge.site_key}"
-    with _prepend_path(chatbot_runtime_workspace):
-        _drop_generated_adapter_import_cache(module_prefix)
-        adapter_module = importlib.import_module(f"{module_prefix}.adapter")
-        client_module = importlib.import_module(f"{module_prefix}.client")
-        adapter_class = getattr(
-            adapter_module,
-            f"Generated{_class_name(plan.chatbot_bridge.site_key)}Adapter",
+    try:
+        adapter = _load_generated_adapter(
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+            runtime_plan=runtime_plan,
+            plan=plan,
         )
-        client_class = getattr(
-            client_module, f"Generated{_class_name(plan.chatbot_bridge.site_key)}Client"
-        )
-        adapter = adapter_class(
-            client=client_class(
-                base_url=_runtime_base_url(
-                    runtime_plan,
-                    chat_auth_contract_path=plan.host_backend.chat_auth_contract_path,
-                )
-            )
-        )
-        try:
-            validated_user = asyncio.run(
-                adapter.validate_auth(auth_context)
-            )
-        except Exception as exc:
-            return {
-                "passed": False,
-                "failure_summary": f"chatbot adapter auth failed: {exc}",
-                "related_files": related_files,
-            }
+        validated_user = asyncio.run(adapter.validate_auth(auth_context))
+    except Exception as exc:
+        return {
+            "passed": False,
+            "failure_summary": f"chatbot adapter auth failed: {exc}",
+            "related_files": related_files,
+        }
     user_id = str(getattr(validated_user, "id", "") or "").strip()
     return {
         "passed": bool(user_id),
@@ -1696,9 +1679,7 @@ def _collect_widget_order_flow_report(
             "failure_summary": f"get_order_status failed: {exc}",
         }
 
-    with patch.object(
-        chat_endpoint.adapter_setup, "resolve_site_adapter", lambda site_id: adapter
-    ):
+    with _patched_runtime_adapter_resolution(chat_endpoint=chat_endpoint, adapter=adapter):
         client = TestClient(server_fastapi.app)
         flow_reports["list_orders"] = _exercise_widget_order_flow(
             client=client,
@@ -2548,6 +2529,17 @@ def _patched_stream_callbacks(runtime_chat_endpoint: Any, callback_handler: Base
         return config
 
     with patch.object(runtime_chat_endpoint, "_build_stream_config", _wrapped_build_stream_config):
+        yield
+
+
+@contextmanager
+def _patched_runtime_adapter_resolution(*, chat_endpoint: Any, adapter: Any):
+    runtime_auth_fn = getattr(chat_endpoint, "resolve_runtime_auth", None)
+    runtime_auth_module_name = getattr(runtime_auth_fn, "__module__", "").strip()
+    if not runtime_auth_module_name:
+        raise AttributeError("chat endpoint missing resolve_runtime_auth")
+    runtime_auth_module = importlib.import_module(runtime_auth_module_name)
+    with patch.object(runtime_auth_module, "_resolve_adapter", lambda site_id: adapter):
         yield
 
 

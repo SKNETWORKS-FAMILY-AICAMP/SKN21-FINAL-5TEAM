@@ -254,8 +254,9 @@ def _contract_from_manifest(
 
 
 def _scenario_payload(contract: ConversationScenarioContract) -> dict[str, Any]:
-    payload = contract.model_dump(mode="json")
-    payload["scenario_contract"] = payload
+    scenario_contract_payload = contract.model_dump(mode="json")
+    payload = dict(scenario_contract_payload)
+    payload["scenario_contract"] = dict(scenario_contract_payload)
     payload["expected_tool_names"] = _scenario_expected_tool_names(contract)
     return payload
 

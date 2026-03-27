@@ -18,16 +18,14 @@ import uuid
 import json
 import boto3
 from datetime import datetime
-from dotenv import load_dotenv
-from pathlib import Path
 from urllib.parse import urljoin
-
-# bilyeo/.env 파일 로드
-env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(env_path)
 
 # backend 디렉토리를 path에 추가
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "backend"))
+
+from env_bootstrap import ensure_backend_env_loaded
+
+ensure_backend_env_loaded()
 
 import oracledb
 from models import get_connection
