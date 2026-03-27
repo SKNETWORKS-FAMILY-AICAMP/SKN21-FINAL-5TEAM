@@ -333,6 +333,22 @@ function resolveLiveStage(payload = state.lastPayload, stages = []) {
   return running?.stage || "";
 }
 
+function statusLabelForStep(status, fallback = "") {
+  if (fallback) {
+    return fallback;
+  }
+  if (status === "completed" || status === "exported" || status === "ready") {
+    return "Completed";
+  }
+  if (status === "running" || status === "starting") {
+    return "Running";
+  }
+  if (status === "failed" || status === "process_failed" || status === "failed_human_review" || status === "blocked") {
+    return "Failed";
+  }
+  return "Waiting";
+}
+
 function renderCurrentWorkBanner(payload) {
   if (!refs.currentWorkBanner) {
     return;
@@ -399,18 +415,17 @@ function renderCurrentWorkBanner(payload) {
   `;
 }
 
-function renderStoryStrip(story = {}) {
-  const steps = Array.isArray(story.steps) ? story.steps : [];
-  if (!steps.length) {
+function renderStoryLane(title, subtitle, steps, laneClass = "") {
+  if (!Array.isArray(steps) || !steps.length) {
     return "";
   }
   return `
-    <section class="story-section">
-      <div class="story-section-head">
-        <span class="section-kicker">Run Story</span>
-        <small>${escapeHtml(story.headline || "")}</small>
+    <div class="story-lane ${laneClass}">
+      <div class="story-lane-head">
+        <span>${escapeHtml(title)}</span>
+        ${subtitle ? `<small>${escapeHtml(subtitle)}</small>` : ""}
       </div>
-      <div class="story-strip">
+      <div class="story-strip ${laneClass}">
         ${steps
           .map(
             (step, index) => `
@@ -426,12 +441,147 @@ function renderStoryStrip(story = {}) {
           )
           .join("")}
       </div>
+    </div>
+  `;
+}
+
+function buildPrimaryAttemptSteps(steps = [], repairStory = {}) {
+  const failedStage = String(repairStory.failed_stage || "").trim();
+  const failedIndex = steps.findIndex((step) => String(step.stage || "") === failedStage);
+  if (failedIndex === -1) {
+    return steps;
+  }
+  return steps.map((step, index) => {
+    if (index < failedIndex) {
+      return {
+        ...step,
+        status: "completed",
+        status_label: statusLabelForStep("completed"),
+        emphasis: "default",
+      };
+    }
+    if (index === failedIndex) {
+      return {
+        ...step,
+        status: "failed",
+        status_label: statusLabelForStep("failed", step.status_label),
+        emphasis: "failed",
+      };
+    }
+    return {
+      ...step,
+      status: "pending",
+      status_label: statusLabelForStep("pending"),
+      emphasis: "default",
+    };
+  });
+}
+
+function buildRerunSteps(story = {}, repairStory = {}) {
+  const steps = Array.isArray(story.steps) ? story.steps : [];
+  const rewindStage = String(repairStory.rewind_to || "").trim();
+  const rewindIndex = steps.findIndex((step) => String(step.stage || "") === rewindStage);
+  if (rewindIndex === -1) {
+    return [];
+  }
+
+  const currentStage = String(story.current_stage?.stage || "").trim();
+  const currentIndex = steps.findIndex((step) => String(step.stage || "") === currentStage);
+  const fallbackRerunStatus = Array.isArray(repairStory.steps)
+    ? repairStory.steps.find((step) => step.kind === "rerun") || {}
+    : {};
+
+  return steps.slice(rewindIndex).map((step, offset) => {
+    const absoluteIndex = rewindIndex + offset;
+    let status = "pending";
+    let statusLabel = statusLabelForStep("pending");
+    let emphasis = "default";
+
+    if (currentIndex !== -1 && absoluteIndex < currentIndex) {
+      status = "completed";
+      statusLabel = statusLabelForStep("completed");
+      emphasis = absoluteIndex === rewindIndex ? "rewind" : "default";
+    } else if (currentIndex !== -1 && absoluteIndex === currentIndex) {
+      status = String(story.current_stage?.status || step.status || "running");
+      statusLabel = statusLabelForStep(status, story.current_stage?.status_label || step.status_label || "");
+      emphasis = status === "failed" ? "failed" : "current";
+    } else if (currentIndex === -1 && absoluteIndex === rewindIndex) {
+      status = String(fallbackRerunStatus.status || "running");
+      statusLabel = statusLabelForStep(status);
+      emphasis = status === "failed" ? "failed" : "current";
+    } else if (absoluteIndex === rewindIndex) {
+      emphasis = "rewind";
+    }
+
+    return {
+      ...step,
+      status,
+      status_label: statusLabel,
+      emphasis,
+    };
+  });
+}
+
+function renderRepairStoryStrip(story = {}, repairStory = {}) {
+  const steps = Array.isArray(story.steps) ? story.steps : [];
+  if (!steps.length) {
+    return "";
+  }
+  const rewindIndex = steps.findIndex((step) => String(step.stage || "") === String(repairStory.rewind_to || ""));
+  const rewindLabel = rewindIndex >= 0
+    ? String(steps[rewindIndex].label || repairStory.rewind_to_label || repairStory.rewind_to || "Rewind")
+    : String(repairStory.rewind_to_label || repairStory.rewind_to || "Rewind");
+  const problem = repairStory.problem || story.headline || "원래 시도에서 문제가 발생했습니다.";
+  const currentAction = repairStory.current_action || repairStory.summary || `${rewindLabel} 단계 재실행 진행 중입니다.`;
+  const primarySteps = buildPrimaryAttemptSteps(steps, repairStory);
+  const rerunSteps = buildRerunSteps(story, repairStory);
+
+  if (!rerunSteps.length) {
+    return renderStoryLane("Run Story", story.headline || "", steps, "story-strip-primary");
+  }
+
+  return `
+    <section class="story-section story-rewind-section">
+      <div class="story-section-head">
+        <span class="section-kicker">Run Story</span>
+        <small>${escapeHtml(story.headline || "")}</small>
+      </div>
+      <div class="story-rewind-graph">
+        ${renderStoryLane("Original Attempt", problem, primarySteps, "story-strip-primary")}
+        <div class="story-rewind-connector">
+          <span class="story-rewind-arrow">↺</span>
+          <div class="story-rewind-copy">
+            <strong>rewind to ${escapeHtml(rewindLabel)}</strong>
+            <small>${escapeHtml(currentAction)}</small>
+          </div>
+        </div>
+        ${renderStoryLane(`Re-run from ${rewindLabel}`, currentAction, rerunSteps, "story-strip-rerun")}
+      </div>
     </section>
   `;
 }
 
-function renderRunStorySnapshot(story = {}) {
-  const content = renderStoryStrip(story);
+function renderStoryStrip(story = {}, repairStory = {}) {
+  if (repairStory.active && repairStory.rewind_to) {
+    return renderRepairStoryStrip(story, repairStory);
+  }
+  const steps = Array.isArray(story.steps) ? story.steps : [];
+  if (!steps.length) {
+    return "";
+  }
+  return `
+    <section class="story-section">
+      <div class="story-section-head">
+        <span class="section-kicker">Run Story</span>
+        <small>${escapeHtml(story.headline || "")}</small>
+      </div>
+      ${renderStoryLane("Run Story", story.summary || story.headline || "", steps, "story-strip-primary")}
+    </section>
+  `;
+}
+
+function renderRunStorySnapshot(story = {}, repairStory = {}) {
+  const content = renderStoryStrip(story, repairStory);
   if (!content) {
     return "";
   }
@@ -1133,13 +1283,13 @@ function renderSelectedStage(payload) {
           retrieval: story.retrieval || {},
         })}
         ${state.lastError ? renderErrorPane(state.lastError) : ""}
-        ${renderRunStorySnapshot(story)}
+        ${renderRunStorySnapshot(story, repairStory)}
         ${renderRawEventLog(payload)}
       </div>
     `
     : `
       <div class="story-panel">
-        ${renderStoryStrip(story)}
+        ${renderStoryStrip(story, repairStory)}
         ${renderNarrativeSummary(story)}
         ${state.lastError ? renderErrorPane(state.lastError) : ""}
         ${stageDetailSection}

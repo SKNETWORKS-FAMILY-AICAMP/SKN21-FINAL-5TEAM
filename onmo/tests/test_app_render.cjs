@@ -277,6 +277,78 @@ function repairPayload() {
   };
 }
 
+function repairRerunGraphPayload() {
+  return {
+    run: {
+      site: "bilyeo",
+      run_id: "bilyeo-v2-repair-graph-010",
+      status: "running",
+      status_label: "Running",
+    },
+    process: { running: true, log_path: "/tmp/onmo.log" },
+    demo: { status: "disabled", status_label: "GitHub Mode" },
+    services: [],
+    story: {
+      headline: "현재 Analysis 단계가 다시 진행 중입니다.",
+      summary: "Validation 실패 이후 Analysis 단계부터 다시 실행 중입니다.",
+      current_stage: { stage: "analysis", label: "Analysis", status: "running", status_label: "Running" },
+      focus_stage: { stage: "analysis", label: "Analysis", status: "running", status_label: "Running" },
+      steps: [
+        { stage: "analysis", label: "Analysis", status: "running", status_label: "Running", emphasis: "current" },
+        { stage: "planning", label: "Planning", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "compile", label: "Compile", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "apply", label: "Apply", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "export", label: "Export", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "indexing", label: "Indexing", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "validation", label: "Validation", status: "failed", status_label: "Failed", emphasis: "failed" },
+      ],
+      retrieval: { active: false, headline: "", summary: "", items: [] },
+    },
+    repair_story: {
+      active: true,
+      headline: "Repair Rewind",
+      summary: "Validation 단계에서 실패해 Analysis부터 다시 진행 중입니다.",
+      status_label: "분석 단계로 되감기",
+      failed_stage: "validation",
+      failed_stage_label: "검증",
+      rewind_to: "analysis",
+      rewind_to_label: "분석",
+      problem: "Validation 단계에서 문제를 감지했습니다.",
+      diagnosis: "이전 산출물을 다시 검증하기 위해 analysis부터 재실행합니다.",
+      current_action: "Analysis 단계 재실행 진행 중입니다.",
+      steps: [
+        { kind: "failure", label: "검증 실패 감지", status: "completed", timestamp: "2026-03-27T19:40:04+09:00" },
+        { kind: "diagnosis", label: "원인 진단 완료", status: "completed", timestamp: "2026-03-27T19:40:18+09:00" },
+        { kind: "rewind", label: "분석으로 되감기 결정", status: "completed", timestamp: "2026-03-27T19:40:23+09:00" },
+        { kind: "rerun", label: "분석 재실행 시작", status: "running", timestamp: "2026-03-27T19:40:24+09:00" },
+      ],
+    },
+    repair: {
+      active: true,
+      status: "running",
+      status_label: "분석 단계로 되감기",
+      failed_stage_label: "검증",
+      effective_rewind_label: "분석",
+      current_action: "Analysis 단계 재실행 진행 중입니다.",
+    },
+    details: {
+      analysis: {
+        cards: [{ label: "Current", value: "rerun active" }],
+      },
+    },
+    recent_events: [],
+    stages: [
+      { stage: "analysis", label: "Analysis", status: "running", status_label: "Running" },
+      { stage: "planning", label: "Planning", status: "completed", status_label: "Completed" },
+      { stage: "compile", label: "Compile", status: "completed", status_label: "Completed" },
+      { stage: "apply", label: "Apply", status: "completed", status_label: "Completed" },
+      { stage: "export", label: "Export", status: "completed", status_label: "Completed" },
+      { stage: "indexing", label: "Indexing", status: "completed", status_label: "Completed" },
+      { stage: "validation", label: "Validation", status: "failed", status_label: "Failed" },
+    ],
+  };
+}
+
 test("repair mode renders a dedicated hero and uses focus stage details", async () => {
   const api = loadApp();
   const payload = repairPayload();
@@ -473,6 +545,22 @@ test("run story snapshot stays open after toggle and rerender", async () => {
 
   const rerenderedPanel = api.refs.stageDetail.querySelector("[data-story-snapshot-panel]");
   assert.equal(rerenderedPanel.open, true);
+});
+
+test("repair snapshot renders a rerun lane and rewind connector", async () => {
+  const api = loadApp();
+  const payload = repairRerunGraphPayload();
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "analysis";
+
+  api.renderSelectedStage(payload);
+
+  assert.match(api.refs.stageDetail.innerHTML, /story-strip-primary/);
+  assert.match(api.refs.stageDetail.innerHTML, /story-strip-rerun/);
+  assert.match(api.refs.stageDetail.innerHTML, /story-rewind-connector/);
+  assert.match(api.refs.stageDetail.innerHTML, /Re-run from Analysis/);
+  assert.match(api.refs.stageDetail.innerHTML, /rewind to Analysis/);
+  assert.match(api.refs.stageDetail.innerHTML, /Validation/);
 });
 
 test("current work banner is rendered for normal and repair runs", async () => {
