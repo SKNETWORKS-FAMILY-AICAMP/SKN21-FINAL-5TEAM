@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event as ThreadingEvent
@@ -1491,15 +1491,13 @@ def _run_parallel_execution_lanes(
             host_context.export_ready.set()
         if indexing_future is not None:
             try:
-                indexing_future.result(timeout=2)
-            except TimeoutError:
-                pass
+                indexing_future.result()
             except Exception:
                 pass
         raise
     finally:
         if executor is not None:
-            executor.shutdown(wait=False, cancel_futures=True)
+            executor.shutdown(wait=True, cancel_futures=True)
 
 
 def run_indexing_stage(

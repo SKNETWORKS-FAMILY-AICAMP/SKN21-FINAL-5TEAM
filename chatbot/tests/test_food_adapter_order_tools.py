@@ -8,6 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from chatbot.src.tools import adapter_order_tools
 from chatbot.src.adapters import setup as adapter_setup
+from chatbot.src.adapters.site_a.mappers import map_site_a_delivery, map_site_a_order
+from chatbot.src.adapters.schema import DeliveryStatus, OrderStatus
 
 
 class FakeFoodClient:
@@ -137,6 +139,110 @@ def test_get_user_orders_for_site_filters_exchange_candidates(monkeypatch):
     assert payload["total_orders"] == 1
     assert payload["ui_data"][0]["order_id"] == "11"
     assert payload["ui_data"][0]["can_exchange"] is True
+
+
+def test_get_user_orders_for_site_supports_bilyeo_order_shape(monkeypatch):
+    orders = [
+        {
+            "order_id": 7,
+            "status": "배송완료",
+            "created_at": "2026-03-27T10:00:00",
+            "total_price": "18000.00",
+            "items": [
+                {
+                    "product_id": 301,
+                    "product_name": "에스트라 아토베리어365 로션",
+                    "price": "18000.00",
+                }
+            ],
+            "shipping": {
+                "delivered_at": "2026-03-26T09:00:00",
+            },
+        }
+    ]
+    adapter = FakeFoodAdapter([])
+    adapter.site_id = "bilyeo"
+
+    async def fake_list_orders(headers):
+        assert headers == {}
+        return orders
+
+    adapter.client = SimpleNamespace(list_orders=fake_list_orders)
+    adapter._normalize_order_status = lambda raw: SimpleNamespace(
+        value={
+            "배송완료": "delivered",
+            "배송중": "shipped",
+            "배송준비중": "preparing",
+            "주문완료": "paid",
+            "주문취소": "cancelled",
+        }.get(raw, "unknown")
+    )
+    monkeypatch.setattr(adapter_order_tools, "_get_site_adapter", lambda site_id: adapter)
+
+    payload = adapter_order_tools.get_user_orders_for_site(
+        user_id=1,
+        site_id="bilyeo",
+        access_token="1",
+        requires_selection=True,
+        action_context="exchange",
+    )
+
+    assert payload["total_orders"] == 1
+    assert payload["ui_data"][0]["order_id"] == "7"
+    assert payload["ui_data"][0]["product_name"] == "에스트라 아토베리어365 로션"
+    assert payload["ui_data"][0]["status"] == "delivered"
+    assert payload["ui_data"][0]["delivered_at"] == "2026-03-26"
+    assert payload["ui_data"][0]["can_exchange"] is True
+
+
+def test_site_a_mappers_support_bilyeo_wrapped_order_payload():
+    deps = {
+        "site_id": "bilyeo",
+        "current_user_id": "1",
+        "normalize_order_status": lambda raw: {
+            "주문완료": OrderStatus.PAID,
+            "배송준비중": OrderStatus.PREPARING,
+            "배송중": OrderStatus.SHIPPED,
+            "배송완료": OrderStatus.DELIVERED,
+            "주문취소": OrderStatus.CANCELLED,
+        }.get(raw, OrderStatus.UNKNOWN),
+        "normalize_delivery_status": lambda raw: {
+            "배송준비중": DeliveryStatus.READY,
+            "배송중": DeliveryStatus.IN_TRANSIT,
+            "배송완료": DeliveryStatus.DELIVERED,
+        }.get(raw, DeliveryStatus.UNKNOWN),
+    }
+    raw = {
+        "order": {
+            "order_id": 9,
+            "user_id": 1,
+            "status": "배송완료",
+            "created_at": "2026-03-27T10:00:00",
+            "total_price": 22000,
+            "items": [
+                {
+                    "product_id": 101,
+                    "product_name": "테스트 상품",
+                    "quantity": 2,
+                    "price": 11000,
+                    "image_url": "https://example.com/p.png",
+                }
+            ],
+            "shipping": {
+                "status": "배송완료",
+                "delivered_at": "2026-03-26T12:00:00",
+            },
+        }
+    }
+
+    order_result = map_site_a_order(raw, deps)
+    delivery_result = map_site_a_delivery(raw, deps)
+
+    assert order_result.order.orderId == "9"
+    assert order_result.order.status.value == "delivered"
+    assert order_result.order.items[0].productTitle == "테스트 상품"
+    assert delivery_result.tracking.orderId == "9"
+    assert delivery_result.tracking.deliveryStatus.value == "delivered"
 
 
 def test_exchange_via_adapter_returns_exchange_requested(monkeypatch):

@@ -19,11 +19,32 @@ def _bootstrap_legacy_import_alias() -> None:
     레거시 경로(`chatbot.src...`)를 현재 경로(`chatbot.src...`)로 매핑.
     기존 노드/툴 파일의 import를 변경하지 않고 서버 실행 가능하게 한다.
     """
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    workspace_root = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(workspace_root)
+    if workspace_root not in sys.path:
+        sys.path.insert(0, workspace_root)
     if repo_root not in sys.path:
-        sys.path.insert(0, repo_root)
+        sys.path.append(repo_root)
 
-    chatbot_src = importlib.import_module("chatbot.src")
+    chatbot_src = importlib.import_module("src")
+
+    def _install_lazy_alias(module: types.ModuleType, *, alias_base: str, import_base: str) -> None:
+        if getattr(module, "__codex_lazy_alias__", False):
+            return
+
+        def _lazy_getattr(name: str) -> Any:
+            imported = importlib.import_module(f"{import_base}.{name}")
+            _install_lazy_alias(
+                imported,
+                alias_base=f"{alias_base}.{name}",
+                import_base=f"{import_base}.{name}",
+            )
+            setattr(module, name, imported)
+            sys.modules[f"{alias_base}.{name}"] = imported
+            return imported
+
+        setattr(module, "__getattr__", _lazy_getattr)
+        setattr(module, "__codex_lazy_alias__", True)
 
     # ecommerce 네임스페이스 보장
     try:
@@ -37,11 +58,12 @@ def _bootstrap_legacy_import_alias() -> None:
     chatbot_ns = sys.modules.get("chatbot")
     if chatbot_ns is None:
         chatbot_ns = types.ModuleType("chatbot")
-        chatbot_ns.__path__ = [os.path.join(repo_root, "chatbot")]
+        chatbot_ns.__path__ = [workspace_root]
         sys.modules["chatbot"] = chatbot_ns
 
     setattr(ecommerce_pkg, "chatbot", chatbot_ns)
     setattr(chatbot_ns, "src", chatbot_src)
+    _install_lazy_alias(chatbot_src, alias_base="chatbot.src", import_base="src")
     sys.modules["chatbot.src"] = chatbot_src
 
 

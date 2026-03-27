@@ -223,7 +223,9 @@ def run_validation_cycle(
 
     if prep_result.passed and runtime_state.passed and runtime_plan is not None:
         chatbot_runtime_boot = validate_chatbot_runtime_boot(
-            chatbot_runtime_workspace=chatbot_runtime_workspace
+            chatbot_runtime_workspace=chatbot_runtime_workspace,
+            runtime_plan=runtime_plan,
+            plan=plan,
         )
     else:
         chatbot_runtime_boot = _skipped_result(
@@ -626,7 +628,7 @@ def validate_chatbot_adapter_auth(
 
     module_prefix = f"src.adapters.generated.{plan.chatbot_bridge.site_key}"
     with _prepend_path(chatbot_runtime_workspace):
-        _drop_import_cache(module_prefix)
+        _drop_generated_adapter_import_cache(module_prefix)
         adapter_module = importlib.import_module(f"{module_prefix}.adapter")
         client_module = importlib.import_module(f"{module_prefix}.client")
         adapter_class = getattr(
@@ -682,6 +684,8 @@ def validate_chatbot_adapter_auth(
 def validate_chatbot_runtime_boot(
     *,
     chatbot_runtime_workspace: Path,
+    runtime_plan: BackendRuntimePlan,
+    plan: IntegrationPlan,
 ) -> dict[str, Any]:
     command = [
         sys.executable,
@@ -700,6 +704,7 @@ def validate_chatbot_runtime_boot(
         if existing_pythonpath
         else str(chatbot_runtime_workspace)
     )
+    env.update(_chatbot_runtime_env_overrides(runtime_plan=runtime_plan, plan=plan))
     result = subprocess.run(
         command,
         cwd=str(chatbot_runtime_workspace),
@@ -727,6 +732,10 @@ def validate_chatbot_runtime_boot(
         "returncode": result.returncode,
         "stdout": result.stdout,
         "stderr": result.stderr,
+        "runtime_env_overrides": _chatbot_runtime_env_overrides(
+            runtime_plan=runtime_plan,
+            plan=plan,
+        ),
         "related_files": [
             "server_fastapi.py",
             "src/tools/adapter_order_tools.py",
@@ -903,135 +912,136 @@ def validate_conversation_runtime(
             related_files=_widget_order_related_files(plan),
         )
 
-    runtime_server_fastapi, runtime_chat_endpoint = _load_runtime_chat_modules(
-        chatbot_runtime_workspace=chatbot_runtime_workspace
-    )
-
-    transcripts_dir = run_root / "conversation-validation"
-    transcripts_dir.mkdir(parents=True, exist_ok=True)
-    live_logs_root_path = Path(live_logs_root).resolve() if live_logs_root is not None else None
-    if live_logs_root_path is not None:
-        live_logs_root_path.mkdir(parents=True, exist_ok=True)
-    scenarios = _build_conversation_scenarios(fixture_manifest=fixture_manifest)
-    previous_states: dict[str, dict[str, Any]] = {}
-    results: list[ConversationScenarioResult] = []
-    transcript_contents: dict[str, str] = {}
-    trace_contents: dict[str, str] = {}
-
-    for scenario in scenarios:
-        scenario_log_path = (
-            live_logs_root_path / f"conversation-{scenario['scenario_id']}.log"
-            if live_logs_root_path is not None
-            else None
+    with _patched_chatbot_runtime_env(runtime_plan=runtime_plan, plan=plan):
+        runtime_server_fastapi, runtime_chat_endpoint = _load_runtime_chat_modules(
+            chatbot_runtime_workspace=chatbot_runtime_workspace
         )
-        _emit_validation_event(
-            event_callback,
-            phase="conversation_scenario_start",
-            event_type="conversation_validation_scenario_started",
-            summary=f"conversation scenario {scenario['scenario_id']} started",
-            details={
-                "scenario_id": scenario["scenario_id"],
-                "mode": scenario["mode"],
-                "log_path": str(scenario_log_path) if scenario_log_path is not None else None,
-                "status": "running",
-            },
-        )
-        _append_text(
-            scenario_log_path,
-            json.dumps(
-                {
-                    "event": "start",
+
+        transcripts_dir = run_root / "conversation-validation"
+        transcripts_dir.mkdir(parents=True, exist_ok=True)
+        live_logs_root_path = Path(live_logs_root).resolve() if live_logs_root is not None else None
+        if live_logs_root_path is not None:
+            live_logs_root_path.mkdir(parents=True, exist_ok=True)
+        scenarios = _build_conversation_scenarios(fixture_manifest=fixture_manifest)
+        previous_states: dict[str, dict[str, Any]] = {}
+        results: list[ConversationScenarioResult] = []
+        transcript_contents: dict[str, str] = {}
+        trace_contents: dict[str, str] = {}
+
+        for scenario in scenarios:
+            scenario_log_path = (
+                live_logs_root_path / f"conversation-{scenario['scenario_id']}.log"
+                if live_logs_root_path is not None
+                else None
+            )
+            _emit_validation_event(
+                event_callback,
+                phase="conversation_scenario_start",
+                event_type="conversation_validation_scenario_started",
+                summary=f"conversation scenario {scenario['scenario_id']} started",
+                details={
                     "scenario_id": scenario["scenario_id"],
                     "mode": scenario["mode"],
+                    "log_path": str(scenario_log_path) if scenario_log_path is not None else None,
+                    "status": "running",
                 },
-                ensure_ascii=False,
             )
-            + "\n",
-        )
-        if scenario["scenario_id"] == "unauthenticated_chat_request":
-            result, transcript_text = asyncio.run(
-                _run_unauthenticated_conversation_scenario(
-                    runtime_server_fastapi=runtime_server_fastapi,
-                    fixture_manifest=fixture_manifest,
-                    scenario=scenario,
-                    transcripts_dir=transcripts_dir,
+            _append_text(
+                scenario_log_path,
+                json.dumps(
+                    {
+                        "event": "start",
+                        "scenario_id": scenario["scenario_id"],
+                        "mode": scenario["mode"],
+                    },
+                    ensure_ascii=False,
                 )
+                + "\n",
             )
-        else:
-            previous_state = None
-            previous_state_from = str(scenario.get("previous_state_from") or "").strip()
-            if previous_state_from:
-                previous_state = previous_states.get(previous_state_from)
-            result, transcript_text, trace_text, final_state = asyncio.run(
-                _run_authenticated_conversation_scenario(
-                    runtime_server_fastapi=runtime_server_fastapi,
-                    runtime_chat_endpoint=runtime_chat_endpoint,
-                    fixture_manifest=fixture_manifest,
-                    scenario=scenario,
-                    previous_state=previous_state,
-                    transcripts_dir=transcripts_dir,
+            if scenario["scenario_id"] == "unauthenticated_chat_request":
+                result, transcript_text = asyncio.run(
+                    _run_unauthenticated_conversation_scenario(
+                        runtime_server_fastapi=runtime_server_fastapi,
+                        fixture_manifest=fixture_manifest,
+                        scenario=scenario,
+                        transcripts_dir=transcripts_dir,
+                    )
                 )
+            else:
+                previous_state = None
+                previous_state_from = str(scenario.get("previous_state_from") or "").strip()
+                if previous_state_from:
+                    previous_state = previous_states.get(previous_state_from)
+                result, transcript_text, trace_text, final_state = asyncio.run(
+                    _run_authenticated_conversation_scenario(
+                        runtime_server_fastapi=runtime_server_fastapi,
+                        runtime_chat_endpoint=runtime_chat_endpoint,
+                        fixture_manifest=fixture_manifest,
+                        scenario=scenario,
+                        previous_state=previous_state,
+                        transcripts_dir=transcripts_dir,
+                    )
+                )
+                trace_contents[scenario["scenario_id"]] = trace_text
+                if final_state:
+                    previous_states[scenario["scenario_id"]] = final_state
+            result = result.model_copy(
+                update={
+                    "log_path": str(scenario_log_path) if scenario_log_path is not None else result.log_path
+                }
             )
-            trace_contents[scenario["scenario_id"]] = trace_text
-            if final_state:
-                previous_states[scenario["scenario_id"]] = final_state
-        result = result.model_copy(
-            update={
-                "log_path": str(scenario_log_path) if scenario_log_path is not None else result.log_path
-            }
-        )
-        results.append(result)
-        transcript_contents[scenario["scenario_id"]] = transcript_text
-        _append_text(
-            scenario_log_path,
-            json.dumps(
-                {
-                    "event": "finish",
+            results.append(result)
+            transcript_contents[scenario["scenario_id"]] = transcript_text
+            _append_text(
+                scenario_log_path,
+                json.dumps(
+                    {
+                        "event": "finish",
+                        "scenario_id": scenario["scenario_id"],
+                        "final_verdict": result.final_verdict,
+                        "transcript_path": result.transcript_path,
+                        "trace_path": result.trace_path,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+            )
+            _emit_validation_event(
+                event_callback,
+                phase="conversation_scenario_finish",
+                event_type="conversation_validation_scenario_completed",
+                summary=f"conversation scenario {scenario['scenario_id']} completed",
+                details={
                     "scenario_id": scenario["scenario_id"],
-                    "final_verdict": result.final_verdict,
+                    "mode": scenario["mode"],
+                    "status": "completed" if result.final_verdict == "pass" else "failed",
+                    "log_path": str(scenario_log_path) if scenario_log_path is not None else None,
                     "transcript_path": result.transcript_path,
                     "trace_path": result.trace_path,
+                    "final_verdict": result.final_verdict,
                 },
-                ensure_ascii=False,
             )
-            + "\n",
-        )
-        _emit_validation_event(
-            event_callback,
-            phase="conversation_scenario_finish",
-            event_type="conversation_validation_scenario_completed",
-            summary=f"conversation scenario {scenario['scenario_id']} completed",
-            details={
-                "scenario_id": scenario["scenario_id"],
-                "mode": scenario["mode"],
-                "status": "completed" if result.final_verdict == "pass" else "failed",
-                "log_path": str(scenario_log_path) if scenario_log_path is not None else None,
-                "transcript_path": result.transcript_path,
-                "trace_path": result.trace_path,
-                "final_verdict": result.final_verdict,
-            },
-        )
 
-    passed = all(result.final_verdict == "pass" for result in results)
-    failure_categories = sorted(
-        {
-            str(result.failure_category).strip()
-            for result in results
-            if str(result.failure_category or "").strip()
-        }
-    )
-    failure_summary = None if passed else "one or more conversation scenarios failed"
-    if failure_summary and failure_categories:
-        failure_summary = f"{failure_summary}: {', '.join(failure_categories)}"
-    return ConversationValidationResult(
-        passed=passed,
-        failure_summary=failure_summary,
-        fixture_manifest=fixture_manifest,
-        scenarios=results,
-        transcript_contents=transcript_contents,
-        trace_contents=trace_contents,
-        related_files=_widget_order_related_files(plan),
-    )
+        passed = all(result.final_verdict == "pass" for result in results)
+        failure_categories = sorted(
+            {
+                str(result.failure_category).strip()
+                for result in results
+                if str(result.failure_category or "").strip()
+            }
+        )
+        failure_summary = None if passed else "one or more conversation scenarios failed"
+        if failure_summary and failure_categories:
+            failure_summary = f"{failure_summary}: {', '.join(failure_categories)}"
+        return ConversationValidationResult(
+            passed=passed,
+            failure_summary=failure_summary,
+            fixture_manifest=fixture_manifest,
+            scenarios=results,
+            transcript_contents=transcript_contents,
+            trace_contents=trace_contents,
+            related_files=_widget_order_related_files(plan),
+        )
 
 
 async def _run_unauthenticated_conversation_scenario(
@@ -1128,7 +1138,10 @@ async def _run_authenticated_conversation_scenario(
         error_message=None if response["status_code"] == 200 else f"chat status {response['status_code']}",
     )
     trace_text = _read_text_if_exists(Path(trace_path))
-    observed_tool_names = _extract_observed_tool_names(trace_text)
+    observed_tool_names = _augment_observed_tool_names(
+        response=response,
+        observed_tool_names=_extract_observed_tool_names(trace_text),
+    )
     deterministic_failures = _evaluate_conversation_deterministic_failures(
         scenario=scenario,
         response=response,
@@ -2190,6 +2203,24 @@ def _extract_observed_tool_names(trace_text: str) -> list[str]:
     return observed
 
 
+def _augment_observed_tool_names(
+    *,
+    response: dict[str, Any],
+    observed_tool_names: list[str],
+) -> list[str]:
+    observed = list(observed_tool_names)
+    metadata_state = response.get("metadata_state") or {}
+    order_context = metadata_state.get("order_context") or {}
+    fallback_tool_name = _optional_text(order_context.get("last_tool"))
+    if fallback_tool_name:
+        normalized_tool_name = {
+            "get_user_orders": "list_orders",
+        }.get(fallback_tool_name, fallback_tool_name)
+        if normalized_tool_name not in observed:
+            observed.append(normalized_tool_name)
+    return observed
+
+
 def _read_text_if_exists(path: Path) -> str:
     if not path.exists():
         return ""
@@ -2246,10 +2277,41 @@ def _client_cookies_dict(client: Any) -> dict[str, str]:
         return {}
 
 
+def _chatbot_runtime_env_overrides(
+    *,
+    runtime_plan: BackendRuntimePlan,
+    plan: IntegrationPlan,
+) -> dict[str, str]:
+    env_var = str(plan.chatbot_bridge.host_base_url_env_var or "").strip()
+    if not env_var:
+        return {}
+    return {
+        env_var: _runtime_base_url(
+            runtime_plan,
+            chat_auth_contract_path=plan.host_backend.chat_auth_contract_path,
+        )
+    }
+
+
+@contextmanager
+def _patched_chatbot_runtime_env(
+    *,
+    runtime_plan: BackendRuntimePlan,
+    plan: IntegrationPlan,
+):
+    overrides = _chatbot_runtime_env_overrides(runtime_plan=runtime_plan, plan=plan)
+    if not overrides:
+        yield {}
+        return
+    with patch.dict(os.environ, overrides, clear=False):
+        yield overrides
+
+
 def _load_runtime_chat_modules(*, chatbot_runtime_workspace: Path) -> tuple[Any, Any]:
     with _prepend_path(chatbot_runtime_workspace):
         _drop_import_cache("server_fastapi")
         _drop_import_cache("src")
+        _drop_import_cache("chatbot.src")
         runtime_server_fastapi = importlib.import_module("server_fastapi")
         runtime_chat_endpoint = importlib.import_module("src.api.v1.endpoints.chat")
     return runtime_server_fastapi, runtime_chat_endpoint
@@ -2292,7 +2354,7 @@ def _load_generated_adapter(
 ):
     module_prefix = f"src.adapters.generated.{plan.chatbot_bridge.site_key}"
     with _prepend_path(chatbot_runtime_workspace):
-        _drop_import_cache(module_prefix)
+        _drop_generated_adapter_import_cache(module_prefix)
         adapter_module = importlib.import_module(f"{module_prefix}.adapter")
         client_module = importlib.import_module(f"{module_prefix}.client")
         adapter_class = getattr(
@@ -2310,6 +2372,25 @@ def _load_generated_adapter(
                 )
             )
         )
+
+
+def _drop_generated_adapter_import_cache(module_prefix: str) -> None:
+    prefixes = [
+        module_prefix,
+        "src.adapters.generated",
+        "src.adapters",
+        "src",
+        module_prefix.replace("src.", "chatbot.src.", 1),
+        "chatbot.src.adapters.generated",
+        "chatbot.src.adapters",
+        "chatbot.src",
+    ]
+    seen: set[str] = set()
+    for prefix in prefixes:
+        if prefix in seen:
+            continue
+        seen.add(prefix)
+        _drop_import_cache(prefix)
 
 
 def _drop_import_cache(module_prefix: str) -> None:

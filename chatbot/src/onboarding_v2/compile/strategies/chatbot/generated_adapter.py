@@ -71,6 +71,8 @@ def compile_generated_chatbot_bridge_bundle(
 
 
 def _ensure_generated_adapter_registration(content: str, *, plan: ChatbotBridgePlan) -> str:
+    site_var_name = plan.site_key.replace("-", "_")
+    site_api_env_var = f"{site_var_name.upper()}_API_URL"
     import_line = (
         f"from .generated.{plan.site_key}.client import Generated{_class_name(plan.site_key)}Client\n"
     )
@@ -78,7 +80,13 @@ def _ensure_generated_adapter_registration(content: str, *, plan: ChatbotBridgeP
         f"from .generated.{plan.site_key}.adapter import Generated{_class_name(plan.site_key)}Adapter\n"
     )
     init_block = [
-        f'    generated_{plan.site_key}_url = os.environ.get("{plan.host_base_url_env_var}", food_url)\n',
+        (
+            f'    generated_{plan.site_key}_url = (\n'
+            f'        os.environ.get("{plan.host_base_url_env_var}")\n'
+            f'        or os.environ.get("{site_api_env_var}")\n'
+            f'        or locals().get("{site_var_name}_url", "")\n'
+            f"    )\n"
+        ),
         f"    generated_{plan.site_key}_client = Generated{_class_name(plan.site_key)}Client(base_url=generated_{plan.site_key}_url)\n",
         f"    generated_{plan.site_key}_adapter = Generated{_class_name(plan.site_key)}Adapter(client=generated_{plan.site_key}_client)\n",
     ]
@@ -202,6 +210,28 @@ def _build_generated_client(*, plan: ChatbotBridgePlan) -> str:
 
 
 def _build_generated_auth(*, plan: ChatbotBridgePlan) -> str:
+    if plan.auth_transport == "bearer_token":
+        return (
+            "from typing import Dict\n\n"
+            "from ...schema import AuthenticatedContext, AdapterError\n\n\n"
+            f'SITE_KEY = "{plan.site_key}"\n\n\n'
+            "def assert_generated_context(ctx: AuthenticatedContext) -> None:\n"
+            "    if ctx.siteId != SITE_KEY:\n"
+            "        raise AdapterError(\n"
+            '            "INVALID_INPUT",\n'
+            '            "generated adapter context siteId mismatch",\n'
+            '            {"expected": SITE_KEY, "received": ctx.siteId},\n'
+            "        )\n\n\n"
+            "def build_generated_auth_headers(ctx: AuthenticatedContext) -> Dict[str, str]:\n"
+            "    headers: Dict[str, str] = {}\n"
+            "    cookie_map = ctx.cookies.copy() if ctx.cookies else {}\n"
+            "    if ctx.accessToken:\n"
+            '        headers["Authorization"] = f"Bearer {ctx.accessToken}"\n'
+            "    if cookie_map:\n"
+            '        headers["Cookie"] = \"; \".join([f\"{key}={value}\" for key, value in cookie_map.items()])\n'
+            "    return headers\n"
+        )
+
     cookie_name = "session_token"
     return (
         "from typing import Dict\n\n"
@@ -306,28 +336,38 @@ def _build_generated_adapter(*, plan: ChatbotBridgePlan) -> str:
         '            "pending": OrderStatus.PENDING,\n'
         '            "created": OrderStatus.PENDING,\n'
         '            "paid": OrderStatus.PAID,\n'
+        '            "주문완료": OrderStatus.PAID,\n'
         '            "payment_complete": OrderStatus.PAID,\n'
         '            "preparing": OrderStatus.PREPARING,\n'
+        '            "배송준비중": OrderStatus.PREPARING,\n'
         '            "packing": OrderStatus.PREPARING,\n'
         '            "shipped": OrderStatus.SHIPPED,\n'
         '            "shipping": OrderStatus.SHIPPED,\n'
+        '            "배송중": OrderStatus.SHIPPED,\n'
         '            "delivered": OrderStatus.DELIVERED,\n'
         '            "done": OrderStatus.DELIVERED,\n'
+        '            "배송완료": OrderStatus.DELIVERED,\n'
         '            "cancel_requested": OrderStatus.CANCEL_REQUESTED,\n'
         '            "cancelled": OrderStatus.CANCELLED,\n'
         '            "canceled": OrderStatus.CANCELLED,\n'
+        '            "주문취소": OrderStatus.CANCELLED,\n'
         '            "exchange_requested": OrderStatus.EXCHANGE_REQUESTED,\n'
+        '            "교환접수": OrderStatus.EXCHANGE_REQUESTED,\n'
         '            "refund_requested": OrderStatus.REFUND_REQUESTED,\n'
         '            "refunded": OrderStatus.REFUNDED,\n'
+        '            "환불완료": OrderStatus.REFUNDED,\n'
         "        }.get(value, OrderStatus.UNKNOWN)\n\n"
         "    def _normalize_delivery_status(self, raw: str) -> DeliveryStatus:\n"
         "        value = str(raw).lower()\n"
         "        return {\n"
         '            "ready": DeliveryStatus.READY,\n'
+        '            "배송준비중": DeliveryStatus.READY,\n'
         '            "in_transit": DeliveryStatus.IN_TRANSIT,\n'
         '            "shipping": DeliveryStatus.IN_TRANSIT,\n'
+        '            "배송중": DeliveryStatus.IN_TRANSIT,\n'
         '            "out_for_delivery": DeliveryStatus.OUT_FOR_DELIVERY,\n'
         '            "delivered": DeliveryStatus.DELIVERED,\n'
+        '            "배송완료": DeliveryStatus.DELIVERED,\n'
         '            "delayed": DeliveryStatus.DELAYED,\n'
         "        }.get(value, DeliveryStatus.UNKNOWN)\n\n"
         "    async def healthcheck(self) -> AdapterHealth:\n"

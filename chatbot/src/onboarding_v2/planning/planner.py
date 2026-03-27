@@ -564,7 +564,7 @@ def _select_integration_strategy(
 
 
 def _build_target_bindings_fallback(*, bundle: AnalysisBundle) -> list[TargetBinding]:
-    auth_record = _find_contract(bundle.verified_contracts.auth_components, "chat_auth_bootstrap")
+    auth_record = _select_auth_bridge_contract(bundle.verified_contracts.auth_components)
     lookup_record = _find_contract(bundle.verified_contracts.tool_targets, "order_lookup")
     action_record = _find_contract(bundle.verified_contracts.tool_targets, "order_action")
     route_target = _path_or_default(bundle.candidate_set.route_definitions, default="backend/foodshop/urls.py")
@@ -860,6 +860,8 @@ def _derive_integration_plan(
     bridge_contract = _derive_chatbot_bridge_contract(
         domain_integration=analysis_bundle.snapshot.domain_integration,
         site_id=site_id,
+        source_root=Path(snapshot.repo_profile.source_root),
+        backend_framework=analysis_bundle.framework_profile.backend_framework,
     )
     assumptions = [
         "planner consumed verified analysis graph and deterministic compiler capabilities",
@@ -893,7 +895,7 @@ def _derive_integration_plan(
             generated_handler_path=_choose_generated_handler_path(analysis_bundle.framework_profile.backend_framework),
             chat_auth_contract_path="/api/chat/auth-token",
             site_id=site_id,
-            capability_profile=str(capability_upgrade.get("capability_profile") or "order_cs_only"),
+            capability_profile="order_cs_only",
             enabled_retrieval_corpora=[],
             widget_features={"image_upload": False},
         ),
@@ -912,7 +914,7 @@ def _derive_integration_plan(
                 source_root=Path(snapshot.repo_profile.source_root),
                 runtime_base_url=normalized_chatbot_server_base_url,
             ),
-            capability_profile=str(capability_upgrade.get("capability_profile") or "order_cs_only"),
+            capability_profile="order_cs_only",
             enabled_retrieval_corpora=[],
             widget_features={"image_upload": False},
         ),
@@ -945,6 +947,27 @@ def _derive_integration_plan(
 
 def _find_contract(records: list[ContractRecord], identifier: str) -> ContractRecord | None:
     return next((record for record in records if record.identifier == identifier), None)
+
+
+def _select_auth_bridge_contract(records: list[ContractRecord]) -> ContractRecord | None:
+    ranked_matches: list[tuple[int, int, ContractRecord]] = []
+    for index, record in enumerate(records):
+        if record.identifier != "chat_auth_bootstrap":
+            continue
+        role = str(record.details.get("role", "")).strip().lower()
+        if record.kind == "auth_component" and role == "backend_auth_source":
+            priority = 0
+        elif record.kind == "auth_component":
+            priority = 1
+        elif record.kind == "authz_guard":
+            priority = 2
+        else:
+            priority = 3
+        ranked_matches.append((priority, index, record))
+    if not ranked_matches:
+        return None
+    ranked_matches.sort(key=lambda item: (item[0], item[1]))
+    return ranked_matches[0][2]
 
 
 def _path_or_default(candidates: list[PathCandidate], *, default: str) -> str:
@@ -1272,6 +1295,8 @@ def _derive_chatbot_bridge_contract(
     *,
     domain_integration: DomainIntegration,
     site_id: str,
+    source_root: Path,
+    backend_framework: str,
 ) -> dict[str, Any]:
     login_endpoint = str(domain_integration.login_endpoint or "").strip()
     auth_validation_endpoint = str(
@@ -1319,7 +1344,11 @@ def _derive_chatbot_bridge_contract(
         "order_action_endpoint": order_action_endpoint
         or next(iter(order_action_endpoints.values())),
         "order_action_endpoints": order_action_endpoints,
-        "auth_transport": "session_token_cookie",
+        "auth_transport": _infer_bridge_auth_transport(
+            source_root=source_root,
+            backend_framework=backend_framework,
+            site_id=site_id,
+        ),
         "response_mapping_profile": "site_a" if _normalize_site_key(site_id) == "food" else "generic",
         "request_field_mappings": {
             "action": "action",
@@ -1327,6 +1356,49 @@ def _derive_chatbot_bridge_contract(
             "new_option_id": "new_option_id",
         },
     }
+
+
+def _infer_bridge_auth_transport(
+    *,
+    source_root: Path,
+    backend_framework: str,
+    site_id: str,
+) -> str:
+    if str(backend_framework or "").strip().lower() != "flask":
+        return "session_token_cookie"
+
+    candidate_paths: list[Path] = []
+    default_handler = source_root / "backend" / "chat_auth.py"
+    if default_handler.exists():
+        candidate_paths.append(default_handler)
+    candidate_paths.extend(
+        path
+        for path in sorted(source_root.rglob("chat_auth.py"))
+        if path not in candidate_paths
+    )
+
+    for candidate in candidate_paths:
+        try:
+            content = candidate.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if _flask_chat_auth_supports_bearer_transport(content):
+            return "bearer_token"
+
+    normalized_site = _normalize_site_key(site_id)
+    if normalized_site == "bilyeo":
+        return "bearer_token"
+    return "session_token_cookie"
+
+
+def _flask_chat_auth_supports_bearer_transport(content: str) -> bool:
+    lowered = str(content or "").lower()
+    has_bearer_markers = (
+        "_parse_bearer_token" in content
+        or ("authorization" in lowered and "bearer" in lowered)
+    )
+    resolves_authenticated_user = "resolve_authenticated_user_id" in content
+    return has_bearer_markers and resolves_authenticated_user
 
 
 def _derive_host_login_endpoint(domain_integration: DomainIntegration) -> str:

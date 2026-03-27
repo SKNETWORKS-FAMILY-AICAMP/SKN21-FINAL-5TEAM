@@ -1047,6 +1047,7 @@ def test_engine_stops_at_compile_when_host_import_smoke_fails(monkeypatch, tmp_p
     assert result["latest_export_artifact"] is None
     assert result["latest_validation_artifact"] is None
     assert result["latest_host_import_smoke_artifact"].endswith("host-import-smoke/v0001.json")
+    assert result["latest_indexing_artifact"] is None
     assert result["host_import_smoke_result"] == {
         "passed": False,
         "failure_code": "host_backend_import_failed",
@@ -1056,6 +1057,10 @@ def test_engine_stops_at_compile_when_host_import_smoke_fails(monkeypatch, tmp_p
     }
     assert result["failure_signature"].startswith("host_backend_import")
     assert result["repair_attempt_count"] == 1
+    summary = json.loads((Path(result["run_root"]) / "views" / "run-summary.json").read_text(encoding="utf-8"))
+    assert summary["retrieval_status"] == {}
+    assert summary["final_capability_profile"] == "order_cs_only"
+    assert summary["enabled_retrieval_corpora"] == []
 
 
 def test_engine_entry_rewinds_validation_failures(monkeypatch, tmp_path: Path):

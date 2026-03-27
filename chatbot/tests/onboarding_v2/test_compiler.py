@@ -3,6 +3,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
@@ -91,7 +93,7 @@ def test_compiler_builds_complete_food_program():
     ]
 
 
-def test_compiler_uses_chat_auth_bridge_for_bilyeo_session_validation():
+def test_compiler_uses_chat_auth_bridge_for_bilyeo_bearer_validation():
     analysis_bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
     planning_bundle = build_planning_bundle(
         snapshot=analysis_bundle.snapshot,
@@ -110,8 +112,18 @@ def test_compiler_uses_chat_auth_bridge_for_bilyeo_session_validation():
         for bundle in program.chatbot_program.supporting_artifact_bundles
         if bundle.path == "src/adapters/generated/bilyeo/client.py"
     )
+    generated_auth = next(
+        bundle.content
+        for bundle in program.chatbot_program.supporting_artifact_bundles
+        if bundle.path == "src/adapters/generated/bilyeo/auth.py"
+    )
 
     assert 'return await self._request("GET", "/api/chat/auth-token", headers=headers)' in generated_client
+    assert 'headers["Authorization"] = f"Bearer {ctx.accessToken}"' in generated_auth
+    assert 'cookie_map["session_token"] = ctx.accessToken' not in generated_auth
+    assert '"주문완료": OrderStatus.PAID' in generated_adapter
+    assert '"배송준비중": OrderStatus.PREPARING' in generated_adapter
+    assert '"배송완료": OrderStatus.DELIVERED' in generated_adapter
 
 
 def test_compiler_registers_generated_adapter_in_setup_bundle():
@@ -133,6 +145,28 @@ def test_compiler_registers_generated_adapter_in_setup_bundle():
     assert "generated_bilyeo_adapter = GeneratedBilyeoAdapter" in setup_operation.new
     assert "AdapterRegistry.register_many([" in setup_operation.new
     assert "generated_bilyeo_adapter," in setup_operation.new
+
+
+def test_compiler_uses_site_specific_generated_host_url_fallback():
+    analysis_bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+        strict_coverage=True,
+    )
+    program = compile_plan(
+        analysis_bundle=analysis_bundle,
+        planning_bundle=planning_bundle,
+        source_root=ROOT / "bilyeo",
+    )
+
+    setup_operation = program.chatbot_program.bridge_bundles[0].operations[0]
+
+    assert 'os.environ.get("GENERATED_BILYEO_API_URL")' in setup_operation.new
+    assert 'os.environ.get("BILYEO_API_URL")' in setup_operation.new
+    assert 'locals().get("bilyeo_url", "")' in setup_operation.new
+    assert 'os.environ.get("GENERATED_BILYEO_API_URL", food_url)' not in setup_operation.new
 
 
 def test_compiler_tolerates_multiline_models_import_and_next_def_boundary(tmp_path: Path):
@@ -247,6 +281,87 @@ def test_compile_flask_backend_bundle_inserts_factory_blueprint_registration(tmp
     )
 
 
+def test_compile_django_backend_bundle_resolves_helper_source_from_users_views(tmp_path: Path):
+    route_path = tmp_path / "backend" / "project" / "urls.py"
+    route_path.parent.mkdir(parents=True, exist_ok=True)
+    route_path.write_text(
+        "from django.urls import path\n\nurlpatterns = []\n",
+        encoding="utf-8",
+    )
+    orders_views_path = tmp_path / "backend" / "orders" / "views.py"
+    orders_views_path.parent.mkdir(parents=True, exist_ok=True)
+    orders_views_path.write_text(
+        "from rest_framework.response import Response\n\n"
+        "def serialize_order(order, request):\n"
+        "    return {}\n\n"
+        "def _handle_exchange(order, request):\n"
+        "    return Response({})\n",
+        encoding="utf-8",
+    )
+    users_views_path = tmp_path / "backend" / "users" / "views.py"
+    users_views_path.parent.mkdir(parents=True, exist_ok=True)
+    users_views_path.write_text(
+        "def _build_user_payload(user):\n"
+        "    return {'id': user.id}\n\n"
+        "def _find_active_session(request):\n"
+        "    return None\n",
+        encoding="utf-8",
+    )
+
+    bundle = compile_django_backend_bundle(
+        source_root=tmp_path,
+        plan=HostBackendPlan(
+            strategy="django_project_urlconf_import_view",
+            route_target="backend/project/urls.py",
+            import_target="backend/project/urls.py",
+            login_endpoint="/api/users/login/",
+            order_action_target="",
+            auth_handler_source="backend/orders/views.py",
+            generated_handler_path="backend/chat_auth.py",
+            site_id="food",
+        ),
+    )
+
+    generated = bundle.supporting_files[0].content
+
+    assert "from users.views import _build_user_payload, _find_active_session" in generated
+    assert "from orders.views import _build_user_payload, _find_active_session" not in generated
+
+
+def test_compile_django_backend_bundle_fails_fast_when_helper_source_missing(tmp_path: Path):
+    route_path = tmp_path / "backend" / "project" / "urls.py"
+    route_path.parent.mkdir(parents=True, exist_ok=True)
+    route_path.write_text(
+        "from django.urls import path\n\nurlpatterns = []\n",
+        encoding="utf-8",
+    )
+    orders_views_path = tmp_path / "backend" / "orders" / "views.py"
+    orders_views_path.parent.mkdir(parents=True, exist_ok=True)
+    orders_views_path.write_text(
+        "from rest_framework.response import Response\n\n"
+        "def serialize_order(order, request):\n"
+        "    return {}\n\n"
+        "def _handle_exchange(order, request):\n"
+        "    return Response({})\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="django_chat_auth_helper_source_missing_helpers"):
+        compile_django_backend_bundle(
+            source_root=tmp_path,
+            plan=HostBackendPlan(
+                strategy="django_project_urlconf_import_view",
+                route_target="backend/project/urls.py",
+                import_target="backend/project/urls.py",
+                login_endpoint="/api/users/login/",
+                order_action_target="",
+                auth_handler_source="backend/orders/views.py",
+                generated_handler_path="backend/chat_auth.py",
+                site_id="food",
+            ),
+        )
+
+
 def test_compile_flask_backend_bundle_generates_validation_aware_bridge_payload(tmp_path: Path):
     app_path = tmp_path / "backend" / "app.py"
     app_path.parent.mkdir(parents=True, exist_ok=True)
@@ -283,6 +398,7 @@ def test_compile_flask_backend_bundle_generates_validation_aware_bridge_payload(
 
 def test_compile_flask_backend_bundle_preserves_existing_chat_auth_contract(tmp_path: Path):
     app_path = tmp_path / "backend" / "app.py"
+    chat_auth_path = tmp_path / "backend" / "chat_auth.py"
     app_path.parent.mkdir(parents=True, exist_ok=True)
     app_path.write_text(
         "from flask import Flask\n"
@@ -291,6 +407,23 @@ def test_compile_flask_backend_bundle_preserves_existing_chat_auth_contract(tmp_
         "    app = Flask(__name__)\n"
         '    app.register_blueprint(chat_auth_bp, url_prefix="/api")\n'
         "    return app\n",
+        encoding="utf-8",
+    )
+    chat_auth_path.write_text(
+        "from flask import Blueprint, jsonify, request, session\n"
+        "from models.user import find_user_by_id\n\n"
+        "chat_auth_bp = Blueprint('chat_auth', __name__)\n"
+        '_SITE_ID = "site-b"\n\n'
+        "def _parse_bearer_token(value):\n"
+        "    return value or ''\n\n"
+        "def resolve_authenticated_user_id():\n"
+        "    return session.get('user_id')\n\n"
+        "def get_authenticated_user():\n"
+        "    user_id = resolve_authenticated_user_id()\n"
+        "    return None if user_id is None else find_user_by_id(user_id)\n\n"
+        "@chat_auth_bp.route('/chat/auth-token', methods=['POST'])\n"
+        "def chat_auth_token():\n"
+        "    return jsonify({'authenticated': False}), 401\n",
         encoding="utf-8",
     )
 
@@ -309,20 +442,140 @@ def test_compile_flask_backend_bundle_preserves_existing_chat_auth_contract(tmp_
     )
 
     updated = bundle.operations[0].new
-    generated = bundle.supporting_files[0].content
+    handler_operation = next(
+        operation for operation in bundle.operations if operation.path == "backend/chat_auth.py"
+    )
+    generated = handler_operation.new
 
     assert "from chat_auth import chat_auth_bp\n" in updated
     assert "from chat_auth import chat_auth_blueprint\n" not in updated
     assert updated.count('app.register_blueprint(chat_auth_bp, url_prefix="/api")') == 1
     assert 'app.register_blueprint(chat_auth_blueprint, url_prefix="/api/chat")' not in updated
-    assert 'chat_auth_bp = Blueprint("chat_auth", __name__)' in generated
+    assert bundle.supporting_files == []
+    assert "def resolve_authenticated_user_id():" in generated
+    assert "def get_authenticated_user():" in generated
+    assert "def _runtime_capability_payload():" in generated
+    assert 'if os.environ.get("ONBOARDING_VALIDATION") == "1":' in generated
+    assert "chat_auth_bp = Blueprint(" in generated
     assert '@chat_auth_bp.route("/chat/auth-token", methods=["GET", "POST"])' in generated
+    assert "find_user_by_email" in generated
+    assert "validation-bilyeo" not in generated
 
 
 def test_compile_flask_backend_bundle_preserved_contract_boots_without_import_error(tmp_path: Path):
     backend_root = tmp_path / "backend"
     app_path = backend_root / "app.py"
+    route_root = backend_root / "routes"
+    route_root.mkdir(parents=True, exist_ok=True)
     app_path.parent.mkdir(parents=True, exist_ok=True)
+    (route_root / "__init__.py").write_text("", encoding="utf-8")
+    (route_root / "order.py").write_text(
+        "from flask import Blueprint\n"
+        "from chat_auth import get_authenticated_user\n\n"
+        "order_bp = Blueprint('order', __name__)\n\n"
+        "@order_bp.route('/orders')\n"
+        "def orders():\n"
+        "    return get_authenticated_user()\n",
+        encoding="utf-8",
+    )
+    (backend_root / "models").mkdir(parents=True, exist_ok=True)
+    (backend_root / "models" / "__init__.py").write_text("", encoding="utf-8")
+    (backend_root / "models" / "user.py").write_text(
+        "def find_user_by_id(user_id):\n"
+        "    return {'user_id': user_id, 'email': 'test@example.com', 'name': 'Test'}\n",
+        encoding="utf-8",
+    )
+    (backend_root / "chat_auth.py").write_text(
+        "from flask import Blueprint, jsonify, request, session\n"
+        "from models.user import find_user_by_id\n\n"
+        "chat_auth_bp = Blueprint('chat_auth', __name__)\n\n"
+        "def _parse_bearer_token(value):\n"
+        "    return value or ''\n\n"
+        "def resolve_authenticated_user_id():\n"
+        "    return session.get('user_id')\n\n"
+        "def get_authenticated_user():\n"
+        "    user_id = resolve_authenticated_user_id()\n"
+        "    return None if user_id is None else find_user_by_id(user_id)\n\n"
+        "@chat_auth_bp.route('/chat/auth-token', methods=['POST'])\n"
+        "def chat_auth_token():\n"
+        "    user = get_authenticated_user()\n"
+        "    return jsonify({'authenticated': user is not None})\n",
+        encoding="utf-8",
+    )
+    app_path.write_text(
+        "from flask import Flask\n"
+        "from chat_auth import chat_auth_bp\n\n"
+        "from routes.order import order_bp\n\n"
+        "def create_app():\n"
+        "    app = Flask(__name__)\n"
+        '    app.register_blueprint(chat_auth_bp, url_prefix="/api")\n'
+        '    app.register_blueprint(order_bp, url_prefix="/api")\n'
+        "    return app\n",
+        encoding="utf-8",
+    )
+
+    bundle = compile_flask_backend_bundle(
+        source_root=tmp_path,
+        plan=HostBackendPlan(
+            strategy="flask_app_register_blueprint",
+            route_target="backend/app.py",
+            import_target="backend/app.py",
+            login_endpoint="/api/auth/login",
+            auth_handler_source="backend/routes/auth.py",
+            generated_handler_path="backend/chat_auth.py",
+            chat_auth_contract_path="/api/chat/auth-token",
+            site_id="bilyeo",
+        ),
+    )
+
+    for operation in bundle.operations:
+        target_path = tmp_path / operation.path
+        target_path.write_text(operation.new, encoding="utf-8")
+
+    result = run_flask_host_import_smoke(
+        host_workspace=tmp_path,
+        entrypoint="app.py",
+    )
+
+    assert result.passed is True
+    assert result.failure_code is None
+
+
+def test_compile_flask_backend_bundle_preserved_contract_emits_numeric_validation_bearer_payload(
+    tmp_path: Path,
+    monkeypatch,
+):
+    backend_root = tmp_path / "backend"
+    app_path = backend_root / "app.py"
+    app_path.parent.mkdir(parents=True, exist_ok=True)
+    (backend_root / "models").mkdir(parents=True, exist_ok=True)
+    (backend_root / "models" / "__init__.py").write_text("", encoding="utf-8")
+    (backend_root / "models" / "user.py").write_text(
+        "def find_user_by_id(user_id):\n"
+        "    return {'user_id': user_id, 'email': 'test@example.com', 'name': 'Kim Test'}\n\n"
+        "def find_user_by_email(email):\n"
+        "    if email == 'test@example.com':\n"
+        "        return {'user_id': 7, 'email': email, 'name': 'Kim Test'}\n"
+        "    return None\n",
+        encoding="utf-8",
+    )
+    (backend_root / "chat_auth.py").write_text(
+        "from flask import Blueprint, jsonify, request, session\n"
+        "from models.user import find_user_by_id\n\n"
+        "chat_auth_bp = Blueprint('chat_auth', __name__)\n"
+        '_SITE_ID = "site-b"\n\n'
+        "def _parse_bearer_token(value):\n"
+        "    return value or ''\n\n"
+        "def resolve_authenticated_user_id():\n"
+        "    return session.get('user_id')\n\n"
+        "def get_authenticated_user():\n"
+        "    user_id = resolve_authenticated_user_id()\n"
+        "    return None if user_id is None else find_user_by_id(user_id)\n\n"
+        "@chat_auth_bp.route('/chat/auth-token', methods=['POST'])\n"
+        "def chat_auth_token():\n"
+        "    return jsonify({'authenticated': False}), 401\n",
+        encoding="utf-8",
+    )
     app_path.write_text(
         "from flask import Flask\n"
         "from chat_auth import chat_auth_bp\n\n"
@@ -347,13 +600,15 @@ def test_compile_flask_backend_bundle_preserved_contract_boots_without_import_er
         ),
     )
 
-    app_path.write_text(bundle.operations[0].new, encoding="utf-8")
-    for supporting_file in bundle.supporting_files:
-        target = tmp_path / supporting_file.path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(supporting_file.content, encoding="utf-8")
+    for operation in bundle.operations:
+        (tmp_path / operation.path).write_text(operation.new, encoding="utf-8")
 
-    module_name = "compiled_flask_app_preserved_contract"
+    monkeypatch.setenv("ONBOARDING_VALIDATION", "1")
+    monkeypatch.setenv("ONBOARDING_CAPABILITY_PROFILE", "order_cs_plus_retrieval")
+    monkeypatch.setenv("ONBOARDING_ENABLED_RETRIEVAL_CORPORA", '["policy","discovery_image"]')
+    monkeypatch.setenv("ONBOARDING_WIDGET_FEATURES", '{"image_upload": true}')
+
+    module_name = "compiled_flask_validation_bridge"
     spec = importlib.util.spec_from_file_location(module_name, app_path)
     assert spec is not None and spec.loader is not None
     sys.path.insert(0, str(backend_root))
@@ -361,13 +616,27 @@ def test_compile_flask_backend_bundle_preserved_contract_boots_without_import_er
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         app = module.create_app()
+        client = app.test_client()
+        response = client.post("/api/chat/auth-token")
     finally:
         sys.path.pop(0)
-        sys.modules.pop(module_name, None)
-        sys.modules.pop("chat_auth", None)
+        for module_key in [
+            module_name,
+            "app",
+            "chat_auth",
+            "models",
+            "models.user",
+        ]:
+            sys.modules.pop(module_key, None)
 
-    rules = {rule.rule for rule in app.url_map.iter_rules()}
-    assert "/api/chat/auth-token" in rules
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["access_token"] == "7"
+    assert payload["user"]["id"] == "7"
+    assert payload["user"]["email"] == "test@example.com"
+    assert payload["capability_profile"] == "order_cs_plus_retrieval"
+    assert payload["enabled_retrieval_corpora"] == ["policy", "discovery_image"]
+    assert payload["widget_features"]["image_upload"] is True
 
 
 def test_run_flask_host_import_smoke_passes_for_preserved_contract(tmp_path: Path):

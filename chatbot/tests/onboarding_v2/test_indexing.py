@@ -390,6 +390,131 @@ def test_execute_indexing_plan_emits_live_worker_progress_events(tmp_path: Path)
     assert "retrieval_worker_completed" in event_types
 
 
+def test_execute_indexing_plan_coerces_late_worker_completion_to_aborted_when_cancelled(
+    tmp_path: Path,
+):
+    plan = RetrievalIndexPlan(
+        site_id="demo-shop",
+        site_slug="demo-shop",
+        corpora=[
+            RagCorpusPlan(
+                corpus="policy",
+                chunking_strategy="heading_sections",
+                collection_alias="site_demo-shop__policy",
+                build_collection="site_demo-shop__policy__run_demo",
+                sources=["policy.md"],
+                smoke_queries=["환불"],
+                minimum_expected_documents=1,
+                loader_strategy="policy_source_scan",
+            )
+        ],
+    )
+    cancel_event = threading.Event()
+    worker_started = threading.Event()
+    events: list[dict[str, object]] = []
+
+    def _slow_worker(**kwargs):
+        del kwargs
+        worker_started.set()
+        while not cancel_event.is_set():
+            time.sleep(0.01)
+        return {
+            "status": "completed",
+            "enabled": True,
+            "documents_indexed": 7,
+            "collection_alias": "site_demo-shop__policy",
+            "build_collection": "site_demo-shop__policy__run_demo",
+            "loader_strategy": "policy_source_scan",
+            "warning_codes": [],
+            "alias_swapped": True,
+            "smoke_passed": True,
+        }
+
+    def _cancel_after_start() -> None:
+        worker_started.wait(timeout=1)
+        cancel_event.set()
+
+    canceller = threading.Thread(target=_cancel_after_start, daemon=True)
+    canceller.start()
+
+    result = execute_indexing_plan(
+        plan=plan,
+        root=tmp_path,
+        worker=_slow_worker,
+        cancel_event=cancel_event,
+        event_callback=events.append,
+        heartbeat_interval_s=0.05,
+    )
+
+    canceller.join(timeout=1)
+    policy = result["corpora"]["policy"]
+    assert policy["status"] == "aborted_by_host_failure"
+    assert policy["alias_swapped"] is False
+    event_types = [str(event["event_type"]) for event in events]
+    assert "retrieval_worker_cancelled" in event_types
+    assert "retrieval_worker_completed" not in event_types
+
+
+def test_execute_indexing_plan_aborts_text_corpus_before_qdrant_commit_when_cancelled(
+    tmp_path: Path,
+):
+    faq_path = tmp_path / "faq.json"
+    faq_path.write_text(
+        '[{"question":"배송은 얼마나 걸리나요?","answer":"2일"}]',
+        encoding="utf-8",
+    )
+    plan = RetrievalIndexPlan(
+        site_id="demo-shop",
+        site_slug="demo-shop",
+        corpora=[
+            RagCorpusPlan(
+                corpus="faq",
+                chunking_strategy="qa_level",
+                collection_alias="site_demo-shop__faq",
+                build_collection="site_demo-shop__faq__run_demo",
+                sources=["faq.json"],
+                smoke_queries=["배송"],
+                minimum_expected_documents=1,
+                loader_strategy="faq_source_scan",
+            )
+        ],
+    )
+    fake_client = _FakeQdrantClient()
+    cancel_event = threading.Event()
+    embed_started = threading.Event()
+
+    def _dense_embedder(texts):
+        del texts
+        embed_started.set()
+        time.sleep(0.05)
+        return [[1.0, 2.0]]
+
+    def _cancel_after_embed_start() -> None:
+        embed_started.wait(timeout=1)
+        cancel_event.set()
+
+    canceller = threading.Thread(target=_cancel_after_embed_start, daemon=True)
+    canceller.start()
+
+    result = execute_indexing_plan(
+        plan=plan,
+        root=tmp_path,
+        cancel_event=cancel_event,
+        qdrant_client=fake_client,
+        dense_embedder=_dense_embedder,
+        sparse_embedder=lambda texts: [
+            models.SparseVector(indices=[0, 1], values=[1.0, float(len(text))])
+            for text in texts
+        ],
+    )
+
+    canceller.join(timeout=1)
+    faq = result["corpora"]["faq"]
+    assert faq["status"] == "aborted_by_host_failure"
+    assert fake_client.upserts == []
+    assert fake_client.aliases == {}
+
+
 def test_execute_indexing_plan_emits_waiting_on_export_before_host_backed_worker_starts(
     tmp_path: Path,
     monkeypatch,

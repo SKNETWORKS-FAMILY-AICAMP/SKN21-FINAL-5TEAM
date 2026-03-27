@@ -597,23 +597,44 @@ def execute_indexing_plan(
                 corpus_plan = future_map[future]
                 session = worker_sessions[corpus_plan.corpus]
                 try:
-                    results[corpus_plan.corpus] = future.result()
+                    result = future.result()
+                    results[corpus_plan.corpus] = _coerce_cancelled_result(
+                        result=result,
+                        corpus_plan=corpus_plan,
+                        cancel_event=cancel_event,
+                    )
                 except _IndexingError as exc:
-                    results[corpus_plan.corpus] = _failure_result(
-                        corpus_plan=corpus_plan,
-                        reason=exc.reason,
-                        warning_codes=exc.warning_codes,
-                        error=exc.error,
-                        log_paths=exc.log_paths,
-                    )
+                    if _cancelled(cancel_event) or "host_lane_failed" in exc.warning_codes:
+                        results[corpus_plan.corpus] = _cancelled_result(corpus_plan=corpus_plan)
+                    else:
+                        results[corpus_plan.corpus] = _failure_result(
+                            corpus_plan=corpus_plan,
+                            reason=exc.reason,
+                            warning_codes=exc.warning_codes,
+                            error=exc.error,
+                            log_paths=exc.log_paths,
+                        )
                 except Exception as exc:
-                    results[corpus_plan.corpus] = _failure_result(
-                        corpus_plan=corpus_plan,
-                        reason="worker_exception",
-                        warning_codes=["worker_exception"],
-                        error=str(exc),
-                    )
-                session.emit_finished(results[corpus_plan.corpus])
+                    if _cancelled(cancel_event):
+                        results[corpus_plan.corpus] = _cancelled_result(corpus_plan=corpus_plan)
+                    else:
+                        results[corpus_plan.corpus] = _failure_result(
+                            corpus_plan=corpus_plan,
+                            reason="worker_exception",
+                            warning_codes=["worker_exception"],
+                            error=str(exc),
+                        )
+                finally:
+                    session.stop_progress()
+        for corpus_plan in plan.corpora:
+            session = worker_sessions[corpus_plan.corpus]
+            result = _coerce_cancelled_result(
+                result=results.get(corpus_plan.corpus) or _cancelled_result(corpus_plan=corpus_plan),
+                corpus_plan=corpus_plan,
+                cancel_event=cancel_event,
+            )
+            results[corpus_plan.corpus] = result
+            session.emit_finished(result)
     finally:
         for session in worker_sessions.values():
             session.stop_progress()
@@ -635,7 +656,7 @@ def _default_worker(
     plan: RetrievalIndexPlan,
 ) -> dict[str, Any]:
     if _cancelled(cancel_event):
-        return _cancelled_result()
+        return _cancelled_result(corpus_plan=corpus_plan)
 
     if corpus_plan.corpus == "faq":
         if str(corpus_plan.row_source_strategy or "").strip() == "host_python_fetch":
@@ -685,7 +706,7 @@ def _ingest_faq_host_python_corpus(
     deps: _IndexingDeps,
 ) -> dict[str, Any]:
     if _cancelled(cancel_event):
-        return _cancelled_result()
+        return _cancelled_result(corpus_plan=corpus_plan)
 
     rows = _fetch_rows(
         corpus_plan=corpus_plan,
@@ -694,7 +715,7 @@ def _ingest_faq_host_python_corpus(
         deps=deps,
     )
     if _cancelled(cancel_event):
-        return _cancelled_result()
+        return _cancelled_result(corpus_plan=corpus_plan)
     chunks = _build_faq_chunks_from_rows(rows)
     if not chunks:
         return _failure_result(
@@ -705,6 +726,8 @@ def _ingest_faq_host_python_corpus(
 
     texts = [str(chunk.get("text") or "").strip() for chunk in chunks]
     dense_vectors = deps.dense_embedder(texts)
+    if _cancelled(cancel_event):
+        return _cancelled_result(corpus_plan=corpus_plan)
     sparse_vectors = _maybe_embed_sparse(texts, deps=deps)
     client = _get_qdrant_client(deps)
     vector_size = len(dense_vectors[0]) if dense_vectors else 1024
@@ -714,6 +737,8 @@ def _ingest_faq_host_python_corpus(
         vector_size=vector_size,
         client=client,
     )
+    if _cancelled(cancel_event):
+        return _cancelled_result(corpus_plan=corpus_plan)
 
     points: list[models.PointStruct] = []
     for index, chunk in enumerate(chunks):
@@ -728,11 +753,15 @@ def _ingest_faq_host_python_corpus(
                 payload=_build_faq_payload(chunk, site_id),
             )
         )
+    if _cancelled(cancel_event):
+        return _cancelled_result(corpus_plan=corpus_plan)
     upsert_points(
         collection_name=corpus_plan.build_collection,
         points=points,
         client=client,
     )
+    if _cancelled(cancel_event):
+        return _cancelled_result(corpus_plan=corpus_plan)
     swap_alias(
         alias_name=corpus_plan.collection_alias,
         build_collection=corpus_plan.build_collection,
@@ -759,7 +788,7 @@ def _ingest_text_corpus(
     sparse_enabled: bool,
 ) -> dict[str, Any]:
     if _cancelled(cancel_event):
-        return _cancelled_result()
+        return _cancelled_result(corpus_plan=corpus_plan)
     available = [source for source in corpus_plan.sources if (root / source).exists()]
     if not available:
         return _failure_result(
@@ -784,6 +813,8 @@ def _ingest_text_corpus(
 
     texts = [str(chunk.get("text") or "").strip() for chunk in chunks]
     dense_vectors = deps.dense_embedder(texts)
+    if _cancelled(cancel_event):
+        return _cancelled_result(corpus_plan=corpus_plan)
     sparse_vectors = _maybe_embed_sparse(texts, deps=deps) if sparse_enabled else None
     client = _get_qdrant_client(deps)
     vector_size = len(dense_vectors[0]) if dense_vectors else 1024
@@ -793,6 +824,8 @@ def _ingest_text_corpus(
         vector_size=vector_size,
         client=client,
     )
+    if _cancelled(cancel_event):
+        return _cancelled_result(corpus_plan=corpus_plan)
 
     points: list[models.PointStruct] = []
     for index, chunk in enumerate(chunks):
@@ -807,11 +840,15 @@ def _ingest_text_corpus(
                 payload=payload_builder(chunk, site_id),
             )
         )
+    if _cancelled(cancel_event):
+        return _cancelled_result(corpus_plan=corpus_plan)
     upsert_points(
         collection_name=corpus_plan.build_collection,
         points=points,
         client=client,
     )
+    if _cancelled(cancel_event):
+        return _cancelled_result(corpus_plan=corpus_plan)
     swap_alias(
         alias_name=corpus_plan.collection_alias,
         build_collection=corpus_plan.build_collection,
@@ -835,7 +872,7 @@ def _ingest_discovery_image_corpus(
     deps: _IndexingDeps,
 ) -> dict[str, Any]:
     if _cancelled(cancel_event):
-        return _cancelled_result()
+        return _cancelled_result(corpus_plan=corpus_plan)
     if str(corpus_plan.row_source_strategy or "").strip() != "host_api_fetch":
         return _failure_result(
             corpus_plan=corpus_plan,
@@ -863,7 +900,7 @@ def _ingest_discovery_image_corpus(
     )
     rows = _ensure_resolved_image_rows(rows=rows, corpus_plan=corpus_plan)
     if _cancelled(cancel_event):
-        return _cancelled_result()
+        return _cancelled_result(corpus_plan=corpus_plan)
     if not rows:
         return _failure_result(
             corpus_plan=corpus_plan,
@@ -891,6 +928,8 @@ def _ingest_discovery_image_corpus(
 
     embedder = deps.image_embedder or _embed_image_bytes_batch
     vectors = embedder([payload for _, payload in image_entries])
+    if _cancelled(cancel_event):
+        return _cancelled_result(corpus_plan=corpus_plan)
     client = _get_qdrant_client(deps)
     vector_size = len(vectors[0]) if vectors else 512
     ensure_build_collection(
@@ -899,6 +938,8 @@ def _ingest_discovery_image_corpus(
         vector_size=vector_size,
         client=client,
     )
+    if _cancelled(cancel_event):
+        return _cancelled_result(corpus_plan=corpus_plan)
     points: list[models.PointStruct] = []
     for index, (row, _image_bytes) in enumerate(image_entries):
         payload = {
@@ -923,11 +964,15 @@ def _ingest_discovery_image_corpus(
                 payload=payload,
             )
         )
+    if _cancelled(cancel_event):
+        return _cancelled_result(corpus_plan=corpus_plan)
     upsert_points(
         collection_name=corpus_plan.build_collection,
         points=points,
         client=client,
     )
+    if _cancelled(cancel_event):
+        return _cancelled_result(corpus_plan=corpus_plan)
     swap_alias(
         alias_name=corpus_plan.collection_alias,
         build_collection=corpus_plan.build_collection,
@@ -1308,8 +1353,8 @@ def _cancelled(cancel_event: Event | None) -> bool:
     return cancel_event is not None and cancel_event.is_set()
 
 
-def _cancelled_result() -> dict[str, Any]:
-    return {
+def _cancelled_result(*, corpus_plan: RagCorpusPlan | None = None) -> dict[str, Any]:
+    payload = {
         "status": "aborted_by_host_failure",
         "enabled": False,
         "documents_indexed": 0,
@@ -1318,6 +1363,26 @@ def _cancelled_result() -> dict[str, Any]:
         "alias_swapped": False,
         "smoke_passed": False,
     }
+    if corpus_plan is not None:
+        payload.update(
+            {
+                "collection_alias": corpus_plan.collection_alias,
+                "build_collection": corpus_plan.build_collection,
+                "loader_strategy": corpus_plan.loader_strategy,
+            }
+        )
+    return payload
+
+
+def _coerce_cancelled_result(
+    *,
+    result: dict[str, Any],
+    corpus_plan: RagCorpusPlan,
+    cancel_event: Event | None,
+) -> dict[str, Any]:
+    if not _cancelled(cancel_event):
+        return result
+    return _cancelled_result(corpus_plan=corpus_plan)
 
 
 def _failure_result(

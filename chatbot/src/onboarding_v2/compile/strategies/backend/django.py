@@ -13,6 +13,12 @@ def compile_django_backend_bundle(
     plan: HostBackendPlan,
 ) -> BackendWiringBundle:
     root = Path(source_root)
+    resolved_auth_source = plan.auth_handler_source
+    if plan.generated_handler_path:
+        resolved_auth_source = _resolve_django_chat_auth_helper_source(
+            root=root,
+            requested_source=plan.auth_handler_source,
+        )
     route_path = root / plan.route_target
     if not route_path.exists():
         raise ValueError(f"django route target not found: {plan.route_target}")
@@ -54,7 +60,7 @@ def compile_django_backend_bundle(
                 path=plan.generated_handler_path,
                 reason="generated django chat auth bridge",
                 content=_build_django_chat_auth_module(
-                    auth_source=plan.auth_handler_source,
+                    auth_source=resolved_auth_source,
                     site_id=plan.site_id,
                 ),
             )
@@ -183,6 +189,44 @@ def _build_django_chat_auth_module(*, auth_source: str, site_id: str) -> str:
         "        status=200,\n"
         "    )\n"
     )
+
+
+def _resolve_django_chat_auth_helper_source(*, root: Path, requested_source: str) -> str:
+    candidate_paths: list[str] = []
+    if requested_source:
+        candidate_paths.append(requested_source)
+    preferred_source = "backend/users/views.py"
+    if preferred_source not in candidate_paths:
+        candidate_paths.append(preferred_source)
+
+    seen: set[str] = set()
+    for candidate in candidate_paths:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if _django_helper_source_exports_required_helpers(root / candidate):
+            return candidate
+
+    backend_root = root / "backend"
+    if backend_root.exists():
+        for path in sorted(backend_root.rglob("views.py")):
+            relative_path = path.relative_to(root).as_posix()
+            if relative_path in seen:
+                continue
+            if _django_helper_source_exports_required_helpers(path):
+                return relative_path
+
+    raise ValueError(
+        "django_chat_auth_helper_source_missing_helpers: expected _build_user_payload and "
+        f"_find_active_session under backend views for requested source {requested_source!r}"
+    )
+
+
+def _django_helper_source_exports_required_helpers(path: Path) -> bool:
+    if not path.exists() or not path.is_file():
+        return False
+    content = path.read_text(encoding="utf-8")
+    return "def _build_user_payload(" in content and "def _find_active_session(" in content
 
 
 def _augment_django_order_action_endpoint(content: str, *, plan: HostBackendPlan) -> str:

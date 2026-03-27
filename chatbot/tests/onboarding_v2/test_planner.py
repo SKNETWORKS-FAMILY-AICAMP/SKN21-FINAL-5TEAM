@@ -310,6 +310,7 @@ def test_planner_accepts_bilyeo_strict_coverage_with_verified_flask_endpoints():
     assert plan.host_backend.login_endpoint == "/api/auth/login"
     assert plan.chatbot_bridge.auth_validation_endpoint == "/api/chat/auth-token"
     assert plan.chatbot_bridge.current_user_endpoint == "/api/chat/auth-token"
+    assert plan.chatbot_bridge.auth_transport == "bearer_token"
 
 
 def test_planner_combines_risk_and_repair_hint_llm_calls(monkeypatch):
@@ -527,6 +528,8 @@ def test_planner_builds_site_scoped_retrieval_index_plan_and_capability_upgrade(
         "stop_on": "empty_or_repeated_ids",
     }
     assert planning_bundle.integration_plan.capability_upgrade["capability_profile"] == "order_cs_plus_retrieval"
+    assert planning_bundle.integration_plan.host_backend.capability_profile == "order_cs_only"
+    assert planning_bundle.integration_plan.host_frontend.capability_profile == "order_cs_only"
     assert planning_bundle.integration_plan.host_frontend.widget_features["image_upload"] is False
     assert planning_bundle.integration_plan.host_frontend.enabled_retrieval_corpora == []
 

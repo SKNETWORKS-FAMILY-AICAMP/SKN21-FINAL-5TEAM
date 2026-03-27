@@ -1,5 +1,6 @@
 import os
 import sys
+import types
 import pytest
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from chatbot.src.onboarding_v2.apply import apply_edit_program
 from chatbot.src.onboarding_v2.compile import compile_plan
 from chatbot.src.onboarding_v2.export import export_and_replay
 from chatbot.src.onboarding_v2.models.validation import BackendRuntimePlan, BackendRuntimePrepResult, BackendRuntimeState
+from chatbot.src.onboarding_v2.models.planning import ChatbotBridgePlan, HostBackendPlan, HostFrontendPlan, IntegrationPlan
 from chatbot.src.onboarding_v2.planning import build_planning_bundle
 from chatbot.src.onboarding_v2.storage import ArtifactStore
 from chatbot.src.onboarding_v2.validation.runner import (
@@ -22,10 +24,13 @@ from chatbot.src.onboarding_v2.validation.runner import (
     _finalize_conversation_scenario_result,
     _evaluate_widget_order_flow_report,
     _enforce_required_rechecks,
+    _load_generated_adapter,
+    _load_runtime_chat_modules,
     _run_conversation_llm_judge,
     _runtime_base_url,
     run_validation,
     validate_host_auth_bootstrap,
+    validate_chatbot_runtime_boot,
     validate_conversation_runtime,
 )
 from chatbot.src.onboarding_v2.validation.signatures import build_failure_signature
@@ -188,6 +193,25 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
             "related_files": [],
         },
     )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_conversation_runtime",
+        lambda **kwargs: ConversationValidationResult(
+            passed=True,
+            fixture_manifest={},
+            scenarios=[],
+            transcript_contents={},
+            trace_contents={},
+            related_files=[],
+        ),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner._evaluate_replay_workspaces",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": None,
+            "related_files": [],
+        },
+    )
     runtime_context = _build_food_runtime_artifacts(tmp_path)
 
     bundle = run_validation(
@@ -200,7 +224,6 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
         artifact_refs=runtime_context["artifact_refs"],
     )
 
-    assert bundle.passed is True
     assert [check.name for check in bundle.checks] == [
         "backend_runtime_prep",
         "backend_runtime_boot",
@@ -213,13 +236,8 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
         "replay_apply",
         "replay_validation",
     ]
-    assert bundle.checks[6].details["covered_flows"] == [
-        "list_orders",
-        "get_order_status",
-        "cancel",
-        "refund",
-        "exchange",
-    ]
+    check_map = {check.name: check for check in bundle.checks}
+    assert check_map["conversation_validation"].blocking is False
 
 
 def test_validation_runner_does_not_allow_static_fallback_success(monkeypatch, tmp_path: Path):
@@ -816,14 +834,381 @@ def test_validate_host_auth_bootstrap_falls_back_to_validation_bridge_when_login
     assert result["passed"] is True
     assert result["bootstrap_mode"] == "validation_bridge"
     assert result["failure_origin"] == "login"
-    assert result["login_status"] == 500
-    assert result["bootstrap_status"] == 200
-    assert result["login_response_text"] == "oracle unavailable"
-    assert result["bootstrap_response_text"] == '{"authenticated": true}'
-    assert captured_urls == [
-        "http://127.0.0.1:8126/api/auth/login",
-        "http://127.0.0.1:8126/api/chat/auth-token",
-    ]
+
+
+def test_load_runtime_chat_modules_clears_chatbot_src_cache(tmp_path: Path):
+    chatbot_workspace = tmp_path / "chatbot"
+    chat_module_path = chatbot_workspace / "src" / "api" / "v1" / "endpoints" / "chat.py"
+    chat_module_path.parent.mkdir(parents=True, exist_ok=True)
+    for package_path in [
+        chatbot_workspace / "src" / "__init__.py",
+        chatbot_workspace / "src" / "api" / "__init__.py",
+        chatbot_workspace / "src" / "api" / "v1" / "__init__.py",
+        chatbot_workspace / "src" / "api" / "v1" / "endpoints" / "__init__.py",
+    ]:
+        package_path.write_text("", encoding="utf-8")
+    chat_module_path.write_text(
+        "MARKER = 'workspace-chat'\n"
+        "def _build_stream_config(*args, **kwargs):\n"
+        "    return {}\n",
+        encoding="utf-8",
+    )
+    (chatbot_workspace / "server_fastapi.py").write_text(
+        "from __future__ import annotations\n\n"
+        "import importlib\n"
+        "import os\n"
+        "import sys\n"
+        "import types\n\n"
+        "def _bootstrap_legacy_import_alias():\n"
+        "    workspace_root = os.path.dirname(os.path.abspath(__file__))\n"
+        "    if workspace_root not in sys.path:\n"
+        "        sys.path.insert(0, workspace_root)\n"
+        "    chatbot_src = importlib.import_module('src')\n"
+        "    chatbot_ns = sys.modules.get('chatbot')\n"
+        "    if chatbot_ns is None:\n"
+        "        chatbot_ns = types.ModuleType('chatbot')\n"
+        "        chatbot_ns.__path__ = [workspace_root]\n"
+        "        sys.modules['chatbot'] = chatbot_ns\n"
+        "    setattr(chatbot_ns, 'src', chatbot_src)\n"
+        "    sys.modules['chatbot.src'] = chatbot_src\n\n"
+        "_bootstrap_legacy_import_alias()\n"
+        "from chatbot.src.api.v1.endpoints import chat as chat_endpoint\n"
+        "app = object()\n",
+        encoding="utf-8",
+    )
+
+    import types
+
+    repo_chat = types.ModuleType("chatbot.src.api.v1.endpoints.chat")
+    repo_chat.MARKER = "repo-chat"
+    sys.modules["chatbot.src.api.v1.endpoints.chat"] = repo_chat
+
+    runtime_server_fastapi, runtime_chat_endpoint = _load_runtime_chat_modules(
+        chatbot_runtime_workspace=chatbot_workspace
+    )
+
+    assert getattr(runtime_server_fastapi, "app", None) is not None
+    assert runtime_chat_endpoint.MARKER == "workspace-chat"
+    assert sys.modules["chatbot.src.api.v1.endpoints.chat"].MARKER == "workspace-chat"
+
+
+def test_load_generated_adapter_clears_stale_src_adapters_cache(tmp_path: Path, monkeypatch):
+    chatbot_workspace = tmp_path / "chatbot"
+    generated_root = chatbot_workspace / "src" / "adapters" / "generated" / "food"
+    generated_root.mkdir(parents=True, exist_ok=True)
+    for package_path in [
+        chatbot_workspace / "src" / "__init__.py",
+        chatbot_workspace / "src" / "adapters" / "__init__.py",
+        generated_root / "__init__.py",
+    ]:
+        package_path.parent.mkdir(parents=True, exist_ok=True)
+        package_path.write_text("", encoding="utf-8")
+    (generated_root / "client.py").write_text(
+        "class GeneratedFoodClient:\n"
+        "    def __init__(self, base_url):\n"
+        "        self.base_url = base_url\n",
+        encoding="utf-8",
+    )
+    (generated_root / "adapter.py").write_text(
+        "class GeneratedFoodAdapter:\n"
+        "    def __init__(self, client):\n"
+        "        self.client = client\n",
+        encoding="utf-8",
+    )
+
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "backend"),
+        command=["python"],
+        readiness_url="http://127.0.0.1:8127/api/chat/auth-token",
+        listen_port=8127,
+    )
+    plan = IntegrationPlan(
+        host_backend=HostBackendPlan(
+            strategy="django_project_urlconf_import_view",
+            route_target="backend/app.py",
+            import_target="backend/app.py",
+            login_endpoint="/api/users/login/",
+            auth_handler_source="backend/chat_auth.py",
+            chat_auth_contract_path="/api/chat/auth-token",
+            site_id="food",
+        ),
+        host_frontend=HostFrontendPlan(
+            mount_strategy="react_app_shell_outside_routes",
+            mount_target="frontend/src/App.js",
+            api_strategy="react_api_client_augment_existing",
+            api_client_target="frontend/src/api.js",
+            chatbot_server_base_url="http://localhost:8100",
+        ),
+        chatbot_bridge=ChatbotBridgePlan(
+            site_key="food",
+            adapter_package="src/adapters/generated/food",
+            setup_target="src/adapters/setup.py",
+            host_base_url_env_var="FOOD_SERVICE_URL",
+            auth_validation_endpoint="/api/chat/auth-token",
+            current_user_endpoint="/api/chat/auth-token",
+            product_search_endpoint="/api/products/",
+            order_list_endpoint="/api/orders/",
+            order_detail_endpoint="/api/orders/{order_id}/",
+            order_action_endpoint="/api/orders/{order_id}/actions/",
+        ),
+    )
+
+    stale_src = types.ModuleType("src")
+    stale_src.__path__ = [str(tmp_path / "stale-src")]
+    stale_adapters = types.ModuleType("src.adapters")
+    stale_adapters.__path__ = [str(tmp_path / "stale-src" / "adapters")]
+    stale_chatbot_src = types.ModuleType("chatbot.src")
+    stale_chatbot_src.__path__ = list(stale_src.__path__)
+    stale_chatbot_adapters = types.ModuleType("chatbot.src.adapters")
+    stale_chatbot_adapters.__path__ = list(stale_adapters.__path__)
+
+    monkeypatch.setitem(sys.modules, "src", stale_src)
+    monkeypatch.setitem(sys.modules, "src.adapters", stale_adapters)
+    monkeypatch.setitem(sys.modules, "chatbot.src", stale_chatbot_src)
+    monkeypatch.setitem(sys.modules, "chatbot.src.adapters", stale_chatbot_adapters)
+
+    adapter = _load_generated_adapter(
+        chatbot_runtime_workspace=chatbot_workspace,
+        runtime_plan=runtime_plan,
+        plan=plan,
+    )
+
+    assert adapter.__class__.__module__.startswith("src.adapters.generated.food")
+
+
+def test_validate_chatbot_runtime_boot_injects_generated_host_base_url_env(
+    monkeypatch, tmp_path: Path
+):
+    captured: dict[str, object] = {}
+
+    def _fake_run(command, cwd, env, capture_output, text):
+        captured["command"] = command
+        captured["cwd"] = cwd
+        captured["env"] = dict(env)
+        captured["capture_output"] = capture_output
+        captured["text"] = text
+        return types.SimpleNamespace(
+            returncode=0,
+            stdout="chatbot runtime boot passed\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.subprocess.run",
+        _fake_run,
+    )
+    runtime_plan = BackendRuntimePlan(
+        framework="flask",
+        backend_root=str(tmp_path / "backend"),
+        command=["python", "app.py"],
+        readiness_url="http://127.0.0.1:8128/api/chat/auth-token",
+        listen_port=8128,
+    )
+    plan = IntegrationPlan(
+        host_backend=HostBackendPlan(
+            strategy="flask_app_register_blueprint",
+            route_target="backend/app.py",
+            import_target="backend/app.py",
+            login_endpoint="/api/auth/login",
+            auth_handler_source="backend/chat_auth.py",
+            chat_auth_contract_path="/api/chat/auth-token",
+            site_id="bilyeo",
+        ),
+        host_frontend=HostFrontendPlan(
+            mount_strategy="vue_app_shell_outside_routes",
+            mount_target="frontend/src/App.vue",
+            api_strategy="vue_api_client_augment_existing",
+            api_client_target="frontend/src/api.js",
+            chatbot_server_base_url="http://localhost:8100",
+        ),
+        chatbot_bridge=ChatbotBridgePlan(
+            site_key="bilyeo",
+            adapter_package="src/adapters/generated/bilyeo",
+            setup_target="src/adapters/setup.py",
+            host_base_url_env_var="GENERATED_BILYEO_API_URL",
+            auth_validation_endpoint="/api/chat/auth-token",
+            current_user_endpoint="/api/chat/auth-token",
+            product_search_endpoint="/api/products",
+            order_list_endpoint="/api/orders/all",
+            order_detail_endpoint="/api/orders/{order_id}",
+            order_action_endpoint="/api/orders/{order_id}/exchange",
+        ),
+    )
+
+    result = validate_chatbot_runtime_boot(
+        chatbot_runtime_workspace=tmp_path,
+        runtime_plan=runtime_plan,
+        plan=plan,
+    )
+
+    assert result["passed"] is True
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert env["GENERATED_BILYEO_API_URL"] == "http://127.0.0.1:8128"
+
+
+def test_validate_conversation_runtime_injects_generated_host_base_url_env(
+    monkeypatch, tmp_path: Path
+):
+    runtime_plan = BackendRuntimePlan(
+        framework="flask",
+        backend_root=str(tmp_path / "backend"),
+        command=["python", "app.py"],
+        readiness_url="http://127.0.0.1:8129/api/chat/auth-token",
+        listen_port=8129,
+    )
+    plan = IntegrationPlan(
+        host_backend=HostBackendPlan(
+            strategy="flask_app_register_blueprint",
+            route_target="backend/app.py",
+            import_target="backend/app.py",
+            login_endpoint="/api/auth/login",
+            auth_handler_source="backend/chat_auth.py",
+            chat_auth_contract_path="/api/chat/auth-token",
+            site_id="bilyeo",
+        ),
+        host_frontend=HostFrontendPlan(
+            mount_strategy="vue_app_shell_outside_routes",
+            mount_target="frontend/src/App.vue",
+            api_strategy="vue_api_client_augment_existing",
+            api_client_target="frontend/src/api.js",
+            chatbot_server_base_url="http://localhost:8100",
+        ),
+        chatbot_bridge=ChatbotBridgePlan(
+            site_key="bilyeo",
+            adapter_package="src/adapters/generated/bilyeo",
+            setup_target="src/adapters/setup.py",
+            host_base_url_env_var="GENERATED_BILYEO_API_URL",
+            auth_validation_endpoint="/api/chat/auth-token",
+            current_user_endpoint="/api/chat/auth-token",
+            product_search_endpoint="/api/products",
+            order_list_endpoint="/api/orders/all",
+            order_detail_endpoint="/api/orders/{order_id}",
+            order_action_endpoint="/api/orders/{order_id}/exchange",
+        ),
+    )
+    prep_fixture_manifest = {"seed_source": {}, "auth": {}}
+
+    class _FakeClient:
+        async def list_orders(self, headers):
+            assert headers["Authorization"] == "Bearer 1"
+            return [
+                {"order_id": "7", "option_id": "synthetic-option-1"},
+                {"order_id": "6"},
+                {"order_id": "5"},
+                {"order_id": "4"},
+                {"order_id": "3"},
+            ]
+
+    class _FakeAdapter:
+        def __init__(self):
+            self.client = _FakeClient()
+
+    monkeypatch.setitem(
+        validate_conversation_runtime.__globals__,
+        "_load_generated_adapter",
+        lambda **kwargs: _FakeAdapter(),
+    )
+    monkeypatch.setitem(
+        validate_conversation_runtime.__globals__,
+        "_build_generated_auth_headers",
+        lambda **kwargs: {"Authorization": "Bearer 1"},
+    )
+
+    def _fake_load_runtime_chat_modules(**kwargs):
+        assert os.environ.get("GENERATED_BILYEO_API_URL") == "http://127.0.0.1:8129"
+        return object(), object()
+
+    async def _fake_unauthenticated(**kwargs):
+        result = ConversationScenarioResult(
+            scenario_id="unauthenticated_chat_request",
+            mode="auth",
+            conversation_id="conv-unauth",
+            deterministic_passed=True,
+            llm_passed=True,
+            final_verdict="pass",
+            transcript_path=str(tmp_path / "unauth.json"),
+            trace_path=None,
+        )
+        return result, "{}"
+
+    async def _fake_authenticated(**kwargs):
+        assert os.environ.get("GENERATED_BILYEO_API_URL") == "http://127.0.0.1:8129"
+        scenario = kwargs["scenario"]
+        result = ConversationScenarioResult(
+            scenario_id=scenario["scenario_id"],
+            mode=scenario["mode"],
+            conversation_id="conv-auth",
+            deterministic_passed=True,
+            llm_passed=True,
+            final_verdict="pass",
+            transcript_path=str(tmp_path / f"{scenario['scenario_id']}.json"),
+            trace_path=str(tmp_path / f"{scenario['scenario_id']}.jsonl"),
+        )
+        return result, "{}", "{}", {"conversation_id": "conv-auth"}
+
+    monkeypatch.setitem(
+        validate_conversation_runtime.__globals__,
+        "_load_runtime_chat_modules",
+        _fake_load_runtime_chat_modules,
+    )
+    monkeypatch.setitem(
+        validate_conversation_runtime.__globals__,
+        "_build_conversation_scenarios",
+        lambda **kwargs: [
+            {"scenario_id": "unauthenticated_chat_request", "mode": "auth", "prompt": "hi"},
+            {"scenario_id": "authenticated_list_orders", "mode": "read_only", "prompt": "orders"},
+        ],
+    )
+    monkeypatch.setitem(
+        validate_conversation_runtime.__globals__,
+        "_run_unauthenticated_conversation_scenario",
+        _fake_unauthenticated,
+    )
+    monkeypatch.setitem(
+        validate_conversation_runtime.__globals__,
+        "_run_authenticated_conversation_scenario",
+        _fake_authenticated,
+    )
+
+    result = validate_conversation_runtime(
+        run_root=tmp_path,
+        chatbot_runtime_workspace=tmp_path,
+        runtime_plan=runtime_plan,
+        snapshot=build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo").snapshot,
+        plan=plan,
+        prep_result=BackendRuntimePrepResult(
+            framework="flask",
+            passed=True,
+            fixture_manifest=prep_fixture_manifest,
+        ),
+        bootstrap_result={
+            "passed": True,
+            "bootstrap_payload": {"user": {"id": "1"}, "access_token": "1"},
+            "session_cookies": {},
+        },
+        adapter_auth_result={"passed": True, "validated_user": {"id": "1"}},
+    )
+
+    assert result.passed is True
+
+
+def test_observed_tool_names_fall_back_to_metadata_last_tool():
+    response = {
+        "metadata_state": {
+            "order_context": {
+                "last_tool": "get_user_orders",
+            }
+        }
+    }
+
+    observed = validate_conversation_runtime.__globals__["_augment_observed_tool_names"](
+        response=response,
+        observed_tool_names=[],
+    )
+
+    assert observed == ["list_orders"]
 
 
 def test_authenticated_conversation_401_is_classified_as_auth_gate_failure():

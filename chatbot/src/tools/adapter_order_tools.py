@@ -197,13 +197,15 @@ def _derive_site_order_actions(
 
 
 def _build_order_ui_item(adapter, raw_order: dict) -> dict:
+    shipping = raw_order.get("shipping") or {}
     normalized_status = _normalize_site_order_status(
         adapter,
         raw_order.get("status", "unknown"),
     )
     actions = _derive_site_order_actions(
         normalized_status,
-        raw_order.get("payment_status"),
+        raw_order.get("payment_status")
+        or (raw_order.get("payment") or {}).get("status"),
     )
     product = raw_order.get("product") or {}
     items = raw_order.get("items") or []
@@ -211,21 +213,23 @@ def _build_order_ui_item(adapter, raw_order: dict) -> dict:
     total_amount = raw_order.get("total_price")
     if total_amount is None:
         total_amount = raw_order.get("total_amount")
+    if total_amount is None:
+        total_amount = (raw_order.get("payment") or {}).get("amount")
     product_name = product.get("name")
     if not product_name and isinstance(first_item, dict):
         product_name = first_item.get("product_name") or first_item.get("productTitle")
+    order_id = raw_order.get("id")
+    if order_id is None:
+        order_id = raw_order.get("order_id")
+    delivered_at = raw_order.get("delivered_at") or shipping.get("delivered_at")
     return {
-        "order_id": str(raw_order.get("id")),
+        "order_id": "" if order_id is None else str(order_id),
         "date": str(raw_order.get("created_at", ""))[:10],
         "status": normalized_status,
         "status_label": raw_order.get("status_label") or normalized_status,
         "product_name": product_name or "상품 정보 없음",
         "amount": float(total_amount or 0),
-        "delivered_at": (
-            str(raw_order.get("created_at", ""))[:10]
-            if normalized_status == "delivered"
-            else None
-        ),
+        "delivered_at": str(delivered_at)[:10] if delivered_at else None,
         **actions,
     }
 

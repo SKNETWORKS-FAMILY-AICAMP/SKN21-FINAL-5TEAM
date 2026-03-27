@@ -41,3 +41,12 @@ def test_server_fastapi_bootstraps_chatbot_alias_before_chatbot_imports() -> Non
     )
     assert first_chatbot_import_index is not None
     assert bootstrap_index < first_chatbot_import_index
+
+
+def test_server_fastapi_bootstraps_workspace_src_alias() -> None:
+    source = Path(
+        "/Users/junseok/Projects/SKN21-FINAL-5TEAM/chatbot/server_fastapi.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'importlib.import_module("src")' in source
+    assert 'importlib.import_module("chatbot.src")' not in source
