@@ -10,7 +10,10 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
 os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
-from chatbot.src.onboarding_v2.engine import run_onboarding_generation_v2
+from chatbot.src.onboarding_v2.engine import (
+    _build_retrieval_smoke_payload,
+    run_onboarding_generation_v2,
+)
 from chatbot.src.onboarding_v2.compile.preflight import CompilePreflightResult
 from chatbot.src.onboarding_v2.models.repair import RepairDecision
 from chatbot.src.onboarding_v2.models.validation import (
@@ -20,6 +23,7 @@ from chatbot.src.onboarding_v2.models.validation import (
     ReplayResult,
 )
 from chatbot.src.onboarding_v2.analysis import analyzer as analyzer_module
+from chatbot.src.onboarding_v2.models.planning import RagCorpusPlan, RetrievalIndexPlan
 from chatbot.src.onboarding_v2.planning import planner as planner_module
 
 
@@ -894,6 +898,7 @@ def test_engine_entry_passes_preflight_scan_paths(monkeypatch, tmp_path: Path):
     assert set(captured["scan_paths"]) == {
         "src/adapters/setup.py",
         "src/adapters/generated/food/__init__.py",
+        "src/adapters/generated/food/contracts.py",
         "src/adapters/generated/food/client.py",
         "src/adapters/generated/food/auth.py",
         "src/adapters/generated/food/mappers.py",
@@ -1649,3 +1654,64 @@ def test_engine_entry_passes_analysis_overrides_into_analysis_rerun(monkeypatch,
         ],
         "treat_api_view_as_method_source": True,
     }
+
+
+def test_build_retrieval_smoke_payload_skips_disabled_corpus():
+    retrieval_plan = RetrievalIndexPlan(
+        site_id="food",
+        site_slug="food",
+        corpora=[
+            RagCorpusPlan(
+                corpus="policy",
+                enabled=True,
+                chunking_strategy="heading_sections",
+                collection_alias="site_food__policy",
+                build_collection="site_food__policy__run_demo",
+                sources=["policy.md"],
+                smoke_queries=["환불"],
+                minimum_expected_documents=1,
+                loader_strategy="policy_source_scan",
+            ),
+            RagCorpusPlan(
+                corpus="discovery_image",
+                enabled=False,
+                chunking_strategy="product_image_rows",
+                collection_alias="site_food__discovery_image",
+                build_collection="site_food__discovery_image__run_demo",
+                sources=["product_crawling.py"],
+                smoke_queries=["자켓"],
+                minimum_expected_documents=1,
+                loader_strategy="public_url_fetch",
+            ),
+        ],
+    )
+
+    payload = _build_retrieval_smoke_payload(
+        retrieval_plan=retrieval_plan,
+        indexing_result={
+            "corpora": {
+                "policy": {
+                    "status": "completed",
+                    "enabled": True,
+                    "documents_indexed": 12,
+                    "smoke_passed": True,
+                },
+                "discovery_image": {
+                    "status": "skipped",
+                    "enabled": False,
+                    "documents_indexed": 0,
+                    "reason": "no_product_rows",
+                    "smoke_passed": False,
+                },
+            }
+        },
+    )
+
+    results = {item["corpus"]: item for item in payload["results"]}
+
+    assert payload["passed"] is True
+    assert results["policy"]["status"] == "passed"
+    assert results["policy"]["passed"] is True
+    assert results["discovery_image"]["status"] == "skipped"
+    assert results["discovery_image"]["passed"] is True
+    assert results["discovery_image"]["summary"] == "discovery_image retrieval smoke skipped"

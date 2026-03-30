@@ -358,6 +358,200 @@ def test_maybe_autostart_demo_services_skips_disabled_or_non_exported_runs(
     disabled_record.log_handle.close()
 
 
+def test_food_service_specs_adds_frontend_install_and_cra_safe_env(tmp_path: Path):
+    source_root = tmp_path / "food"
+    backend_root = source_root / "backend"
+    frontend_root = source_root / "frontend"
+    backend_root.mkdir(parents=True, exist_ok=True)
+    frontend_root.mkdir(parents=True, exist_ok=True)
+    (backend_root / "manage.py").write_text("print('ok')\n", encoding="utf-8")
+    (frontend_root / "package.json").write_text('{"name":"food-frontend"}\n', encoding="utf-8")
+
+    specs, blocked = app_module._food_service_specs(
+        profile=app_module.KNOWN_LAUNCH_PROFILES["food"],
+        source_root=source_root,
+    )
+
+    assert blocked == []
+    frontend = next(spec for spec in specs if spec.service_name == "frontend")
+    assert frontend.prepare_command == ["npm", "install"]
+    assert frontend.prepare_sentinel == "node_modules"
+    assert "HOST" not in frontend.env_overrides
+    assert frontend.env_overrides["DANGEROUSLY_DISABLE_HOST_CHECK"] == "true"
+
+
+def test_ensure_service_process_runs_prepare_command_before_launch(monkeypatch, tmp_path: Path):
+    frontend_root = tmp_path / "frontend"
+    frontend_root.mkdir(parents=True, exist_ok=True)
+    (frontend_root / "package.json").write_text('{"name":"food-frontend"}\n', encoding="utf-8")
+
+    events: list[tuple[str, object]] = []
+
+    def _fake_run(command, **kwargs):
+        events.append(("run", list(command)))
+        return app_module.subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    class _FakeProcess:
+        pid = 3210
+        returncode = None
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            del timeout
+            self.returncode = 0
+            return 0
+
+        def kill(self):
+            self.returncode = -9
+
+    def _fake_popen(command, **kwargs):
+        events.append(("popen", list(command)))
+        return _FakeProcess()
+
+    monkeypatch.setattr(app_module.subprocess, "run", _fake_run)
+    monkeypatch.setattr(app_module.subprocess, "Popen", _fake_popen)
+
+    snapshot = app_module._ensure_service_process(
+        site="food",
+        run_id="food-demo-install",
+        spec=app_module.ServiceLaunchSpec(
+            service_name="frontend",
+            label="Food frontend",
+            working_directory=frontend_root,
+            command=["npm", "run", "dev"],
+            url="http://127.0.0.1:3000/",
+            healthcheck_port=3000,
+            env_overrides={"PORT": "3000"},
+            prepare_command=["npm", "install"],
+            prepare_sentinel="node_modules",
+        ),
+    )
+
+    assert events == [
+        ("run", ["npm", "install"]),
+        ("popen", ["npm", "run", "dev"]),
+    ]
+    assert snapshot["status"] == "starting"
+    record = app_module._SERVICE_REGISTRY["food:frontend"]
+    record.log_handle.close()
+
+
+def test_build_demo_payload_exposes_primary_open_action_for_exported_preview():
+    payload = app_module._build_demo_payload(
+        run_payload={
+            "run": {"status": "exported"},
+            "details": {"validation": {"passed": True}},
+        },
+        service_snapshots=[
+            {
+                "name": "frontend",
+                "label": "Bilyeo frontend",
+                "status": "ready",
+                "status_label": "Ready",
+                "ready": True,
+                "running": True,
+                "url": "http://127.0.0.1:3000/bilyeo/",
+            }
+        ],
+        preview_url="http://127.0.0.1:3000/bilyeo/",
+    )
+
+    assert payload["primary_action"] == {
+        "label": "사이트 열기",
+        "url": "http://127.0.0.1:3000/bilyeo/",
+    }
+    assert payload["launch_status"] == "ready"
+    assert payload["open_url"] == "http://127.0.0.1:3000/bilyeo/"
+
+
+def test_build_demo_payload_marks_blocked_launch_state_for_failed_bootstrap():
+    payload = app_module._build_demo_payload(
+        run_payload={
+            "run": {"status": "exported"},
+            "details": {"validation": {"passed": True}},
+        },
+        service_snapshots=[
+            {
+                "name": "backend",
+                "label": "Food backend",
+                "status": "blocked",
+                "status_label": "Blocked",
+                "ready": False,
+                "running": False,
+                "reason": "docker compose를 찾을 수 없습니다.",
+                "url": "http://127.0.0.1:8000",
+            }
+        ],
+        preview_url="http://127.0.0.1:3000/",
+        launch_profile=app_module.KNOWN_LAUNCH_PROFILES["food"],
+    )
+
+    assert payload["status"] == "blocked"
+    assert payload["launch_status"] == "blocked"
+    assert payload["blocked_reason"] == "docker compose를 찾을 수 없습니다."
+    assert payload["primary_action"] is None
+
+
+def test_run_github_import_job_enables_demo_for_known_family(monkeypatch, tmp_path: Path):
+    run_id = "food-github-20260330-101010"
+    runtime_root = tmp_path / "runtime-v2"
+    record = app_module.GitHubImportRun(
+        run_id=run_id,
+        site="food",
+        repo_url="https://github.com/acme/food/tree/main/food",
+        owner="acme",
+        repo="food",
+        default_branch="main",
+        generated_root="generated-v2",
+        runtime_root=str(runtime_root),
+        created_at="2026-03-30T10:10:10+00:00",
+        updated_at="2026-03-30T10:10:10+00:00",
+        status="importing",
+        summary="GitHub 저장소 정보를 확인하는 중입니다.",
+        source_subdir="food",
+        demo_enabled=False,
+    )
+    app_module._GITHUB_IMPORT_REGISTRY[run_id] = record
+
+    extracted_root = tmp_path / "archive" / "repo"
+    selected_root = extracted_root / "food"
+    selected_root.mkdir(parents=True, exist_ok=True)
+    launch_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        app_module,
+        "_probe_github_repository",
+        lambda repo_url, access_token=None: app_module.GitHubRepoProbe(
+            repo_url=repo_url,
+            owner="acme",
+            repo="food",
+            default_branch="main",
+            private=False,
+            requires_auth=False,
+            source_subdir="food",
+        ),
+    )
+    monkeypatch.setattr(app_module, "download_github_archive", lambda **kwargs: extracted_root)
+    monkeypatch.setattr(app_module, "resolve_github_source_root", lambda root, subdir: selected_root)
+    monkeypatch.setattr(
+        app_module,
+        "_launch_onboarding_process",
+        lambda **kwargs: launch_calls.append(kwargs) or {"status": "running"},
+    )
+
+    app_module._run_github_import_job(run_id=run_id)
+
+    updated = app_module._GITHUB_IMPORT_REGISTRY[run_id]
+    assert updated.demo_enabled is True
+    assert launch_calls and launch_calls[0]["demo_enabled"] is True
+    assert launch_calls[0]["preview_url"] == "http://127.0.0.1:3000/"
+
+
 def test_probe_github_repository_accepts_tree_subdir_url(monkeypatch):
     monkeypatch.setattr(
         github_imports,

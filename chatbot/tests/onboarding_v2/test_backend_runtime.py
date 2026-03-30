@@ -596,6 +596,66 @@ def test_prepare_backend_runtime_classifies_oracle_reset_failure_as_host_contrac
     assert prep.fixture_manifest["failure_code"] == "backend_runtime_prep_external_dependency_unavailable"
 
 
+def test_prepare_backend_runtime_defers_oracle_reset_and_seed_until_runtime_probe(
+    tmp_path: Path,
+    monkeypatch,
+):
+    workspace = tmp_path / "workspace"
+    backend_root = workspace / "backend"
+    scripts_root = workspace / "scripts"
+    backend_root.mkdir(parents=True)
+    scripts_root.mkdir(parents=True)
+    (backend_root / "manage.py").write_text("print('django')\n", encoding="utf-8")
+    (scripts_root / "reset_db.py").write_text("print('reset')\n", encoding="utf-8")
+    (scripts_root / "seed.py").write_text("print('seed')\n", encoding="utf-8")
+    (workspace / ".env").write_text(
+        (
+            "ORACLE_USER=oracle-user\n"
+            "ORACLE_PASSWORD=oracle-password\n"
+            "ORACLE_HOST=oracle-host\n"
+            "ORACLE_PORT=1521\n"
+            "ORACLE_SERVICE_NAME=freepdb1\n"
+        ),
+        encoding="utf-8",
+    )
+
+    def _ok_command(*, name: str, command: list[str], cwd: Path, log_path: Path | None = None, **kwargs):
+        del kwargs
+        return backend_runtime_module.BackendRuntimeCommandResult(
+            name=name,
+            command=command,
+            cwd=str(cwd),
+            returncode=0,
+            stdout=f"{name} ok",
+            stderr="",
+            passed=True,
+            log_path=str(log_path) if log_path is not None else None,
+        )
+
+    def _run_command(*, name: str, command: list[str], cwd: Path, log_path: Path | None = None, **kwargs):
+        raise AssertionError(f"{name} should have been deferred, but ran {command!r}")
+
+    monkeypatch.setattr(backend_runtime_module, "_create_venv", lambda *args, **kwargs: _ok_command(name="create_venv", command=["python", "-m", "venv"], cwd=tmp_path))
+    monkeypatch.setattr(backend_runtime_module, "_install_backend_requirements", lambda **kwargs: _ok_command(name="install", command=["pip", "install"], cwd=backend_root))
+    monkeypatch.setattr(backend_runtime_module, "_run_django_migrate", lambda **kwargs: _ok_command(name="migrate", command=["manage.py", "migrate"], cwd=backend_root))
+    monkeypatch.setattr(backend_runtime_module, "_run_command", _run_command)
+
+    prep = prepare_backend_runtime(
+        workspace=workspace,
+        snapshot=_snapshot(backend_framework="django"),
+    )
+
+    assert prep.passed is True
+    assert prep.reset is not None
+    assert prep.reset.skipped is True
+    assert prep.seed is not None
+    assert prep.seed.skipped is True
+    assert prep.fixture_manifest["available"] is False
+    assert prep.fixture_manifest["reason"] == "runtime_fixture_discovery_pending"
+    assert prep.fixture_manifest["deferred_seed_strategy"] == "runtime_order_probe"
+    assert prep.fixture_manifest["dependency_kind"] == "oracle"
+
+
 def test_prepare_backend_runtime_uses_five_second_default_heartbeats(tmp_path: Path, monkeypatch):
     workspace = tmp_path / "workspace"
     backend_root = workspace / "backend"

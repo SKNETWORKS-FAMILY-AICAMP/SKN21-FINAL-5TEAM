@@ -1,0 +1,23 @@
+INFO:     Started server process [3996]
+INFO:     Waiting for application startup.
+
+==================================================
+🚀 Chatbot Server Startup: Loading Heavy Models...
+==================================================
+⏳ Loading Guardrail model...
+✅ Guardrail model loaded successfully.
+⏳ Ensuring retrieval models (BM25, Ranker)...
+Fetching 18 files:   0%|          | 0/18 [00:00<?, ?it/s]Fetching 18 files:   6%|▌         | 1/18 [00:00<00:04,  3.57it/s]Fetching 18 files:  17%|█▋        | 3/18 [00:00<00:02,  6.56it/s]Fetching 18 files:  56%|█████▌    | 10/18 [00:00<00:00, 20.81it/s]Fetching 18 files:  89%|████████▉ | 16/18 [00:00<00:00, 28.01it/s]Fetching 18 files: 100%|██████████| 18/18 [00:00<00:00, 20.19it/s]
+INFO:flashrank.Ranker:Downloading ms-marco-MiniLM-L-12-v2...
+Sparse retrieval model loaded.
+ms-marco-MiniLM-L-12-v2.zip:   0%|          | 0.00/21.6M [00:00<?, ?iB/s]ms-marco-MiniLM-L-12-v2.zip:   2%|▏         | 344k/21.6M [00:00<00:06, 3.37MiB/s]ms-marco-MiniLM-L-12-v2.zip:   5%|▍         | 0.98M/21.6M [00:00<00:04, 4.70MiB/s]ms-marco-MiniLM-L-12-v2.zip:   9%|▉         | 1.97M/21.6M [00:00<00:03, 6.78MiB/s]ms-marco-MiniLM-L-12-v2.zip:  14%|█▍        | 3.04M/21.6M [00:00<00:02, 8.05MiB/s]ms-marco-MiniLM-L-12-v2.zip:  19%|█▉        | 4.16M/21.6M [00:00<00:02, 9.09MiB/s]ms-marco-MiniLM-L-12-v2.zip:  24%|██▍       | 5.23M/21.6M [00:00<00:01, 9.73MiB/s]ms-marco-MiniLM-L-12-v2.zip:  29%|██▉       | 6.23M/21.6M [00:00<00:01, 9.95MiB/s]ms-marco-MiniLM-L-12-v2.zip:  33%|███▎      | 7.20M/21.6M [00:00<00:01, 9.23MiB/s]ms-marco-MiniLM-L-12-v2.zip:  39%|███▉      | 8.43M/21.6M [00:00<00:01, 10.1MiB/s]ms-marco-MiniLM-L-12-v2.zip:  43%|████▎     | 9.41M/21.6M [00:01<00:01, 10.0MiB/s]ms-marco-MiniLM-L-12-v2.zip:  48%|████▊     | 10.4M/21.6M [00:01<00:01, 9.91MiB/s]ms-marco-MiniLM-L-12-v2.zip:  55%|█████▌    | 11.9M/21.6M [00:01<00:00, 10.9MiB/s]ms-marco-MiniLM-L-12-v2.zip:  62%|██████▏   | 13.5M/21.6M [00:01<00:00, 12.4MiB/s]ms-marco-MiniLM-L-12-v2.zip:  68%|██████▊   | 14.7M/21.6M [00:01<00:00, 12.2MiB/s]ms-marco-MiniLM-L-12-v2.zip:  74%|███████▍  | 16.1M/21.6M [00:01<00:00, 12.8MiB/s]ms-marco-MiniLM-L-12-v2.zip:  80%|███████▉  | 17.3M/21.6M [00:01<00:00, 12.6MiB/s]ms-marco-MiniLM-L-12-v2.zip:  86%|████████▌ | 18.6M/21.6M [00:01<00:00, 12.9MiB/s]ms-marco-MiniLM-L-12-v2.zip:  94%|█████████▍| 20.5M/21.6M [00:01<00:00, 14.7MiB/s]ms-marco-MiniLM-L-12-v2.zip: 100%|██████████| 21.6M/21.6M [00:02<00:00, 11.1MiB/s]
+INFO:src.infrastructure.kobart_summarizer:[KoBART] 모델 로드 시작: EbanLee/kobart-summary-v3
+INFO:src.infrastructure.kobart_summarizer:[KoBART] 모델 로드 완료 (device=mps, params=123,859,968)
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8100 (Press CTRL+C to quit)
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [3996]
+/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/resource_tracker.py:301: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/mp-9uuwgu86'}
+  warnings.warn(

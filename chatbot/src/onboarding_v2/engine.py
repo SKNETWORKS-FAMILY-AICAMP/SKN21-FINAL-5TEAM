@@ -1152,13 +1152,18 @@ def run_apply_stage(
             attempt=attempt,
         )
         if not apply_result.passed:
-            failure_signature = build_failure_signature(check_name="apply", summary="apply failed")
+            apply_failure_summary = str(apply_result.failure_summary or "apply failed")
+            failure_signature = build_failure_signature(
+                check_name="apply",
+                summary=apply_failure_summary,
+            )
             failed_event = event_store.write_event(
                 run_id=run_id,
                 stage="apply",
                 phase="finish",
                 event_type="stage_failed",
-                summary="apply failed",
+                summary=apply_failure_summary,
+                details=dict(apply_result.failure_details or {}),
                 artifact_refs=[apply_ref],
                 input_refs=[state.compile_ref, state.chatbot_compile_ref],
                 failure_signature=failure_signature,
@@ -1167,7 +1172,7 @@ def run_apply_stage(
             raise _StageFailure(
                 stage="apply",
                 failure_signature=failure_signature,
-                failure_summary="apply failed",
+                failure_summary=apply_failure_summary,
                 trigger_event_id=failed_event.event_id,
                 related_artifacts=[state.compile_ref, state.chatbot_compile_ref, apply_ref],
                 related_files=apply_result.applied_files,
@@ -2379,20 +2384,31 @@ def _build_retrieval_smoke_payload(
     passed = True
     for corpus_plan in retrieval_plan.corpora:
         payload = dict(status_map.get(corpus_plan.corpus) or {})
-        corpus_passed = (
-            str(payload.get("status") or "") == "completed"
+        raw_status = str(payload.get("status") or "").strip()
+        corpus_status = "failed"
+        if raw_status == "skipped":
+            corpus_status = "skipped"
+        elif (
+            raw_status == "completed"
             and int(payload.get("documents_indexed") or 0) >= int(corpus_plan.minimum_expected_documents)
-        )
+        ):
+            corpus_status = "passed"
+        corpus_passed = corpus_status != "failed"
         if not corpus_passed:
             passed = False
         results.append(
             {
                 "corpus": corpus_plan.corpus,
                 "passed": corpus_passed,
+                "status": corpus_status,
                 "summary": (
                     f"{corpus_plan.corpus} retrieval smoke passed"
-                    if corpus_passed
-                    else f"{corpus_plan.corpus} retrieval smoke failed"
+                    if corpus_status == "passed"
+                    else (
+                        f"{corpus_plan.corpus} retrieval smoke skipped"
+                        if corpus_status == "skipped"
+                        else f"{corpus_plan.corpus} retrieval smoke failed"
+                    )
                 ),
                 "details": payload,
             }

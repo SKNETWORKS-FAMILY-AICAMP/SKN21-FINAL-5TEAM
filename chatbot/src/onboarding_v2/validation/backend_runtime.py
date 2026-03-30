@@ -81,6 +81,24 @@ def _required_env_keys_for_dependency_kind(kind: str | None) -> list[str]:
     return []
 
 
+def _should_defer_fixture_scripts(
+    *,
+    env: dict[str, str],
+    reset_path: Path | None,
+    seed_path: Path | None,
+) -> tuple[bool, str | None]:
+    if reset_path is None and seed_path is None:
+        return False, None
+    dependency_kind = _classify_dependency_kind(
+        output_text="",
+        env=env,
+        script_path=reset_path or seed_path,
+    )
+    required_env_keys = _required_env_keys_for_dependency_kind(dependency_kind)
+    has_all_required_env = all(str(env.get(key) or "").strip() for key in required_env_keys)
+    return dependency_kind == "oracle" and has_all_required_env, dependency_kind
+
+
 def _classify_prep_external_dependency_failure(
     *,
     step_name: str,
@@ -294,12 +312,26 @@ def prepare_backend_runtime(
         backend_root=backend_root,
         dotenv_defaults=backend_env_defaults,
     )
+    defer_fixture_scripts, deferred_dependency_kind = _should_defer_fixture_scripts(
+        env=reset_env,
+        reset_path=reset_path,
+        seed_path=seed_path,
+    )
     reset_command = [str(python_executable), str(reset_path)] if reset_path is not None else []
     reset = _run_prep_step(
         step_name="reset",
         command_preview=reset_command,
         cwd=backend_root,
-        command_factory=lambda log_path: _run_optional_script(
+        command_factory=lambda log_path: _skipped_command_result(
+            name="reset",
+            command=reset_command,
+            cwd=backend_root,
+            stdout="reset deferred until runtime fixture discovery",
+            skipped_reason="oracle reset deferred until runtime order probe",
+            log_path=log_path,
+        )
+        if defer_fixture_scripts
+        else _run_optional_script(
             name="reset",
             script_path=reset_path,
             framework=framework,
@@ -376,7 +408,16 @@ def prepare_backend_runtime(
         step_name="seed",
         command_preview=seed_command,
         cwd=backend_root,
-        command_factory=lambda log_path: _run_optional_script(
+        command_factory=lambda log_path: _skipped_command_result(
+            name="seed",
+            command=seed_command,
+            cwd=backend_root,
+            stdout="seed deferred until runtime fixture discovery",
+            skipped_reason="oracle seed deferred until runtime order probe",
+            log_path=log_path,
+        )
+        if defer_fixture_scripts
+        else _run_optional_script(
             name="seed",
             script_path=seed_path,
             framework=framework,
@@ -456,15 +497,25 @@ def prepare_backend_runtime(
         status="running",
     )
     fixture_manifest = _build_fixture_manifest(
-        available=seed_path is not None and not seed.skipped,
+        available=(seed_path is not None and not seed.skipped) if not defer_fixture_scripts else False,
         seed_source=_build_seed_source(
             workspace=workspace,
             reset_path=reset_path,
             seed_path=seed_path,
             python_executable=python_executable,
         ),
-        reason=None if seed_path is not None and not seed.skipped else "fixture_unavailable",
+        reason=(
+            None
+            if seed_path is not None and not seed.skipped
+            else "fixture_unavailable"
+        )
+        if not defer_fixture_scripts
+        else "runtime_fixture_discovery_pending",
     )
+    if defer_fixture_scripts:
+        fixture_manifest["deferred_seed_strategy"] = "runtime_order_probe"
+        if deferred_dependency_kind:
+            fixture_manifest["dependency_kind"] = deferred_dependency_kind
     if fixture_manifest_log_path is not None:
         fixture_manifest_log_path.parent.mkdir(parents=True, exist_ok=True)
         fixture_manifest_log_path.write_text(

@@ -297,6 +297,59 @@ def test_decorate_dashboard_payload_builds_retrieval_story():
     assert enriched["story"]["retrieval"]["items"][1]["status"] == "indexing"
 
 
+def test_decorate_dashboard_payload_marks_disabled_discovery_image_as_skipped():
+    payload = {
+        "run": {
+            "run_id": "food-demo-003b",
+            "site": "food",
+            "status": "exported",
+            "status_label": "Exported",
+            "retrieval_status": {
+                "policy": {"status": "completed", "documents_indexed": 38, "smoke_passed": True, "enabled": True},
+                "discovery_image": {
+                    "status": "failed",
+                    "documents_indexed": 0,
+                    "smoke_passed": False,
+                    "enabled": False,
+                    "reason": "no_product_rows",
+                },
+            },
+            "enabled_retrieval_corpora": ["policy"],
+        },
+        "process": {
+            "running": False,
+            "log_path": "/tmp/onmo.log",
+        },
+        "stages": [
+            {
+                "stage": "indexing",
+                "label": "Indexing",
+                "status": "completed",
+                "status_label": "Completed",
+                "summary": "indexing completed",
+            },
+            {
+                "stage": "validation",
+                "label": "Validation",
+                "status": "completed",
+                "status_label": "Completed",
+                "summary": "validation completed",
+            },
+        ],
+        "repair": {"active": False},
+        "recent_events": [],
+        "repair_events": [],
+        "details": {},
+    }
+
+    enriched = dashboard.decorate_dashboard_payload(payload)
+    items = {item["corpus"]: item for item in enriched["story"]["retrieval"]["items"]}
+
+    assert items["policy"]["status"] == "ready"
+    assert items["discovery_image"]["status"] == "skipped"
+    assert enriched["story"]["retrieval"]["summary"] == "인덱싱 준비가 완료되었습니다."
+
+
 def test_decorate_dashboard_payload_promotes_indexing_to_formal_stage():
     payload = {
         "run": {
@@ -364,6 +417,56 @@ def test_decorate_dashboard_payload_promotes_indexing_to_formal_stage():
     assert enriched["story"]["focus_stage"]["stage"] == "indexing"
     assert enriched["story"]["steps"][1]["label"] == "Indexing"
     assert enriched["story"]["steps"][1]["emphasis"] == "current"
+
+
+def test_build_indexing_details_treats_disabled_corpus_as_skipped_non_blocking():
+    details = dashboard._build_indexing_details(
+        indexing_result={
+            "corpora": {
+                "policy": {
+                    "status": "completed",
+                    "enabled": True,
+                    "documents_indexed": 38,
+                    "smoke_passed": True,
+                },
+                "discovery_image": {
+                    "status": "failed",
+                    "enabled": False,
+                    "documents_indexed": 0,
+                    "reason": "no_product_rows",
+                    "smoke_passed": False,
+                },
+            }
+        },
+        retrieval_smoke={
+            "passed": False,
+            "results": [
+                {
+                    "corpus": "policy",
+                    "status": "passed",
+                    "passed": True,
+                    "summary": "policy retrieval smoke passed",
+                },
+                {
+                    "corpus": "discovery_image",
+                    "passed": False,
+                    "summary": "discovery_image retrieval smoke failed",
+                    "details": {
+                        "status": "failed",
+                        "enabled": False,
+                        "reason": "no_product_rows",
+                    },
+                },
+            ],
+        },
+    )
+
+    corpus_rows = {row["label"]: row for row in details["corpora"]}
+    smoke_rows = {row["label"]: row for row in details["smoke_checks"]}
+
+    assert details["failed_count"] == 0
+    assert corpus_rows["Discovery Image"]["value"] == "Skipped / 0 docs"
+    assert smoke_rows["Discovery Image smoke"]["value"] == "skipped"
 
 
 def test_load_run_dashboard_builds_analysis_live_payload_and_rich_recent_events(tmp_path: Path):
@@ -472,7 +575,9 @@ def test_build_validation_details_ignores_legacy_non_dict_flow_report_entries():
     details = dashboard._build_validation_details(
         validation_bundle={"passed": True, "failure_summary": ""},
         validation_checks=[],
+        backend_runtime_prep=None,
         backend_runtime_state={"passed": True, "framework": "django"},
+        chatbot_runtime_boot=None,
         widget_bundle_fetch={"passed": True, "target_url": "http://127.0.0.1:8100/widget.js"},
         host_auth_bootstrap={"login_url": "http://127.0.0.1:5000/login", "bootstrap_url": "http://127.0.0.1:5000/api/chat/auth-token"},
         chatbot_adapter_auth={"validated_user": {"id": "7"}},
@@ -486,6 +591,10 @@ def test_build_validation_details_ignores_legacy_non_dict_flow_report_entries():
             },
             "sampled_order_id": "order-1",
         },
+        conversation_validation=None,
+        replay_result={},
+        recent_events=[],
+        stage_status="completed",
     )
 
     assert details["passed"] is True
@@ -497,6 +606,170 @@ def test_build_validation_details_ignores_legacy_non_dict_flow_report_entries():
         }
     ]
     assert details["sampled_order_id"] == "order-1"
+
+
+def test_build_validation_details_tracks_running_step_without_false_failure_defaults():
+    details = dashboard._build_validation_details(
+        validation_bundle=None,
+        validation_checks=[],
+        backend_runtime_prep=None,
+        backend_runtime_state=None,
+        chatbot_runtime_boot=None,
+        widget_bundle_fetch=None,
+        host_auth_bootstrap=None,
+        chatbot_adapter_auth=None,
+        widget_order_e2e=None,
+        conversation_validation=None,
+        replay_result={},
+        recent_events=[
+            {
+                "timestamp": "2026-03-28T10:12:00+09:00",
+                "stage": "validation",
+                "phase": "prep_fixture_manifest_finish",
+                "event_type": "backend_runtime_prep_step_completed",
+                "display_summary": "백엔드 런타임 준비 fixture manifest 완료",
+                "details": {
+                    "step_name": "fixture_manifest",
+                    "status": "completed",
+                },
+            }
+        ],
+        stage_status="running",
+    )
+
+    assert details["checks"][0]["label"] == "Backend runtime prep"
+    assert details["checks"][0]["status"] == "running"
+    assert details["checks"][0]["status_label"] == "진행 중"
+    assert "fixture manifest 완료" in details["checks"][0]["summary"]
+    assert details["checks"][1]["status"] == "pending"
+    assert details["progress"] == {
+        "total": 10,
+        "passed": 0,
+        "running": 1,
+        "pending": 9,
+        "failed": 0,
+        "skipped": 0,
+    }
+
+
+def test_build_validation_details_promotes_check_rows_from_live_validation_events():
+    details = dashboard._build_validation_details(
+        validation_bundle=None,
+        validation_checks=[],
+        backend_runtime_prep=None,
+        backend_runtime_state=None,
+        chatbot_runtime_boot=None,
+        widget_bundle_fetch=None,
+        host_auth_bootstrap=None,
+        chatbot_adapter_auth=None,
+        widget_order_e2e=None,
+        conversation_validation=None,
+        replay_result={
+            "passed": True,
+            "target_match_passed": True,
+            "static_validation_passed": True,
+        },
+        recent_events=[
+            {
+                "timestamp": "2026-03-30T10:20:00+09:00",
+                "stage": "validation",
+                "event_type": "validation_check_completed",
+                "summary": "backend runtime boot completed",
+                "details": {
+                    "check_name": "backend_runtime_boot",
+                    "status": "passed",
+                    "summary": "backend runtime boot passed",
+                },
+            },
+            {
+                "timestamp": "2026-03-30T10:20:05+09:00",
+                "stage": "validation",
+                "event_type": "validation_check_started",
+                "summary": "widget bundle fetch started",
+                "details": {
+                    "check_name": "widget_bundle_fetch",
+                    "status": "running",
+                    "summary": "widget bundle fetch started",
+                },
+            },
+        ],
+        stage_status="running",
+    )
+
+    backend_runtime_boot = next(item for item in details["checks"] if item["name"] == "backend_runtime_boot")
+    widget_bundle_fetch = next(item for item in details["checks"] if item["name"] == "widget_bundle_fetch")
+
+    assert backend_runtime_boot["status"] == "passed"
+    assert backend_runtime_boot["status_label"] == "통과"
+    assert backend_runtime_boot["summary"] == "backend runtime boot passed"
+    assert backend_runtime_boot["updated_at"] == "2026-03-30T10:20:00+09:00"
+    assert widget_bundle_fetch["status"] == "running"
+    assert widget_bundle_fetch["status_label"] == "진행 중"
+    assert widget_bundle_fetch["summary"] == "widget bundle fetch started"
+    assert details["progress"] == {
+        "total": 10,
+        "passed": 3,
+        "running": 1,
+        "pending": 6,
+        "failed": 0,
+        "skipped": 0,
+    }
+
+
+def test_build_validation_details_lets_live_events_override_pending_artifact_rows():
+    details = dashboard._build_validation_details(
+        validation_bundle=None,
+        validation_checks=[],
+        backend_runtime_prep={},
+        backend_runtime_state={"passed": None, "failure_summary": ""},
+        chatbot_runtime_boot=None,
+        widget_bundle_fetch=None,
+        host_auth_bootstrap=None,
+        chatbot_adapter_auth=None,
+        widget_order_e2e=None,
+        conversation_validation=None,
+        replay_result={},
+        recent_events=[
+            {
+                "timestamp": "2026-03-30T10:22:00+09:00",
+                "stage": "validation",
+                "event_type": "validation_check_started",
+                "summary": "backend runtime boot started",
+                "details": {
+                    "check_name": "backend_runtime_boot",
+                    "status": "running",
+                    "summary": "backend runtime boot started",
+                },
+            }
+        ],
+        stage_status="running",
+    )
+
+    backend_runtime_boot = next(item for item in details["checks"] if item["name"] == "backend_runtime_boot")
+
+    assert backend_runtime_boot["status"] == "running"
+    assert backend_runtime_boot["summary"] == "backend runtime boot started"
+    assert backend_runtime_boot["updated_at"] == "2026-03-30T10:22:00+09:00"
+
+
+def test_build_apply_details_exposes_runtime_copy_failure_summary():
+    details = dashboard._build_apply_details(
+        apply_result={
+            "workspace_path": "/tmp/runtime/demo/demo-run-v2/workspace",
+            "host_workspace_path": "/tmp/runtime/demo/demo-run-v2/workspace/host",
+            "chatbot_workspace_path": "/tmp/runtime/demo/demo-run-v2/workspace/chatbot",
+            "failure_summary": "runtime copy failed: no space left on device",
+            "failure_details": {
+                "failure_code": "runtime_copy_no_space_left",
+                "offending_paths": ["chatbot_eval/benchmark/report.json"],
+            },
+            "applied_files": [],
+        }
+    )
+
+    assert details["failure_summary"] == "runtime copy failed: no space left on device"
+    assert details["failure_details"]["failure_code"] == "runtime_copy_no_space_left"
+    assert details["cards"][0]["caption"] == "runtime copy failed: no space left on device"
 
 
 def test_load_run_dashboard_builds_planning_live_issue_from_fallback_reason(tmp_path: Path):

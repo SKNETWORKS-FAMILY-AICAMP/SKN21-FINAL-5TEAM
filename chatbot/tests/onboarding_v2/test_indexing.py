@@ -284,6 +284,56 @@ def test_execute_indexing_plan_discovery_image_uses_host_api_rows_and_allows_par
     UUID(str(fake_client.upserts[0][1][0].id))
 
 
+def test_execute_indexing_plan_marks_discovery_image_without_rows_as_skipped(tmp_path: Path):
+    plan = RetrievalIndexPlan(
+        site_id="demo-shop",
+        site_slug="demo-shop",
+        corpora=[
+            RagCorpusPlan(
+                corpus="discovery_image",
+                chunking_strategy="product_image_rows",
+                collection_alias="site_demo-shop__discovery_image",
+                build_collection="site_demo-shop__discovery_image__run_demo",
+                sources=["product_crawling.py"],
+                smoke_queries=["검은색 자켓"],
+                minimum_expected_documents=1,
+                loader_strategy="public_url_fetch",
+                row_source_strategy="host_api_fetch",
+                row_source_endpoint="/api/products",
+                row_id_field="product_id",
+                row_image_url_field="image_url",
+                pagination_strategy={
+                    "type": "page_number",
+                    "page_param": "page",
+                    "page_size_param": "page_size",
+                    "page_size": 100,
+                    "stop_on": "empty_or_repeated_ids",
+                },
+            )
+        ],
+    )
+    host_context = HostExportContext()
+    host_context.host_runtime_workspace = tmp_path
+    host_context.snapshot = object()
+    host_context.export_ready.set()
+
+    result = execute_indexing_plan(
+        plan=plan,
+        root=tmp_path,
+        host_context=host_context,
+        qdrant_client=_FakeQdrantClient(),
+        row_fetcher=lambda **kwargs: [],
+    )
+
+    discovery = result["corpora"]["discovery_image"]
+    assert discovery["status"] == "skipped"
+    assert discovery["enabled"] is False
+    assert discovery["documents_indexed"] == 0
+    assert discovery["reason"] == "no_product_rows"
+    assert "no_product_rows" in discovery["warning_codes"]
+    assert discovery["alias_swapped"] is False
+
+
 def test_execute_indexing_plan_can_ingest_faq_rows_via_host_python_fetch(tmp_path: Path):
     backend_model = tmp_path / "backend" / "models"
     backend_model.mkdir(parents=True)

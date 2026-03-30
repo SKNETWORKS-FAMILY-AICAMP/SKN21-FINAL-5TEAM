@@ -15,7 +15,13 @@ from chatbot.src.onboarding_v2.analysis import build_analysis_bundle
 from chatbot.src.onboarding_v2.apply import apply_edit_program
 from chatbot.src.onboarding_v2.compile import compile_plan
 from chatbot.src.onboarding_v2.export import export_and_replay
-from chatbot.src.onboarding_v2.models.validation import BackendRuntimePlan, BackendRuntimePrepResult, BackendRuntimeState, ReplayResult
+from chatbot.src.onboarding_v2.models.validation import (
+    BackendRuntimeCommandResult,
+    BackendRuntimePlan,
+    BackendRuntimePrepResult,
+    BackendRuntimeState,
+    ReplayResult,
+)
 from chatbot.src.onboarding_v2.models.planning import (
     ChatbotBridgePlan,
     HostBackendPlan,
@@ -47,6 +53,7 @@ from chatbot.src.onboarding_v2.validation.runner import (
     _runtime_base_url,
     _validate_chatbot_adapter_auth_inprocess,
     run_validation,
+    run_validation_cycle,
     validate_chatbot_adapter_auth,
     validate_host_auth_bootstrap,
     validate_chatbot_runtime_boot,
@@ -324,6 +331,142 @@ def test_validation_runner_normalizes_checks(monkeypatch, tmp_path: Path):
     ]
     check_map = {check.name: check for check in bundle.checks}
     assert check_map["conversation_validation"].blocking is False
+
+
+def test_validation_runner_emits_live_check_boundary_events(monkeypatch, tmp_path: Path):
+    runtime_plan = BackendRuntimePlan(
+        framework="django",
+        backend_root=str(tmp_path / "runtime" / "food" / "food-run-v2" / "workspace" / "backend"),
+        command=["python", "manage.py", "runserver", "127.0.0.1:8000"],
+        readiness_url="http://127.0.0.1:8000/api/chat/auth-token",
+    )
+    runtime_state = BackendRuntimeState(
+        framework="django",
+        passed=True,
+        pid=1234,
+        command=runtime_plan.command,
+        readiness_url=runtime_plan.readiness_url,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.prepare_backend_runtime",
+        lambda **kwargs: BackendRuntimePrepResult(framework="django", passed=True, failure_summary="backend runtime prepared"),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.build_backend_runtime_plan",
+        lambda **kwargs: runtime_plan,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.launch_backend_runtime",
+        lambda plan, **kwargs: runtime_state,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.stop_backend_runtime",
+        lambda state: None,
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_runtime_boot",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot runtime boot passed",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_bundle_fetch",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget bundle fetch passed",
+            "target_url": "http://localhost:8100/widget.js",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_host_auth_bootstrap",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "host auth bootstrap passed",
+            "login_url": "http://localhost:8000/login",
+            "bootstrap_url": "http://localhost:8000/api/chat/auth-token",
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_chatbot_adapter_auth",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "chatbot adapter auth passed",
+            "validated_user": {"id": "7", "siteId": "food"},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_widget_order_e2e",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": "widget order e2e passed",
+            "covered_flows": ["list_orders"],
+            "flow_reports": {},
+            "related_files": [],
+        },
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner.validate_conversation_runtime",
+        lambda **kwargs: ConversationValidationResult(
+            passed=True,
+            failure_summary="conversation validation passed",
+            fixture_manifest={},
+            scenarios=[],
+            transcript_contents={},
+            trace_contents={},
+            related_files=[],
+        ),
+    )
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.validation.runner._evaluate_replay_workspaces",
+        lambda **kwargs: {
+            "passed": True,
+            "failure_summary": None,
+            "related_files": [],
+        },
+    )
+
+    runtime_context = _build_food_runtime_artifacts(tmp_path)
+    observed_events: list[dict[str, object]] = []
+
+    run_validation_cycle(
+        run_root=runtime_context["generated_root"],
+        host_runtime_workspace=runtime_context["apply_result"].host_workspace_path,
+        chatbot_runtime_workspace=runtime_context["apply_result"].chatbot_workspace_path,
+        snapshot=runtime_context["snapshot"],
+        plan=runtime_context["plan"],
+        replay_result=runtime_context["replay_result"],
+        artifact_refs=runtime_context["artifact_refs"],
+        event_callback=lambda payload: observed_events.append(payload),
+    )
+
+    boundary_events = [
+        (str(event.get("event_type") or ""), str((event.get("details") or {}).get("check_name") or ""))
+        for event in observed_events
+        if str(event.get("event_type") or "").startswith("validation_check_")
+    ]
+    assert boundary_events == [
+        ("validation_check_started", "backend_runtime_prep"),
+        ("validation_check_completed", "backend_runtime_prep"),
+        ("validation_check_started", "backend_runtime_boot"),
+        ("validation_check_completed", "backend_runtime_boot"),
+        ("validation_check_started", "chatbot_runtime_boot"),
+        ("validation_check_completed", "chatbot_runtime_boot"),
+        ("validation_check_started", "widget_bundle_fetch"),
+        ("validation_check_completed", "widget_bundle_fetch"),
+        ("validation_check_started", "host_auth_bootstrap"),
+        ("validation_check_completed", "host_auth_bootstrap"),
+        ("validation_check_started", "chatbot_adapter_auth"),
+        ("validation_check_completed", "chatbot_adapter_auth"),
+        ("validation_check_started", "widget_order_e2e"),
+        ("validation_check_completed", "widget_order_e2e"),
+        ("validation_check_started", "conversation_validation"),
+        ("validation_check_completed", "conversation_validation"),
+    ]
 
 
 def test_validation_runner_does_not_allow_static_fallback_success(monkeypatch, tmp_path: Path):
@@ -2066,6 +2209,118 @@ def test_runtime_fixture_manifest_marks_upstream_order_seed_failures_separately(
     assert manifest["failure_origin"] == "upstream_fixture"
     assert manifest["failure_code"] == "fixture_upstream_list_orders_failed"
     assert manifest["module_origins"] == module_origins
+
+
+def test_runtime_fixture_manifest_seeds_only_when_live_orders_are_missing(
+    monkeypatch, tmp_path: Path
+):
+    observed: dict[str, object] = {"list_orders_calls": 0}
+
+    class _FakeClient:
+        async def list_orders(self, headers):
+            observed["headers"] = headers
+            observed["list_orders_calls"] = int(observed["list_orders_calls"]) + 1
+            if observed["list_orders_calls"] == 1:
+                return []
+            return [{"order_id": "10", "option_id": "opt-1"}]
+
+    class _FakeAdapter:
+        def __init__(self):
+            self.client = _FakeClient()
+            self.response_contract = ResolvedResponseContract()
+
+    class _FakeAdapterSetup:
+        def resolve_site_adapter(self, site_id: str):
+            assert site_id == "food"
+            return _FakeAdapter()
+
+    module_origins = {
+        "server_fastapi": str(tmp_path / "chatbot" / "server_fastapi.py"),
+    }
+    monkeypatch.setitem(
+        _build_runtime_fixture_manifest.__globals__,
+        "_load_runtime_validation_modules",
+        lambda **kwargs: (
+            object(),
+            object(),
+            _FakeAdapterSetup(),
+            object(),
+            module_origins,
+        ),
+    )
+    monkeypatch.setitem(
+        _build_runtime_fixture_manifest.__globals__,
+        "_build_generated_auth_headers",
+        lambda **kwargs: {"Authorization": "Bearer 1"},
+    )
+    monkeypatch.setitem(
+        _build_runtime_fixture_manifest.__globals__,
+        "build_backend_subprocess_env",
+        lambda **kwargs: {"ORACLE_HOST": "oracle-host"},
+    )
+
+    def _fake_run_optional_script(**kwargs):
+        observed["seed_kwargs"] = kwargs
+        return BackendRuntimeCommandResult(
+            name="seed",
+            command=[str(kwargs["python_executable"]), str(kwargs["script_path"])],
+            cwd=str(kwargs["backend_root"]),
+            returncode=0,
+            stdout="seed ok",
+            stderr="",
+            passed=True,
+        )
+
+    monkeypatch.setitem(
+        _build_runtime_fixture_manifest.__globals__,
+        "_run_optional_script",
+        _fake_run_optional_script,
+    )
+
+    manifest = _build_runtime_fixture_manifest(
+        chatbot_runtime_workspace=tmp_path / "chatbot",
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path / "backend"),
+            command=["python"],
+            readiness_url="http://127.0.0.1:8123/api/chat/auth-token",
+            listen_port=8123,
+        ),
+        plan=_build_food_plan(),
+        prep_result=BackendRuntimePrepResult(
+            framework="django",
+            passed=True,
+            backend_root=str(tmp_path / "backend"),
+            python_executable=str(tmp_path / "venv" / "bin" / "python"),
+            fixture_manifest={
+                "available": False,
+                "seed_source": {
+                    "seed_path": str(tmp_path / "workspace" / "scripts" / "seed.py"),
+                },
+                "auth": {},
+                "deferred_seed_strategy": "runtime_order_probe",
+            },
+        ),
+        bootstrap_result={
+            "passed": True,
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "validation-food",
+                "user": {"id": "7"},
+            },
+            "session_cookies": {"session_token": "fixture-session"},
+        },
+        adapter_auth_result={"passed": True, "validated_user": {"id": "7"}},
+        onboarding_credentials=None,
+    )
+
+    assert observed["list_orders_calls"] == 2
+    assert manifest["available"] is True
+    assert manifest["orders"]["lookup_order_id"] == "10"
+    assert manifest["seed_source"]["runtime_seeded"] is True
+    assert manifest["seed_source"]["runtime_seed_stdout"] == "seed ok"
+    assert observed["seed_kwargs"]["name"] == "seed"
 
 
 def test_validate_conversation_runtime_replays_runtime_subprocess_events(

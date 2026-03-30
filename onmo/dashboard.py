@@ -53,6 +53,40 @@ STATUS_LABELS_KO = {
     "unknown": "알 수 없음",
 }
 
+VALIDATION_CHECK_ORDER = [
+    "backend_runtime_prep",
+    "backend_runtime_boot",
+    "chatbot_runtime_boot",
+    "widget_bundle_fetch",
+    "host_auth_bootstrap",
+    "chatbot_adapter_auth",
+    "widget_order_e2e",
+    "conversation_validation",
+    "replay_apply",
+    "replay_validation",
+]
+
+VALIDATION_CHECK_LABELS = {
+    "backend_runtime_prep": "Backend runtime prep",
+    "backend_runtime_boot": "Backend runtime boot",
+    "chatbot_runtime_boot": "Chatbot runtime boot",
+    "widget_bundle_fetch": "Widget bundle fetch",
+    "host_auth_bootstrap": "Host auth bootstrap",
+    "chatbot_adapter_auth": "Chatbot adapter auth",
+    "widget_order_e2e": "Widget order e2e",
+    "conversation_validation": "Conversation validation",
+    "replay_apply": "Replay apply",
+    "replay_validation": "Replay validation",
+}
+
+VALIDATION_CHECK_STATUS_LABELS_KO = {
+    "pending": "대기",
+    "running": "진행 중",
+    "passed": "통과",
+    "failed": "실패",
+    "skipped": "건너뜀",
+}
+
 
 @dataclass(slots=True)
 class ProcessSnapshot:
@@ -201,11 +235,14 @@ def load_run_dashboard(*, run_root: str | Path, process: ProcessSnapshot | None 
     indexing_result = _read_artifact_payload(root, "indexing", "indexing-result")
     retrieval_smoke = _read_artifact_payload(root, "indexing", "retrieval-smoke")
     validation_bundle = _read_artifact_payload(root, "validation", "validation-bundle")
+    backend_runtime_prep = _read_artifact_payload(root, "validation", "backend-runtime-prep")
     backend_runtime_state = _read_artifact_payload(root, "validation", "backend-runtime-state")
+    chatbot_runtime_boot = _read_artifact_payload(root, "validation", "chatbot-runtime-boot")
     widget_bundle_fetch = _read_artifact_payload(root, "validation", "widget-bundle-fetch")
     host_auth_bootstrap = _read_artifact_payload(root, "validation", "host-auth-bootstrap")
     chatbot_adapter_auth = _read_artifact_payload(root, "validation", "chatbot-adapter-auth")
     widget_order_e2e = _read_artifact_payload(root, "validation", "widget-order-e2e")
+    conversation_validation = _read_artifact_payload(root, "validation", "conversation-validation")
     repair_failure_bundle = _read_artifact_payload(root, "repair", "failure-bundle")
     repair_decision = _read_artifact_payload(root, "repair", "repair-decision")
 
@@ -221,6 +258,7 @@ def load_run_dashboard(*, run_root: str | Path, process: ProcessSnapshot | None 
     )
     analysis_status = next((item.get("status") for item in stages if str(item.get("stage")) == "analysis"), "pending")
     planning_status = next((item.get("status") for item in stages if str(item.get("stage")) == "planning"), "pending")
+    validation_status = next((item.get("status") for item in stages if str(item.get("stage")) == "validation"), "pending")
 
     return {
         "run": {
@@ -276,11 +314,17 @@ def load_run_dashboard(*, run_root: str | Path, process: ProcessSnapshot | None 
             "validation": _build_validation_details(
                 validation_bundle=validation_bundle,
                 validation_checks=validation_checks,
+                backend_runtime_prep=backend_runtime_prep,
                 backend_runtime_state=backend_runtime_state,
+                chatbot_runtime_boot=chatbot_runtime_boot,
                 widget_bundle_fetch=widget_bundle_fetch,
                 host_auth_bootstrap=host_auth_bootstrap,
                 chatbot_adapter_auth=chatbot_adapter_auth,
                 widget_order_e2e=widget_order_e2e,
+                conversation_validation=conversation_validation,
+                replay_result=replay_result,
+                recent_events=compact_events,
+                stage_status=str(validation_status or "pending"),
             ),
         },
     }
@@ -820,9 +864,10 @@ def _build_compile_details(
 
 def _build_apply_details(*, apply_result: dict[str, Any] | None) -> dict[str, Any]:
     payload = apply_result or {}
+    failure_summary = str(payload.get("failure_summary") or "").strip()
     return {
         "cards": [
-            _card("Workspace", _tail_path(payload.get("workspace_path")), "runtime workspace"),
+            _card("Workspace", _tail_path(payload.get("workspace_path")), failure_summary or "runtime workspace"),
             _card("Host workspace", _tail_path(payload.get("host_workspace_path")), "host copy"),
             _card("Chatbot workspace", _tail_path(payload.get("chatbot_workspace_path")), "chatbot copy"),
             _card("Applied files", len(payload.get("applied_files") or []), "total"),
@@ -841,6 +886,8 @@ def _build_apply_details(*, apply_result: dict[str, Any] | None) -> dict[str, An
             "host_workspace": str(payload.get("host_workspace_path") or "").strip(),
             "chatbot_workspace": str(payload.get("chatbot_workspace_path") or "").strip(),
         },
+        "failure_summary": failure_summary,
+        "failure_details": dict(payload.get("failure_details") or {}),
         "applied_files": [str(item) for item in (payload.get("applied_files") or [])[:16]],
     }
 
@@ -914,6 +961,7 @@ def _build_indexing_details(
 
         smoke = smoke_results.get(corpus) or {}
         smoke_summary = str(smoke.get("summary") or "").strip()
+        smoke_status = _retrieval_smoke_status(payload=payload, smoke=smoke)
         corpus_rows.append(
             {
                 "label": _corpus_label(corpus),
@@ -925,7 +973,7 @@ def _build_indexing_details(
             smoke_rows.append(
                 {
                     "label": f"{_corpus_label(corpus)} smoke",
-                    "value": "passed" if bool(smoke.get("passed")) else "failed",
+                    "value": smoke_status,
                     "caption": smoke_summary or "-",
                 }
             )
@@ -948,18 +996,28 @@ def _build_validation_details(
     *,
     validation_bundle: dict[str, Any] | None,
     validation_checks: list[dict[str, Any]],
+    backend_runtime_prep: dict[str, Any] | None,
     backend_runtime_state: dict[str, Any] | None,
+    chatbot_runtime_boot: dict[str, Any] | None,
     widget_bundle_fetch: dict[str, Any] | None,
     host_auth_bootstrap: dict[str, Any] | None,
     chatbot_adapter_auth: dict[str, Any] | None,
     widget_order_e2e: dict[str, Any] | None,
+    conversation_validation: dict[str, Any] | None,
+    replay_result: dict[str, Any] | None,
+    recent_events: list[dict[str, Any]],
+    stage_status: str,
 ) -> dict[str, Any]:
     bundle = validation_bundle or {}
+    prep_payload = backend_runtime_prep or {}
     runtime_state = backend_runtime_state or {}
+    chatbot_boot = chatbot_runtime_boot or {}
     widget_fetch = widget_bundle_fetch or {}
     host_bootstrap = host_auth_bootstrap or {}
     adapter_auth = chatbot_adapter_auth or {}
     widget_e2e = widget_order_e2e or {}
+    conversation_payload = conversation_validation or {}
+    replay_payload = replay_result or {}
 
     proofs = [
         entry
@@ -989,28 +1047,343 @@ def _build_validation_details(
                 }
             )
 
+    checks = _build_validation_check_rows(
+        validation_checks=validation_checks,
+        backend_runtime_prep=prep_payload,
+        backend_runtime_state=runtime_state,
+        chatbot_runtime_boot=chatbot_boot,
+        widget_bundle_fetch=widget_fetch,
+        host_auth_bootstrap=host_bootstrap,
+        chatbot_adapter_auth=adapter_auth,
+        widget_order_e2e=widget_e2e,
+        conversation_validation=conversation_payload,
+        replay_result=replay_payload,
+        normalized_flow_reports=normalized_flow_reports,
+        recent_events=recent_events,
+        stage_status=stage_status,
+    )
+    progress = _summarize_validation_progress(checks)
+
     return {
         "passed": bool(bundle.get("passed")),
-        "cards": [
-            _card("Validation", "Passed" if bundle.get("passed") else "Failed", bundle.get("failure_summary") or ""),
-            _card("Backend runtime", "Ready" if runtime_state.get("passed") else "Blocked", runtime_state.get("framework") or ""),
-            _card("Widget bundle", "Fetched" if widget_fetch.get("passed") else "Missing", ""),
-            _card("Widget E2E", "Passed" if widget_e2e.get("passed") else "Failed", ""),
-        ],
-        "checks": [
-            {
-                "name": str(item.get("name") or ""),
-                "passed": bool(item.get("passed")),
-                "summary": str(item.get("summary") or ""),
-            }
-            for item in validation_checks
-        ],
+        "cards": [],
+        "checks": checks,
         "proofs": proofs,
         "covered_flows": covered_flows,
         "flow_reports": normalized_flow_reports,
         "sampled_order_id": str(widget_e2e.get("sampled_order_id") or ""),
         "validated_user_id": str((adapter_auth.get("validated_user") or {}).get("id") or ""),
+        "progress": progress,
+        "status": _validation_overall_status(bundle=bundle, stage_status=stage_status, progress=progress),
+        "status_label": VALIDATION_CHECK_STATUS_LABELS_KO.get(
+            _validation_overall_status(bundle=bundle, stage_status=stage_status, progress=progress),
+            "대기",
+        ),
+        "summary": _validation_summary_text(bundle=bundle, progress=progress, stage_status=stage_status),
     }
+
+
+def _build_validation_check_rows(
+    *,
+    validation_checks: list[dict[str, Any]],
+    backend_runtime_prep: dict[str, Any],
+    backend_runtime_state: dict[str, Any],
+    chatbot_runtime_boot: dict[str, Any],
+    widget_bundle_fetch: dict[str, Any],
+    host_auth_bootstrap: dict[str, Any],
+    chatbot_adapter_auth: dict[str, Any],
+    widget_order_e2e: dict[str, Any],
+    conversation_validation: dict[str, Any],
+    replay_result: dict[str, Any],
+    normalized_flow_reports: list[dict[str, Any]],
+    recent_events: list[dict[str, Any]],
+    stage_status: str,
+) -> list[dict[str, Any]]:
+    current_activity = _current_validation_activity(recent_events=recent_events, stage_status=stage_status)
+    event_overrides = _validation_check_event_overrides(recent_events=recent_events)
+    checks_by_name = {
+        str(item.get("name") or "").strip(): dict(item)
+        for item in validation_checks
+        if str(item.get("name") or "").strip()
+    }
+    artifact_fallbacks = {
+        "backend_runtime_prep": backend_runtime_prep,
+        "backend_runtime_boot": backend_runtime_state,
+        "chatbot_runtime_boot": chatbot_runtime_boot,
+        "widget_bundle_fetch": widget_bundle_fetch,
+        "host_auth_bootstrap": host_auth_bootstrap,
+        "chatbot_adapter_auth": chatbot_adapter_auth,
+        "widget_order_e2e": widget_order_e2e,
+        "conversation_validation": conversation_validation,
+        "replay_apply": _replay_apply_payload(replay_result),
+        "replay_validation": _replay_validation_payload(replay_result),
+    }
+
+    ordered_names = list(VALIDATION_CHECK_ORDER)
+    for item in validation_checks:
+        name = str(item.get("name") or "").strip()
+        if name and name not in ordered_names:
+            ordered_names.append(name)
+    ordered_names.extend([f"flow_{item['name']}" for item in normalized_flow_reports if item.get("name")])
+
+    rows: list[dict[str, Any]] = []
+    flow_map = {f"flow_{item['name']}": item for item in normalized_flow_reports if item.get("name")}
+    for name in ordered_names:
+        if name.startswith("flow_"):
+            row = _validation_flow_row(name=name, report=flow_map.get(name) or {})
+        elif name in checks_by_name:
+            row = _validation_row_from_check(name=name, payload=checks_by_name[name])
+        elif name in artifact_fallbacks and artifact_fallbacks[name]:
+            row = _validation_row_from_artifact(name=name, payload=artifact_fallbacks[name])
+        else:
+            row = _validation_pending_row(name=name)
+
+        if name in event_overrides and name not in checks_by_name:
+            row = {
+                **row,
+                **event_overrides[name],
+            }
+
+        if current_activity and current_activity.get("check_name") == name and row["status"] == "pending":
+            row["status"] = "running"
+            row["status_label"] = VALIDATION_CHECK_STATUS_LABELS_KO["running"]
+            row["summary"] = str(current_activity.get("summary") or row["summary"])
+        elif current_activity and current_activity.get("check_name") == name and row["status"] == "running":
+            row["summary"] = str(current_activity.get("summary") or row["summary"])
+
+        rows.append(row)
+    return rows
+
+
+def _validation_row_from_check(*, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    summary = str(payload.get("summary") or "")
+    passed = bool(payload.get("passed"))
+    if passed:
+        status = "passed"
+    else:
+        status = _validation_failure_status(summary=summary, payload=payload)
+    return {
+        "name": name,
+        "label": _validation_check_label(name),
+        "status": status,
+        "status_label": VALIDATION_CHECK_STATUS_LABELS_KO[status],
+        "summary": summary or _validation_pending_summary(name),
+        "passed": passed,
+        "updated_at": "",
+    }
+
+
+def _validation_row_from_artifact(*, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    summary = str(payload.get("failure_summary") or payload.get("reason") or "")
+    passed_value = payload.get("passed")
+    if passed_value is True:
+        status = "passed"
+    elif passed_value is False:
+        status = _validation_failure_status(summary=summary, payload=payload)
+    else:
+        status = "pending"
+    return {
+        "name": name,
+        "label": _validation_check_label(name),
+        "status": status,
+        "status_label": VALIDATION_CHECK_STATUS_LABELS_KO[status],
+        "summary": summary or _validation_pending_summary(name),
+        "passed": status == "passed",
+        "updated_at": "",
+    }
+
+
+def _validation_flow_row(*, name: str, report: dict[str, Any]) -> dict[str, Any]:
+    passed = bool(report.get("passed"))
+    status = "passed" if passed else "failed"
+    return {
+        "name": name,
+        "label": _validation_check_label(name),
+        "status": status,
+        "status_label": VALIDATION_CHECK_STATUS_LABELS_KO[status],
+        "summary": str(report.get("summary") or ("flow passed" if passed else "flow failed")),
+        "passed": passed,
+        "updated_at": "",
+    }
+
+
+def _validation_pending_row(name: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "label": _validation_check_label(name),
+        "status": "pending",
+        "status_label": VALIDATION_CHECK_STATUS_LABELS_KO["pending"],
+        "summary": _validation_pending_summary(name),
+        "passed": False,
+        "updated_at": "",
+    }
+
+
+def _validation_failure_status(*, summary: str, payload: dict[str, Any]) -> str:
+    normalized = " ".join(str(summary or "").lower().split())
+    details = dict(payload.get("details") or {}) if isinstance(payload.get("details"), dict) else {}
+    if "skipped because" in normalized or str(details.get("skipped_reason") or "").strip():
+        return "skipped"
+    if str(payload.get("status") or details.get("status") or "").strip() == "skipped":
+        return "skipped"
+    return "failed"
+
+
+def _current_validation_activity(*, recent_events: list[dict[str, Any]], stage_status: str) -> dict[str, str]:
+    if stage_status != "running":
+        return {}
+    validation_events = [event for event in recent_events if str(event.get("stage") or "") == "validation"]
+    if not validation_events:
+        return {}
+    latest = validation_events[-1]
+    event_type = str(latest.get("event_type") or "").strip()
+    details = dict(latest.get("details") or {})
+    if event_type.startswith("backend_runtime_prep_step_"):
+        return {
+            "check_name": "backend_runtime_prep",
+            "summary": _validation_step_event_summary(latest),
+        }
+    if event_type.startswith("conversation_validation_scenario_"):
+        return {
+            "check_name": "conversation_validation",
+            "summary": _validation_conversation_event_summary(latest),
+        }
+    if event_type == "validation_check_started":
+        return {
+            "check_name": str(details.get("check_name") or "").strip(),
+            "summary": str(details.get("summary") or latest.get("display_summary") or latest.get("summary") or "").strip(),
+        }
+    if str(details.get("status") or "") == "running":
+        return {
+            "check_name": "",
+            "summary": str(latest.get("display_summary") or latest.get("summary") or "").strip(),
+        }
+    return {}
+
+
+def _validation_check_event_overrides(*, recent_events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    overrides: dict[str, dict[str, Any]] = {}
+    for event in recent_events:
+        if str(event.get("stage") or "") != "validation":
+            continue
+        if str(event.get("event_type") or "").strip() not in {"validation_check_started", "validation_check_completed"}:
+            continue
+        details = dict(event.get("details") or {})
+        check_name = str(details.get("check_name") or "").strip()
+        if not check_name:
+            continue
+        status = str(details.get("status") or "").strip() or ("running" if str(event.get("event_type")) == "validation_check_started" else "pending")
+        if status not in VALIDATION_CHECK_STATUS_LABELS_KO:
+            status = "pending"
+        summary = str(details.get("summary") or event.get("display_summary") or event.get("summary") or "").strip()
+        overrides[check_name] = {
+            "status": status,
+            "status_label": VALIDATION_CHECK_STATUS_LABELS_KO[status],
+            "summary": summary or _validation_pending_summary(check_name),
+            "passed": status == "passed",
+            "updated_at": str(event.get("timestamp") or ""),
+        }
+    return overrides
+
+
+def _replay_apply_payload(replay_result: dict[str, Any]) -> dict[str, Any]:
+    if not replay_result:
+        return {}
+    passed = bool(replay_result.get("passed"))
+    return {
+        "passed": passed,
+        "failure_summary": "replay apply passed" if passed else "replay apply failed",
+    }
+
+
+def _replay_validation_payload(replay_result: dict[str, Any]) -> dict[str, Any]:
+    if not replay_result:
+        return {}
+    passed = bool(replay_result.get("target_match_passed")) and bool(replay_result.get("static_validation_passed"))
+    return {
+        "passed": passed,
+        "failure_summary": "replay validation passed" if passed else str(replay_result.get("static_validation_summary") or "replay validation failed"),
+    }
+
+
+def _validation_step_event_summary(event: dict[str, Any]) -> str:
+    details = dict(event.get("details") or {})
+    step_name = _humanize_validation_step_name(str(details.get("step_name") or "step"))
+    event_type = str(event.get("event_type") or "")
+    if event_type.endswith("_started"):
+        suffix = "시작"
+    elif event_type.endswith("_completed"):
+        suffix = "완료"
+    else:
+        suffix = "진행 중"
+    return f"{step_name} {suffix}"
+
+
+def _validation_conversation_event_summary(event: dict[str, Any]) -> str:
+    details = dict(event.get("details") or {})
+    scenario_id = str(details.get("scenario_id") or "scenario")
+    if str(event.get("event_type") or "").endswith("_completed"):
+        verdict = "통과" if str(details.get("final_verdict") or "").strip() == "pass" else "실패"
+        return f"시나리오 {scenario_id} {verdict}"
+    return f"시나리오 {scenario_id} 진행 중"
+
+
+def _validation_check_label(name: str) -> str:
+    if name.startswith("retrieval_"):
+        corpus = name.removeprefix("retrieval_")
+        return f"Retrieval · {_corpus_label(corpus)}"
+    if name.startswith("flow_"):
+        return f"Flow · {name.removeprefix('flow_')}"
+    return VALIDATION_CHECK_LABELS.get(name, name.replace("_", " ").title())
+
+
+def _validation_pending_summary(name: str) -> str:
+    if name == "widget_bundle_fetch":
+        return "백엔드 런타임 준비 이후 실행됩니다."
+    return "아직 시작되지 않았습니다."
+
+
+def _humanize_validation_step_name(name: str) -> str:
+    normalized = str(name or "").strip()
+    if not normalized:
+        return "step"
+    return normalized.replace("_", " ")
+
+
+def _summarize_validation_progress(checks: list[dict[str, Any]]) -> dict[str, int]:
+    progress = {
+        "total": len(checks),
+        "passed": 0,
+        "running": 0,
+        "pending": 0,
+        "failed": 0,
+        "skipped": 0,
+    }
+    for item in checks:
+        status = str(item.get("status") or "pending")
+        if status in progress:
+            progress[status] += 1
+    return progress
+
+
+def _validation_overall_status(*, bundle: dict[str, Any], stage_status: str, progress: dict[str, int]) -> str:
+    if bool(bundle.get("passed")):
+        return "passed"
+    if progress.get("failed"):
+        return "failed"
+    if stage_status == "running" or progress.get("running"):
+        return "running"
+    return "pending"
+
+
+def _validation_summary_text(*, bundle: dict[str, Any], progress: dict[str, int], stage_status: str) -> str:
+    if bool(bundle.get("passed")):
+        return "검증이 완료되었습니다."
+    if progress.get("failed"):
+        return str(bundle.get("failure_summary") or "일부 검증이 실패했습니다.")
+    if stage_status == "running" or progress.get("running"):
+        return "검증 항목을 순서대로 확인하는 중입니다."
+    return "검증 준비 중입니다."
 
 
 def _collect_host_targets(program: dict[str, Any]) -> list[str]:
@@ -1583,6 +1956,10 @@ def _event_display_summary_ko(event: dict[str, Any] | None) -> str:
         return f"{_phase_label_ko(stage, phase)} fallback 사용"
     if event_type == "llm_tool_called":
         return f"{_phase_label_ko(stage, phase)} 도구 호출"
+    if event_type.startswith("backend_runtime_prep_step_"):
+        return f"백엔드 런타임 준비 {_validation_step_event_summary(payload)}"
+    if event_type.startswith("conversation_validation_scenario_"):
+        return f"대화 검증 {_validation_conversation_event_summary(payload)}"
     if event_type.startswith("analysis_candidate_harvest_"):
         return {
             "analysis_candidate_harvest_started": "후보 수집 시작",
@@ -1639,6 +2016,8 @@ def _corpus_label(corpus: str) -> str:
 
 def _retrieval_chip_status(payload: dict[str, Any]) -> str:
     raw_status = str(payload.get("status") or "").strip()
+    if _is_non_blocking_disabled_corpus(payload):
+        return "skipped"
     if raw_status == "completed" and bool(payload.get("smoke_passed", True)):
         return "ready"
     if raw_status in {"running", "pending", "starting"}:
@@ -1650,6 +2029,31 @@ def _retrieval_chip_status(payload: dict[str, Any]) -> str:
     if not raw_status:
         return "queued"
     return "queued"
+
+
+def _is_non_blocking_disabled_corpus(payload: dict[str, Any]) -> bool:
+    raw_status = str(payload.get("status") or "").strip()
+    if raw_status == "skipped":
+        return True
+    if bool(payload.get("enabled", True)):
+        return False
+    reason = str(payload.get("reason") or "").strip()
+    warning_codes = {
+        str(code).strip()
+        for code in (payload.get("warning_codes") or [])
+        if str(code).strip()
+    }
+    return reason == "no_product_rows" or "no_product_rows" in warning_codes
+
+
+def _retrieval_smoke_status(*, payload: dict[str, Any], smoke: dict[str, Any]) -> str:
+    raw_status = str(smoke.get("status") or "").strip()
+    if raw_status in {"passed", "failed", "skipped"}:
+        return raw_status
+    smoke_details = dict(smoke.get("details") or {})
+    if _is_non_blocking_disabled_corpus(smoke_details or payload):
+        return "skipped"
+    return "passed" if bool(smoke.get("passed")) else "failed"
 
 
 def _retrieval_status_label(status: str) -> str:

@@ -682,6 +682,67 @@ body {
   margin-top: 12px;
 }
 
+.validation-summary-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
+  padding: 2px 0 10px;
+  border-bottom: 1px solid rgba(95, 107, 122, 0.12);
+}
+
+.validation-summary-line strong {
+  font-size: 0.84rem;
+  color: var(--soft);
+}
+
+.validation-summary-line small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.validation-check-stream {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.validation-check-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding-top: 10px;
+  border-top: 1px solid rgba(95, 107, 122, 0.1);
+}
+
+.validation-check-row:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.validation-check-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.validation-check-copy strong {
+  font-size: 0.92rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.validation-check-copy small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .stage-live-shell {
   display: grid;
   gap: 12px;
@@ -831,6 +892,22 @@ body {
 .demo-banner.neutral {
   border-color: rgba(95, 107, 122, 0.14);
   background: rgba(255, 255, 255, 0.96);
+}
+
+.demo-primary-action {
+  margin: 0 0 12px;
+}
+
+.demo-primary-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 164px;
+  text-decoration: none;
+}
+
+.demo-primary-link:hover {
+  text-decoration: none;
 }
 
 .repair-banner {

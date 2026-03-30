@@ -46,6 +46,7 @@ const state = {
   targetStages: [],
   rawLogOpen: false,
   rawLogScrollTop: 0,
+  rawLogAutoFollow: true,
 };
 
 const ACTIVE_RUN_STORAGE_KEY = "onmo.active-run";
@@ -181,6 +182,7 @@ function restoreRunUiState(run = state.currentRun) {
   state.selectionPinned = Boolean(stored.selectionPinned);
   state.rawLogOpen = Boolean(stored.rawLogOpen);
   state.rawLogScrollTop = Math.max(0, Number(stored.rawLogScrollTop) || 0);
+  state.rawLogAutoFollow = state.rawLogScrollTop === 0;
 }
 
 async function request(path, options = {}) {
@@ -402,8 +404,25 @@ function renderRawLogMeta(event = {}) {
   return bits.join(" / ");
 }
 
+function rawLogMaxScrollTop(element) {
+  if (!element) {
+    return 0;
+  }
+  const scrollHeight = Math.max(0, Number(element.scrollHeight) || 0);
+  const clientHeight = Math.max(0, Number(element.clientHeight) || 0);
+  return Math.max(0, scrollHeight - clientHeight);
+}
+
+function rawLogNearBottom(element, threshold = 24) {
+  if (!element) {
+    return true;
+  }
+  const scrollTop = Math.max(0, Number(element.scrollTop) || 0);
+  return rawLogMaxScrollTop(element) - scrollTop <= threshold;
+}
+
 function statusClass(status) {
-  if (["completed", "exported", "ready"].includes(status)) return "ok";
+  if (["completed", "exported", "ready", "passed"].includes(status)) return "ok";
   if (["running", "starting"].includes(status)) return "warn";
   if (["failed", "process_failed", "failed_human_review", "blocked"].includes(status)) return "fail";
   return "neutral";
@@ -508,7 +527,7 @@ function resolveLiveStage(payload = state.lastPayload, stages = []) {
   if (repairStory.active && repairStory.rewind_to) {
     return repairStory.rewind_to;
   }
-  if (payload?.story?.current_stage?.stage) {
+  if (["running", "starting"].includes(String(payload?.story?.current_stage?.status || "").trim()) && payload?.story?.current_stage?.stage) {
     return payload.story.current_stage.stage;
   }
   const activeStages = Array.isArray(stages) ? stages : [];
@@ -928,9 +947,12 @@ function bindStoryInteractions() {
     });
   }
   if (rawBody) {
-    rawBody.scrollTop = Math.max(0, Number(state.rawLogScrollTop) || 0);
+    rawBody.scrollTop = state.rawLogAutoFollow
+      ? rawLogMaxScrollTop(rawBody)
+      : Math.max(0, Number(state.rawLogScrollTop) || 0);
     rawBody.addEventListener("scroll", () => {
       state.rawLogScrollTop = Math.max(0, Number(rawBody.scrollTop) || 0);
+      state.rawLogAutoFollow = rawLogNearBottom(rawBody);
       persistRunUiState();
     });
   }
@@ -1258,30 +1280,80 @@ function renderServiceGrid(services = [], demo = {}, limits = LIMITS) {
   `;
 }
 
+function renderDemoPrimaryAction(demo = {}) {
+  const action = demo.primary_action || {};
+  const url = String(action.url || demo.open_url || "").trim();
+  if (!url) {
+    return "";
+  }
+  const label = String(action.label || "사이트 열기").trim() || "사이트 열기";
+  return `
+    <div class="demo-primary-action">
+      <a class="launch-button demo-primary-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">
+        ${escapeHtml(localizeUiText(label))}
+      </a>
+    </div>
+  `;
+}
+
+function renderValidationProgress(details = {}) {
+  const progress = details.progress || {};
+  const parts = [
+    Number.isFinite(Number(progress.total)) && Number(progress.total) > 0 ? `전체 ${progress.total}` : "",
+    Number(progress.passed) > 0 ? `통과 ${progress.passed}` : "",
+    Number(progress.running) > 0 ? `진행 ${progress.running}` : "",
+    Number(progress.pending) > 0 ? `대기 ${progress.pending}` : "",
+    Number(progress.failed) > 0 ? `실패 ${progress.failed}` : "",
+    Number(progress.skipped) > 0 ? `건너뜀 ${progress.skipped}` : "",
+  ].filter(Boolean);
+  if (!parts.length) {
+    return "";
+  }
+  return `
+    <div class="validation-summary-line">
+      <strong>검증 진행 현황</strong>
+      <small>${escapeHtml(parts.join(" · "))}</small>
+    </div>
+  `;
+}
+
+function renderValidationChecks(details = {}, compact = false) {
+  const checks = Array.isArray(details.checks) ? details.checks.filter((item) => item != null) : [];
+  if (!checks.length) {
+    return '<div class="empty-state">검증 체크 결과가 아직 없습니다.</div>';
+  }
+  return `
+    <div class="validation-check-stream">
+      ${checks
+        .map(
+          (item) => `
+            <div class="validation-check-row">
+              <span class="status-badge ${statusClass(item.status || "pending")}">${escapeHtml(localizeUiText(item.status_label || "대기"))}</span>
+              <div class="validation-check-copy">
+                <strong>${escapeHtml(localizeUiText(item.label || item.name || "-"))}</strong>
+                <small>${escapeHtml(localizeUiText(item.summary || ""))}</small>
+              </div>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 function renderValidation(details = {}, services = [], demo = {}, compact = false) {
   const limits = viewLimits(compact);
-  const checks = limitItems(details.checks || [], limits.checks)
-    .map(
-      (item) => `
-        <div class="check-card">
-          <span class="status-badge ${item.passed ? "ok" : "fail"}">${item.passed ? "통과" : "실패"}</span>
-          <h4>${escapeHtml(item.name)}</h4>
-          <p>${escapeHtml(localizeUiText(item.summary))}</p>
-        </div>
-      `
-    )
-    .join("");
-
   const proofLink = demo.preview_url
     ? `<div class="fact-list"><div class="fact-list-item"><strong>미리보기</strong><small>${escapeHtml(demo.preview_url)}</small></div></div>`
     : "";
 
   return `
     ${renderServiceGrid(services, demo, limits)}
-    ${renderCards(details.cards, limits)}
+    ${renderDemoPrimaryAction(demo)}
+    ${renderValidationProgress(details)}
+    ${renderValidationChecks(details, compact)}
     ${renderHighlights(details.proofs || [], limits)}
     ${proofLink}
-    <div class="checks-grid">${checks || '<div class="empty-state">검증 체크 결과가 아직 없습니다.</div>'}</div>
   `;
 }
 
@@ -1354,7 +1426,7 @@ function isTerminalRunStatus(status) {
 }
 
 function isTerminalDemoStatus(status) {
-  return ["ready", "failed", "blocked"].includes(status);
+  return ["ready", "failed", "blocked", "disabled"].includes(status);
 }
 
 function shouldContinuePolling(payload) {
@@ -1385,6 +1457,7 @@ function stopPolling() {
 function renderSelectedStage(payload) {
   const existingRawBody = refs.stageDetail.querySelector("[data-raw-log-body]");
   if (existingRawBody) {
+    state.rawLogAutoFollow = rawLogNearBottom(existingRawBody);
     state.rawLogScrollTop = Math.max(0, Number(existingRawBody.scrollTop) || 0);
   }
   renderRunStoryPanel(payload);
@@ -1514,6 +1587,7 @@ function beginRunTracking(payload, preferredStage = "import") {
   state.lastError = null;
   state.rawLogOpen = false;
   state.rawLogScrollTop = 0;
+  state.rawLogAutoFollow = true;
   if (state.playbackTimer) {
     window.clearTimeout(state.playbackTimer);
     state.playbackTimer = null;

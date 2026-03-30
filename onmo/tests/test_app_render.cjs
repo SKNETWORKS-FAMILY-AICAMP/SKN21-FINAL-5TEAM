@@ -33,6 +33,13 @@ function createElement(id = "") {
   function ensureScrollContainer(key) {
     return ensureNode(key, () => ({
       scrollTop: 0,
+      get clientHeight() {
+        return 180;
+      },
+      get scrollHeight() {
+        const rowCount = (html.match(/raw-log-row/g) || []).length;
+        return Math.max(240, rowCount * 28 + 120);
+      },
       listeners: {},
       addEventListener(type, handler) {
         this.listeners[type] = handler;
@@ -615,6 +622,195 @@ test("indexing renders as a formal stage detail instead of only retrieval chips"
   assert.match(api.refs.stageDetail.innerHTML, /Policy/);
 });
 
+test("validation detail shows check-by-check progress without premature failed or blocked labels", async () => {
+  const api = loadApp();
+  const payload = {
+    run: { site: "food", run_id: "food-demo-validation-005", status: "running", status_label: "Running" },
+    process: { running: true, log_path: "/tmp/onmo.log" },
+    demo: { status: "disabled", status_label: "GitHub Mode" },
+    services: [],
+    story: {
+      headline: "현재 Validation 단계가 진행 중입니다.",
+      summary: "백엔드 런타임 준비를 확인하는 중입니다.",
+      current_stage: { stage: "validation", label: "Validation", status: "running", status_label: "Running" },
+      focus_stage: { stage: "validation", label: "Validation", status: "running", status_label: "Running" },
+      steps: [
+        { stage: "export", label: "Export", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "indexing", label: "Indexing", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "validation", label: "Validation", status: "running", status_label: "Running", emphasis: "current" },
+      ],
+    },
+    repair_story: { active: false, headline: "", summary: "", steps: [], failed_stage: "", rewind_to: "" },
+    repair: { active: false },
+    details: {
+      validation: {
+        passed: false,
+        progress: { total: 4, passed: 1, running: 1, pending: 2, failed: 0, skipped: 0 },
+        proofs: [],
+        checks: [
+          { label: "Backend runtime prep", status: "running", status_label: "진행 중", summary: "fixture manifest 완료" },
+          { label: "Backend runtime boot", status: "pending", status_label: "대기", summary: "아직 시작되지 않았습니다." },
+          { label: "Widget bundle fetch", status: "pending", status_label: "대기", summary: "백엔드 런타임 준비 이후 실행됩니다." },
+          { label: "Flow · list_orders", status: "passed", status_label: "통과", summary: "flow passed" },
+        ],
+      },
+    },
+    recent_events: [],
+    stages: [
+      { stage: "export", label: "Export", status: "completed", status_label: "Completed" },
+      { stage: "indexing", label: "Indexing", status: "completed", status_label: "Completed" },
+      { stage: "validation", label: "Validation", status: "running", status_label: "Running" },
+    ],
+  };
+
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "validation";
+  api.renderStageMenu(payload.stages);
+  api.renderSelectedStage(payload);
+
+  assert.match(api.refs.stageDetail.innerHTML, /검증 진행 현황/);
+  assert.match(api.refs.stageDetail.innerHTML, /Backend runtime prep/);
+  assert.match(api.refs.stageDetail.innerHTML, /Widget bundle fetch/);
+  assert.match(api.refs.stageDetail.innerHTML, /Flow · list_orders/);
+  assert.match(api.refs.stageDetail.innerHTML, /fixture manifest 완료/);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, />Failed</);
+  assert.doesNotMatch(api.refs.stageDetail.innerHTML, />Blocked</);
+});
+
+test("validation detail renders every check row instead of truncating to eight items", async () => {
+  const api = loadApp();
+  const checks = Array.from({ length: 17 }, (_, index) => ({
+    label: `Check ${index + 1}`,
+    status: index < 16 ? "passed" : "failed",
+    status_label: index < 16 ? "통과" : "실패",
+    summary: `summary ${index + 1}`,
+  }));
+  const payload = {
+    run: { site: "food", run_id: "food-demo-validation-rows-017", status: "failed", status_label: "Failed" },
+    process: { running: false, log_path: "/tmp/onmo.log" },
+    demo: { status: "disabled", status_label: "GitHub Mode" },
+    services: [],
+    story: {
+      headline: "검증이 끝났습니다.",
+      summary: "검증 결과를 정리했습니다.",
+      current_stage: { stage: "validation", label: "Validation", status: "failed", status_label: "Failed" },
+      focus_stage: { stage: "validation", label: "Validation", status: "failed", status_label: "Failed" },
+      steps: [{ stage: "validation", label: "Validation", status: "failed", status_label: "Failed", emphasis: "failed" }],
+    },
+    repair_story: { active: false, headline: "", summary: "", steps: [], failed_stage: "", rewind_to: "" },
+    repair: { active: false },
+    details: {
+      validation: {
+        passed: false,
+        progress: { total: 17, passed: 16, running: 0, pending: 0, failed: 1, skipped: 0 },
+        proofs: [],
+        checks,
+      },
+    },
+    recent_events: [],
+    stages: [{ stage: "validation", label: "Validation", status: "failed", status_label: "Failed" }],
+  };
+
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "validation";
+  api.renderStageMenu(payload.stages);
+  api.renderSelectedStage(payload);
+
+  const rowCount = (api.refs.stageDetail.innerHTML.match(/validation-check-row/g) || []).length;
+  assert.equal(rowCount, 17);
+  assert.match(api.refs.stageDetail.innerHTML, /전체 17 · 통과 16 · 실패 1/);
+});
+
+test("completed validation stage does not keep a live chip in the left rail", async () => {
+  const api = loadApp();
+  const payload = {
+    run: { site: "food", run_id: "food-demo-validation-complete-018", status: "exported", status_label: "Ready" },
+    process: { running: false, log_path: "/tmp/onmo.log" },
+    demo: { status: "disabled", status_label: "GitHub Mode" },
+    story: {
+      headline: "검증이 완료되었습니다.",
+      summary: "모든 검증이 끝났습니다.",
+      current_stage: { stage: "validation", label: "Validation", status: "completed", status_label: "Completed" },
+      focus_stage: { stage: "validation", label: "Validation", status: "completed", status_label: "Completed" },
+      steps: [
+        { stage: "export", label: "Export", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "validation", label: "Validation", status: "completed", status_label: "Completed", emphasis: "current" },
+      ],
+    },
+    repair_story: { active: false, headline: "", summary: "", steps: [], failed_stage: "", rewind_to: "" },
+    repair: { active: false },
+    details: { validation: { passed: true, progress: { total: 1, passed: 1, running: 0, pending: 0, failed: 0, skipped: 0 }, checks: [] } },
+    recent_events: [],
+    stages: [
+      { stage: "export", label: "Export", status: "completed", status_label: "Completed" },
+      { stage: "validation", label: "Validation", status: "completed", status_label: "Completed" },
+    ],
+  };
+
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "validation";
+  api.renderStageMenu(payload.stages);
+
+  assert.doesNotMatch(api.refs.stageTimeline.innerHTML, /stage-link-live/);
+  assert.doesNotMatch(api.refs.stageTimeline.innerHTML, /진행 중/);
+});
+
+test("validation detail renders a primary website open button for exported demo runs", async () => {
+  const api = loadApp();
+  const payload = {
+    run: { site: "bilyeo", run_id: "bilyeo-demo-website-006", status: "exported", status_label: "Ready" },
+    process: { running: false, log_path: "/tmp/onmo.log" },
+    demo: {
+      status: "starting",
+      status_label: "Launching bilyeo",
+      message: "validated run finished, starting bilyeo live services",
+      preview_url: "http://127.0.0.1:3000/bilyeo/",
+      primary_action: {
+        label: "사이트 열기",
+        url: "http://127.0.0.1:3000/bilyeo/",
+      },
+    },
+    services: [],
+    story: {
+      headline: "Validation이 끝났습니다.",
+      summary: "서비스를 시작하고 있습니다.",
+      current_stage: { stage: "validation", label: "Validation", status: "completed", status_label: "Completed" },
+      focus_stage: { stage: "validation", label: "Validation", status: "completed", status_label: "Completed" },
+      steps: [
+        { stage: "export", label: "Export", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "indexing", label: "Indexing", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "validation", label: "Validation", status: "completed", status_label: "Completed", emphasis: "current" },
+      ],
+    },
+    repair_story: { active: false, headline: "", summary: "", steps: [], failed_stage: "", rewind_to: "" },
+    repair: { active: false },
+    details: {
+      validation: {
+        passed: true,
+        progress: { total: 4, passed: 4, running: 0, pending: 0, failed: 0, skipped: 0 },
+        proofs: [],
+        checks: [
+          { label: "Backend runtime prep", status: "passed", status_label: "통과", summary: "fixture manifest 완료" },
+        ],
+      },
+    },
+    recent_events: [],
+    stages: [
+      { stage: "export", label: "Export", status: "completed", status_label: "Completed" },
+      { stage: "indexing", label: "Indexing", status: "completed", status_label: "Completed" },
+      { stage: "validation", label: "Validation", status: "completed", status_label: "Completed" },
+    ],
+  };
+
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "validation";
+  api.renderStageMenu(payload.stages);
+  api.renderSelectedStage(payload);
+
+  assert.match(api.refs.stageDetail.innerHTML, /사이트 열기/);
+  assert.match(api.refs.stageDetail.innerHTML, /http:\/\/127\.0\.0\.1:3000\/bilyeo\//);
+});
+
 test("run story graph renders in a dedicated always-visible panel", async () => {
   const api = loadApp();
   const payload = repairPayload();
@@ -789,6 +985,54 @@ test("developer log keeps scroll position across rerenders while polling", async
       rawLogScrollTop: 240,
     })
   );
+});
+
+test("developer log auto-follows new entries when the viewer was already at the bottom", async () => {
+  const api = loadApp({
+    sessionStorage: {
+      "onmo.active-run": JSON.stringify({
+        site: "bilyeo",
+        run_id: "bilyeo-v2-repair-009",
+        generated_root: "generated-v2",
+      }),
+      "onmo.run-ui:bilyeo:bilyeo-v2-repair-009": JSON.stringify({
+        selectedStage: "analysis",
+        selectionPinned: true,
+        rawLogOpen: true,
+      }),
+    },
+  });
+  const payload = dashboardPayload();
+  payload.recent_events = Array.from({ length: 30 }, (_, index) => ({
+    timestamp: `2026-03-27T20:${String(index).padStart(2, "0")}:00+09:00`,
+    stage: "analysis",
+    summary: `analysis event ${index}`,
+    display_summary: `분석 이벤트 ${index}`,
+  }));
+
+  api.state.currentRun = {
+    site: "bilyeo",
+    run_id: "bilyeo-v2-repair-009",
+    generated_root: "generated-v2",
+  };
+  api.state.lastPayload = payload;
+  api.restoreRunFromQuery();
+  api.renderSelectedStage(payload);
+
+  const firstBody = api.refs.stageDetail.querySelector("[data-raw-log-body]");
+  firstBody.scrollTop = firstBody.scrollHeight - firstBody.clientHeight;
+  firstBody.listeners.scroll();
+
+  payload.recent_events = Array.from({ length: 35 }, (_, index) => ({
+    timestamp: `2026-03-27T21:${String(index).padStart(2, "0")}:00+09:00`,
+    stage: "analysis",
+    summary: `analysis event ${index}`,
+    display_summary: `분석 이벤트 ${index}`,
+  }));
+  api.renderSelectedStage(payload);
+
+  const rerenderedBody = api.refs.stageDetail.querySelector("[data-raw-log-body]");
+  assert.equal(rerenderedBody.scrollTop, rerenderedBody.scrollHeight - rerenderedBody.clientHeight);
 });
 
 test("repair layout keeps information ownership split between panels", async () => {

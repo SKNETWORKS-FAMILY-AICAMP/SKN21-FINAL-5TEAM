@@ -63,6 +63,44 @@ GITHUB_OAUTH_STATE_TTL = timedelta(minutes=15)
 GITHUB_MODE_MESSAGE = "GitHub 가져오기 런은 라이브 프리뷰를 실행하지 않습니다."
 
 
+@dataclass(frozen=True, slots=True)
+class KnownLaunchProfile:
+    site: str
+    label: str
+    preview_url: str
+    backend_url: str
+    frontend_url: str
+    chatbot_url: str = "http://127.0.0.1:8100"
+    bootstrap_service: str | None = None
+
+
+KNOWN_LAUNCH_PROFILES: dict[str, KnownLaunchProfile] = {
+    "bilyeo": KnownLaunchProfile(
+        site="bilyeo",
+        label="Bilyeo",
+        preview_url="http://127.0.0.1:3000/bilyeo/",
+        backend_url="http://127.0.0.1:5000",
+        frontend_url="http://127.0.0.1:3000/bilyeo/",
+        bootstrap_service="bilyeo-oracle",
+    ),
+    "food": KnownLaunchProfile(
+        site="food",
+        label="Food",
+        preview_url="http://127.0.0.1:3000/",
+        backend_url="http://127.0.0.1:8000",
+        frontend_url="http://127.0.0.1:3000/",
+    ),
+    "ecommerce": KnownLaunchProfile(
+        site="ecommerce",
+        label="Ecommerce",
+        preview_url="http://127.0.0.1:3000/",
+        backend_url="http://127.0.0.1:8000",
+        frontend_url="http://127.0.0.1:3000/",
+        bootstrap_service="mysql",
+    ),
+}
+
+
 @dataclass(slots=True)
 class GitHubImportRun:
     run_id: str
@@ -350,6 +388,8 @@ class ServiceLaunchSpec:
     healthcheck_url: str | None = None
     healthcheck_port: int | None = None
     env_overrides: dict[str, str] = field(default_factory=dict)
+    prepare_command: list[str] | None = None
+    prepare_sentinel: str | None = None
 
 
 @dataclass(slots=True)
@@ -495,10 +535,11 @@ def _maybe_autostart_demo_services(record: RunProcessRecord) -> list[dict[str, A
         process=_snapshot_from_record(synced),
     )
     payload = _decorate_dashboard_with_github_import(payload, synced.run_id)
+    launch_profile = _launch_profile_from_run(site=synced.site, run_id=synced.run_id, run_payload=payload)
     preview_url = (
         (synced.preview_url or "").strip()
         or str((payload.get("process") or {}).get("preview_url") or "").strip()
-        or DEFAULT_PREVIEW_URL
+        or _launch_profile_preview_url(launch_profile)
     )
     return _ensure_demo_services(
         site=synced.site,
@@ -597,6 +638,35 @@ def _project_options() -> list[dict[str, str]]:
             continue
         items.append(dict(preset))
     return items
+
+
+def _launch_profile_for_site(site: str) -> KnownLaunchProfile | None:
+    return KNOWN_LAUNCH_PROFILES.get(str(site or "").strip())
+
+
+def _resolve_launch_profile(*, site: str, source_root: Path | None = None) -> KnownLaunchProfile | None:
+    direct = _launch_profile_for_site(site)
+    if direct is not None:
+        return direct
+    if source_root is None:
+        return None
+    return _launch_profile_for_site(source_root.name)
+
+
+def _launch_profile_from_run(*, site: str, run_id: str, run_payload: dict[str, Any]) -> KnownLaunchProfile | None:
+    try:
+        source_root = _resolve_source_root_for_run(site=site, run_id=run_id, run_payload=run_payload)
+    except Exception:
+        source_root = None
+    return _resolve_launch_profile(site=site, source_root=source_root)
+
+
+def _launch_profile_preview_url(profile: KnownLaunchProfile | None, *, fallback: str | None = None) -> str:
+    if profile is not None:
+        return profile.preview_url
+    if fallback is None:
+        return ""
+    return str(fallback or DEFAULT_PREVIEW_URL).strip()
 
 
 def _probe_github_repository(repo_url: str, access_token: str | None = None) -> GitHubRepoProbe:
@@ -765,14 +835,20 @@ def _run_github_import_job(*, run_id: str, access_token: str | None = None) -> N
             workdir_root=str(workdir_root.resolve()),
             summary="GitHub 소스를 가져왔습니다. 온보딩을 시작합니다.",
         )
+        launch_profile = _resolve_launch_profile(site=record.site, source_root=source_root)
+        preview_url = _launch_profile_preview_url(launch_profile, fallback=None)
+        _update_github_import_run(
+            run_id,
+            demo_enabled=launch_profile is not None,
+        )
         _launch_onboarding_process(
             site=record.site,
             source_root_arg=str(source_root.resolve()),
             generated_root_arg=record.generated_root,
             runtime_root_arg=record.runtime_root,
             run_id=record.run_id,
-            preview_url=None,
-            demo_enabled=False,
+            preview_url=preview_url or None,
+            demo_enabled=launch_profile is not None,
         )
         _update_github_import_run(
             run_id,
@@ -1080,6 +1156,38 @@ def _launch_service(*, site: str, run_id: str, spec: ServiceLaunchSpec) -> Servi
     )
 
 
+def _prepare_service_launch(spec: ServiceLaunchSpec) -> str | None:
+    prepare_command = list(spec.prepare_command or [])
+    if not prepare_command:
+        return None
+
+    sentinel = str(spec.prepare_sentinel or "").strip()
+    if sentinel and (spec.working_directory / sentinel).exists():
+        return None
+
+    env = _build_child_env(extra=spec.env_overrides)
+    try:
+        result = subprocess.run(
+            prepare_command,
+            cwd=str(spec.working_directory),
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=300,
+            check=False,
+            creationflags=_subprocess_creationflags(),
+        )
+    except FileNotFoundError:
+        return f"{spec.label} preparation command not found: {prepare_command[0]}"
+    except subprocess.TimeoutExpired:
+        return f"{spec.label} preparation timed out"
+
+    if result.returncode == 0:
+        return None
+    output = str(result.stderr or result.stdout or "").strip()
+    return output or f"{spec.label} preparation failed"
+
+
 def _ensure_service_process(*, site: str, run_id: str, spec: ServiceLaunchSpec) -> dict[str, Any]:
     key = _service_key(site, spec.service_name)
     with _REGISTRY_LOCK:
@@ -1091,7 +1199,7 @@ def _ensure_service_process(*, site: str, run_id: str, spec: ServiceLaunchSpec) 
                 and synced.run_id == run_id
                 and synced.working_directory == str(spec.working_directory)
                 and synced.command == spec.command
-            ):
+                ):
                 return _snapshot_from_service_record(synced) or _service_snapshot(
                     spec.service_name,
                     spec.label,
@@ -1100,6 +1208,18 @@ def _ensure_service_process(*, site: str, run_id: str, spec: ServiceLaunchSpec) 
                     url=spec.url,
                 )
             _terminate_service(synced)
+        prepare_failure = _prepare_service_launch(spec)
+        if prepare_failure:
+            return _service_snapshot(
+                spec.service_name,
+                spec.label,
+                run_id=run_id,
+                status="blocked",
+                reason=prepare_failure,
+                url=spec.url,
+                working_directory=str(spec.working_directory),
+                command=spec.command,
+            )
         record = _launch_service(site=site, run_id=run_id, spec=spec)
         _SERVICE_REGISTRY[key] = record
         return _snapshot_from_service_record(record) or _service_snapshot(
@@ -1111,75 +1231,118 @@ def _ensure_service_process(*, site: str, run_id: str, spec: ServiceLaunchSpec) 
         )
 
 
-def _build_demo_service_specs(
-    *,
-    site: str,
-    run_id: str,
-    source_root: Path,
-    preview_url: str,
-) -> tuple[list[ServiceLaunchSpec], list[dict[str, Any]]]:
-    specs: list[ServiceLaunchSpec] = []
+def _launch_profile_labels(profile: KnownLaunchProfile) -> dict[str, str]:
+    return {
+        "chatbot": "Chatbot server",
+        "backend": f"{profile.label} backend",
+        "frontend": f"{profile.label} frontend",
+    }
+
+
+def _blocked_launch_snapshots(profile: KnownLaunchProfile, *, run_id: str, reason: str) -> list[dict[str, Any]]:
+    labels = _launch_profile_labels(profile)
+    return [
+        _service_snapshot(
+            service_name=name,
+            label=labels[name],
+            run_id=run_id,
+            status="blocked",
+            reason=reason,
+            url=(
+                profile.chatbot_url
+                if name == "chatbot"
+                else profile.backend_url if name == "backend" else profile.frontend_url
+            ),
+        )
+        for name in DEMO_SERVICE_NAMES
+    ]
+
+
+def _bootstrap_launch_profile(profile: KnownLaunchProfile) -> str | None:
+    if not profile.bootstrap_service:
+        return None
+    compose_path = ROOT / "docker" / "AWS" / "docker-compose.yml"
+    if not compose_path.exists():
+        return f"자동 실행 환경 파일을 찾을 수 없습니다: {compose_path}"
+    try:
+        result = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(compose_path),
+                "up",
+                "-d",
+                profile.bootstrap_service,
+            ],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except FileNotFoundError:
+        return "docker compose를 찾을 수 없습니다."
+    except subprocess.TimeoutExpired:
+        return f"{profile.label} 자동 실행 환경 준비 시간이 초과되었습니다."
+    if result.returncode == 0:
+        return None
+    output = str(result.stderr or result.stdout or "").strip()
+    return output or f"{profile.label} 자동 실행 환경 준비에 실패했습니다."
+
+
+def _chatbot_service_spec(*, profile: KnownLaunchProfile) -> ServiceLaunchSpec:
+    env_overrides = {
+        "PYTHONPATH": str(ROOT),
+        "BACKEND_API_URL": profile.backend_url,
+    }
+    if profile.site == "bilyeo":
+        env_overrides["BILYEO_API_URL"] = profile.backend_url
+    return ServiceLaunchSpec(
+        service_name="chatbot",
+        label="Chatbot server",
+        working_directory=ROOT,
+        command=[
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "chatbot.server_fastapi:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8100",
+        ],
+        url=profile.chatbot_url,
+        healthcheck_url=f"{profile.chatbot_url.rstrip('/')}/widget.js",
+        env_overrides=env_overrides,
+    )
+
+
+def _bilyeo_service_specs(*, profile: KnownLaunchProfile, source_root: Path) -> tuple[list[ServiceLaunchSpec], list[dict[str, Any]]]:
+    specs: list[ServiceLaunchSpec] = [_chatbot_service_spec(profile=profile)]
     blocked: list[dict[str, Any]] = []
 
-    chatbot_root = (ROOT / "chatbot").resolve()
-    if not (chatbot_root / "server_fastapi.py").exists():
-        blocked.append(
-            _service_snapshot(
-                "chatbot",
-                "Chatbot server",
-                run_id=run_id,
-                status="blocked",
-                reason="chatbot/server_fastapi.py not found",
-                url="http://127.0.0.1:8100",
-            )
-        )
-    else:
-        chatbot_env = {
-            "PYTHONPATH": str(ROOT),
-            "BILYEO_API_URL": "http://127.0.0.1:5000",
-        }
-        specs.append(
-            ServiceLaunchSpec(
-                service_name="chatbot",
-                label="Chatbot server",
-                working_directory=ROOT,
-                command=[
-                    sys.executable,
-                    "-m",
-                    "uvicorn",
-                    "chatbot.server_fastapi:app",
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    "8100",
-                ],
-                url="http://127.0.0.1:8100",
-                healthcheck_url="http://127.0.0.1:8100/widget.js",
-                env_overrides=chatbot_env,
-            )
-        )
-
-    backend_root = (source_root / "backend").resolve() if (source_root / "backend").exists() else source_root.resolve()
+    backend_root = (source_root / "backend").resolve()
     backend_entrypoint = backend_root / "app.py"
     if not backend_entrypoint.exists():
         blocked.append(
             _service_snapshot(
                 "backend",
-                "Bilyeo backend",
-                run_id=run_id,
+                f"{profile.label} backend",
+                run_id="",
                 status="blocked",
-                reason="bilyeo backend/app.py not found",
-                url="http://127.0.0.1:5000",
+                reason=f"{profile.site} backend/app.py not found",
+                url=profile.backend_url,
             )
         )
     else:
         specs.append(
             ServiceLaunchSpec(
                 service_name="backend",
-                label="Bilyeo backend",
+                label=f"{profile.label} backend",
                 working_directory=backend_root,
                 command=[sys.executable, "app.py"],
-                url="http://127.0.0.1:5000",
+                url=profile.backend_url,
                 healthcheck_port=5000,
             )
         )
@@ -1190,27 +1353,207 @@ def _build_demo_service_specs(
         blocked.append(
             _service_snapshot(
                 "frontend",
-                "Bilyeo frontend",
-                run_id=run_id,
+                f"{profile.label} frontend",
+                run_id="",
                 status="blocked",
-                reason="bilyeo frontend/package.json not found",
-                url=preview_url,
+                reason=f"{profile.site} frontend/package.json not found",
+                url=profile.frontend_url,
             )
         )
     else:
         specs.append(
             ServiceLaunchSpec(
                 service_name="frontend",
-                label="Bilyeo frontend",
+                label=f"{profile.label} frontend",
                 working_directory=frontend_root,
                 command=["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "3000"],
-                url=preview_url,
+                url=profile.frontend_url,
                 healthcheck_port=3000,
-                env_overrides={"VITE_CHATBOT_SERVER_BASE_URL": "http://127.0.0.1:8100"},
+                env_overrides={"VITE_CHATBOT_SERVER_BASE_URL": profile.chatbot_url},
+                prepare_command=["npm", "install"],
+                prepare_sentinel="node_modules",
+            )
+        )
+    return specs, blocked
+
+
+def _food_service_specs(*, profile: KnownLaunchProfile, source_root: Path) -> tuple[list[ServiceLaunchSpec], list[dict[str, Any]]]:
+    specs: list[ServiceLaunchSpec] = [_chatbot_service_spec(profile=profile)]
+    blocked: list[dict[str, Any]] = []
+
+    backend_root = (source_root / "backend").resolve()
+    manage_py = backend_root / "manage.py"
+    if not manage_py.exists():
+        blocked.append(
+            _service_snapshot(
+                "backend",
+                f"{profile.label} backend",
+                run_id="",
+                status="blocked",
+                reason=f"{profile.site} backend/manage.py not found",
+                url=profile.backend_url,
+            )
+        )
+    else:
+        specs.append(
+            ServiceLaunchSpec(
+                service_name="backend",
+                label=f"{profile.label} backend",
+                working_directory=backend_root,
+                command=[sys.executable, "manage.py", "runserver", "127.0.0.1:8000"],
+                url=profile.backend_url,
+                healthcheck_port=8000,
+                env_overrides={"DJANGO_SETTINGS_MODULE": "foodshop.settings"},
             )
         )
 
+    frontend_root = (source_root / "frontend").resolve()
+    package_json = frontend_root / "package.json"
+    if not package_json.exists():
+        blocked.append(
+            _service_snapshot(
+                "frontend",
+                f"{profile.label} frontend",
+                run_id="",
+                status="blocked",
+                reason=f"{profile.site} frontend/package.json not found",
+                url=profile.frontend_url,
+            )
+        )
+    else:
+        specs.append(
+            ServiceLaunchSpec(
+                service_name="frontend",
+                label=f"{profile.label} frontend",
+                working_directory=frontend_root,
+                command=["npm", "run", "dev"],
+                url=profile.frontend_url,
+                healthcheck_port=3000,
+                env_overrides={
+                    "PORT": "3000",
+                    "BROWSER": "none",
+                    "DANGEROUSLY_DISABLE_HOST_CHECK": "true",
+                    "REACT_APP_API_URL": profile.backend_url,
+                    "REACT_APP_CHATBOT_SERVER_BASE_URL": profile.chatbot_url,
+                },
+                prepare_command=["npm", "install"],
+                prepare_sentinel="node_modules",
+            )
+        )
     return specs, blocked
+
+
+def _ecommerce_service_specs(*, profile: KnownLaunchProfile, source_root: Path) -> tuple[list[ServiceLaunchSpec], list[dict[str, Any]]]:
+    specs: list[ServiceLaunchSpec] = [_chatbot_service_spec(profile=profile)]
+    blocked: list[dict[str, Any]] = []
+
+    backend_root = (source_root / "backend").resolve()
+    backend_entrypoint = backend_root / "app" / "main.py"
+    if not backend_entrypoint.exists():
+        blocked.append(
+            _service_snapshot(
+                "backend",
+                f"{profile.label} backend",
+                run_id="",
+                status="blocked",
+                reason=f"{profile.site} backend/app/main.py not found",
+                url=profile.backend_url,
+            )
+        )
+    else:
+        specs.append(
+            ServiceLaunchSpec(
+                service_name="backend",
+                label=f"{profile.label} backend",
+                working_directory=backend_root,
+                command=[sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
+                url=profile.backend_url,
+                healthcheck_url=f"{profile.backend_url.rstrip('/')}/",
+                env_overrides={
+                    "PYTHONPATH": str(backend_root),
+                    "DB_HOST": "127.0.0.1",
+                    "DB_PORT": "3306",
+                    "DB_USER": "ecom_user",
+                    "DB_PASSWORD": "ecopchatbot!",
+                    "DB_NAME": "ecommerce",
+                },
+            )
+        )
+
+    frontend_root = (source_root / "frontend").resolve()
+    package_json = frontend_root / "package.json"
+    if not package_json.exists():
+        blocked.append(
+            _service_snapshot(
+                "frontend",
+                f"{profile.label} frontend",
+                run_id="",
+                status="blocked",
+                reason=f"{profile.site} frontend/package.json not found",
+                url=profile.frontend_url,
+            )
+        )
+    else:
+        specs.append(
+            ServiceLaunchSpec(
+                service_name="frontend",
+                label=f"{profile.label} frontend",
+                working_directory=frontend_root,
+                command=["npm", "run", "dev", "--", "--hostname", "127.0.0.1", "--port", "3000"],
+                url=profile.frontend_url,
+                healthcheck_port=3000,
+                env_overrides={
+                    "NEXT_PUBLIC_API_URL": profile.backend_url,
+                    "NEXT_PUBLIC_CHATBOT_API_URL": profile.chatbot_url,
+                },
+                prepare_command=["npm", "install"],
+                prepare_sentinel="node_modules",
+            )
+        )
+    return specs, blocked
+
+
+def _build_demo_service_specs(
+    *,
+    site: str,
+    run_id: str,
+    source_root: Path,
+    preview_url: str,
+) -> tuple[list[ServiceLaunchSpec], list[dict[str, Any]]]:
+    profile = _resolve_launch_profile(site=site, source_root=source_root)
+    if profile is None:
+        return [], []
+
+    chatbot_entrypoint = (ROOT / "chatbot" / "server_fastapi.py").resolve()
+    if not chatbot_entrypoint.exists():
+        return [], _blocked_launch_snapshots(
+            profile,
+            run_id=run_id,
+            reason="chatbot/server_fastapi.py not found",
+        )
+
+    bootstrap_failure = _bootstrap_launch_profile(profile)
+    if bootstrap_failure:
+        return [], _blocked_launch_snapshots(profile, run_id=run_id, reason=bootstrap_failure)
+
+    if profile.site == "bilyeo":
+        specs, blocked = _bilyeo_service_specs(profile=profile, source_root=source_root)
+    elif profile.site == "food":
+        specs, blocked = _food_service_specs(profile=profile, source_root=source_root)
+    elif profile.site == "ecommerce":
+        specs, blocked = _ecommerce_service_specs(profile=profile, source_root=source_root)
+    else:
+        specs, blocked = [], []
+
+    normalized_blocked = [
+        {
+            **item,
+            "run_id": run_id,
+            "url": item.get("url") or preview_url,
+        }
+        for item in blocked
+    ]
+    return specs, normalized_blocked
 
 
 def _resolve_source_root_for_run(*, site: str, run_id: str, run_payload: dict[str, Any]) -> Path:
@@ -1234,7 +1577,13 @@ def _collect_service_snapshots(*, site: str, run_id: str) -> list[dict[str, Any]
     return snapshots
 
 
-def _build_demo_payload(*, run_payload: dict[str, Any], service_snapshots: list[dict[str, Any]], preview_url: str) -> dict[str, Any]:
+def _build_demo_payload(
+    *,
+    run_payload: dict[str, Any],
+    service_snapshots: list[dict[str, Any]],
+    preview_url: str,
+    launch_profile: KnownLaunchProfile | None = None,
+) -> dict[str, Any]:
     ordered_services = sorted(
         service_snapshots,
         key=lambda item: DEMO_SERVICE_NAMES.index(str(item.get("name") or "frontend"))
@@ -1247,31 +1596,62 @@ def _build_demo_payload(*, run_payload: dict[str, Any], service_snapshots: list[
         item for item in ordered_services if str(item.get("status") or "") in {"blocked", "failed"}
     ]
     validation_passed = bool(((run_payload.get("details") or {}).get("validation") or {}).get("passed"))
+    exported = str((run_payload.get("run") or {}).get("status") or "").strip() == "exported"
+    normalized_preview_url = str(preview_url or "").strip()
+    launch_supported = launch_profile is not None or bool(ordered_services)
+    launch_status = "idle"
+    launch_label = "자동 실행 대기"
+    blocked_reason = str(blocked_services[0].get("reason") or "").strip() if blocked_services else ""
 
-    if validation_passed and blocked_services:
-        status = "failed"
-        status_label = "Bilyeo blocked"
-        message = str(blocked_services[0].get("reason") or "one or more bilyeo services could not start")
-    elif validation_passed and total_count == 3 and ready_count == total_count:
+    if validation_passed and not launch_supported:
+        status = "disabled"
+        status_label = "자동 실행 없음"
+        message = "이 프로젝트 계열은 자동 실행 프로필이 아직 없습니다."
+    elif validation_passed and blocked_services:
+        status = "blocked"
+        status_label = f"{launch_profile.label if launch_profile is not None else 'Site'} blocked"
+        message = blocked_reason or "자동 실행 환경 준비에 실패했습니다."
+        launch_status = "blocked"
+        launch_label = "자동 실행 불가"
+    elif validation_passed and total_count and ready_count == total_count:
         status = "ready"
-        status_label = "Bilyeo Ready"
-        message = "chatbot, bilyeo backend, frontend are all live"
+        status_label = f"{launch_profile.label if launch_profile is not None else 'Site'} ready"
+        message = "검증이 끝났고 사이트가 준비되었습니다."
+        launch_status = "ready"
+        launch_label = "사이트 열기 가능"
     elif validation_passed and any(item.get("running") for item in ordered_services):
         status = "starting"
-        status_label = "Launching bilyeo"
-        message = "validated run finished, starting bilyeo live services"
+        status_label = f"{launch_profile.label if launch_profile is not None else 'Site'} launching"
+        message = "검증이 끝나 사이트를 준비하는 중입니다."
+        launch_status = "launching"
+        launch_label = "사이트 준비 중"
     elif validation_passed:
         status = "pending"
         status_label = "Validated"
-        message = "validated run is ready to launch bilyeo services"
+        message = "검증이 끝났고 자동 실행을 시작할 준비가 되었습니다."
+        launch_status = "launching"
+        launch_label = "사이트 준비 중"
     elif (run_payload.get("run") or {}).get("status") in {"failed", "failed_human_review", "process_failed"}:
         status = "failed"
-        status_label = "Bilyeo blocked"
-        message = "run must pass validation before bilyeo can start"
+        status_label = "자동 실행 보류"
+        message = "검증을 통과해야 사이트를 자동으로 시작할 수 있습니다."
+        launch_status = "idle"
+        launch_label = "자동 실행 대기"
     else:
         status = "pending"
         status_label = "Waiting for validation"
-        message = "bilyeo services launch after validation passes"
+        message = "검증 통과 후 자동 실행을 시작합니다."
+        launch_status = "idle"
+        launch_label = "자동 실행 대기"
+
+    primary_action = (
+        {
+            "label": "사이트 열기",
+            "url": normalized_preview_url,
+        }
+        if launch_status == "ready" and normalized_preview_url
+        else None
+    )
 
     return {
         "status": status,
@@ -1279,17 +1659,27 @@ def _build_demo_payload(*, run_payload: dict[str, Any], service_snapshots: list[
         "message": message,
         "ready": status == "ready",
         "preview_url": preview_url,
+        "launch_status": launch_status,
+        "launch_label": launch_label,
+        "open_url": normalized_preview_url if launch_status == "ready" else None,
+        "blocked_reason": blocked_reason or None,
+        "primary_action": primary_action,
         "services": ordered_services,
     }
 
 
-def _build_disabled_demo_payload() -> dict[str, Any]:
+def _build_disabled_demo_payload(*, message: str = GITHUB_MODE_MESSAGE) -> dict[str, Any]:
     return {
         "status": "disabled",
-        "status_label": "GitHub Mode",
-        "message": GITHUB_MODE_MESSAGE,
+        "status_label": "자동 실행 없음",
+        "message": message,
         "ready": False,
         "preview_url": None,
+        "launch_status": "idle",
+        "launch_label": "자동 실행 대기",
+        "open_url": None,
+        "blocked_reason": None,
+        "primary_action": None,
         "services": [],
     }
 
@@ -1311,20 +1701,28 @@ def _github_mode_enabled_for_run(
 def _ensure_demo_services(*, site: str, run_id: str, run_payload: dict[str, Any], preview_url: str) -> list[dict[str, Any]]:
     details = run_payload.get("details") or {}
     validation_details = details.get("validation") or {}
+    launch_profile = _launch_profile_from_run(site=site, run_id=run_id, run_payload=run_payload)
 
     if not bool(validation_details.get("passed")):
         return _collect_service_snapshots(site=site, run_id=run_id)
 
     source_root = _resolve_source_root_for_run(site=site, run_id=run_id, run_payload=run_payload)
     if not source_root.exists():
+        profile = launch_profile or KnownLaunchProfile(
+            site=site,
+            label=site.title() or "Site",
+            preview_url=preview_url,
+            backend_url="http://127.0.0.1:8000",
+            frontend_url=preview_url,
+        )
         return [
             _service_snapshot(
                 "backend",
-                "Bilyeo backend",
+                f"{profile.label} backend",
                 run_id=run_id,
                 status="blocked",
                 reason=f"source root not found: {source_root}",
-                url="http://127.0.0.1:5000",
+                url=profile.backend_url,
             ),
             _service_snapshot(
                 "chatbot",
@@ -1332,11 +1730,11 @@ def _ensure_demo_services(*, site: str, run_id: str, run_payload: dict[str, Any]
                 run_id=run_id,
                 status="blocked",
                 reason=f"source root not found: {source_root}",
-                url="http://127.0.0.1:8100",
+                url=profile.chatbot_url,
             ),
             _service_snapshot(
                 "frontend",
-                "Bilyeo frontend",
+                f"{profile.label} frontend",
                 run_id=run_id,
                 status="blocked",
                 reason=f"source root not found: {source_root}",
@@ -1573,14 +1971,20 @@ def get_run_dashboard(
         payload["demo"] = _build_disabled_demo_payload()
         return payload
 
+    launch_profile = _launch_profile_from_run(site=site, run_id=run_id, run_payload=payload)
     preview_url = (
         (process.preview_url if process is not None else None)
         or str((payload.get("process") or {}).get("preview_url") or "").strip()
-        or DEFAULT_PREVIEW_URL
+        or _launch_profile_preview_url(launch_profile)
     )
     services = _ensure_demo_services(site=site, run_id=run_id, run_payload=payload, preview_url=preview_url)
     payload["services"] = services
-    payload["demo"] = _build_demo_payload(run_payload=payload, service_snapshots=services, preview_url=preview_url)
+    payload["demo"] = _build_demo_payload(
+        run_payload=payload,
+        service_snapshots=services,
+        preview_url=preview_url,
+        launch_profile=launch_profile,
+    )
     return payload
 
 

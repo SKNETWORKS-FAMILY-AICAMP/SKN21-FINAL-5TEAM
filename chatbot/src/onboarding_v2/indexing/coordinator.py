@@ -902,7 +902,7 @@ def _ingest_discovery_image_corpus(
     if _cancelled(cancel_event):
         return _cancelled_result(corpus_plan=corpus_plan)
     if not rows:
-        return _failure_result(
+        return _skipped_result(
             corpus_plan=corpus_plan,
             reason="no_product_rows",
             warning_codes=["no_product_rows"],
@@ -1395,6 +1395,30 @@ def _failure_result(
 ) -> dict[str, Any]:
     return {
         "status": "failed",
+        "enabled": False,
+        "documents_indexed": 0,
+        "collection_alias": corpus_plan.collection_alias,
+        "build_collection": corpus_plan.build_collection,
+        "loader_strategy": corpus_plan.loader_strategy,
+        "warning_codes": list(warning_codes or []),
+        "reason": reason,
+        "error": error,
+        "log_paths": dict(log_paths or {}),
+        "alias_swapped": False,
+        "smoke_passed": False,
+    }
+
+
+def _skipped_result(
+    *,
+    corpus_plan: RagCorpusPlan,
+    reason: str,
+    warning_codes: list[str] | None = None,
+    error: str | None = None,
+    log_paths: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "status": "skipped",
         "enabled": False,
         "documents_indexed": 0,
         "collection_alias": corpus_plan.collection_alias,

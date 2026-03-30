@@ -40,9 +40,11 @@ from chatbot.src.onboarding_v2.models.validation import (
 )
 from chatbot.src.onboarding_v2.validation.backend_runtime import (
     build_backend_runtime_plan,
+    build_backend_subprocess_env,
     launch_backend_runtime,
     prepare_backend_runtime,
     stop_backend_runtime,
+    _run_optional_script,
 )
 from chatbot.src.onboarding_v2.validation.replay_evaluator import (
     evaluate_backend_workspace_static,
@@ -190,6 +192,41 @@ def _emit_validation_event(event_callback: Any | None, **payload: Any) -> None:
     if event_callback is None:
         return
     event_callback(payload)
+
+
+def _validation_check_status_from_payload(payload: Any) -> str:
+    data = payload.model_dump(mode="json") if hasattr(payload, "model_dump") else dict(payload or {})
+    passed_value = data.get("passed")
+    if passed_value is True:
+        return "passed"
+    summary = str(data.get("failure_summary") or data.get("reason") or "")
+    details = dict(data.get("details") or {}) if isinstance(data.get("details"), dict) else {}
+    if "skipped because" in " ".join(summary.lower().split()) or str(details.get("skipped_reason") or "").strip():
+        return "skipped"
+    if str(data.get("status") or details.get("status") or "").strip() == "skipped":
+        return "skipped"
+    return "failed"
+
+
+def _emit_validation_check_boundary(
+    event_callback: Any | None,
+    *,
+    check_name: str,
+    phase: str,
+    status: str,
+    summary: str,
+) -> None:
+    _emit_validation_event(
+        event_callback,
+        phase=f"validation_check_{check_name}_{phase}",
+        event_type=f"validation_check_{phase}",
+        summary=summary,
+        details={
+            "check_name": check_name,
+            "status": status,
+            "summary": summary,
+        },
+    )
 
 
 def _append_text(path: Path | None, content: str) -> None:
@@ -417,11 +454,25 @@ def run_validation_cycle(
     chatbot_runtime_workspace = resolved_paths.chatbot_runtime_workspace
     live_logs_root_path = resolved_paths.live_logs_root
 
+    _emit_validation_check_boundary(
+        event_callback,
+        check_name="backend_runtime_prep",
+        phase="started",
+        status="running",
+        summary="backend runtime prep started",
+    )
     prep_result = prepare_backend_runtime(
         workspace=host_runtime_workspace,
         snapshot=snapshot,
         live_logs_root=live_logs_root_path,
         event_callback=event_callback,
+    )
+    _emit_validation_check_boundary(
+        event_callback,
+        check_name="backend_runtime_prep",
+        phase="completed",
+        status=_validation_check_status_from_payload(prep_result),
+        summary=str(prep_result.failure_summary or "backend runtime prepared"),
     )
     runtime_state: BackendRuntimeState
     chatbot_runtime_boot: dict[str, Any]
@@ -431,6 +482,13 @@ def run_validation_cycle(
     widget_order_e2e: WidgetOrderE2EResult
     conversation_validation: ConversationValidationResult
     if prep_result.passed:
+        _emit_validation_check_boundary(
+            event_callback,
+            check_name="backend_runtime_boot",
+            phase="started",
+            status="running",
+            summary="backend runtime boot started",
+        )
         runtime_plan = build_backend_runtime_plan(
             workspace=host_runtime_workspace,
             snapshot=snapshot,
@@ -452,8 +510,22 @@ def run_validation_cycle(
             reason="backend runtime boot skipped because backend runtime prep failed",
             upstream=prep_result,
         )
+    _emit_validation_check_boundary(
+        event_callback,
+        check_name="backend_runtime_boot",
+        phase="completed",
+        status=_validation_check_status_from_payload(runtime_state),
+        summary=str(runtime_state.failure_summary or "backend runtime booted"),
+    )
 
     if prep_result.passed and runtime_state.passed and runtime_plan is not None:
+        _emit_validation_check_boundary(
+            event_callback,
+            check_name="chatbot_runtime_boot",
+            phase="started",
+            status="running",
+            summary="chatbot runtime boot started",
+        )
         chatbot_runtime_boot = validate_chatbot_runtime_boot(
             chatbot_runtime_workspace=chatbot_runtime_workspace,
             runtime_plan=runtime_plan,
@@ -466,6 +538,13 @@ def run_validation_cycle(
             else "chatbot runtime boot skipped because backend runtime prep failed",
             upstream=runtime_state if prep_result.passed else prep_result,
         )
+    _emit_validation_check_boundary(
+        event_callback,
+        check_name="chatbot_runtime_boot",
+        phase="completed",
+        status=_validation_check_status_from_payload(chatbot_runtime_boot),
+        summary=str(chatbot_runtime_boot.get("failure_summary") or "chatbot runtime boot passed"),
+    )
 
     if (
         prep_result.passed
@@ -473,6 +552,13 @@ def run_validation_cycle(
         and runtime_plan is not None
         and chatbot_runtime_boot.get("passed")
     ):
+        _emit_validation_check_boundary(
+            event_callback,
+            check_name="widget_bundle_fetch",
+            phase="started",
+            status="running",
+            summary="widget bundle fetch started",
+        )
         widget_bundle_fetch = validate_widget_bundle_fetch(
             chatbot_runtime_workspace=chatbot_runtime_workspace,
             runtime_plan=runtime_plan,
@@ -493,6 +579,13 @@ def run_validation_cycle(
                 else (runtime_state if prep_result.passed else prep_result)
             ),
         )
+    _emit_validation_check_boundary(
+        event_callback,
+        check_name="widget_bundle_fetch",
+        phase="completed",
+        status=_validation_check_status_from_payload(widget_bundle_fetch),
+        summary=str(widget_bundle_fetch.get("failure_summary") or "widget bundle fetch passed"),
+    )
 
     if (
         prep_result.passed
@@ -502,6 +595,13 @@ def run_validation_cycle(
         and widget_bundle_fetch.get("passed")
     ):
         try:
+            _emit_validation_check_boundary(
+                event_callback,
+                check_name="host_auth_bootstrap",
+                phase="started",
+                status="running",
+                summary="host auth bootstrap started",
+            )
             host_auth_bootstrap = validate_host_auth_bootstrap(
                 run_root=run_root,
                 host_runtime_workspace=host_runtime_workspace,
@@ -511,11 +611,39 @@ def run_validation_cycle(
                 plan=plan,
                 onboarding_credentials=onboarding_credentials,
             )
+            _emit_validation_check_boundary(
+                event_callback,
+                check_name="host_auth_bootstrap",
+                phase="completed",
+                status=_validation_check_status_from_payload(host_auth_bootstrap),
+                summary=str(host_auth_bootstrap.get("failure_summary") or "host auth bootstrap passed"),
+            )
+            _emit_validation_check_boundary(
+                event_callback,
+                check_name="chatbot_adapter_auth",
+                phase="started",
+                status="running",
+                summary="chatbot adapter auth started",
+            )
             chatbot_adapter_auth = validate_chatbot_adapter_auth(
                 chatbot_runtime_workspace=chatbot_runtime_workspace,
                 runtime_plan=runtime_plan,
                 bootstrap_result=host_auth_bootstrap,
                 plan=plan,
+            )
+            _emit_validation_check_boundary(
+                event_callback,
+                check_name="chatbot_adapter_auth",
+                phase="completed",
+                status=_validation_check_status_from_payload(chatbot_adapter_auth),
+                summary=str(chatbot_adapter_auth.get("failure_summary") or "chatbot adapter auth passed"),
+            )
+            _emit_validation_check_boundary(
+                event_callback,
+                check_name="widget_order_e2e",
+                phase="started",
+                status="running",
+                summary="widget order e2e started",
             )
             widget_order_e2e = validate_widget_order_e2e(
                 chatbot_runtime_workspace=chatbot_runtime_workspace,
@@ -525,6 +653,20 @@ def run_validation_cycle(
                 plan=plan,
             )
             widget_order_e2e = _coerce_widget_order_e2e_result(widget_order_e2e)
+            _emit_validation_check_boundary(
+                event_callback,
+                check_name="widget_order_e2e",
+                phase="completed",
+                status=_validation_check_status_from_payload(widget_order_e2e),
+                summary=str(widget_order_e2e.failure_summary or "widget order e2e passed"),
+            )
+            _emit_validation_check_boundary(
+                event_callback,
+                check_name="conversation_validation",
+                phase="started",
+                status="running",
+                summary="conversation validation started",
+            )
             conversation_validation = validate_conversation_runtime(
                 run_root=run_root,
                 chatbot_runtime_workspace=chatbot_runtime_workspace,
@@ -538,6 +680,13 @@ def run_validation_cycle(
                 onboarding_credentials=onboarding_credentials,
                 event_callback=event_callback,
                 live_logs_root=live_logs_root_path,
+            )
+            _emit_validation_check_boundary(
+                event_callback,
+                check_name="conversation_validation",
+                phase="completed",
+                status=_validation_check_status_from_payload(conversation_validation),
+                summary=str(conversation_validation.failure_summary or "conversation validation passed"),
             )
         finally:
             stop_backend_runtime(runtime_state)
@@ -589,6 +738,34 @@ def run_validation_cycle(
             failure_code=upstream_failure_code,
             fixture_manifest=fixture_manifest,
             related_files=[],
+        )
+        _emit_validation_check_boundary(
+            event_callback,
+            check_name="host_auth_bootstrap",
+            phase="completed",
+            status=_validation_check_status_from_payload(host_auth_bootstrap),
+            summary=str(host_auth_bootstrap.get("failure_summary") or "host auth bootstrap skipped"),
+        )
+        _emit_validation_check_boundary(
+            event_callback,
+            check_name="chatbot_adapter_auth",
+            phase="completed",
+            status=_validation_check_status_from_payload(chatbot_adapter_auth),
+            summary=str(chatbot_adapter_auth.get("failure_summary") or "chatbot adapter auth skipped"),
+        )
+        _emit_validation_check_boundary(
+            event_callback,
+            check_name="widget_order_e2e",
+            phase="completed",
+            status=_validation_check_status_from_payload(widget_order_e2e),
+            summary=str(widget_order_e2e.failure_summary or "widget order e2e skipped"),
+        )
+        _emit_validation_check_boundary(
+            event_callback,
+            check_name="conversation_validation",
+            phase="completed",
+            status=_validation_check_status_from_payload(conversation_validation),
+            summary=str(conversation_validation.failure_summary or "conversation validation skipped"),
         )
 
     replay_validation_payload = _evaluate_replay_workspaces(
@@ -2052,6 +2229,53 @@ def _build_runtime_fixture_manifest(
         headers = _build_generated_auth_headers(adapter=adapter, auth_context=auth_context)
         raw_orders = asyncio.run(adapter.client.list_orders(headers))
         order_candidates = _extract_order_candidates(raw_orders)
+        if not order_candidates and manifest.get("deferred_seed_strategy") == "runtime_order_probe":
+            seed_path_text = str(
+                (seed_source.get("seed_path") or prep_result.seed_source_path or "")
+            ).strip()
+            if seed_path_text:
+                seed_result = _run_optional_script(
+                    name="seed",
+                    script_path=Path(seed_path_text),
+                    framework=runtime_plan.framework,
+                    backend_root=Path(
+                        str(prep_result.backend_root or runtime_plan.backend_root)
+                    ).resolve(),
+                    python_executable=Path(
+                        str(prep_result.python_executable or sys.executable)
+                    ).resolve(),
+                    env=build_backend_subprocess_env(
+                        backend_root=Path(
+                            str(prep_result.backend_root or runtime_plan.backend_root)
+                        ).resolve()
+                    ),
+                    missing_stdout="seed script not found; skipped seed",
+                )
+                seed_source["runtime_seeded"] = bool(seed_result.passed)
+                if seed_result.stdout:
+                    seed_source["runtime_seed_stdout"] = seed_result.stdout
+                if seed_result.stderr:
+                    seed_source["runtime_seed_stderr"] = seed_result.stderr
+                if seed_result.log_path:
+                    seed_source["runtime_seed_log_path"] = seed_result.log_path
+                manifest["seed_source"] = seed_source
+                if not seed_result.passed:
+                    manifest["available"] = False
+                    manifest["reason"] = "runtime fixtures unavailable: seed script failed"
+                    manifest["error_summary"] = (
+                        str(seed_result.stderr or seed_result.stdout or "seed failed").strip()
+                    )
+                    manifest["failure_origin"] = "upstream_fixture"
+                    manifest["failure_code"] = "fixture_seed_failed"
+                    manifest["orders"] = dict(manifest.get("orders") or {})
+                    manifest["module_origins"] = module_origins
+                    manifest["validation_capability_contract"] = build_validation_capability_contract(
+                        plan=plan,
+                        fixture_manifest=manifest,
+                    ).model_dump(mode="json")
+                    return manifest
+                raw_orders = asyncio.run(adapter.client.list_orders(headers))
+                order_candidates = _extract_order_candidates(raw_orders)
         order_ids = [
             order_id
             for order_id in (
