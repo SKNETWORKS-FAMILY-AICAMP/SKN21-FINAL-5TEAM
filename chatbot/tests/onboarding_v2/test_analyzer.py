@@ -326,6 +326,72 @@ def test_analyzer_discovers_rag_sources_without_manifest(tmp_path: Path):
     assert "verified order action target missing" in bundle.unresolved_ambiguities
 
 
+def test_build_analysis_bundle_extracts_host_python_row_source_for_db_backed_product_models(tmp_path: Path):
+    backend_models = tmp_path / "backend" / "models"
+    backend_models.mkdir(parents=True, exist_ok=True)
+    (backend_models / "product.py").write_text(
+        "def get_all_products(category=None, search=None):\n"
+        "    query = \"SELECT product_id, image_url FROM products\"\n"
+        "    return [{\"product_id\": 1, \"image_url\": \"https://cdn.example.com/item.jpg\"}]\n",
+        encoding="utf-8",
+    )
+
+    bundle = build_analysis_bundle(site="demo-shop", source_root=tmp_path)
+
+    image_source = next(
+        source for source in bundle.rag_sources.discovery_image if source.path.endswith("backend/models/product.py")
+    )
+    assert image_source.details["row_source_strategy"] == "host_python_fetch"
+    assert image_source.details["row_source_module"] == "models.product"
+    assert image_source.details["row_source_callable"] == "get_all_products"
+
+
+def test_build_analysis_bundle_extracts_discovery_image_enrichment_hints(tmp_path: Path):
+    backend_models = tmp_path / "backend" / "models"
+    backend_models.mkdir(parents=True, exist_ok=True)
+    (backend_models / "__init__.py").write_text(
+        """
+CREATE TABLE products (
+    product_id INTEGER,
+    image_url VARCHAR2(500),
+    category VARCHAR2(50)
+);
+CREATE TABLE product_info (
+    info_id INTEGER,
+    product_id INTEGER,
+    ingredients CLOB,
+    precautions CLOB,
+    review CLOB
+);
+        """,
+        encoding="utf-8",
+    )
+    (tmp_path / "scripts").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "scripts" / "product_crawling.py").write_text(
+        """
+PRODUCT_INFO_FIELD_MAP = {
+    "성분": "ingredients",
+    "주의사항": "precautions",
+}
+product = {"name": "토너", "brand": "브랜드", "image_url": "https://cdn.example.com/a.jpg"}
+product["product_info"] = info
+        """,
+        encoding="utf-8",
+    )
+
+    bundle = build_analysis_bundle(site="demo-shop", source_root=tmp_path)
+
+    crawler_source = next(
+        source for source in bundle.rag_sources.discovery_image if source.path.endswith("product_crawling.py")
+    )
+    assert "name" in crawler_source.details["text_field_candidates"]
+    assert "product_info.ingredients" in crawler_source.details["nested_text_paths"]
+    schema_source = next(
+        source for source in bundle.rag_sources.discovery_image if source.path.endswith("backend/models/__init__.py")
+    )
+    assert schema_source.details["auxiliary_relation_hints"][0]["table_name"] == "product_info"
+
+
 def test_build_analysis_bundle_merges_llm_contracts_with_deterministic_fallback(monkeypatch):
     def _fake_invoke_structured_stage(*, phase, response_model, fallback_payload, **kwargs):
         del kwargs

@@ -14,6 +14,24 @@ from routes.order import order_bp
 from routes.product import product_bp
 
 
+def _build_cors_kwargs() -> dict[str, object]:
+    raw_origins = str(os.environ.get("CORS_ALLOWED_ORIGINS") or "").strip()
+    origins = [
+        origin.strip()
+        for origin in raw_origins.split(",")
+        if origin.strip()
+    ]
+    if not origins:
+        origins = [
+            "http://127.0.0.1:3000",
+            "http://localhost:3000",
+        ]
+    return {
+        "origins": origins,
+        "supports_credentials": True,
+    }
+
+
 def init_db_with_retry(max_attempts: int = 30, delay_seconds: int = 5):
     last_error = None
     for attempt in range(1, max_attempts + 1):
@@ -32,7 +50,7 @@ def init_db_with_retry(max_attempts: int = 30, delay_seconds: int = 5):
 def create_app():
     app = Flask(__name__)
     app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-production")
-    CORS(app)
+    CORS(app, **_build_cors_kwargs())
 
     init_db_with_retry()
 

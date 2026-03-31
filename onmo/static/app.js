@@ -91,6 +91,8 @@ const refs = {
   stageDetail: document.getElementById("stage-detail"),
   siteSelect: document.getElementById("site"),
   repoUrlInput: document.getElementById("repo-url"),
+  githubEnvFileInput: document.getElementById("github-env-file"),
+  githubEnvTargetSelect: document.getElementById("github-env-target"),
 };
 
 function storage() {
@@ -186,11 +188,15 @@ function restoreRunUiState(run = state.currentRun) {
 }
 
 async function request(path, options = {}) {
+  const headers = {
+    ...(options.headers || {}),
+  };
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (!isFormData && !Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {
+    headers["Content-Type"] = "application/json";
+  }
   const response = await fetch(path, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
+    headers,
     ...options,
   });
   if (!response.ok) {
@@ -681,7 +687,61 @@ function buildPrimaryAttemptSteps(steps = [], repairStory = {}) {
   });
 }
 
-function buildRerunSteps(story = {}, repairStory = {}) {
+function resolveRerunCurrentContext(story = {}, repairStory = {}, repair = {}) {
+  const steps = Array.isArray(story.steps) ? story.steps : [];
+  const rewindStage = String(repairStory.rewind_to || "").trim();
+  const rewindIndex = steps.findIndex((step) => String(step.stage || "") === rewindStage);
+  if (rewindIndex === -1) {
+    return {
+      stage: "",
+      status: "pending",
+      status_label: statusLabelForStep("pending"),
+    };
+  }
+
+  const storyCurrentStage = String(story.current_stage?.stage || "").trim();
+  const storyCurrentStatus = String(story.current_stage?.status || "").trim();
+  const storyCurrentIndex = steps.findIndex((step) => String(step.stage || "") === storyCurrentStage);
+  if (storyCurrentIndex >= rewindIndex && ["running", "starting"].includes(storyCurrentStatus)) {
+    return {
+      stage: storyCurrentStage,
+      status: storyCurrentStatus,
+      status_label: statusLabelForStep(storyCurrentStatus, story.current_stage?.status_label || ""),
+    };
+  }
+
+  const liveStep = steps.find(
+    (step, absoluteIndex) => absoluteIndex >= rewindIndex && ["running", "starting"].includes(String(step.status || "").trim())
+  );
+  if (liveStep) {
+    return {
+      stage: String(liveStep.stage || ""),
+      status: String(liveStep.status || "running"),
+      status_label: statusLabelForStep(String(liveStep.status || "running"), liveStep.status_label || ""),
+    };
+  }
+
+  const rerunStep = Array.isArray(repairStory.steps)
+    ? repairStory.steps.find((step) => String(step.kind || "") === "rerun") || {}
+    : {};
+  const rerunStatus = String(rerunStep.status || repair.status || "").trim();
+  if (["running", "starting", "failed", "blocked"].includes(rerunStatus)) {
+    const normalizedStatus = rerunStatus === "blocked" ? "failed" : rerunStatus;
+    return {
+      stage: rewindStage,
+      status: normalizedStatus,
+      status_label: statusLabelForStep(normalizedStatus),
+    };
+  }
+
+  return {
+    stage: "",
+    status: "pending",
+    status_label: statusLabelForStep("pending"),
+  };
+}
+
+function buildRerunSteps(story = {}, repairStory = {}, repair = {}) {
   const steps = Array.isArray(story.steps) ? story.steps : [];
   const rewindStage = String(repairStory.rewind_to || "").trim();
   const rewindIndex = steps.findIndex((step) => String(step.stage || "") === rewindStage);
@@ -689,11 +749,9 @@ function buildRerunSteps(story = {}, repairStory = {}) {
     return [];
   }
 
-  const currentStage = String(story.current_stage?.stage || "").trim();
+  const rerunCurrent = resolveRerunCurrentContext(story, repairStory, repair);
+  const currentStage = String(rerunCurrent.stage || "").trim();
   const currentIndex = steps.findIndex((step) => String(step.stage || "") === currentStage);
-  const fallbackRerunStatus = Array.isArray(repairStory.steps)
-    ? repairStory.steps.find((step) => step.kind === "rerun") || {}
-    : {};
 
   return steps.map((step, absoluteIndex) => {
     if (absoluteIndex < rewindIndex) {
@@ -712,12 +770,8 @@ function buildRerunSteps(story = {}, repairStory = {}) {
       statusLabel = statusLabelForStep("completed");
       emphasis = absoluteIndex === rewindIndex ? "rewind" : "default";
     } else if (currentIndex !== -1 && absoluteIndex === currentIndex) {
-      status = String(story.current_stage?.status || step.status || "running");
-      statusLabel = statusLabelForStep(status, story.current_stage?.status_label || step.status_label || "");
-      emphasis = status === "failed" ? "failed" : "current";
-    } else if (currentIndex === -1 && absoluteIndex === rewindIndex) {
-      status = String(fallbackRerunStatus.status || "running");
-      statusLabel = statusLabelForStep(status);
+      status = String(rerunCurrent.status || "running");
+      statusLabel = statusLabelForStep(status, rerunCurrent.status_label || "");
       emphasis = status === "failed" ? "failed" : "current";
     } else if (absoluteIndex === rewindIndex) {
       emphasis = "rewind";
@@ -732,7 +786,7 @@ function buildRerunSteps(story = {}, repairStory = {}) {
   });
 }
 
-function renderRepairStoryStrip(story = {}, repairStory = {}) {
+function renderRepairStoryStrip(story = {}, repairStory = {}, repair = {}) {
   const steps = Array.isArray(story.steps) ? story.steps : [];
   if (!steps.length) {
     return "";
@@ -744,7 +798,7 @@ function renderRepairStoryStrip(story = {}, repairStory = {}) {
     : stageLabel(repairStory.rewind_to, repairStory.rewind_to_label || repairStory.rewind_to || "되돌아감");
   const currentAction = localizeUiText(repairStory.current_action || repairStory.summary || `${rewindLabel} 단계 재실행 진행 중입니다.`);
   const primarySteps = buildPrimaryAttemptSteps(steps, repairStory);
-  const rerunSteps = buildRerunSteps(story, repairStory);
+  const rerunSteps = buildRerunSteps(story, repairStory, repair);
   const connectorLabel = localizeUiText(storyUi.connector_label || `${rewindLabel} 단계로 되돌아감`);
 
   if (!rerunSteps.length) {
@@ -752,7 +806,7 @@ function renderRepairStoryStrip(story = {}, repairStory = {}) {
   }
 
   const primaryLaneSteps = storyUi.steps ? buildPrimaryAttemptSteps(storyUi.steps, repairStory) : primarySteps;
-  const rerunLaneSteps = storyUi.steps ? buildRerunSteps({ ...story, steps: storyUi.steps }, repairStory) : rerunSteps;
+  const rerunLaneSteps = storyUi.steps ? buildRerunSteps({ ...story, steps: storyUi.steps }, repairStory, repair) : rerunSteps;
   const rerunEntryIndex = rerunLaneSteps.findIndex((step) => !step?.placeholder);
   if (rerunEntryIndex !== -1) {
     rerunLaneSteps[rerunEntryIndex] = {
@@ -772,9 +826,9 @@ function renderRepairStoryStrip(story = {}, repairStory = {}) {
   `;
 }
 
-function renderStoryStrip(story = {}, repairStory = {}) {
+function renderStoryStrip(story = {}, repairStory = {}, repair = {}) {
   if (repairStory.active && repairStory.rewind_to) {
-    return renderRepairStoryStrip(story, repairStory);
+    return renderRepairStoryStrip(story, repairStory, repair);
   }
   const steps = Array.isArray(story.steps) ? story.steps : [];
   if (!steps.length) {
@@ -1341,6 +1395,46 @@ function renderValidationChecks(details = {}, compact = false) {
   `;
 }
 
+function renderValidationWarnings(details = {}, demo = {}) {
+  const warningText = String(
+    details.validation_warning_summary || demo.validation_warning_summary || ""
+  ).trim();
+  const missingCorpora = Array.isArray(demo.missing_retrieval_corpora)
+    ? demo.missing_retrieval_corpora.filter(Boolean)
+    : [];
+  const demoAuth = demo.demo_auth || details.demo_auth || {};
+  const notes = [];
+  if (warningText) notes.push(warningText);
+  if (missingCorpora.length) notes.push(`누락 코퍼스: ${missingCorpora.join(", ")}`);
+  if (!notes.length && !demoAuth.email) {
+    return "";
+  }
+  return `
+    <div class="fact-list">
+      ${notes
+        .map(
+          (note) => `
+            <div class="fact-list-item">
+              <strong>주의</strong>
+              <small>${escapeHtml(localizeUiText(note))}</small>
+            </div>
+          `
+        )
+        .join("")}
+      ${
+        demoAuth.email
+          ? `
+            <div class="fact-list-item">
+              <strong>데모 로그인</strong>
+              <small>${escapeHtml(demoAuth.email)}</small>
+            </div>
+          `
+          : ""
+      }
+    </div>
+  `;
+}
+
 function renderValidation(details = {}, services = [], demo = {}, compact = false) {
   const limits = viewLimits(compact);
   const proofLink = demo.preview_url
@@ -1350,6 +1444,7 @@ function renderValidation(details = {}, services = [], demo = {}, compact = fals
   return `
     ${renderServiceGrid(services, demo, limits)}
     ${renderDemoPrimaryAction(demo)}
+    ${renderValidationWarnings(details, demo)}
     ${renderValidationProgress(details)}
     ${renderValidationChecks(details, compact)}
     ${renderHighlights(details.proofs || [], limits)}
@@ -1558,9 +1653,17 @@ function serializeForm() {
 }
 
 function serializeGithubImportForm() {
-  return {
-    repo_url: formValue("repo-url"),
-  };
+  const body = new FormData();
+  body.append("repo_url", formValue("repo-url"));
+  const envTargetPath = formValue("github-env-target");
+  if (envTargetPath) {
+    body.append("env_target_path", envTargetPath);
+  }
+  const envFile = refs.githubEnvFileInput?.files?.[0];
+  if (envFile) {
+    body.append("env_file", envFile);
+  }
+  return body;
 }
 
 function resetActionButtons() {
@@ -1626,7 +1729,7 @@ function renderRunStoryPanel(payload) {
     `;
     return;
   }
-  const content = renderStoryStrip(payload.story || {}, payload.repair_story || {});
+  const content = renderStoryStrip(payload.story || {}, payload.repair_story || {}, payload.repair || {});
   refs.runStoryShell.className = "run-story-shell";
   refs.runStoryShell.innerHTML = `
     <div class="story-flow-head">
@@ -1769,7 +1872,7 @@ refs.githubForm.addEventListener("submit", async (event) => {
   try {
     const payload = await request("/api/onboarding/github/imports", {
       method: "POST",
-      body: JSON.stringify(serializeGithubImportForm()),
+      body: serializeGithubImportForm(),
     });
     if (payload.status === "auth_required" && payload.authorize_url) {
       window.location.assign(payload.authorize_url);

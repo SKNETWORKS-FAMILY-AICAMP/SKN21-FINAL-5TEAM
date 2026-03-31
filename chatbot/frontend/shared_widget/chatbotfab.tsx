@@ -16,8 +16,6 @@ import ProductListUI, { type UiProduct } from './ProductListUI';
 import ReviewFormUI from './ReviewFormUI';
 import UsedSaleFormUI from './UsedSaleFormUI';
 
-const INITIAL_BOT_MESSAGE: TextMessage = { role: 'bot', type: 'text', text: '안녕하세요. MOYEO 챗봇입니다.' };
-
 type TextMessage = { role: 'user' | 'bot'; type: 'text'; text: string; isStreaming?: boolean; showDivider?: boolean };
 type OrderListMessage = {
   role: 'bot';
@@ -232,6 +230,42 @@ const MODEL_OPTIONS: ModelOption[] = [
   ...HF_MODELS.map((id) => ({ id, provider: 'huggingface' as const, label: id })),
   ...VLLM_MODELS.map((id) => ({ id, provider: 'vllm' as const, label: `${id} (RunPod)` })),
 ];
+
+function normalizeSiteBrandLabel(value?: string | null): string {
+  return String(value ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function deriveAssistantBrandDisplayName(host?: SharedWidgetHostConfig): string {
+  const explicitDisplayName = normalizeSiteBrandLabel(host?.brandDisplayName);
+  if (explicitDisplayName) {
+    return explicitDisplayName;
+  }
+  const siteId = normalizeSiteBrandLabel(host?.siteId).toLowerCase();
+  if (siteId) {
+    return siteId.replace(/[_-]+/g, ' ');
+  }
+  return 'moyeo';
+}
+
+export function resolveAssistantTitle(host?: SharedWidgetHostConfig): string {
+  const explicitTitle = normalizeSiteBrandLabel(host?.assistantTitle);
+  if (explicitTitle) {
+    return explicitTitle;
+  }
+  return `${deriveAssistantBrandDisplayName(host)} AI 고객상담사`;
+}
+
+export function buildInitialBotMessage(host?: SharedWidgetHostConfig): TextMessage {
+  const explicitGreeting = normalizeSiteBrandLabel(host?.initialGreeting);
+  if (explicitGreeting) {
+    return { role: 'bot', type: 'text', text: explicitGreeting };
+  }
+  return {
+    role: 'bot',
+    type: 'text',
+    text: `안녕하세요. ${deriveAssistantBrandDisplayName(host)} 챗봇입니다.`,
+  };
+}
 
 function resolveProviderByModel(modelId: string): LlmProvider {
   if (VLLM_MODELS.includes(modelId as (typeof VLLM_MODELS)[number])) {
@@ -643,13 +677,15 @@ export default function ChatbotFab({
   const capabilityProfile =
     effectiveHost.capabilityProfile ??
     (effectiveCapabilities === 'full' ? 'full' : 'order_cs_only');
+  const initialBotMessage = buildInitialBotMessage(effectiveHost);
+  const assistantTitle = resolveAssistantTitle(effectiveHost);
   const imageUploadEnabled =
     typeof effectiveHost.widgetFeatures?.imageUpload === 'boolean'
       ? Boolean(effectiveHost.widgetFeatures?.imageUpload)
       : effectiveCapabilities === 'full';
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<ChatMsg[]>([INITIAL_BOT_MESSAGE]);
+  const [messages, setMessages] = useState<ChatMsg[]>(() => [initialBotMessage]);
   const [conversationState, setConversationState] = useState<Record<string, unknown> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -683,7 +719,7 @@ export default function ChatbotFab({
 
   const resetConversationSession = () => {
     clearPendingImage();
-    setMessages([INITIAL_BOT_MESSAGE]);
+    setMessages([buildInitialBotMessage(effectiveHost)]);
     setConversationState(null);
     setStatusMessage(null);
     setStreamingText('');
@@ -851,7 +887,8 @@ export default function ChatbotFab({
     resumePayload?: Record<string, unknown> | null,
   ) => {
     const text = typeof textOverride === 'string' ? textOverride : input.trim();
-    if (!text || isLoading) return;
+    const isResumeSubmission = Boolean(hidden && resumePayload);
+    if (!text || (isLoading && !isResumeSubmission)) return;
     setIsLoading(true);
     setStatusMessage(null); // 초기화
     setStreamingText('');
@@ -1419,7 +1456,7 @@ export default function ChatbotFab({
         <div className={styles.resizeHandleCorner} onMouseDown={(e) => onResizeStart(e, 'corner')} />
 
         <header className={styles.panelHeader}>
-          <div className={styles.title}>MOYEO AI 고객상담사</div>
+          <div className={styles.title}>{assistantTitle}</div>
 
           <button type="button" className={styles.closeBtn} onClick={toggle} aria-label="닫기">
             ✕

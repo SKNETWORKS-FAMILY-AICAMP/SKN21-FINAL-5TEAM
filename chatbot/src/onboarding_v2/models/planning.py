@@ -96,6 +96,7 @@ class HostFrontendPlan(BaseModel):
     router_boundary: str | None = None
     api_strategy: str
     api_client_target: str
+    site_id: str | None = None
     auth_bootstrap_path: str = "/api/chat/auth-token"
     chatbot_server_base_url: str
     chatbot_server_base_url_expression: str = ""
@@ -111,6 +112,7 @@ class HostFrontendPlan(BaseModel):
         "router_boundary",
         "api_strategy",
         "api_client_target",
+        "site_id",
         "auth_bootstrap_path",
         "chatbot_server_base_url",
         "chatbot_server_base_url_expression",
@@ -566,6 +568,11 @@ class RagCorpusPlan(BaseModel):
     row_source_callable: str | None = None
     row_id_field: str | None = None
     row_image_url_field: str | None = None
+    dense_image_field: str | None = None
+    sparse_text_paths: list[str] = Field(default_factory=list)
+    payload_paths: list[str] = Field(default_factory=list)
+    row_enrichment_strategy: str | None = None
+    auxiliary_relation_hints: list[dict[str, Any]] = Field(default_factory=list)
     pagination_strategy: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
@@ -582,6 +589,8 @@ class RagCorpusPlan(BaseModel):
         "row_source_callable",
         "row_id_field",
         "row_image_url_field",
+        "dense_image_field",
+        "row_enrichment_strategy",
         mode="before",
     )
     @classmethod

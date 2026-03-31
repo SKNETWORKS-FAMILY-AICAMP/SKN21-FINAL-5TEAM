@@ -1,4 +1,4 @@
-globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_widget_widgetRoot {\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n.chatbot_widget_widgetMessageList {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n}\n.chatbot_widget_widgetTextMessage {\n  margin: 0;\n}\n.chatbot_widget_widgetOrderList,\n.chatbot_widget_widgetProductList {\n  width: 100%;\n}\n\n/* chatbotfab.module.css */\n.chatbotfab_fab {\n  position: fixed;\n  right: 24px;\n  bottom: 24px;\n  width: 52px;\n  height: 52px;\n  border-radius: 999px;\n  border: none;\n  background: #111;\n  color: #fff;\n  font-size: 20px;\n  cursor: pointer;\n  z-index: 9999;\n  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);\n}\n.chatbotfab_panel {\n  position: fixed;\n  right: 24px;\n  bottom: 88px;\n  display: flex;\n  flex-direction: column;\n  background: #fff;\n  border: 1px solid #e0e0e0;\n  border-radius: 16px;\n  overflow: hidden;\n  z-index: 9999;\n  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);\n  transform: translateY(16px);\n  opacity: 0;\n  pointer-events: none;\n  transition: transform 0.2s ease, opacity 0.2s ease;\n  overscroll-behavior: contain;\n}\n.chatbotfab_open {\n  transform: translateY(0);\n  opacity: 1;\n  pointer-events: auto;\n}\n.chatbotfab_resizeHandleLeft {\n  position: absolute;\n  top: 10px;\n  left: 0;\n  width: 8px;\n  height: calc(100% - 10px);\n  cursor: ew-resize;\n  z-index: 14;\n}\n.chatbotfab_resizeHandleTop {\n  position: absolute;\n  top: 0;\n  left: 10px;\n  width: calc(100% - 10px);\n  height: 8px;\n  cursor: ns-resize;\n  z-index: 14;\n}\n.chatbotfab_resizeHandleCorner {\n  position: absolute;\n  top: 0;\n  left: 0;\n  width: 12px;\n  height: 12px;\n  cursor: nwse-resize;\n  z-index: 15;\n}\n.chatbotfab_panelHeader {\n  min-height: 52px;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 4px 12px;\n  background: #111;\n  color: #fff;\n}\n.chatbotfab_headerLeft {\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  min-width: 0;\n}\n.chatbotfab_title {\n  font-size: 14px;\n  font-weight: 600;\n}\n.chatbotfab_modelControls {\n  display: flex;\n  gap: 6px;\n  flex-wrap: wrap;\n}\n.chatbotfab_modelSelect {\n  max-width: 180px;\n  height: 28px;\n  border-radius: 6px;\n  border: 1px solid #333;\n  background: #1d1d1d;\n  color: #fff;\n  font-size: 12px;\n  padding: 0 8px;\n}\n.chatbotfab_closeBtn {\n  width: 32px;\n  height: 32px;\n  border-radius: 8px;\n  border: none;\n  background: transparent;\n  color: #fff;\n  cursor: pointer;\n  font-size: 16px;\n}\n.chatbotfab_msgList {\n  flex: 1;\n  min-height: 0;\n  padding: 16px;\n  overflow-y: auto;\n  background: #fafafa;\n  overscroll-behavior: contain;\n}\n.chatbotfab_msgRow {\n  display: flex;\n  width: 100%;\n  margin-bottom: 30px;\n}\n.chatbotfab_userRow {\n  justify-content: flex-end;\n}\n.chatbotfab_botRow {\n  justify-content: flex-start;\n}\n.chatbotfab_bubble {\n  max-width: 76%;\n  padding: 0px 8px;\n  border-radius: 18px 18px 4px 18px;\n  font-size: 13.5px;\n  line-height: 1.65;\n  background: #111;\n  color: #fff;\n  white-space: pre-line;\n  word-break: break-word;\n}\n.chatbotfab_imageBubble {\n  padding: 8px;\n}\n.chatbotfab_imagePreviewCard {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 6px;\n}\n.chatbotfab_imagePreview {\n  width: min(180px, 42vw);\n  max-height: 220px;\n  border-radius: 12px;\n  border: 1px solid rgba(255, 255, 255, 0.25);\n  object-fit: cover;\n  background: #0d0d0d;\n}\n.chatbotfab_imageFilename {\n  font-size: 11px;\n  color: rgba(255, 255, 255, 0.65);\n  max-width: 180px;\n  text-align: center;\n  overflow: hidden;\n  white-space: nowrap;\n  text-overflow: ellipsis;\n}\n.chatbotfab_botMsg {\n  display: flex;\n  gap: 10px;\n  width: auto;\n  max-width: min(78%, 680px);\n  align-items: flex-start;\n}\n.chatbotfab_botIcon {\n  flex-shrink: 0;\n  width: 24px;\n  height: 24px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 16px;\n  margin-top: 1px;\n  color: #4a90d9;\n  filter: drop-shadow(0 0 2px rgba(74, 144, 217, 0.4));\n}\n.chatbotfab_botText {\n  flex: 0 1 auto;\n  width: 100%;\n  min-width: 0;\n  font-size: 13.5px;\n  line-height: 1.7;\n  color: #222;\n  white-space: pre-line;\n  word-break: break-word;\n}\n.chatbotfab_botTextRich {\n  padding: 0;\n  border: none;\n  border-radius: 0;\n  background: transparent;\n  box-shadow: none;\n  white-space: normal;\n}\n.chatbotfab_streaming {\n  will-change: transform;\n  transform: translateZ(0);\n  backface-visibility: hidden;\n  -webkit-font-smoothing: subpixel-antialiased;\n  animation: chatbotfab_smoothText 0.15s ease-out;\n}\n.chatbotfab_streamingPreviewWrap {\n  margin-top: 8px;\n  padding: 0;\n  border: none;\n  border-radius: 0;\n  background: transparent;\n  box-shadow: none;\n  animation: chatbotfab_fadeUpIn 0.35s ease-out;\n}\n.chatbotfab_streamingPreviewText {\n  color: #2a2a2a;\n  line-height: 1.72;\n  letter-spacing: 0.01em;\n  white-space: normal;\n  word-break: break-word;\n}\n.chatbotfab_streamingCurrentLine {\n  margin-top: 4px;\n  color: #303642;\n}\n.chatbotfab_markdownBody {\n  color: #1f2430;\n  font-size: 13.5px;\n  line-height: 1.72;\n}\n.chatbotfab_markdownBody p {\n  margin: 0;\n}\n.chatbotfab_markdownBody p + p {\n  margin-top: 10px;\n}\n.chatbotfab_markdownBody ul,\n.chatbotfab_markdownBody ol {\n  margin: 8px 0 8px 1.1em;\n  padding-left: 0.6em;\n}\n.chatbotfab_markdownBody li {\n  margin: 4px 0;\n}\n.chatbotfab_markdownBody li > p {\n  margin: 0;\n}\n.chatbotfab_markdownBody h1,\n.chatbotfab_markdownBody h2,\n.chatbotfab_markdownBody h3,\n.chatbotfab_markdownBody h4 {\n  margin: 10px 0 6px;\n  line-height: 1.4;\n  color: #111827;\n}\n.chatbotfab_markdownBody code {\n  background: #f2f4f8;\n  border: 1px solid #e4e9f2;\n  border-radius: 6px;\n  padding: 0.08em 0.38em;\n  font-size: 0.92em;\n}\n.chatbotfab_markdownBody pre {\n  margin: 8px 0;\n  padding: 10px 12px;\n  border-radius: 10px;\n  background: #0f172a;\n  color: #f8fafc;\n  overflow-x: auto;\n}\n.chatbotfab_markdownBody pre code {\n  background: transparent;\n  border: none;\n  padding: 0;\n  color: inherit;\n}\n.chatbotfab_persistentDivider {\n  margin-top: 2px;\n  padding-top: 10px;\n  border-top: 1px solid rgba(17, 17, 17, 0.08);\n}\n.chatbotfab_reasoningWrap {\n  margin-top: 4px;\n  display: flex;\n  flex-direction: column;\n  align-items: flex-start;\n}\n.chatbotfab_reasoningToggle {\n  width: auto;\n  max-width: 100%;\n  display: inline-flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 6px;\n  border: 1px solid transparent;\n  background: transparent;\n  color: #6b7482;\n  border-radius: 999px;\n  height: 32px;\n  padding: 0 10px;\n  font-size: 13px;\n  font-weight: 600;\n  cursor: pointer;\n  transition:\n    background 0.2s ease,\n    border-color 0.2s ease,\n    color 0.2s ease;\n}\n.chatbotfab_reasoningToggle:hover {\n  background: #f2f5fb;\n  border-color: #d6dce8;\n  color: #3f4754;\n}\n.chatbotfab_reasoningToggleOpen {\n  border-color: transparent;\n  background: transparent;\n  color: #3b4350;\n}\n.chatbotfab_reasoningToggleText {\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n.chatbotfab_reasoningChevron {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  font-size: 13px;\n  transition: transform 0.22s ease;\n}\n.chatbotfab_reasoningChevronOpen {\n  transform: rotate(180deg);\n}\n.chatbotfab_reasoningPanel {\n  width: 100%;\n  max-height: 0;\n  opacity: 0;\n  overflow: hidden;\n  transform: translateY(-4px);\n  transition:\n    max-height 0.28s ease,\n    opacity 0.22s ease,\n    transform 0.22s ease;\n}\n.chatbotfab_reasoningPanelOpen {\n  max-height: 320px;\n  opacity: 1;\n  transform: translateY(0);\n}\n.chatbotfab_reasoningInner {\n  margin-top: 8px;\n  border-left: 3px solid #d2d7e3;\n  background: #fbfcfe;\n  border-radius: 0 10px 10px 0;\n  padding: 10px 12px;\n  font-size: 12.5px;\n  line-height: 1.72;\n  color: #606a7a;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n.chatbotfab_reasoningStreamingText {\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n.chatbotfab_finalAnswerWrap {\n  margin-top: 10px;\n  animation: chatbotfab_fadeUpIn 0.25s ease-out;\n}\n@keyframes chatbotfab_smoothText {\n  0% {\n    opacity: 0.85;\n    filter: blur(0.3px);\n  }\n  100% {\n    opacity: 1;\n    filter: blur(0px);\n  }\n}\n@keyframes chatbotfab_fadeUpIn {\n  0% {\n    opacity: 0;\n    transform: translateY(6px);\n  }\n  100% {\n    opacity: 1;\n    transform: translateY(0);\n  }\n}\n.chatbotfab_inputBar {\n  height: 56px;\n  min-height: 56px;\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  padding: 8px 12px 4px;\n  border-top: 1px solid #eee;\n  background: #fff;\n}\n.chatbotfab_uploadBtn {\n  width: 36px;\n  height: 36px;\n  border-radius: 12px;\n  border: 1px solid #dadada;\n  background: #f7f7f7;\n  color: #111;\n  font-size: 22px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  transition: border-color 0.18s ease, background 0.18s ease;\n}\n.chatbotfab_uploadBtn:hover:not(:disabled) {\n  border-color: #111;\n  background: #ffffff;\n}\n.chatbotfab_uploadBtn:disabled {\n  cursor: not-allowed;\n  opacity: 0.6;\n}\n.chatbotfab_uploadBtnIcon {\n  line-height: 1;\n  font-size: 24px;\n}\n.chatbotfab_imageInputField {\n  display: none;\n}\n.chatbotfab_uploadStatus {\n  min-height: 18px;\n  font-size: 11px;\n  color: #6f7785;\n  margin: 2px 0 0 46px;\n}\n.chatbotfab_uploadStatusError {\n  color: #c51d34;\n}\n.chatbotfab_pendingImagePreview {\n  margin: 6px 0 0 46px;\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  font-size: 12px;\n}\n.chatbotfab_pendingImagePreview img {\n  width: 46px;\n  height: 46px;\n  border-radius: 8px;\n  object-fit: cover;\n  border: 1px solid rgba(0, 0, 0, 0.08);\n}\n.chatbotfab_pendingImageRemove {\n  border: none;\n  background: transparent;\n  color: #c51d34;\n  font-size: 11px;\n  cursor: pointer;\n  padding: 0;\n}\n.chatbotfab_bottomControls {\n  position: relative;\n  padding-bottom: 8px;\n}\n.chatbotfab_feedbackBar {\n  margin: 0 12px 8px;\n  padding: 12px 14px;\n  border: 1px solid #e5e8ee;\n  border-radius: 14px;\n  background:\n    linear-gradient(\n      180deg,\n      #fbfcfe 0%,\n      #f3f6fa 100%);\n}\n.chatbotfab_feedbackLabel {\n  font-size: 12px;\n  font-weight: 700;\n  color: #334155;\n}\n.chatbotfab_feedbackActions {\n  display: flex;\n  gap: 8px;\n  margin-top: 10px;\n}\n.chatbotfab_feedbackBtn {\n  min-width: 92px;\n  height: 34px;\n  padding: 0 12px;\n  border-radius: 10px;\n  border: 1px solid #d5dbe5;\n  background: #fff;\n  color: #1f2937;\n  font-size: 12px;\n  font-weight: 700;\n  cursor: pointer;\n  transition:\n    border-color 0.16s ease,\n    background 0.16s ease,\n    transform 0.08s ease;\n}\n.chatbotfab_feedbackBtn:hover:not(:disabled) {\n  border-color: #94a3b8;\n  background: #f8fafc;\n}\n.chatbotfab_feedbackBtn:active:not(:disabled) {\n  transform: translateY(1px);\n}\n.chatbotfab_feedbackBtn:disabled {\n  opacity: 0.6;\n  cursor: not-allowed;\n}\n.chatbotfab_feedbackError {\n  margin-top: 8px;\n  font-size: 11px;\n  color: #c51d34;\n}\n.chatbotfab_modelPickerBtn {\n  height: 24px;\n  border: none;\n  background: transparent;\n  color: #6f7785;\n  font-size: 12px;\n  font-weight: 600;\n  cursor: pointer;\n  padding: 2px 8px;\n  display: inline-flex;\n  align-items: center;\n  width: fit-content;\n  max-width: 100%;\n  white-space: nowrap;\n  transition: color 0.18s ease;\n}\n.chatbotfab_modelPickerBtn:hover:not(:disabled) {\n  color: #49515f;\n}\n.chatbotfab_modelPickerBtn:disabled {\n  opacity: 0.6;\n  cursor: not-allowed;\n}\n.chatbotfab_modelPickerRow {\n  height: 18px;\n  display: flex;\n  align-items: center;\n  padding: 0 12px;\n  position: relative;\n  width: 100%;\n  margin-top: -2px;\n}\n.chatbotfab_input {\n  flex: 1;\n  height: 42px;\n  resize: none;\n  box-sizing: border-box;\n  border: 1px solid #ddd;\n  border-radius: 14px;\n  padding: 10px 14px;\n  line-height: 1.3;\n  outline: none;\n  font-size: 13px;\n  font-family: inherit;\n  background: #fafafa;\n  transition:\n    border-color 0.2s ease,\n    background 0.2s ease,\n    box-shadow 0.2s ease;\n}\n.chatbotfab_input:focus {\n  border-color: #9aa4b2;\n  background: #fff;\n  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.06);\n}\n.chatbotfab_sendBtn {\n  min-width: 72px;\n  height: 42px;\n  padding: 0 16px;\n  border-radius: 14px;\n  border: none;\n  background: #111;\n  color: #fff;\n  cursor: pointer;\n  font-size: 13px;\n  font-weight: 600;\n  transition: background 0.2s ease, transform 0.1s ease;\n}\n.chatbotfab_sendBtn:hover:not(:disabled) {\n  background: #222;\n}\n.chatbotfab_sendBtn:active:not(:disabled) {\n  transform: translateY(1px);\n}\n.chatbotfab_sendBtn:disabled {\n  opacity: 0.55;\n  cursor: not-allowed;\n}\n.chatbotfab_modelDropdown {\n  position: absolute;\n  left: 0;\n  bottom: calc(100% + 10px);\n  width: min(320px, calc(100% - 24px));\n  max-height: 220px;\n  border-radius: 12px;\n  background: rgba(16, 18, 23, 0.98);\n  border: 1px solid #2a313f;\n  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35);\n  z-index: 40;\n  overflow: hidden;\n  animation: chatbotfab_fadeUpIn 0.16s ease-out;\n}\n.chatbotfab_modelDropdownTitle {\n  height: 34px;\n  min-height: 34px;\n  display: flex;\n  align-items: center;\n  padding: 0 12px;\n  font-size: 13px;\n  color: #aab3c2;\n  border-bottom: 1px solid rgba(255, 255, 255, 0.08);\n}\n.chatbotfab_modelDropdownList {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  padding: 6px;\n  overflow-y: auto;\n  max-height: 186px;\n  overscroll-behavior: contain;\n}\n.chatbotfab_modelOptionBtn {\n  height: 34px;\n  border-radius: 8px;\n  border: 1px solid transparent;\n  background: transparent;\n  color: #e2e7f1;\n  text-align: left;\n  padding: 0 12px;\n  font-size: 13px;\n  cursor: pointer;\n  transition: background 0.16s ease, border-color 0.16s ease;\n}\n.chatbotfab_modelOptionBtn:hover {\n  background: rgba(255, 255, 255, 0.08);\n  border-color: rgba(255, 255, 255, 0.14);\n}\n.chatbotfab_modelOptionBtnActive {\n  background: rgba(121, 159, 255, 0.22);\n  border-color: rgba(121, 159, 255, 0.45);\n  color: #eaf0ff;\n  font-weight: 700;\n}\n.chatbotfab_orderListContainer {\n  width: 100%;\n  max-width: 100%;\n  background: #fff;\n  border-radius: 12px;\n  padding: 12px;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);\n}\n.chatbotfab_orderListMessage {\n  font-size: 13px;\n  margin-bottom: 12px;\n  color: #333;\n  font-weight: 500;\n}\n.chatbotfab_orderCards {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n  max-height: 280px;\n  overflow-y: auto;\n  margin-bottom: 12px;\n}\n.chatbotfab_orderCard {\n  display: flex;\n  gap: 10px;\n  padding: 10px;\n  border: 1px solid #e0e0e0;\n  border-radius: 8px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  background: #fafafa;\n}\n.chatbotfab_orderCard:hover {\n  background: #f0f0f0;\n  border-color: #111;\n}\n.chatbotfab_orderCheckbox {\n  flex-shrink: 0;\n  width: 18px;\n  height: 18px;\n  margin-top: 2px;\n  cursor: pointer;\n}\n.chatbotfab_orderContent {\n  flex: 1;\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n}\n.chatbotfab_orderHeader {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 4px;\n}\n.chatbotfab_orderId {\n  font-size: 11px;\n  color: #666;\n}\n.chatbotfab_orderStatus {\n  font-size: 11px;\n  padding: 2px 6px;\n  background: #111;\n  color: #fff;\n  border-radius: 4px;\n}\n.chatbotfab_orderProduct {\n  font-size: 13px;\n  font-weight: 600;\n  color: #111;\n  margin-bottom: 4px;\n}\n.chatbotfab_orderMeta {\n  display: flex;\n  justify-content: space-between;\n  font-size: 11px;\n  color: #777;\n}\n.chatbotfab_orderAmount {\n  font-weight: 700;\n  color: #111;\n}\n.chatbotfab_orderDelivered {\n  font-size: 11px;\n  color: #0066cc;\n  margin-top: 2px;\n}\n.chatbotfab_orderActions {\n  display: flex;\n  gap: 4px;\n  margin-top: 6px;\n}\n.chatbotfab_actionBadge {\n  font-size: 10px;\n  padding: 2px 6px;\n  background: #e8f4f8;\n  color: #0066cc;\n  border-radius: 4px;\n  border: 1px solid #b3d9eb;\n}\n.chatbotfab_confirmBtn {\n  width: 100%;\n  height: 36px;\n  border-radius: 8px;\n  border: none;\n  background: #111;\n  color: #fff;\n  cursor: pointer;\n  font-size: 13px;\n  font-weight: 600;\n  transition: background 0.2s ease;\n}\n.chatbotfab_confirmBtn:hover:not(:disabled) {\n  background: #333;\n}\n.chatbotfab_confirmBtn:disabled {\n  background: #ccc;\n  cursor: not-allowed;\n}\n.chatbotfab_confirmationContainer {\n  width: 100%;\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n}\n.chatbotfab_confirmationMessage {\n  margin: 0;\n  font-size: 13px;\n  color: #222;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n.chatbotfab_confirmationActions {\n  display: flex;\n  gap: 8px;\n}\n.chatbotfab_confirmationApproveBtn,\n.chatbotfab_confirmationRejectBtn {\n  flex: 1;\n  height: 34px;\n  border-radius: 8px;\n  border: none;\n  font-size: 12px;\n  font-weight: 600;\n  cursor: pointer;\n  transition: opacity 0.2s ease;\n}\n.chatbotfab_confirmationApproveBtn {\n  background: #111;\n  color: #fff;\n}\n.chatbotfab_confirmationRejectBtn {\n  background: #eceff4;\n  color: #333;\n}\n.chatbotfab_confirmationApproveBtn:disabled,\n.chatbotfab_confirmationRejectBtn:disabled {\n  opacity: 0.6;\n  cursor: not-allowed;\n}\n.chatbotfab_addressCard {\n  width: 100%;\n  background: #fff;\n  border: 1px solid #e7eaf0;\n  border-radius: 10px;\n  padding: 10px;\n}\n.chatbotfab_addressCardTitle {\n  font-size: 13px;\n  color: #333;\n  margin-bottom: 8px;\n}\n.chatbotfab_addressFieldGroup {\n  margin-top: 8px;\n}\n.chatbotfab_addressFieldLabel {\n  font-size: 11px;\n  color: #777;\n  margin-bottom: 4px;\n}\n.chatbotfab_addressFieldValue {\n  min-height: 32px;\n  border: 1px solid #eceff4;\n  border-radius: 8px;\n  padding: 7px 9px;\n  font-size: 12px;\n  color: #222;\n  background: #fafbfd;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n.chatbotfab_addressInput {\n  width: 100%;\n  height: 34px;\n  border: 1px solid #d8dde6;\n  border-radius: 8px;\n  padding: 0 10px;\n  font-size: 12px;\n  outline: none;\n  box-sizing: border-box;\n}\n.chatbotfab_addressInput:focus {\n  border-color: #9aa4b2;\n  box-shadow: 0 0 0 2px rgba(17, 17, 17, 0.06);\n}\n.chatbotfab_addressSubmitBtn {\n  margin-top: 10px;\n  width: 100%;\n  height: 34px;\n  border-radius: 8px;\n  border: none;\n  background: #111;\n  color: #fff;\n  cursor: pointer;\n  font-size: 12px;\n  font-weight: 600;\n}\n.chatbotfab_addressSubmitBtn:disabled {\n  background: #ccc;\n  cursor: not-allowed;\n}\n.chatbotfab_typingIndicator {\n  display: flex;\n  gap: 4px;\n  align-items: center;\n  padding: 4px 0;\n}\n.chatbotfab_typingIndicator span {\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  background: #999;\n  animation: chatbotfab_typingBounce 1.4s infinite ease-in-out;\n  opacity: 0.6;\n}\n.chatbotfab_typingIndicator span:nth-child(1) {\n  animation-delay: -0.32s;\n}\n.chatbotfab_typingIndicator span:nth-child(2) {\n  animation-delay: -0.16s;\n}\n.chatbotfab_typingIndicator span:nth-child(3) {\n  animation-delay: 0s;\n}\n@keyframes chatbotfab_typingBounce {\n  0%, 80%, 100% {\n    transform: translateY(0);\n    opacity: 0.6;\n  }\n  40% {\n    transform: translateY(-8px);\n    opacity: 1;\n  }\n}\n.chatbotfab_statusMessage {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  font-size: 13px;\n  color: #666;\n  font-weight: 500;\n}\n.chatbotfab_statusMessageSoft {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  font-size: 12.5px;\n  color: #8f97a3;\n  font-weight: 500;\n  letter-spacing: 0.01em;\n  animation: chatbotfab_fadeUpIn 0.25s ease-out;\n}\n.chatbotfab_statusTypewriter {\n  white-space: pre-line;\n  word-break: break-word;\n}\n.chatbotfab_spinnerSmall {\n  width: 14px;\n  height: 14px;\n  border: 2px solid #ddd;\n  border-top-color: #111;\n  border-radius: 50%;\n  animation: chatbotfab_spinner 0.8s linear infinite;\n}\n@keyframes chatbotfab_spinner {\n  to {\n    transform: rotate(360deg);\n  }\n}\n\n/* reviewform.module.css */\n.reviewform_reviewFormContainer {\n  background-color: var(--white);\n  border: 1px solid var(--border-light);\n  border-radius: 8px;\n  padding: 16px;\n  margin-top: 8px;\n  font-family: inherit;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);\n}\n.reviewform_title {\n  margin: 0 0 8px 0;\n  font-size: 16px;\n  font-weight: 600;\n  color: var(--text-dark);\n}\n.reviewform_subtitle {\n  margin: 0 0 16px 0;\n  font-size: 14px;\n  color: var(--text-dark);\n  line-height: 1.4;\n}\n.reviewform_satisfactionGroup {\n  display: flex;\n  gap: 8px;\n  margin-bottom: 20px;\n}\n.reviewform_satisfactionBtn {\n  flex: 1;\n  padding: 10px 0;\n  border: 1px solid var(--border-light);\n  border-radius: 8px;\n  background-color: var(--bg-light);\n  color: var(--text-dark);\n  font-size: 14px;\n  font-weight: 500;\n  cursor: pointer;\n  transition: all 0.2s;\n}\n.reviewform_satisfactionBtn:hover {\n  background-color: var(--bg-hover);\n}\n.reviewform_activeBtn {\n  background-color: var(--primary);\n  color: var(--white);\n  border-color: var(--primary);\n}\n.reviewform_activeBtn:hover {\n  background-color: var(--primary-dark);\n}\n.reviewform_draftSection {\n  display: flex;\n  flex-direction: column;\n  gap: 16px;\n}\n.reviewform_loadingDrafts {\n  font-size: 13px;\n  color: var(--text-muted);\n  font-style: italic;\n  animation: reviewform_pulse 1.5s infinite;\n}\n@keyframes reviewform_pulse {\n  0% {\n    opacity: 0.6;\n  }\n  50% {\n    opacity: 1;\n  }\n  100% {\n    opacity: 0.6;\n  }\n}\n.reviewform_errorText {\n  color: var(--danger, #e74c3c);\n  font-size: 13px;\n}\n.reviewform_draftList {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n}\n.reviewform_draftPrompt {\n  margin: 0;\n  font-size: 12px;\n  color: var(--text-muted);\n}\n.reviewform_draftItemBtn {\n  text-align: left;\n  padding: 10px 12px;\n  background-color: rgba(0, 102, 255, 0.05);\n  border: 1px dashed rgba(0, 102, 255, 0.3);\n  border-radius: 6px;\n  color: var(--text-dark);\n  font-size: 13px;\n  line-height: 1.4;\n  cursor: pointer;\n  transition: all 0.2s;\n}\n.reviewform_draftItemBtn:hover {\n  background-color: rgba(0, 102, 255, 0.1);\n  border-color: rgba(0, 102, 255, 0.5);\n}\n.reviewform_textArea {\n  width: 100%;\n  padding: 12px;\n  border: 1px solid var(--border-light);\n  border-radius: 6px;\n  font-family: inherit;\n  font-size: 14px;\n  resize: vertical;\n  min-height: 100px;\n}\n.reviewform_textArea:focus {\n  outline: none;\n  border-color: var(--primary);\n  box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.1);\n}\n.reviewform_actionGroup {\n  display: flex;\n  justify-content: flex-end;\n  gap: 10px;\n  margin-top: 8px;\n}\n.reviewform_cancelBtn {\n  padding: 8px 16px;\n  background-color: transparent;\n  border: 1px solid var(--border-light);\n  color: var(--text-dark);\n  border-radius: 6px;\n  font-size: 14px;\n  cursor: pointer;\n  transition: all 0.2s;\n}\n.reviewform_cancelBtn:hover {\n  background-color: var(--bg-hover);\n}\n.reviewform_submitBtn {\n  padding: 8px 24px;\n  background-color: var(--primary, #0066ff);\n  border: none;\n  color: #ffffff;\n  border-radius: 6px;\n  font-size: 14px;\n  font-weight: 500;\n  cursor: pointer;\n  transition: all 0.2s;\n}\n.reviewform_submitBtn:hover {\n  background-color: var(--primary-dark, #0052cc);\n}\n\n/* usedsaleform.module.css */\n.usedsaleform_container {\n  width: 100%;\n  max-width: 440px;\n  box-sizing: border-box;\n  border: 1px solid #e6e8ef;\n  border-radius: 12px;\n  background: #fff;\n  padding: 14px;\n}\n.usedsaleform_title {\n  font-size: 13px;\n  font-weight: 700;\n  color: #1f2430;\n  margin-bottom: 10px;\n}\n.usedsaleform_label {\n  display: block;\n  font-size: 12px;\n  font-weight: 600;\n  color: #465066;\n  margin: 8px 0 6px;\n}\n.usedsaleform_input {\n  width: 100%;\n  box-sizing: border-box;\n  height: 36px;\n  border: 1px solid #d8dce7;\n  border-radius: 8px;\n  padding: 0 10px;\n  font-size: 13px;\n}\n.usedsaleform_textarea {\n  width: 100%;\n  box-sizing: border-box;\n  min-height: 92px;\n  border: 1px solid #d8dce7;\n  border-radius: 8px;\n  padding: 10px;\n  font-size: 13px;\n  resize: vertical;\n}\n.usedsaleform_conditionGroup {\n  display: flex;\n  gap: 6px;\n  flex-wrap: wrap;\n}\n.usedsaleform_conditionBtn {\n  border: 1px solid #d5d9e4;\n  background: #f8f9fc;\n  color: #2d3648;\n  border-radius: 8px;\n  font-size: 12px;\n  font-weight: 600;\n  padding: 6px 10px;\n  cursor: pointer;\n}\n.usedsaleform_conditionBtn:disabled {\n  opacity: 0.55;\n  cursor: not-allowed;\n}\n.usedsaleform_activeBtn {\n  background: #111827;\n  border-color: #111827;\n  color: #fff;\n}\n.usedsaleform_submitBtn {\n  margin-top: 12px;\n  width: 100%;\n  box-sizing: border-box;\n  height: 38px;\n  border: none;\n  border-radius: 10px;\n  background: #1f2937;\n  color: #fff;\n  font-size: 13px;\n  font-weight: 700;\n  cursor: pointer;\n}\n.usedsaleform_submitBtn:disabled {\n  opacity: 0.65;\n  cursor: not-allowed;\n}\n";
+globalThis.__ORDER_CS_WIDGET_CSS__ = "/* productlist.module.css */\n.productlist_container {\n  margin-top: 10px;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n}\n.productlist_message {\n  font-size: 14px;\n  color: #333;\n  margin-bottom: 8px;\n}\n.productlist_productList {\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n.productlist_productCard {\n  display: flex;\n  background-color: #fff;\n  border: 1px solid #eaeaea;\n  border-radius: 8px;\n  padding: 12px;\n  gap: 12px;\n  position: relative;\n  overflow: hidden;\n  transition: box-shadow 0.2s;\n}\n.productlist_productCard:hover {\n  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);\n}\n.productlist_productImageWrap {\n  flex-shrink: 0;\n  width: 80px;\n  height: 80px;\n  position: relative;\n  background-color: #f7f7f7;\n  border-radius: 6px;\n  overflow: hidden;\n  cursor: pointer;\n}\n.productlist_productInfo {\n  flex: 1;\n  display: flex;\n  flex-direction: column;\n  justify-content: space-between;\n}\n.productlist_productName {\n  font-size: 14px;\n  font-weight: 600;\n  color: #111;\n  margin: 0;\n  display: -webkit-box;\n  -webkit-line-clamp: 2;\n  line-clamp: 2;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  cursor: pointer;\n}\n.productlist_productMeta {\n  font-size: 11px;\n  color: #666;\n  margin: 4px 0 0 0;\n}\n.productlist_productPrice {\n  font-size: 14px;\n  font-weight: 700;\n  color: #111;\n  margin: 4px 0 0 0;\n}\n.productlist_actionRow {\n  display: flex;\n  gap: 8px;\n  margin-top: 8px;\n}\n.productlist_btn {\n  flex: 1;\n  padding: 6px 0;\n  font-size: 12px;\n  font-weight: 500;\n  text-align: center;\n  border-radius: 4px;\n  cursor: pointer;\n  border: 1px solid #ddd;\n  background: #fff;\n  color: #333;\n  transition: all 0.2s;\n}\n.productlist_btn:hover:not(:disabled) {\n  background: #f5f5f5;\n  border-color: #ccc;\n}\n.productlist_primary {\n  background: #111;\n  color: #fff;\n  border-color: #111;\n}\n.productlist_primary:hover:not(:disabled) {\n  background: #333;\n}\n.productlist_btn:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n.productlist_modalOverlay {\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  background: rgba(255, 255, 255, 0.95);\n  display: flex;\n  flex-direction: column;\n  justify-content: center;\n  align-items: center;\n  z-index: 10;\n  padding: 16px;\n  animation: productlist_fadeIn 0.2s ease-out;\n}\n@keyframes productlist_fadeIn {\n  from {\n    opacity: 0;\n  }\n  to {\n    opacity: 1;\n  }\n}\n.productlist_modalTitle {\n  font-size: 14px;\n  font-weight: 600;\n  margin: 0 0 12px 0;\n}\n.productlist_sizeGrid {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n  justify-content: center;\n}\n.productlist_sizeBtn {\n  padding: 6px 12px;\n  font-size: 12px;\n  border: 1px solid #ccc;\n  background: #fff;\n  border-radius: 4px;\n  cursor: pointer;\n}\n.productlist_sizeBtn:hover {\n  background: #f5f5f5;\n}\n.productlist_closeModalBtn {\n  position: absolute;\n  top: 8px;\n  right: 8px;\n  background: none;\n  border: none;\n  font-size: 16px;\n  cursor: pointer;\n  color: #666;\n}\n\n/* chatbot-widget.module.css */\n.chatbot_widget_widgetRoot {\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n.chatbot_widget_widgetMessageList {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n}\n.chatbot_widget_widgetTextMessage {\n  margin: 0;\n}\n.chatbot_widget_widgetOrderList,\n.chatbot_widget_widgetProductList {\n  width: 100%;\n}\n\n/* chatbotfab.module.css */\n.chatbotfab_fab {\n  position: fixed;\n  right: 24px;\n  bottom: 24px;\n  width: 52px;\n  height: 52px;\n  border-radius: 999px;\n  border: none;\n  background: #111;\n  color: #fff;\n  font-size: 20px;\n  cursor: pointer;\n  z-index: 9999;\n  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);\n}\n.chatbotfab_panel {\n  position: fixed;\n  right: 24px;\n  bottom: 88px;\n  display: flex;\n  flex-direction: column;\n  background: #fff;\n  border: 1px solid #e0e0e0;\n  border-radius: 16px;\n  overflow: hidden;\n  z-index: 9999;\n  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);\n  transform: translateY(16px);\n  opacity: 0;\n  pointer-events: none;\n  transition: transform 0.2s ease, opacity 0.2s ease;\n  overscroll-behavior: contain;\n}\n.chatbotfab_open {\n  transform: translateY(0);\n  opacity: 1;\n  pointer-events: auto;\n}\n.chatbotfab_resizeHandleLeft {\n  position: absolute;\n  top: 10px;\n  left: 0;\n  width: 8px;\n  height: calc(100% - 10px);\n  cursor: ew-resize;\n  z-index: 14;\n}\n.chatbotfab_resizeHandleTop {\n  position: absolute;\n  top: 0;\n  left: 10px;\n  width: calc(100% - 10px);\n  height: 8px;\n  cursor: ns-resize;\n  z-index: 14;\n}\n.chatbotfab_resizeHandleCorner {\n  position: absolute;\n  top: 0;\n  left: 0;\n  width: 12px;\n  height: 12px;\n  cursor: nwse-resize;\n  z-index: 15;\n}\n.chatbotfab_panelHeader {\n  min-height: 52px;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 4px 12px;\n  background: #111;\n  color: #fff;\n}\n.chatbotfab_headerLeft {\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  min-width: 0;\n}\n.chatbotfab_title {\n  font-size: 14px;\n  font-weight: 600;\n}\n.chatbotfab_modelControls {\n  display: flex;\n  gap: 6px;\n  flex-wrap: wrap;\n}\n.chatbotfab_modelSelect {\n  max-width: 180px;\n  height: 28px;\n  border-radius: 6px;\n  border: 1px solid #333;\n  background: #1d1d1d;\n  color: #fff;\n  font-size: 12px;\n  padding: 0 8px;\n}\n.chatbotfab_closeBtn {\n  width: 32px;\n  height: 32px;\n  border-radius: 8px;\n  border: none;\n  background: transparent;\n  color: #fff;\n  cursor: pointer;\n  font-size: 16px;\n}\n.chatbotfab_msgList {\n  flex: 1;\n  min-height: 0;\n  padding: 16px;\n  overflow-y: auto;\n  background: #fafafa;\n  overscroll-behavior: contain;\n}\n.chatbotfab_msgRow {\n  display: flex;\n  width: 100%;\n  margin-bottom: 30px;\n}\n.chatbotfab_userRow {\n  justify-content: flex-end;\n}\n.chatbotfab_botRow {\n  justify-content: flex-start;\n}\n.chatbotfab_bubble {\n  max-width: 76%;\n  padding: 0px 8px;\n  border-radius: 18px 18px 4px 18px;\n  font-size: 13.5px;\n  line-height: 1.65;\n  background: #111;\n  color: #fff;\n  white-space: pre-line;\n  word-break: break-word;\n}\n.chatbotfab_imageBubble {\n  padding: 8px;\n}\n.chatbotfab_imagePreviewCard {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 6px;\n}\n.chatbotfab_imagePreview {\n  width: min(180px, 42vw);\n  max-height: 220px;\n  border-radius: 12px;\n  border: 1px solid rgba(255, 255, 255, 0.25);\n  object-fit: cover;\n  background: #0d0d0d;\n}\n.chatbotfab_imageFilename {\n  font-size: 11px;\n  color: rgba(255, 255, 255, 0.65);\n  max-width: 180px;\n  text-align: center;\n  overflow: hidden;\n  white-space: nowrap;\n  text-overflow: ellipsis;\n}\n.chatbotfab_botMsg {\n  display: flex;\n  gap: 10px;\n  width: auto;\n  max-width: min(78%, 680px);\n  align-items: flex-start;\n}\n.chatbotfab_botIcon {\n  flex-shrink: 0;\n  width: 24px;\n  height: 24px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 16px;\n  margin-top: 1px;\n  color: #4a90d9;\n  filter: drop-shadow(0 0 2px rgba(74, 144, 217, 0.4));\n}\n.chatbotfab_botText {\n  flex: 0 1 auto;\n  width: 100%;\n  min-width: 0;\n  font-size: 13.5px;\n  line-height: 1.7;\n  color: #222;\n  white-space: pre-line;\n  word-break: break-word;\n}\n.chatbotfab_botTextRich {\n  padding: 0;\n  border: none;\n  border-radius: 0;\n  background: transparent;\n  box-shadow: none;\n  white-space: normal;\n}\n.chatbotfab_streaming {\n  will-change: transform;\n  transform: translateZ(0);\n  backface-visibility: hidden;\n  -webkit-font-smoothing: subpixel-antialiased;\n  animation: chatbotfab_smoothText 0.15s ease-out;\n}\n.chatbotfab_streamingPreviewWrap {\n  margin-top: 8px;\n  padding: 0;\n  border: none;\n  border-radius: 0;\n  background: transparent;\n  box-shadow: none;\n  animation: chatbotfab_fadeUpIn 0.35s ease-out;\n}\n.chatbotfab_streamingPreviewText {\n  color: #2a2a2a;\n  line-height: 1.72;\n  letter-spacing: 0.01em;\n  white-space: normal;\n  word-break: break-word;\n}\n.chatbotfab_streamingCurrentLine {\n  margin-top: 4px;\n  color: #303642;\n}\n.chatbotfab_markdownBody {\n  color: #1f2430;\n  font-size: 13.5px;\n  line-height: 1.72;\n}\n.chatbotfab_markdownBody p {\n  margin: 0;\n}\n.chatbotfab_markdownBody p + p {\n  margin-top: 10px;\n}\n.chatbotfab_markdownBody ul,\n.chatbotfab_markdownBody ol {\n  margin: 8px 0 8px 1.1em;\n  padding-left: 0.6em;\n}\n.chatbotfab_markdownBody li {\n  margin: 4px 0;\n}\n.chatbotfab_markdownBody li > p {\n  margin: 0;\n}\n.chatbotfab_markdownBody h1,\n.chatbotfab_markdownBody h2,\n.chatbotfab_markdownBody h3,\n.chatbotfab_markdownBody h4 {\n  margin: 10px 0 6px;\n  line-height: 1.4;\n  color: #111827;\n}\n.chatbotfab_markdownBody code {\n  background: #f2f4f8;\n  border: 1px solid #e4e9f2;\n  border-radius: 6px;\n  padding: 0.08em 0.38em;\n  font-size: 0.92em;\n}\n.chatbotfab_markdownBody pre {\n  margin: 8px 0;\n  padding: 10px 12px;\n  border-radius: 10px;\n  background: #0f172a;\n  color: #f8fafc;\n  overflow-x: auto;\n}\n.chatbotfab_markdownBody pre code {\n  background: transparent;\n  border: none;\n  padding: 0;\n  color: inherit;\n}\n.chatbotfab_persistentDivider {\n  margin-top: 2px;\n  padding-top: 10px;\n  border-top: 1px solid rgba(17, 17, 17, 0.08);\n}\n.chatbotfab_reasoningWrap {\n  margin-top: 4px;\n  display: flex;\n  flex-direction: column;\n  align-items: flex-start;\n}\n.chatbotfab_reasoningToggle {\n  width: auto;\n  max-width: 100%;\n  display: inline-flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 6px;\n  border: 1px solid transparent;\n  background: transparent;\n  color: #6b7482;\n  border-radius: 999px;\n  height: 32px;\n  padding: 0 10px;\n  font-size: 13px;\n  font-weight: 600;\n  cursor: pointer;\n  transition:\n    background 0.2s ease,\n    border-color 0.2s ease,\n    color 0.2s ease;\n}\n.chatbotfab_reasoningToggle:hover {\n  background: #f2f5fb;\n  border-color: #d6dce8;\n  color: #3f4754;\n}\n.chatbotfab_reasoningToggleOpen {\n  border-color: transparent;\n  background: transparent;\n  color: #3b4350;\n}\n.chatbotfab_reasoningToggleText {\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n.chatbotfab_reasoningChevron {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  font-size: 13px;\n  transition: transform 0.22s ease;\n}\n.chatbotfab_reasoningChevronOpen {\n  transform: rotate(180deg);\n}\n.chatbotfab_reasoningPanel {\n  width: 100%;\n  max-height: 0;\n  opacity: 0;\n  overflow: hidden;\n  transform: translateY(-4px);\n  transition:\n    max-height 0.28s ease,\n    opacity 0.22s ease,\n    transform 0.22s ease;\n}\n.chatbotfab_reasoningPanelOpen {\n  max-height: 320px;\n  opacity: 1;\n  transform: translateY(0);\n}\n.chatbotfab_reasoningInner {\n  margin-top: 8px;\n  border-left: 3px solid #d2d7e3;\n  background: #fbfcfe;\n  border-radius: 0 10px 10px 0;\n  padding: 10px 12px;\n  font-size: 12.5px;\n  line-height: 1.72;\n  color: #606a7a;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n.chatbotfab_reasoningStreamingText {\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n.chatbotfab_finalAnswerWrap {\n  margin-top: 10px;\n  animation: chatbotfab_fadeUpIn 0.25s ease-out;\n}\n@keyframes chatbotfab_smoothText {\n  0% {\n    opacity: 0.85;\n    filter: blur(0.3px);\n  }\n  100% {\n    opacity: 1;\n    filter: blur(0px);\n  }\n}\n@keyframes chatbotfab_fadeUpIn {\n  0% {\n    opacity: 0;\n    transform: translateY(6px);\n  }\n  100% {\n    opacity: 1;\n    transform: translateY(0);\n  }\n}\n.chatbotfab_inputBar {\n  height: 56px;\n  min-height: 56px;\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  padding: 8px 12px 4px;\n  border-top: 1px solid #eee;\n  background: #fff;\n}\n.chatbotfab_uploadBtn {\n  width: 36px;\n  height: 36px;\n  border-radius: 12px;\n  border: 1px solid #dadada;\n  background: #f7f7f7;\n  color: #111;\n  font-size: 22px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  transition: border-color 0.18s ease, background 0.18s ease;\n}\n.chatbotfab_uploadBtn:hover:not(:disabled) {\n  border-color: #111;\n  background: #ffffff;\n}\n.chatbotfab_uploadBtn:disabled {\n  cursor: not-allowed;\n  opacity: 0.6;\n}\n.chatbotfab_uploadBtnIcon {\n  line-height: 1;\n  font-size: 24px;\n}\n.chatbotfab_imageInputField {\n  display: none;\n}\n.chatbotfab_uploadStatus {\n  min-height: 18px;\n  font-size: 11px;\n  color: #6f7785;\n  margin: 2px 0 0 46px;\n}\n.chatbotfab_uploadStatusError {\n  color: #c51d34;\n}\n.chatbotfab_pendingImagePreview {\n  margin: 6px 0 0 46px;\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  font-size: 12px;\n}\n.chatbotfab_pendingImagePreview img {\n  width: 46px;\n  height: 46px;\n  border-radius: 8px;\n  object-fit: cover;\n  border: 1px solid rgba(0, 0, 0, 0.08);\n}\n.chatbotfab_pendingImageRemove {\n  border: none;\n  background: transparent;\n  color: #c51d34;\n  font-size: 11px;\n  cursor: pointer;\n  padding: 0;\n}\n.chatbotfab_bottomControls {\n  position: relative;\n  padding-bottom: 8px;\n}\n.chatbotfab_feedbackBar {\n  margin: 0 12px 8px;\n  padding: 12px 14px;\n  border: 1px solid #e5e8ee;\n  border-radius: 14px;\n  background:\n    linear-gradient(\n      180deg,\n      #fbfcfe 0%,\n      #f3f6fa 100%);\n}\n.chatbotfab_feedbackLabel {\n  font-size: 12px;\n  font-weight: 700;\n  color: #334155;\n}\n.chatbotfab_feedbackActions {\n  display: flex;\n  gap: 8px;\n  margin-top: 10px;\n}\n.chatbotfab_feedbackBtn {\n  min-width: 92px;\n  height: 34px;\n  padding: 0 12px;\n  border-radius: 10px;\n  border: 1px solid #d5dbe5;\n  background: #fff;\n  color: #1f2937;\n  font-size: 12px;\n  font-weight: 700;\n  cursor: pointer;\n  transition:\n    border-color 0.16s ease,\n    background 0.16s ease,\n    transform 0.08s ease;\n}\n.chatbotfab_feedbackBtn:hover:not(:disabled) {\n  border-color: #94a3b8;\n  background: #f8fafc;\n}\n.chatbotfab_feedbackBtn:active:not(:disabled) {\n  transform: translateY(1px);\n}\n.chatbotfab_feedbackBtn:disabled {\n  opacity: 0.6;\n  cursor: not-allowed;\n}\n.chatbotfab_feedbackError {\n  margin-top: 8px;\n  font-size: 11px;\n  color: #c51d34;\n}\n.chatbotfab_modelPickerBtn {\n  height: 24px;\n  border: none;\n  background: transparent;\n  color: #6f7785;\n  font-size: 12px;\n  font-weight: 600;\n  cursor: pointer;\n  padding: 2px 8px;\n  display: inline-flex;\n  align-items: center;\n  width: fit-content;\n  max-width: 100%;\n  white-space: nowrap;\n  transition: color 0.18s ease;\n}\n.chatbotfab_modelPickerBtn:hover:not(:disabled) {\n  color: #49515f;\n}\n.chatbotfab_modelPickerBtn:disabled {\n  opacity: 0.6;\n  cursor: not-allowed;\n}\n.chatbotfab_modelPickerRow {\n  height: 18px;\n  display: flex;\n  align-items: center;\n  padding: 0 12px;\n  position: relative;\n  width: 100%;\n  margin-top: -2px;\n}\n.chatbotfab_input {\n  flex: 1;\n  height: 42px;\n  resize: none;\n  box-sizing: border-box;\n  border: 1px solid #ddd;\n  border-radius: 14px;\n  padding: 10px 14px;\n  line-height: 1.3;\n  outline: none;\n  font-size: 13px;\n  font-family: inherit;\n  background: #fafafa;\n  transition:\n    border-color 0.2s ease,\n    background 0.2s ease,\n    box-shadow 0.2s ease;\n}\n.chatbotfab_input:focus {\n  border-color: #9aa4b2;\n  background: #fff;\n  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.06);\n}\n.chatbotfab_sendBtn {\n  min-width: 72px;\n  height: 42px;\n  padding: 0 16px;\n  border-radius: 14px;\n  border: none;\n  background: #111;\n  color: #fff;\n  cursor: pointer;\n  font-size: 13px;\n  font-weight: 600;\n  transition: background 0.2s ease, transform 0.1s ease;\n}\n.chatbotfab_sendBtn:hover:not(:disabled) {\n  background: #222;\n}\n.chatbotfab_sendBtn:active:not(:disabled) {\n  transform: translateY(1px);\n}\n.chatbotfab_sendBtn:disabled {\n  opacity: 0.55;\n  cursor: not-allowed;\n}\n.chatbotfab_modelDropdown {\n  position: absolute;\n  left: 0;\n  bottom: calc(100% + 10px);\n  width: min(320px, calc(100% - 24px));\n  max-height: 220px;\n  border-radius: 12px;\n  background: rgba(16, 18, 23, 0.98);\n  border: 1px solid #2a313f;\n  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35);\n  z-index: 40;\n  overflow: hidden;\n  animation: chatbotfab_fadeUpIn 0.16s ease-out;\n}\n.chatbotfab_modelDropdownTitle {\n  height: 34px;\n  min-height: 34px;\n  display: flex;\n  align-items: center;\n  padding: 0 12px;\n  font-size: 13px;\n  color: #aab3c2;\n  border-bottom: 1px solid rgba(255, 255, 255, 0.08);\n}\n.chatbotfab_modelDropdownList {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  padding: 6px;\n  overflow-y: auto;\n  max-height: 186px;\n  overscroll-behavior: contain;\n}\n.chatbotfab_modelOptionBtn {\n  height: 34px;\n  border-radius: 8px;\n  border: 1px solid transparent;\n  background: transparent;\n  color: #e2e7f1;\n  text-align: left;\n  padding: 0 12px;\n  font-size: 13px;\n  cursor: pointer;\n  transition: background 0.16s ease, border-color 0.16s ease;\n}\n.chatbotfab_modelOptionBtn:hover {\n  background: rgba(255, 255, 255, 0.08);\n  border-color: rgba(255, 255, 255, 0.14);\n}\n.chatbotfab_modelOptionBtnActive {\n  background: rgba(121, 159, 255, 0.22);\n  border-color: rgba(121, 159, 255, 0.45);\n  color: #eaf0ff;\n  font-weight: 700;\n}\n.chatbotfab_orderListContainer {\n  width: 100%;\n  max-width: 100%;\n  background: #fff;\n  border-radius: 12px;\n  padding: 12px;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);\n}\n.chatbotfab_orderListMessage {\n  font-size: 13px;\n  margin-bottom: 12px;\n  color: #333;\n  font-weight: 500;\n}\n.chatbotfab_orderCards {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n  max-height: 280px;\n  overflow-y: auto;\n  margin-bottom: 12px;\n}\n.chatbotfab_orderCard {\n  display: flex;\n  gap: 10px;\n  padding: 10px;\n  border: 1px solid #e0e0e0;\n  border-radius: 8px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  background: #fafafa;\n}\n.chatbotfab_orderCard:hover {\n  background: #f0f0f0;\n  border-color: #111;\n}\n.chatbotfab_orderCheckbox {\n  flex-shrink: 0;\n  width: 18px;\n  height: 18px;\n  margin-top: 2px;\n  cursor: pointer;\n}\n.chatbotfab_orderContent {\n  flex: 1;\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n}\n.chatbotfab_orderHeader {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 4px;\n}\n.chatbotfab_orderId {\n  font-size: 11px;\n  color: #666;\n}\n.chatbotfab_orderStatus {\n  font-size: 11px;\n  padding: 2px 6px;\n  background: #111;\n  color: #fff;\n  border-radius: 4px;\n}\n.chatbotfab_orderProduct {\n  font-size: 13px;\n  font-weight: 600;\n  color: #111;\n  margin-bottom: 4px;\n}\n.chatbotfab_orderMeta {\n  display: flex;\n  justify-content: space-between;\n  font-size: 11px;\n  color: #777;\n}\n.chatbotfab_orderAmount {\n  font-weight: 700;\n  color: #111;\n}\n.chatbotfab_orderDelivered {\n  font-size: 11px;\n  color: #0066cc;\n  margin-top: 2px;\n}\n.chatbotfab_orderActions {\n  display: flex;\n  gap: 4px;\n  margin-top: 6px;\n}\n.chatbotfab_actionBadge {\n  font-size: 10px;\n  padding: 2px 6px;\n  background: #e8f4f8;\n  color: #0066cc;\n  border-radius: 4px;\n  border: 1px solid #b3d9eb;\n}\n.chatbotfab_confirmBtn {\n  width: 100%;\n  height: 36px;\n  border-radius: 8px;\n  border: none;\n  background: #111;\n  color: #fff;\n  cursor: pointer;\n  font-size: 13px;\n  font-weight: 600;\n  transition: background 0.2s ease;\n}\n.chatbotfab_confirmBtn:hover:not(:disabled) {\n  background: #333;\n}\n.chatbotfab_confirmBtn:disabled {\n  background: #ccc;\n  cursor: not-allowed;\n}\n.chatbotfab_confirmationContainer {\n  width: 100%;\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n}\n.chatbotfab_confirmationMessage {\n  margin: 0;\n  font-size: 13px;\n  color: #222;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n.chatbotfab_confirmationActions {\n  display: flex;\n  gap: 8px;\n}\n.chatbotfab_confirmationApproveBtn,\n.chatbotfab_confirmationRejectBtn {\n  flex: 1;\n  height: 34px;\n  border-radius: 8px;\n  border: none;\n  font-size: 12px;\n  font-weight: 600;\n  cursor: pointer;\n  transition: opacity 0.2s ease;\n}\n.chatbotfab_confirmationApproveBtn {\n  background: #111;\n  color: #fff;\n}\n.chatbotfab_confirmationRejectBtn {\n  background: #eceff4;\n  color: #333;\n}\n.chatbotfab_confirmationApproveBtn:disabled,\n.chatbotfab_confirmationRejectBtn:disabled {\n  opacity: 0.6;\n  cursor: not-allowed;\n}\n.chatbotfab_addressCard {\n  width: 100%;\n  background: #fff;\n  border: 1px solid #e7eaf0;\n  border-radius: 10px;\n  padding: 10px;\n}\n.chatbotfab_addressCardTitle {\n  font-size: 13px;\n  color: #333;\n  margin-bottom: 8px;\n}\n.chatbotfab_addressFieldGroup {\n  margin-top: 8px;\n}\n.chatbotfab_addressFieldLabel {\n  font-size: 11px;\n  color: #777;\n  margin-bottom: 4px;\n}\n.chatbotfab_addressFieldValue {\n  min-height: 32px;\n  border: 1px solid #eceff4;\n  border-radius: 8px;\n  padding: 7px 9px;\n  font-size: 12px;\n  color: #222;\n  background: #fafbfd;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n.chatbotfab_addressInput {\n  width: 100%;\n  height: 34px;\n  border: 1px solid #d8dde6;\n  border-radius: 8px;\n  padding: 0 10px;\n  font-size: 12px;\n  outline: none;\n  box-sizing: border-box;\n}\n.chatbotfab_addressInput:focus {\n  border-color: #9aa4b2;\n  box-shadow: 0 0 0 2px rgba(17, 17, 17, 0.06);\n}\n.chatbotfab_addressSubmitBtn {\n  margin-top: 10px;\n  width: 100%;\n  height: 34px;\n  border-radius: 8px;\n  border: none;\n  background: #111;\n  color: #fff;\n  cursor: pointer;\n  font-size: 12px;\n  font-weight: 600;\n}\n.chatbotfab_addressSubmitBtn:disabled {\n  background: #ccc;\n  cursor: not-allowed;\n}\n.chatbotfab_typingIndicator {\n  display: flex;\n  gap: 4px;\n  align-items: center;\n  padding: 4px 0;\n}\n.chatbotfab_typingIndicator span {\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  background: #999;\n  animation: chatbotfab_typingBounce 1.4s infinite ease-in-out;\n  opacity: 0.6;\n}\n.chatbotfab_typingIndicator span:nth-child(1) {\n  animation-delay: -0.32s;\n}\n.chatbotfab_typingIndicator span:nth-child(2) {\n  animation-delay: -0.16s;\n}\n.chatbotfab_typingIndicator span:nth-child(3) {\n  animation-delay: 0s;\n}\n@keyframes chatbotfab_typingBounce {\n  0%, 80%, 100% {\n    transform: translateY(0);\n    opacity: 0.6;\n  }\n  40% {\n    transform: translateY(-8px);\n    opacity: 1;\n  }\n}\n.chatbotfab_statusMessage {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  font-size: 13px;\n  color: #666;\n  font-weight: 500;\n}\n.chatbotfab_statusMessageSoft {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  font-size: 12.5px;\n  color: #8f97a3;\n  font-weight: 500;\n  letter-spacing: 0.01em;\n  animation: chatbotfab_fadeUpIn 0.25s ease-out;\n}\n.chatbotfab_statusTypewriter {\n  white-space: pre-line;\n  word-break: break-word;\n}\n.chatbotfab_spinnerSmall {\n  width: 14px;\n  height: 14px;\n  border: 2px solid #ddd;\n  border-top-color: #111;\n  border-radius: 50%;\n  animation: chatbotfab_spinner 0.8s linear infinite;\n}\n@keyframes chatbotfab_spinner {\n  to {\n    transform: rotate(360deg);\n  }\n}\n\n/* reviewform.module.css */\n.reviewform_reviewFormContainer {\n  background-color: var(--white);\n  border: 1px solid var(--border-light);\n  border-radius: 8px;\n  padding: 16px;\n  margin-top: 8px;\n  font-family: inherit;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);\n}\n.reviewform_title {\n  margin: 0 0 8px 0;\n  font-size: 16px;\n  font-weight: 600;\n  color: var(--text-dark);\n}\n.reviewform_subtitle {\n  margin: 0 0 16px 0;\n  font-size: 14px;\n  color: var(--text-dark);\n  line-height: 1.4;\n}\n.reviewform_satisfactionGroup {\n  display: flex;\n  gap: 8px;\n  margin-bottom: 20px;\n}\n.reviewform_satisfactionBtn {\n  flex: 1;\n  padding: 10px 0;\n  border: 1px solid var(--border-light);\n  border-radius: 8px;\n  background-color: var(--bg-light);\n  color: var(--text-dark);\n  font-size: 14px;\n  font-weight: 500;\n  cursor: pointer;\n  transition: all 0.2s;\n}\n.reviewform_satisfactionBtn:hover {\n  background-color: var(--bg-hover);\n}\n.reviewform_activeBtn {\n  background-color: var(--primary);\n  color: var(--white);\n  border-color: var(--primary);\n}\n.reviewform_activeBtn:hover {\n  background-color: var(--primary-dark);\n}\n.reviewform_draftSection {\n  display: flex;\n  flex-direction: column;\n  gap: 16px;\n}\n.reviewform_loadingDrafts {\n  font-size: 13px;\n  color: var(--text-muted);\n  font-style: italic;\n  animation: reviewform_pulse 1.5s infinite;\n}\n@keyframes reviewform_pulse {\n  0% {\n    opacity: 0.6;\n  }\n  50% {\n    opacity: 1;\n  }\n  100% {\n    opacity: 0.6;\n  }\n}\n.reviewform_errorText {\n  color: var(--danger, #e74c3c);\n  font-size: 13px;\n}\n.reviewform_draftList {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n}\n.reviewform_draftPrompt {\n  margin: 0;\n  font-size: 12px;\n  color: var(--text-muted);\n}\n.reviewform_draftItemBtn {\n  text-align: left;\n  padding: 10px 12px;\n  background-color: rgba(0, 102, 255, 0.05);\n  border: 1px dashed rgba(0, 102, 255, 0.3);\n  border-radius: 6px;\n  color: var(--text-dark);\n  font-size: 13px;\n  line-height: 1.4;\n  cursor: pointer;\n  transition: all 0.2s;\n}\n.reviewform_draftItemBtn:hover {\n  background-color: rgba(0, 102, 255, 0.1);\n  border-color: rgba(0, 102, 255, 0.5);\n}\n.reviewform_textArea {\n  width: 100%;\n  padding: 12px;\n  border: 1px solid var(--border-light);\n  border-radius: 6px;\n  font-family: inherit;\n  font-size: 14px;\n  resize: vertical;\n  min-height: 100px;\n}\n.reviewform_textArea:focus {\n  outline: none;\n  border-color: var(--primary);\n  box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.1);\n}\n.reviewform_actionGroup {\n  display: flex;\n  justify-content: flex-end;\n  gap: 10px;\n  margin-top: 8px;\n}\n.reviewform_cancelBtn {\n  padding: 8px 16px;\n  background-color: transparent;\n  border: 1px solid var(--border-light);\n  color: var(--text-dark);\n  border-radius: 6px;\n  font-size: 14px;\n  cursor: pointer;\n  transition: all 0.2s;\n}\n.reviewform_cancelBtn:hover {\n  background-color: var(--bg-hover);\n}\n.reviewform_submitBtn {\n  padding: 8px 24px;\n  background-color: var(--primary, #0066ff);\n  border: none;\n  color: #ffffff;\n  border-radius: 6px;\n  font-size: 14px;\n  font-weight: 500;\n  cursor: pointer;\n  transition: all 0.2s;\n}\n.reviewform_submitBtn:hover {\n  background-color: var(--primary-dark, #0052cc);\n}\n\n/* usedsaleform.module.css */\n.usedsaleform_container {\n  width: 100%;\n  max-width: 440px;\n  box-sizing: border-box;\n  border: 1px solid #e6e8ef;\n  border-radius: 12px;\n  background: #fff;\n  padding: 14px;\n}\n.usedsaleform_title {\n  font-size: 13px;\n  font-weight: 700;\n  color: #1f2430;\n  margin-bottom: 10px;\n}\n.usedsaleform_label {\n  display: block;\n  font-size: 12px;\n  font-weight: 600;\n  color: #465066;\n  margin: 8px 0 6px;\n}\n.usedsaleform_input {\n  width: 100%;\n  box-sizing: border-box;\n  height: 36px;\n  border: 1px solid #d8dce7;\n  border-radius: 8px;\n  padding: 0 10px;\n  font-size: 13px;\n}\n.usedsaleform_textarea {\n  width: 100%;\n  box-sizing: border-box;\n  min-height: 92px;\n  border: 1px solid #d8dce7;\n  border-radius: 8px;\n  padding: 10px;\n  font-size: 13px;\n  resize: vertical;\n}\n.usedsaleform_conditionGroup {\n  display: flex;\n  gap: 6px;\n  flex-wrap: wrap;\n}\n.usedsaleform_conditionBtn {\n  border: 1px solid #d5d9e4;\n  background: #f8f9fc;\n  color: #2d3648;\n  border-radius: 8px;\n  font-size: 12px;\n  font-weight: 600;\n  padding: 6px 10px;\n  cursor: pointer;\n}\n.usedsaleform_conditionBtn:disabled {\n  opacity: 0.55;\n  cursor: not-allowed;\n}\n.usedsaleform_activeBtn {\n  background: #111827;\n  border-color: #111827;\n  color: #fff;\n}\n.usedsaleform_submitBtn {\n  margin-top: 12px;\n  width: 100%;\n  box-sizing: border-box;\n  height: 38px;\n  border: none;\n  border-radius: 10px;\n  background: #1f2937;\n  color: #fff;\n  font-size: 13px;\n  font-weight: 700;\n  cursor: pointer;\n}\n.usedsaleform_submitBtn:disabled {\n  opacity: 0.65;\n  cursor: not-allowed;\n}\n";
 (() => {
   var __create = Object.create;
   var __defProp = Object.defineProperty;
@@ -32,8 +32,1499 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
   ));
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
-  // ../../../node_modules/react/cjs/react.development.js
+  // node_modules/react/cjs/react.development.js
   var require_react_development = __commonJS({
+    "node_modules/react/cjs/react.development.js"(exports, module) {
+      "use strict";
+      (function() {
+        function defineDeprecationWarning(methodName, info) {
+          Object.defineProperty(Component.prototype, methodName, {
+            get: function() {
+              console.warn(
+                "%s(...) is deprecated in plain JavaScript React classes. %s",
+                info[0],
+                info[1]
+              );
+            }
+          });
+        }
+        function getIteratorFn(maybeIterable) {
+          if (null === maybeIterable || "object" !== typeof maybeIterable)
+            return null;
+          maybeIterable = MAYBE_ITERATOR_SYMBOL && maybeIterable[MAYBE_ITERATOR_SYMBOL] || maybeIterable["@@iterator"];
+          return "function" === typeof maybeIterable ? maybeIterable : null;
+        }
+        function warnNoop(publicInstance, callerName) {
+          publicInstance = (publicInstance = publicInstance.constructor) && (publicInstance.displayName || publicInstance.name) || "ReactClass";
+          var warningKey = publicInstance + "." + callerName;
+          didWarnStateUpdateForUnmountedComponent[warningKey] || (console.error(
+            "Can't call %s on a component that is not yet mounted. This is a no-op, but it might indicate a bug in your application. Instead, assign to `this.state` directly or define a `state = {};` class property with the desired state in the %s component.",
+            callerName,
+            publicInstance
+          ), didWarnStateUpdateForUnmountedComponent[warningKey] = true);
+        }
+        function Component(props, context, updater) {
+          this.props = props;
+          this.context = context;
+          this.refs = emptyObject;
+          this.updater = updater || ReactNoopUpdateQueue;
+        }
+        function ComponentDummy() {
+        }
+        function PureComponent(props, context, updater) {
+          this.props = props;
+          this.context = context;
+          this.refs = emptyObject;
+          this.updater = updater || ReactNoopUpdateQueue;
+        }
+        function noop() {
+        }
+        function testStringCoercion(value) {
+          return "" + value;
+        }
+        function checkKeyStringCoercion(value) {
+          try {
+            testStringCoercion(value);
+            var JSCompiler_inline_result = false;
+          } catch (e) {
+            JSCompiler_inline_result = true;
+          }
+          if (JSCompiler_inline_result) {
+            JSCompiler_inline_result = console;
+            var JSCompiler_temp_const = JSCompiler_inline_result.error;
+            var JSCompiler_inline_result$jscomp$0 = "function" === typeof Symbol && Symbol.toStringTag && value[Symbol.toStringTag] || value.constructor.name || "Object";
+            JSCompiler_temp_const.call(
+              JSCompiler_inline_result,
+              "The provided key is an unsupported type %s. This value must be coerced to a string before using it here.",
+              JSCompiler_inline_result$jscomp$0
+            );
+            return testStringCoercion(value);
+          }
+        }
+        function getComponentNameFromType(type) {
+          if (null == type) return null;
+          if ("function" === typeof type)
+            return type.$$typeof === REACT_CLIENT_REFERENCE ? null : type.displayName || type.name || null;
+          if ("string" === typeof type) return type;
+          switch (type) {
+            case REACT_FRAGMENT_TYPE:
+              return "Fragment";
+            case REACT_PROFILER_TYPE:
+              return "Profiler";
+            case REACT_STRICT_MODE_TYPE:
+              return "StrictMode";
+            case REACT_SUSPENSE_TYPE:
+              return "Suspense";
+            case REACT_SUSPENSE_LIST_TYPE:
+              return "SuspenseList";
+            case REACT_ACTIVITY_TYPE:
+              return "Activity";
+          }
+          if ("object" === typeof type)
+            switch ("number" === typeof type.tag && console.error(
+              "Received an unexpected object in getComponentNameFromType(). This is likely a bug in React. Please file an issue."
+            ), type.$$typeof) {
+              case REACT_PORTAL_TYPE:
+                return "Portal";
+              case REACT_CONTEXT_TYPE:
+                return type.displayName || "Context";
+              case REACT_CONSUMER_TYPE:
+                return (type._context.displayName || "Context") + ".Consumer";
+              case REACT_FORWARD_REF_TYPE:
+                var innerType = type.render;
+                type = type.displayName;
+                type || (type = innerType.displayName || innerType.name || "", type = "" !== type ? "ForwardRef(" + type + ")" : "ForwardRef");
+                return type;
+              case REACT_MEMO_TYPE:
+                return innerType = type.displayName || null, null !== innerType ? innerType : getComponentNameFromType(type.type) || "Memo";
+              case REACT_LAZY_TYPE:
+                innerType = type._payload;
+                type = type._init;
+                try {
+                  return getComponentNameFromType(type(innerType));
+                } catch (x) {
+                }
+            }
+          return null;
+        }
+        function getTaskName(type) {
+          if (type === REACT_FRAGMENT_TYPE) return "<>";
+          if ("object" === typeof type && null !== type && type.$$typeof === REACT_LAZY_TYPE)
+            return "<...>";
+          try {
+            var name2 = getComponentNameFromType(type);
+            return name2 ? "<" + name2 + ">" : "<...>";
+          } catch (x) {
+            return "<...>";
+          }
+        }
+        function getOwner() {
+          var dispatcher = ReactSharedInternals.A;
+          return null === dispatcher ? null : dispatcher.getOwner();
+        }
+        function UnknownOwner() {
+          return Error("react-stack-top-frame");
+        }
+        function hasValidKey(config) {
+          if (hasOwnProperty2.call(config, "key")) {
+            var getter = Object.getOwnPropertyDescriptor(config, "key").get;
+            if (getter && getter.isReactWarning) return false;
+          }
+          return void 0 !== config.key;
+        }
+        function defineKeyPropWarningGetter(props, displayName) {
+          function warnAboutAccessingKey() {
+            specialPropKeyWarningShown || (specialPropKeyWarningShown = true, console.error(
+              "%s: `key` is not a prop. Trying to access it will result in `undefined` being returned. If you need to access the same value within the child component, you should pass it as a different prop. (https://react.dev/link/special-props)",
+              displayName
+            ));
+          }
+          warnAboutAccessingKey.isReactWarning = true;
+          Object.defineProperty(props, "key", {
+            get: warnAboutAccessingKey,
+            configurable: true
+          });
+        }
+        function elementRefGetterWithDeprecationWarning() {
+          var componentName = getComponentNameFromType(this.type);
+          didWarnAboutElementRef[componentName] || (didWarnAboutElementRef[componentName] = true, console.error(
+            "Accessing element.ref was removed in React 19. ref is now a regular prop. It will be removed from the JSX Element type in a future release."
+          ));
+          componentName = this.props.ref;
+          return void 0 !== componentName ? componentName : null;
+        }
+        function ReactElement(type, key, props, owner, debugStack, debugTask) {
+          var refProp = props.ref;
+          type = {
+            $$typeof: REACT_ELEMENT_TYPE,
+            type,
+            key,
+            props,
+            _owner: owner
+          };
+          null !== (void 0 !== refProp ? refProp : null) ? Object.defineProperty(type, "ref", {
+            enumerable: false,
+            get: elementRefGetterWithDeprecationWarning
+          }) : Object.defineProperty(type, "ref", { enumerable: false, value: null });
+          type._store = {};
+          Object.defineProperty(type._store, "validated", {
+            configurable: false,
+            enumerable: false,
+            writable: true,
+            value: 0
+          });
+          Object.defineProperty(type, "_debugInfo", {
+            configurable: false,
+            enumerable: false,
+            writable: true,
+            value: null
+          });
+          Object.defineProperty(type, "_debugStack", {
+            configurable: false,
+            enumerable: false,
+            writable: true,
+            value: debugStack
+          });
+          Object.defineProperty(type, "_debugTask", {
+            configurable: false,
+            enumerable: false,
+            writable: true,
+            value: debugTask
+          });
+          Object.freeze && (Object.freeze(type.props), Object.freeze(type));
+          return type;
+        }
+        function cloneAndReplaceKey(oldElement, newKey) {
+          newKey = ReactElement(
+            oldElement.type,
+            newKey,
+            oldElement.props,
+            oldElement._owner,
+            oldElement._debugStack,
+            oldElement._debugTask
+          );
+          oldElement._store && (newKey._store.validated = oldElement._store.validated);
+          return newKey;
+        }
+        function validateChildKeys(node2) {
+          isValidElement(node2) ? node2._store && (node2._store.validated = 1) : "object" === typeof node2 && null !== node2 && node2.$$typeof === REACT_LAZY_TYPE && ("fulfilled" === node2._payload.status ? isValidElement(node2._payload.value) && node2._payload.value._store && (node2._payload.value._store.validated = 1) : node2._store && (node2._store.validated = 1));
+        }
+        function isValidElement(object) {
+          return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
+        }
+        function escape(key) {
+          var escaperLookup = { "=": "=0", ":": "=2" };
+          return "$" + key.replace(/[=:]/g, function(match) {
+            return escaperLookup[match];
+          });
+        }
+        function getElementKey(element3, index2) {
+          return "object" === typeof element3 && null !== element3 && null != element3.key ? (checkKeyStringCoercion(element3.key), escape("" + element3.key)) : index2.toString(36);
+        }
+        function resolveThenable(thenable) {
+          switch (thenable.status) {
+            case "fulfilled":
+              return thenable.value;
+            case "rejected":
+              throw thenable.reason;
+            default:
+              switch ("string" === typeof thenable.status ? thenable.then(noop, noop) : (thenable.status = "pending", thenable.then(
+                function(fulfilledValue) {
+                  "pending" === thenable.status && (thenable.status = "fulfilled", thenable.value = fulfilledValue);
+                },
+                function(error) {
+                  "pending" === thenable.status && (thenable.status = "rejected", thenable.reason = error);
+                }
+              )), thenable.status) {
+                case "fulfilled":
+                  return thenable.value;
+                case "rejected":
+                  throw thenable.reason;
+              }
+          }
+          throw thenable;
+        }
+        function mapIntoArray(children, array, escapedPrefix, nameSoFar, callback) {
+          var type = typeof children;
+          if ("undefined" === type || "boolean" === type) children = null;
+          var invokeCallback = false;
+          if (null === children) invokeCallback = true;
+          else
+            switch (type) {
+              case "bigint":
+              case "string":
+              case "number":
+                invokeCallback = true;
+                break;
+              case "object":
+                switch (children.$$typeof) {
+                  case REACT_ELEMENT_TYPE:
+                  case REACT_PORTAL_TYPE:
+                    invokeCallback = true;
+                    break;
+                  case REACT_LAZY_TYPE:
+                    return invokeCallback = children._init, mapIntoArray(
+                      invokeCallback(children._payload),
+                      array,
+                      escapedPrefix,
+                      nameSoFar,
+                      callback
+                    );
+                }
+            }
+          if (invokeCallback) {
+            invokeCallback = children;
+            callback = callback(invokeCallback);
+            var childKey = "" === nameSoFar ? "." + getElementKey(invokeCallback, 0) : nameSoFar;
+            isArrayImpl(callback) ? (escapedPrefix = "", null != childKey && (escapedPrefix = childKey.replace(userProvidedKeyEscapeRegex, "$&/") + "/"), mapIntoArray(callback, array, escapedPrefix, "", function(c) {
+              return c;
+            })) : null != callback && (isValidElement(callback) && (null != callback.key && (invokeCallback && invokeCallback.key === callback.key || checkKeyStringCoercion(callback.key)), escapedPrefix = cloneAndReplaceKey(
+              callback,
+              escapedPrefix + (null == callback.key || invokeCallback && invokeCallback.key === callback.key ? "" : ("" + callback.key).replace(
+                userProvidedKeyEscapeRegex,
+                "$&/"
+              ) + "/") + childKey
+            ), "" !== nameSoFar && null != invokeCallback && isValidElement(invokeCallback) && null == invokeCallback.key && invokeCallback._store && !invokeCallback._store.validated && (escapedPrefix._store.validated = 2), callback = escapedPrefix), array.push(callback));
+            return 1;
+          }
+          invokeCallback = 0;
+          childKey = "" === nameSoFar ? "." : nameSoFar + ":";
+          if (isArrayImpl(children))
+            for (var i = 0; i < children.length; i++)
+              nameSoFar = children[i], type = childKey + getElementKey(nameSoFar, i), invokeCallback += mapIntoArray(
+                nameSoFar,
+                array,
+                escapedPrefix,
+                type,
+                callback
+              );
+          else if (i = getIteratorFn(children), "function" === typeof i)
+            for (i === children.entries && (didWarnAboutMaps || console.warn(
+              "Using Maps as children is not supported. Use an array of keyed ReactElements instead."
+            ), didWarnAboutMaps = true), children = i.call(children), i = 0; !(nameSoFar = children.next()).done; )
+              nameSoFar = nameSoFar.value, type = childKey + getElementKey(nameSoFar, i++), invokeCallback += mapIntoArray(
+                nameSoFar,
+                array,
+                escapedPrefix,
+                type,
+                callback
+              );
+          else if ("object" === type) {
+            if ("function" === typeof children.then)
+              return mapIntoArray(
+                resolveThenable(children),
+                array,
+                escapedPrefix,
+                nameSoFar,
+                callback
+              );
+            array = String(children);
+            throw Error(
+              "Objects are not valid as a React child (found: " + ("[object Object]" === array ? "object with keys {" + Object.keys(children).join(", ") + "}" : array) + "). If you meant to render a collection of children, use an array instead."
+            );
+          }
+          return invokeCallback;
+        }
+        function mapChildren(children, func, context) {
+          if (null == children) return children;
+          var result = [], count = 0;
+          mapIntoArray(children, result, "", "", function(child) {
+            return func.call(context, child, count++);
+          });
+          return result;
+        }
+        function lazyInitializer(payload) {
+          if (-1 === payload._status) {
+            var ioInfo = payload._ioInfo;
+            null != ioInfo && (ioInfo.start = ioInfo.end = performance.now());
+            ioInfo = payload._result;
+            var thenable = ioInfo();
+            thenable.then(
+              function(moduleObject) {
+                if (0 === payload._status || -1 === payload._status) {
+                  payload._status = 1;
+                  payload._result = moduleObject;
+                  var _ioInfo = payload._ioInfo;
+                  null != _ioInfo && (_ioInfo.end = performance.now());
+                  void 0 === thenable.status && (thenable.status = "fulfilled", thenable.value = moduleObject);
+                }
+              },
+              function(error) {
+                if (0 === payload._status || -1 === payload._status) {
+                  payload._status = 2;
+                  payload._result = error;
+                  var _ioInfo2 = payload._ioInfo;
+                  null != _ioInfo2 && (_ioInfo2.end = performance.now());
+                  void 0 === thenable.status && (thenable.status = "rejected", thenable.reason = error);
+                }
+              }
+            );
+            ioInfo = payload._ioInfo;
+            if (null != ioInfo) {
+              ioInfo.value = thenable;
+              var displayName = thenable.displayName;
+              "string" === typeof displayName && (ioInfo.name = displayName);
+            }
+            -1 === payload._status && (payload._status = 0, payload._result = thenable);
+          }
+          if (1 === payload._status)
+            return ioInfo = payload._result, void 0 === ioInfo && console.error(
+              "lazy: Expected the result of a dynamic import() call. Instead received: %s\n\nYour code should look like: \n  const MyComponent = lazy(() => import('./MyComponent'))\n\nDid you accidentally put curly braces around the import?",
+              ioInfo
+            ), "default" in ioInfo || console.error(
+              "lazy: Expected the result of a dynamic import() call. Instead received: %s\n\nYour code should look like: \n  const MyComponent = lazy(() => import('./MyComponent'))",
+              ioInfo
+            ), ioInfo.default;
+          throw payload._result;
+        }
+        function resolveDispatcher() {
+          var dispatcher = ReactSharedInternals.H;
+          null === dispatcher && console.error(
+            "Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:\n1. You might have mismatching versions of React and the renderer (such as React DOM)\n2. You might be breaking the Rules of Hooks\n3. You might have more than one copy of React in the same app\nSee https://react.dev/link/invalid-hook-call for tips about how to debug and fix this problem."
+          );
+          return dispatcher;
+        }
+        function releaseAsyncTransition() {
+          ReactSharedInternals.asyncTransitions--;
+        }
+        function enqueueTask(task) {
+          if (null === enqueueTaskImpl)
+            try {
+              var requireString = ("require" + Math.random()).slice(0, 7);
+              enqueueTaskImpl = (module && module[requireString]).call(
+                module,
+                "timers"
+              ).setImmediate;
+            } catch (_err) {
+              enqueueTaskImpl = function(callback) {
+                false === didWarnAboutMessageChannel && (didWarnAboutMessageChannel = true, "undefined" === typeof MessageChannel && console.error(
+                  "This browser does not have a MessageChannel implementation, so enqueuing tasks via await act(async () => ...) will fail. Please file an issue at https://github.com/facebook/react/issues if you encounter this warning."
+                ));
+                var channel = new MessageChannel();
+                channel.port1.onmessage = callback;
+                channel.port2.postMessage(void 0);
+              };
+            }
+          return enqueueTaskImpl(task);
+        }
+        function aggregateErrors(errors) {
+          return 1 < errors.length && "function" === typeof AggregateError ? new AggregateError(errors) : errors[0];
+        }
+        function popActScope(prevActQueue, prevActScopeDepth) {
+          prevActScopeDepth !== actScopeDepth - 1 && console.error(
+            "You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. "
+          );
+          actScopeDepth = prevActScopeDepth;
+        }
+        function recursivelyFlushAsyncActWork(returnValue, resolve, reject) {
+          var queue = ReactSharedInternals.actQueue;
+          if (null !== queue)
+            if (0 !== queue.length)
+              try {
+                flushActQueue(queue);
+                enqueueTask(function() {
+                  return recursivelyFlushAsyncActWork(returnValue, resolve, reject);
+                });
+                return;
+              } catch (error) {
+                ReactSharedInternals.thrownErrors.push(error);
+              }
+            else ReactSharedInternals.actQueue = null;
+          0 < ReactSharedInternals.thrownErrors.length ? (queue = aggregateErrors(ReactSharedInternals.thrownErrors), ReactSharedInternals.thrownErrors.length = 0, reject(queue)) : resolve(returnValue);
+        }
+        function flushActQueue(queue) {
+          if (!isFlushing) {
+            isFlushing = true;
+            var i = 0;
+            try {
+              for (; i < queue.length; i++) {
+                var callback = queue[i];
+                do {
+                  ReactSharedInternals.didUsePromise = false;
+                  var continuation = callback(false);
+                  if (null !== continuation) {
+                    if (ReactSharedInternals.didUsePromise) {
+                      queue[i] = callback;
+                      queue.splice(0, i);
+                      return;
+                    }
+                    callback = continuation;
+                  } else break;
+                } while (1);
+              }
+              queue.length = 0;
+            } catch (error) {
+              queue.splice(0, i + 1), ReactSharedInternals.thrownErrors.push(error);
+            } finally {
+              isFlushing = false;
+            }
+          }
+        }
+        "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart(Error());
+        var REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), MAYBE_ITERATOR_SYMBOL = Symbol.iterator, didWarnStateUpdateForUnmountedComponent = {}, ReactNoopUpdateQueue = {
+          isMounted: function() {
+            return false;
+          },
+          enqueueForceUpdate: function(publicInstance) {
+            warnNoop(publicInstance, "forceUpdate");
+          },
+          enqueueReplaceState: function(publicInstance) {
+            warnNoop(publicInstance, "replaceState");
+          },
+          enqueueSetState: function(publicInstance) {
+            warnNoop(publicInstance, "setState");
+          }
+        }, assign = Object.assign, emptyObject = {};
+        Object.freeze(emptyObject);
+        Component.prototype.isReactComponent = {};
+        Component.prototype.setState = function(partialState, callback) {
+          if ("object" !== typeof partialState && "function" !== typeof partialState && null != partialState)
+            throw Error(
+              "takes an object of state variables to update or a function which returns an object of state variables."
+            );
+          this.updater.enqueueSetState(this, partialState, callback, "setState");
+        };
+        Component.prototype.forceUpdate = function(callback) {
+          this.updater.enqueueForceUpdate(this, callback, "forceUpdate");
+        };
+        var deprecatedAPIs = {
+          isMounted: [
+            "isMounted",
+            "Instead, make sure to clean up subscriptions and pending requests in componentWillUnmount to prevent memory leaks."
+          ],
+          replaceState: [
+            "replaceState",
+            "Refactor your code to use setState instead (see https://github.com/facebook/react/issues/3236)."
+          ]
+        };
+        for (fnName in deprecatedAPIs)
+          deprecatedAPIs.hasOwnProperty(fnName) && defineDeprecationWarning(fnName, deprecatedAPIs[fnName]);
+        ComponentDummy.prototype = Component.prototype;
+        deprecatedAPIs = PureComponent.prototype = new ComponentDummy();
+        deprecatedAPIs.constructor = PureComponent;
+        assign(deprecatedAPIs, Component.prototype);
+        deprecatedAPIs.isPureReactComponent = true;
+        var isArrayImpl = Array.isArray, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = {
+          H: null,
+          A: null,
+          T: null,
+          S: null,
+          actQueue: null,
+          asyncTransitions: 0,
+          isBatchingLegacy: false,
+          didScheduleLegacyUpdate: false,
+          didUsePromise: false,
+          thrownErrors: [],
+          getCurrentStack: null,
+          recentlyCreatedOwnerStacks: 0
+        }, hasOwnProperty2 = Object.prototype.hasOwnProperty, createTask = console.createTask ? console.createTask : function() {
+          return null;
+        };
+        deprecatedAPIs = {
+          react_stack_bottom_frame: function(callStackForError) {
+            return callStackForError();
+          }
+        };
+        var specialPropKeyWarningShown, didWarnAboutOldJSXRuntime;
+        var didWarnAboutElementRef = {};
+        var unknownOwnerDebugStack = deprecatedAPIs.react_stack_bottom_frame.bind(
+          deprecatedAPIs,
+          UnknownOwner
+        )();
+        var unknownOwnerDebugTask = createTask(getTaskName(UnknownOwner));
+        var didWarnAboutMaps = false, userProvidedKeyEscapeRegex = /\/+/g, reportGlobalError = "function" === typeof reportError ? reportError : function(error) {
+          if ("object" === typeof window && "function" === typeof window.ErrorEvent) {
+            var event = new window.ErrorEvent("error", {
+              bubbles: true,
+              cancelable: true,
+              message: "object" === typeof error && null !== error && "string" === typeof error.message ? String(error.message) : String(error),
+              error
+            });
+            if (!window.dispatchEvent(event)) return;
+          } else if ("object" === typeof process && "function" === typeof process.emit) {
+            process.emit("uncaughtException", error);
+            return;
+          }
+          console.error(error);
+        }, didWarnAboutMessageChannel = false, enqueueTaskImpl = null, actScopeDepth = 0, didWarnNoAwaitAct = false, isFlushing = false, queueSeveralMicrotasks = "function" === typeof queueMicrotask ? function(callback) {
+          queueMicrotask(function() {
+            return queueMicrotask(callback);
+          });
+        } : enqueueTask;
+        deprecatedAPIs = Object.freeze({
+          __proto__: null,
+          c: function(size) {
+            return resolveDispatcher().useMemoCache(size);
+          }
+        });
+        var fnName = {
+          map: mapChildren,
+          forEach: function(children, forEachFunc, forEachContext) {
+            mapChildren(
+              children,
+              function() {
+                forEachFunc.apply(this, arguments);
+              },
+              forEachContext
+            );
+          },
+          count: function(children) {
+            var n = 0;
+            mapChildren(children, function() {
+              n++;
+            });
+            return n;
+          },
+          toArray: function(children) {
+            return mapChildren(children, function(child) {
+              return child;
+            }) || [];
+          },
+          only: function(children) {
+            if (!isValidElement(children))
+              throw Error(
+                "React.Children.only expected to receive a single React element child."
+              );
+            return children;
+          }
+        };
+        exports.Activity = REACT_ACTIVITY_TYPE;
+        exports.Children = fnName;
+        exports.Component = Component;
+        exports.Fragment = REACT_FRAGMENT_TYPE;
+        exports.Profiler = REACT_PROFILER_TYPE;
+        exports.PureComponent = PureComponent;
+        exports.StrictMode = REACT_STRICT_MODE_TYPE;
+        exports.Suspense = REACT_SUSPENSE_TYPE;
+        exports.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE = ReactSharedInternals;
+        exports.__COMPILER_RUNTIME = deprecatedAPIs;
+        exports.act = function(callback) {
+          var prevActQueue = ReactSharedInternals.actQueue, prevActScopeDepth = actScopeDepth;
+          actScopeDepth++;
+          var queue = ReactSharedInternals.actQueue = null !== prevActQueue ? prevActQueue : [], didAwaitActCall = false;
+          try {
+            var result = callback();
+          } catch (error) {
+            ReactSharedInternals.thrownErrors.push(error);
+          }
+          if (0 < ReactSharedInternals.thrownErrors.length)
+            throw popActScope(prevActQueue, prevActScopeDepth), callback = aggregateErrors(ReactSharedInternals.thrownErrors), ReactSharedInternals.thrownErrors.length = 0, callback;
+          if (null !== result && "object" === typeof result && "function" === typeof result.then) {
+            var thenable = result;
+            queueSeveralMicrotasks(function() {
+              didAwaitActCall || didWarnNoAwaitAct || (didWarnNoAwaitAct = true, console.error(
+                "You called act(async () => ...) without await. This could lead to unexpected testing behaviour, interleaving multiple act calls and mixing their scopes. You should - await act(async () => ...);"
+              ));
+            });
+            return {
+              then: function(resolve, reject) {
+                didAwaitActCall = true;
+                thenable.then(
+                  function(returnValue) {
+                    popActScope(prevActQueue, prevActScopeDepth);
+                    if (0 === prevActScopeDepth) {
+                      try {
+                        flushActQueue(queue), enqueueTask(function() {
+                          return recursivelyFlushAsyncActWork(
+                            returnValue,
+                            resolve,
+                            reject
+                          );
+                        });
+                      } catch (error$0) {
+                        ReactSharedInternals.thrownErrors.push(error$0);
+                      }
+                      if (0 < ReactSharedInternals.thrownErrors.length) {
+                        var _thrownError = aggregateErrors(
+                          ReactSharedInternals.thrownErrors
+                        );
+                        ReactSharedInternals.thrownErrors.length = 0;
+                        reject(_thrownError);
+                      }
+                    } else resolve(returnValue);
+                  },
+                  function(error) {
+                    popActScope(prevActQueue, prevActScopeDepth);
+                    0 < ReactSharedInternals.thrownErrors.length ? (error = aggregateErrors(
+                      ReactSharedInternals.thrownErrors
+                    ), ReactSharedInternals.thrownErrors.length = 0, reject(error)) : reject(error);
+                  }
+                );
+              }
+            };
+          }
+          var returnValue$jscomp$0 = result;
+          popActScope(prevActQueue, prevActScopeDepth);
+          0 === prevActScopeDepth && (flushActQueue(queue), 0 !== queue.length && queueSeveralMicrotasks(function() {
+            didAwaitActCall || didWarnNoAwaitAct || (didWarnNoAwaitAct = true, console.error(
+              "A component suspended inside an `act` scope, but the `act` call was not awaited. When testing React components that depend on asynchronous data, you must await the result:\n\nawait act(() => ...)"
+            ));
+          }), ReactSharedInternals.actQueue = null);
+          if (0 < ReactSharedInternals.thrownErrors.length)
+            throw callback = aggregateErrors(ReactSharedInternals.thrownErrors), ReactSharedInternals.thrownErrors.length = 0, callback;
+          return {
+            then: function(resolve, reject) {
+              didAwaitActCall = true;
+              0 === prevActScopeDepth ? (ReactSharedInternals.actQueue = queue, enqueueTask(function() {
+                return recursivelyFlushAsyncActWork(
+                  returnValue$jscomp$0,
+                  resolve,
+                  reject
+                );
+              })) : resolve(returnValue$jscomp$0);
+            }
+          };
+        };
+        exports.cache = function(fn) {
+          return function() {
+            return fn.apply(null, arguments);
+          };
+        };
+        exports.cacheSignal = function() {
+          return null;
+        };
+        exports.captureOwnerStack = function() {
+          var getCurrentStack = ReactSharedInternals.getCurrentStack;
+          return null === getCurrentStack ? null : getCurrentStack();
+        };
+        exports.cloneElement = function(element3, config, children) {
+          if (null === element3 || void 0 === element3)
+            throw Error(
+              "The argument must be a React element, but you passed " + element3 + "."
+            );
+          var props = assign({}, element3.props), key = element3.key, owner = element3._owner;
+          if (null != config) {
+            var JSCompiler_inline_result;
+            a: {
+              if (hasOwnProperty2.call(config, "ref") && (JSCompiler_inline_result = Object.getOwnPropertyDescriptor(
+                config,
+                "ref"
+              ).get) && JSCompiler_inline_result.isReactWarning) {
+                JSCompiler_inline_result = false;
+                break a;
+              }
+              JSCompiler_inline_result = void 0 !== config.ref;
+            }
+            JSCompiler_inline_result && (owner = getOwner());
+            hasValidKey(config) && (checkKeyStringCoercion(config.key), key = "" + config.key);
+            for (propName in config)
+              !hasOwnProperty2.call(config, propName) || "key" === propName || "__self" === propName || "__source" === propName || "ref" === propName && void 0 === config.ref || (props[propName] = config[propName]);
+          }
+          var propName = arguments.length - 2;
+          if (1 === propName) props.children = children;
+          else if (1 < propName) {
+            JSCompiler_inline_result = Array(propName);
+            for (var i = 0; i < propName; i++)
+              JSCompiler_inline_result[i] = arguments[i + 2];
+            props.children = JSCompiler_inline_result;
+          }
+          props = ReactElement(
+            element3.type,
+            key,
+            props,
+            owner,
+            element3._debugStack,
+            element3._debugTask
+          );
+          for (key = 2; key < arguments.length; key++)
+            validateChildKeys(arguments[key]);
+          return props;
+        };
+        exports.createContext = function(defaultValue) {
+          defaultValue = {
+            $$typeof: REACT_CONTEXT_TYPE,
+            _currentValue: defaultValue,
+            _currentValue2: defaultValue,
+            _threadCount: 0,
+            Provider: null,
+            Consumer: null
+          };
+          defaultValue.Provider = defaultValue;
+          defaultValue.Consumer = {
+            $$typeof: REACT_CONSUMER_TYPE,
+            _context: defaultValue
+          };
+          defaultValue._currentRenderer = null;
+          defaultValue._currentRenderer2 = null;
+          return defaultValue;
+        };
+        exports.createElement = function(type, config, children) {
+          for (var i = 2; i < arguments.length; i++)
+            validateChildKeys(arguments[i]);
+          i = {};
+          var key = null;
+          if (null != config)
+            for (propName in didWarnAboutOldJSXRuntime || !("__self" in config) || "key" in config || (didWarnAboutOldJSXRuntime = true, console.warn(
+              "Your app (or one of its dependencies) is using an outdated JSX transform. Update to the modern JSX transform for faster performance: https://react.dev/link/new-jsx-transform"
+            )), hasValidKey(config) && (checkKeyStringCoercion(config.key), key = "" + config.key), config)
+              hasOwnProperty2.call(config, propName) && "key" !== propName && "__self" !== propName && "__source" !== propName && (i[propName] = config[propName]);
+          var childrenLength = arguments.length - 2;
+          if (1 === childrenLength) i.children = children;
+          else if (1 < childrenLength) {
+            for (var childArray = Array(childrenLength), _i = 0; _i < childrenLength; _i++)
+              childArray[_i] = arguments[_i + 2];
+            Object.freeze && Object.freeze(childArray);
+            i.children = childArray;
+          }
+          if (type && type.defaultProps)
+            for (propName in childrenLength = type.defaultProps, childrenLength)
+              void 0 === i[propName] && (i[propName] = childrenLength[propName]);
+          key && defineKeyPropWarningGetter(
+            i,
+            "function" === typeof type ? type.displayName || type.name || "Unknown" : type
+          );
+          var propName = 1e4 > ReactSharedInternals.recentlyCreatedOwnerStacks++;
+          return ReactElement(
+            type,
+            key,
+            i,
+            getOwner(),
+            propName ? Error("react-stack-top-frame") : unknownOwnerDebugStack,
+            propName ? createTask(getTaskName(type)) : unknownOwnerDebugTask
+          );
+        };
+        exports.createRef = function() {
+          var refObject = { current: null };
+          Object.seal(refObject);
+          return refObject;
+        };
+        exports.forwardRef = function(render) {
+          null != render && render.$$typeof === REACT_MEMO_TYPE ? console.error(
+            "forwardRef requires a render function but received a `memo` component. Instead of forwardRef(memo(...)), use memo(forwardRef(...))."
+          ) : "function" !== typeof render ? console.error(
+            "forwardRef requires a render function but was given %s.",
+            null === render ? "null" : typeof render
+          ) : 0 !== render.length && 2 !== render.length && console.error(
+            "forwardRef render functions accept exactly two parameters: props and ref. %s",
+            1 === render.length ? "Did you forget to use the ref parameter?" : "Any additional parameter will be undefined."
+          );
+          null != render && null != render.defaultProps && console.error(
+            "forwardRef render functions do not support defaultProps. Did you accidentally pass a React component?"
+          );
+          var elementType = { $$typeof: REACT_FORWARD_REF_TYPE, render }, ownName;
+          Object.defineProperty(elementType, "displayName", {
+            enumerable: false,
+            configurable: true,
+            get: function() {
+              return ownName;
+            },
+            set: function(name2) {
+              ownName = name2;
+              render.name || render.displayName || (Object.defineProperty(render, "name", { value: name2 }), render.displayName = name2);
+            }
+          });
+          return elementType;
+        };
+        exports.isValidElement = isValidElement;
+        exports.lazy = function(ctor) {
+          ctor = { _status: -1, _result: ctor };
+          var lazyType = {
+            $$typeof: REACT_LAZY_TYPE,
+            _payload: ctor,
+            _init: lazyInitializer
+          }, ioInfo = {
+            name: "lazy",
+            start: -1,
+            end: -1,
+            value: null,
+            owner: null,
+            debugStack: Error("react-stack-top-frame"),
+            debugTask: console.createTask ? console.createTask("lazy()") : null
+          };
+          ctor._ioInfo = ioInfo;
+          lazyType._debugInfo = [{ awaited: ioInfo }];
+          return lazyType;
+        };
+        exports.memo = function(type, compare) {
+          null == type && console.error(
+            "memo: The first argument must be a component. Instead received: %s",
+            null === type ? "null" : typeof type
+          );
+          compare = {
+            $$typeof: REACT_MEMO_TYPE,
+            type,
+            compare: void 0 === compare ? null : compare
+          };
+          var ownName;
+          Object.defineProperty(compare, "displayName", {
+            enumerable: false,
+            configurable: true,
+            get: function() {
+              return ownName;
+            },
+            set: function(name2) {
+              ownName = name2;
+              type.name || type.displayName || (Object.defineProperty(type, "name", { value: name2 }), type.displayName = name2);
+            }
+          });
+          return compare;
+        };
+        exports.startTransition = function(scope) {
+          var prevTransition = ReactSharedInternals.T, currentTransition = {};
+          currentTransition._updatedFibers = /* @__PURE__ */ new Set();
+          ReactSharedInternals.T = currentTransition;
+          try {
+            var returnValue = scope(), onStartTransitionFinish = ReactSharedInternals.S;
+            null !== onStartTransitionFinish && onStartTransitionFinish(currentTransition, returnValue);
+            "object" === typeof returnValue && null !== returnValue && "function" === typeof returnValue.then && (ReactSharedInternals.asyncTransitions++, returnValue.then(releaseAsyncTransition, releaseAsyncTransition), returnValue.then(noop, reportGlobalError));
+          } catch (error) {
+            reportGlobalError(error);
+          } finally {
+            null === prevTransition && currentTransition._updatedFibers && (scope = currentTransition._updatedFibers.size, currentTransition._updatedFibers.clear(), 10 < scope && console.warn(
+              "Detected a large number of updates inside startTransition. If this is due to a subscription please re-write it to use React provided hooks. Otherwise concurrent mode guarantees are off the table."
+            )), null !== prevTransition && null !== currentTransition.types && (null !== prevTransition.types && prevTransition.types !== currentTransition.types && console.error(
+              "We expected inner Transitions to have transferred the outer types set and that you cannot add to the outer Transition while inside the inner.This is a bug in React."
+            ), prevTransition.types = currentTransition.types), ReactSharedInternals.T = prevTransition;
+          }
+        };
+        exports.unstable_useCacheRefresh = function() {
+          return resolveDispatcher().useCacheRefresh();
+        };
+        exports.use = function(usable) {
+          return resolveDispatcher().use(usable);
+        };
+        exports.useActionState = function(action, initialState, permalink) {
+          return resolveDispatcher().useActionState(
+            action,
+            initialState,
+            permalink
+          );
+        };
+        exports.useCallback = function(callback, deps) {
+          return resolveDispatcher().useCallback(callback, deps);
+        };
+        exports.useContext = function(Context) {
+          var dispatcher = resolveDispatcher();
+          Context.$$typeof === REACT_CONSUMER_TYPE && console.error(
+            "Calling useContext(Context.Consumer) is not supported and will cause bugs. Did you mean to call useContext(Context) instead?"
+          );
+          return dispatcher.useContext(Context);
+        };
+        exports.useDebugValue = function(value, formatterFn) {
+          return resolveDispatcher().useDebugValue(value, formatterFn);
+        };
+        exports.useDeferredValue = function(value, initialValue) {
+          return resolveDispatcher().useDeferredValue(value, initialValue);
+        };
+        exports.useEffect = function(create2, deps) {
+          null == create2 && console.warn(
+            "React Hook useEffect requires an effect callback. Did you forget to pass a callback to the hook?"
+          );
+          return resolveDispatcher().useEffect(create2, deps);
+        };
+        exports.useEffectEvent = function(callback) {
+          return resolveDispatcher().useEffectEvent(callback);
+        };
+        exports.useId = function() {
+          return resolveDispatcher().useId();
+        };
+        exports.useImperativeHandle = function(ref, create2, deps) {
+          return resolveDispatcher().useImperativeHandle(ref, create2, deps);
+        };
+        exports.useInsertionEffect = function(create2, deps) {
+          null == create2 && console.warn(
+            "React Hook useInsertionEffect requires an effect callback. Did you forget to pass a callback to the hook?"
+          );
+          return resolveDispatcher().useInsertionEffect(create2, deps);
+        };
+        exports.useLayoutEffect = function(create2, deps) {
+          null == create2 && console.warn(
+            "React Hook useLayoutEffect requires an effect callback. Did you forget to pass a callback to the hook?"
+          );
+          return resolveDispatcher().useLayoutEffect(create2, deps);
+        };
+        exports.useMemo = function(create2, deps) {
+          return resolveDispatcher().useMemo(create2, deps);
+        };
+        exports.useOptimistic = function(passthrough, reducer) {
+          return resolveDispatcher().useOptimistic(passthrough, reducer);
+        };
+        exports.useReducer = function(reducer, initialArg, init) {
+          return resolveDispatcher().useReducer(reducer, initialArg, init);
+        };
+        exports.useRef = function(initialValue) {
+          return resolveDispatcher().useRef(initialValue);
+        };
+        exports.useState = function(initialState) {
+          return resolveDispatcher().useState(initialState);
+        };
+        exports.useSyncExternalStore = function(subscribe, getSnapshot, getServerSnapshot) {
+          return resolveDispatcher().useSyncExternalStore(
+            subscribe,
+            getSnapshot,
+            getServerSnapshot
+          );
+        };
+        exports.useTransition = function() {
+          return resolveDispatcher().useTransition();
+        };
+        exports.version = "19.2.3";
+        "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop(Error());
+      })();
+    }
+  });
+
+  // node_modules/react/index.js
+  var require_react = __commonJS({
+    "node_modules/react/index.js"(exports, module) {
+      "use strict";
+      if (false) {
+        module.exports = null;
+      } else {
+        module.exports = require_react_development();
+      }
+    }
+  });
+
+  // node_modules/react/cjs/react-jsx-runtime.development.js
+  var require_react_jsx_runtime_development = __commonJS({
+    "node_modules/react/cjs/react-jsx-runtime.development.js"(exports) {
+      "use strict";
+      (function() {
+        function getComponentNameFromType(type) {
+          if (null == type) return null;
+          if ("function" === typeof type)
+            return type.$$typeof === REACT_CLIENT_REFERENCE ? null : type.displayName || type.name || null;
+          if ("string" === typeof type) return type;
+          switch (type) {
+            case REACT_FRAGMENT_TYPE:
+              return "Fragment";
+            case REACT_PROFILER_TYPE:
+              return "Profiler";
+            case REACT_STRICT_MODE_TYPE:
+              return "StrictMode";
+            case REACT_SUSPENSE_TYPE:
+              return "Suspense";
+            case REACT_SUSPENSE_LIST_TYPE:
+              return "SuspenseList";
+            case REACT_ACTIVITY_TYPE:
+              return "Activity";
+          }
+          if ("object" === typeof type)
+            switch ("number" === typeof type.tag && console.error(
+              "Received an unexpected object in getComponentNameFromType(). This is likely a bug in React. Please file an issue."
+            ), type.$$typeof) {
+              case REACT_PORTAL_TYPE:
+                return "Portal";
+              case REACT_CONTEXT_TYPE:
+                return type.displayName || "Context";
+              case REACT_CONSUMER_TYPE:
+                return (type._context.displayName || "Context") + ".Consumer";
+              case REACT_FORWARD_REF_TYPE:
+                var innerType = type.render;
+                type = type.displayName;
+                type || (type = innerType.displayName || innerType.name || "", type = "" !== type ? "ForwardRef(" + type + ")" : "ForwardRef");
+                return type;
+              case REACT_MEMO_TYPE:
+                return innerType = type.displayName || null, null !== innerType ? innerType : getComponentNameFromType(type.type) || "Memo";
+              case REACT_LAZY_TYPE:
+                innerType = type._payload;
+                type = type._init;
+                try {
+                  return getComponentNameFromType(type(innerType));
+                } catch (x) {
+                }
+            }
+          return null;
+        }
+        function testStringCoercion(value) {
+          return "" + value;
+        }
+        function checkKeyStringCoercion(value) {
+          try {
+            testStringCoercion(value);
+            var JSCompiler_inline_result = false;
+          } catch (e) {
+            JSCompiler_inline_result = true;
+          }
+          if (JSCompiler_inline_result) {
+            JSCompiler_inline_result = console;
+            var JSCompiler_temp_const = JSCompiler_inline_result.error;
+            var JSCompiler_inline_result$jscomp$0 = "function" === typeof Symbol && Symbol.toStringTag && value[Symbol.toStringTag] || value.constructor.name || "Object";
+            JSCompiler_temp_const.call(
+              JSCompiler_inline_result,
+              "The provided key is an unsupported type %s. This value must be coerced to a string before using it here.",
+              JSCompiler_inline_result$jscomp$0
+            );
+            return testStringCoercion(value);
+          }
+        }
+        function getTaskName(type) {
+          if (type === REACT_FRAGMENT_TYPE) return "<>";
+          if ("object" === typeof type && null !== type && type.$$typeof === REACT_LAZY_TYPE)
+            return "<...>";
+          try {
+            var name2 = getComponentNameFromType(type);
+            return name2 ? "<" + name2 + ">" : "<...>";
+          } catch (x) {
+            return "<...>";
+          }
+        }
+        function getOwner() {
+          var dispatcher = ReactSharedInternals.A;
+          return null === dispatcher ? null : dispatcher.getOwner();
+        }
+        function UnknownOwner() {
+          return Error("react-stack-top-frame");
+        }
+        function hasValidKey(config) {
+          if (hasOwnProperty2.call(config, "key")) {
+            var getter = Object.getOwnPropertyDescriptor(config, "key").get;
+            if (getter && getter.isReactWarning) return false;
+          }
+          return void 0 !== config.key;
+        }
+        function defineKeyPropWarningGetter(props, displayName) {
+          function warnAboutAccessingKey() {
+            specialPropKeyWarningShown || (specialPropKeyWarningShown = true, console.error(
+              "%s: `key` is not a prop. Trying to access it will result in `undefined` being returned. If you need to access the same value within the child component, you should pass it as a different prop. (https://react.dev/link/special-props)",
+              displayName
+            ));
+          }
+          warnAboutAccessingKey.isReactWarning = true;
+          Object.defineProperty(props, "key", {
+            get: warnAboutAccessingKey,
+            configurable: true
+          });
+        }
+        function elementRefGetterWithDeprecationWarning() {
+          var componentName = getComponentNameFromType(this.type);
+          didWarnAboutElementRef[componentName] || (didWarnAboutElementRef[componentName] = true, console.error(
+            "Accessing element.ref was removed in React 19. ref is now a regular prop. It will be removed from the JSX Element type in a future release."
+          ));
+          componentName = this.props.ref;
+          return void 0 !== componentName ? componentName : null;
+        }
+        function ReactElement(type, key, props, owner, debugStack, debugTask) {
+          var refProp = props.ref;
+          type = {
+            $$typeof: REACT_ELEMENT_TYPE,
+            type,
+            key,
+            props,
+            _owner: owner
+          };
+          null !== (void 0 !== refProp ? refProp : null) ? Object.defineProperty(type, "ref", {
+            enumerable: false,
+            get: elementRefGetterWithDeprecationWarning
+          }) : Object.defineProperty(type, "ref", { enumerable: false, value: null });
+          type._store = {};
+          Object.defineProperty(type._store, "validated", {
+            configurable: false,
+            enumerable: false,
+            writable: true,
+            value: 0
+          });
+          Object.defineProperty(type, "_debugInfo", {
+            configurable: false,
+            enumerable: false,
+            writable: true,
+            value: null
+          });
+          Object.defineProperty(type, "_debugStack", {
+            configurable: false,
+            enumerable: false,
+            writable: true,
+            value: debugStack
+          });
+          Object.defineProperty(type, "_debugTask", {
+            configurable: false,
+            enumerable: false,
+            writable: true,
+            value: debugTask
+          });
+          Object.freeze && (Object.freeze(type.props), Object.freeze(type));
+          return type;
+        }
+        function jsxDEVImpl(type, config, maybeKey, isStaticChildren, debugStack, debugTask) {
+          var children = config.children;
+          if (void 0 !== children)
+            if (isStaticChildren)
+              if (isArrayImpl(children)) {
+                for (isStaticChildren = 0; isStaticChildren < children.length; isStaticChildren++)
+                  validateChildKeys(children[isStaticChildren]);
+                Object.freeze && Object.freeze(children);
+              } else
+                console.error(
+                  "React.jsx: Static children should always be an array. You are likely explicitly calling React.jsxs or React.jsxDEV. Use the Babel transform instead."
+                );
+            else validateChildKeys(children);
+          if (hasOwnProperty2.call(config, "key")) {
+            children = getComponentNameFromType(type);
+            var keys2 = Object.keys(config).filter(function(k) {
+              return "key" !== k;
+            });
+            isStaticChildren = 0 < keys2.length ? "{key: someKey, " + keys2.join(": ..., ") + ": ...}" : "{key: someKey}";
+            didWarnAboutKeySpread[children + isStaticChildren] || (keys2 = 0 < keys2.length ? "{" + keys2.join(": ..., ") + ": ...}" : "{}", console.error(
+              'A props object containing a "key" prop is being spread into JSX:\n  let props = %s;\n  <%s {...props} />\nReact keys must be passed directly to JSX without using spread:\n  let props = %s;\n  <%s key={someKey} {...props} />',
+              isStaticChildren,
+              children,
+              keys2,
+              children
+            ), didWarnAboutKeySpread[children + isStaticChildren] = true);
+          }
+          children = null;
+          void 0 !== maybeKey && (checkKeyStringCoercion(maybeKey), children = "" + maybeKey);
+          hasValidKey(config) && (checkKeyStringCoercion(config.key), children = "" + config.key);
+          if ("key" in config) {
+            maybeKey = {};
+            for (var propName in config)
+              "key" !== propName && (maybeKey[propName] = config[propName]);
+          } else maybeKey = config;
+          children && defineKeyPropWarningGetter(
+            maybeKey,
+            "function" === typeof type ? type.displayName || type.name || "Unknown" : type
+          );
+          return ReactElement(
+            type,
+            children,
+            maybeKey,
+            getOwner(),
+            debugStack,
+            debugTask
+          );
+        }
+        function validateChildKeys(node2) {
+          isValidElement(node2) ? node2._store && (node2._store.validated = 1) : "object" === typeof node2 && null !== node2 && node2.$$typeof === REACT_LAZY_TYPE && ("fulfilled" === node2._payload.status ? isValidElement(node2._payload.value) && node2._payload.value._store && (node2._payload.value._store.validated = 1) : node2._store && (node2._store.validated = 1));
+        }
+        function isValidElement(object) {
+          return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
+        }
+        var React5 = require_react(), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = React5.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty2 = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
+          return null;
+        };
+        React5 = {
+          react_stack_bottom_frame: function(callStackForError) {
+            return callStackForError();
+          }
+        };
+        var specialPropKeyWarningShown;
+        var didWarnAboutElementRef = {};
+        var unknownOwnerDebugStack = React5.react_stack_bottom_frame.bind(
+          React5,
+          UnknownOwner
+        )();
+        var unknownOwnerDebugTask = createTask(getTaskName(UnknownOwner));
+        var didWarnAboutKeySpread = {};
+        exports.Fragment = REACT_FRAGMENT_TYPE;
+        exports.jsx = function(type, config, maybeKey) {
+          var trackActualOwner = 1e4 > ReactSharedInternals.recentlyCreatedOwnerStacks++;
+          return jsxDEVImpl(
+            type,
+            config,
+            maybeKey,
+            false,
+            trackActualOwner ? Error("react-stack-top-frame") : unknownOwnerDebugStack,
+            trackActualOwner ? createTask(getTaskName(type)) : unknownOwnerDebugTask
+          );
+        };
+        exports.jsxs = function(type, config, maybeKey) {
+          var trackActualOwner = 1e4 > ReactSharedInternals.recentlyCreatedOwnerStacks++;
+          return jsxDEVImpl(
+            type,
+            config,
+            maybeKey,
+            true,
+            trackActualOwner ? Error("react-stack-top-frame") : unknownOwnerDebugStack,
+            trackActualOwner ? createTask(getTaskName(type)) : unknownOwnerDebugTask
+          );
+        };
+      })();
+    }
+  });
+
+  // node_modules/react/jsx-runtime.js
+  var require_jsx_runtime = __commonJS({
+    "node_modules/react/jsx-runtime.js"(exports, module) {
+      "use strict";
+      if (false) {
+        module.exports = null;
+      } else {
+        module.exports = require_react_jsx_runtime_development();
+      }
+    }
+  });
+
+  // ../../../node_modules/inline-style-parser/cjs/index.js
+  var require_cjs = __commonJS({
+    "../../../node_modules/inline-style-parser/cjs/index.js"(exports, module) {
+      "use strict";
+      var COMMENT_REGEX = /\/\*[^*]*\*+([^/*][^*]*\*+)*\//g;
+      var NEWLINE_REGEX = /\n/g;
+      var WHITESPACE_REGEX = /^\s*/;
+      var PROPERTY_REGEX = /^(\*?[-#/*\\\w]+(\[[0-9a-z_-]+\])?)\s*/;
+      var COLON_REGEX = /^:\s*/;
+      var VALUE_REGEX = /^((?:'(?:\\'|.)*?'|"(?:\\"|.)*?"|\([^)]*?\)|[^};])+)/;
+      var SEMICOLON_REGEX = /^[;\s]*/;
+      var TRIM_REGEX = /^\s+|\s+$/g;
+      var NEWLINE = "\n";
+      var FORWARD_SLASH = "/";
+      var ASTERISK = "*";
+      var EMPTY_STRING = "";
+      var TYPE_COMMENT = "comment";
+      var TYPE_DECLARATION = "declaration";
+      function index2(style, options) {
+        if (typeof style !== "string") {
+          throw new TypeError("First argument must be a string");
+        }
+        if (!style) return [];
+        options = options || {};
+        var lineno = 1;
+        var column = 1;
+        function updatePosition(str) {
+          var lines = str.match(NEWLINE_REGEX);
+          if (lines) lineno += lines.length;
+          var i = str.lastIndexOf(NEWLINE);
+          column = ~i ? str.length - i : column + str.length;
+        }
+        function position3() {
+          var start2 = { line: lineno, column };
+          return function(node2) {
+            node2.position = new Position(start2);
+            whitespace2();
+            return node2;
+          };
+        }
+        function Position(start2) {
+          this.start = start2;
+          this.end = { line: lineno, column };
+          this.source = options.source;
+        }
+        Position.prototype.content = style;
+        function error(msg) {
+          var err = new Error(
+            options.source + ":" + lineno + ":" + column + ": " + msg
+          );
+          err.reason = msg;
+          err.filename = options.source;
+          err.line = lineno;
+          err.column = column;
+          err.source = style;
+          if (options.silent) ;
+          else {
+            throw err;
+          }
+        }
+        function match(re2) {
+          var m = re2.exec(style);
+          if (!m) return;
+          var str = m[0];
+          updatePosition(str);
+          style = style.slice(str.length);
+          return m;
+        }
+        function whitespace2() {
+          match(WHITESPACE_REGEX);
+        }
+        function comments(rules) {
+          var c;
+          rules = rules || [];
+          while (c = comment()) {
+            if (c !== false) {
+              rules.push(c);
+            }
+          }
+          return rules;
+        }
+        function comment() {
+          var pos = position3();
+          if (FORWARD_SLASH != style.charAt(0) || ASTERISK != style.charAt(1)) return;
+          var i = 2;
+          while (EMPTY_STRING != style.charAt(i) && (ASTERISK != style.charAt(i) || FORWARD_SLASH != style.charAt(i + 1))) {
+            ++i;
+          }
+          i += 2;
+          if (EMPTY_STRING === style.charAt(i - 1)) {
+            return error("End of comment missing");
+          }
+          var str = style.slice(2, i - 2);
+          column += 2;
+          updatePosition(str);
+          style = style.slice(i);
+          column += 2;
+          return pos({
+            type: TYPE_COMMENT,
+            comment: str
+          });
+        }
+        function declaration() {
+          var pos = position3();
+          var prop = match(PROPERTY_REGEX);
+          if (!prop) return;
+          comment();
+          if (!match(COLON_REGEX)) return error("property missing ':'");
+          var val = match(VALUE_REGEX);
+          var ret = pos({
+            type: TYPE_DECLARATION,
+            property: trim(prop[0].replace(COMMENT_REGEX, EMPTY_STRING)),
+            value: val ? trim(val[0].replace(COMMENT_REGEX, EMPTY_STRING)) : EMPTY_STRING
+          });
+          match(SEMICOLON_REGEX);
+          return ret;
+        }
+        function declarations() {
+          var decls = [];
+          comments(decls);
+          var decl;
+          while (decl = declaration()) {
+            if (decl !== false) {
+              decls.push(decl);
+              comments(decls);
+            }
+          }
+          return decls;
+        }
+        whitespace2();
+        return declarations();
+      }
+      function trim(str) {
+        return str ? str.replace(TRIM_REGEX, EMPTY_STRING) : EMPTY_STRING;
+      }
+      module.exports = index2;
+    }
+  });
+
+  // ../../../node_modules/style-to-object/cjs/index.js
+  var require_cjs2 = __commonJS({
+    "../../../node_modules/style-to-object/cjs/index.js"(exports) {
+      "use strict";
+      var __importDefault = exports && exports.__importDefault || function(mod) {
+        return mod && mod.__esModule ? mod : { "default": mod };
+      };
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.default = StyleToObject;
+      var inline_style_parser_1 = __importDefault(require_cjs());
+      function StyleToObject(style, iterator) {
+        let styleObject = null;
+        if (!style || typeof style !== "string") {
+          return styleObject;
+        }
+        const declarations = (0, inline_style_parser_1.default)(style);
+        const hasIterator = typeof iterator === "function";
+        declarations.forEach((declaration) => {
+          if (declaration.type !== "declaration") {
+            return;
+          }
+          const { property, value } = declaration;
+          if (hasIterator) {
+            iterator(property, value, declaration);
+          } else if (value) {
+            styleObject = styleObject || {};
+            styleObject[property] = value;
+          }
+        });
+        return styleObject;
+      }
+    }
+  });
+
+  // ../../../node_modules/style-to-js/cjs/utilities.js
+  var require_utilities = __commonJS({
+    "../../../node_modules/style-to-js/cjs/utilities.js"(exports) {
+      "use strict";
+      Object.defineProperty(exports, "__esModule", { value: true });
+      exports.camelCase = void 0;
+      var CUSTOM_PROPERTY_REGEX = /^--[a-zA-Z0-9_-]+$/;
+      var HYPHEN_REGEX = /-([a-z])/g;
+      var NO_HYPHEN_REGEX = /^[^-]+$/;
+      var VENDOR_PREFIX_REGEX = /^-(webkit|moz|ms|o|khtml)-/;
+      var MS_VENDOR_PREFIX_REGEX = /^-(ms)-/;
+      var skipCamelCase = function(property) {
+        return !property || NO_HYPHEN_REGEX.test(property) || CUSTOM_PROPERTY_REGEX.test(property);
+      };
+      var capitalize = function(match, character) {
+        return character.toUpperCase();
+      };
+      var trimHyphen = function(match, prefix) {
+        return "".concat(prefix, "-");
+      };
+      var camelCase = function(property, options) {
+        if (options === void 0) {
+          options = {};
+        }
+        if (skipCamelCase(property)) {
+          return property;
+        }
+        property = property.toLowerCase();
+        if (options.reactCompat) {
+          property = property.replace(MS_VENDOR_PREFIX_REGEX, trimHyphen);
+        } else {
+          property = property.replace(VENDOR_PREFIX_REGEX, trimHyphen);
+        }
+        return property.replace(HYPHEN_REGEX, capitalize);
+      };
+      exports.camelCase = camelCase;
+    }
+  });
+
+  // ../../../node_modules/style-to-js/cjs/index.js
+  var require_cjs3 = __commonJS({
+    "../../../node_modules/style-to-js/cjs/index.js"(exports, module) {
+      "use strict";
+      var __importDefault = exports && exports.__importDefault || function(mod) {
+        return mod && mod.__esModule ? mod : { "default": mod };
+      };
+      var style_to_object_1 = __importDefault(require_cjs2());
+      var utilities_1 = require_utilities();
+      function StyleToJS(style, options) {
+        var output = {};
+        if (!style || typeof style !== "string") {
+          return output;
+        }
+        (0, style_to_object_1.default)(style, function(property, value) {
+          if (property && value) {
+            output[(0, utilities_1.camelCase)(property, options)] = value;
+          }
+        });
+        return output;
+      }
+      StyleToJS.default = StyleToJS;
+      module.exports = StyleToJS;
+    }
+  });
+
+  // ../../../node_modules/react/cjs/react.development.js
+  var require_react_development2 = __commonJS({
     "../../../node_modules/react/cjs/react.development.js"(exports, module) {
       "use strict";
       (function() {
@@ -1005,19 +2496,19 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
   });
 
   // ../../../node_modules/react/index.js
-  var require_react = __commonJS({
+  var require_react2 = __commonJS({
     "../../../node_modules/react/index.js"(exports, module) {
       "use strict";
       if (false) {
         module.exports = null;
       } else {
-        module.exports = require_react_development();
+        module.exports = require_react_development2();
       }
     }
   });
 
   // ../../../node_modules/react/cjs/react-jsx-runtime.development.js
-  var require_react_jsx_runtime_development = __commonJS({
+  var require_react_jsx_runtime_development2 = __commonJS({
     "../../../node_modules/react/cjs/react-jsx-runtime.development.js"(exports) {
       "use strict";
       (function() {
@@ -1230,7 +2721,7 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
         function isValidElement(object) {
           return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
         }
-        var React5 = require_react(), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = React5.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty2 = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
+        var React5 = require_react2(), REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = React5.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty2 = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
           return null;
         };
         React5 = {
@@ -1274,252 +2765,14 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
   });
 
   // ../../../node_modules/react/jsx-runtime.js
-  var require_jsx_runtime = __commonJS({
+  var require_jsx_runtime2 = __commonJS({
     "../../../node_modules/react/jsx-runtime.js"(exports, module) {
       "use strict";
       if (false) {
         module.exports = null;
       } else {
-        module.exports = require_react_jsx_runtime_development();
+        module.exports = require_react_jsx_runtime_development2();
       }
-    }
-  });
-
-  // ../../../node_modules/inline-style-parser/cjs/index.js
-  var require_cjs = __commonJS({
-    "../../../node_modules/inline-style-parser/cjs/index.js"(exports, module) {
-      "use strict";
-      var COMMENT_REGEX = /\/\*[^*]*\*+([^/*][^*]*\*+)*\//g;
-      var NEWLINE_REGEX = /\n/g;
-      var WHITESPACE_REGEX = /^\s*/;
-      var PROPERTY_REGEX = /^(\*?[-#/*\\\w]+(\[[0-9a-z_-]+\])?)\s*/;
-      var COLON_REGEX = /^:\s*/;
-      var VALUE_REGEX = /^((?:'(?:\\'|.)*?'|"(?:\\"|.)*?"|\([^)]*?\)|[^};])+)/;
-      var SEMICOLON_REGEX = /^[;\s]*/;
-      var TRIM_REGEX = /^\s+|\s+$/g;
-      var NEWLINE = "\n";
-      var FORWARD_SLASH = "/";
-      var ASTERISK = "*";
-      var EMPTY_STRING = "";
-      var TYPE_COMMENT = "comment";
-      var TYPE_DECLARATION = "declaration";
-      function index2(style, options) {
-        if (typeof style !== "string") {
-          throw new TypeError("First argument must be a string");
-        }
-        if (!style) return [];
-        options = options || {};
-        var lineno = 1;
-        var column = 1;
-        function updatePosition(str) {
-          var lines = str.match(NEWLINE_REGEX);
-          if (lines) lineno += lines.length;
-          var i = str.lastIndexOf(NEWLINE);
-          column = ~i ? str.length - i : column + str.length;
-        }
-        function position3() {
-          var start2 = { line: lineno, column };
-          return function(node2) {
-            node2.position = new Position(start2);
-            whitespace2();
-            return node2;
-          };
-        }
-        function Position(start2) {
-          this.start = start2;
-          this.end = { line: lineno, column };
-          this.source = options.source;
-        }
-        Position.prototype.content = style;
-        function error(msg) {
-          var err = new Error(
-            options.source + ":" + lineno + ":" + column + ": " + msg
-          );
-          err.reason = msg;
-          err.filename = options.source;
-          err.line = lineno;
-          err.column = column;
-          err.source = style;
-          if (options.silent) ;
-          else {
-            throw err;
-          }
-        }
-        function match(re2) {
-          var m = re2.exec(style);
-          if (!m) return;
-          var str = m[0];
-          updatePosition(str);
-          style = style.slice(str.length);
-          return m;
-        }
-        function whitespace2() {
-          match(WHITESPACE_REGEX);
-        }
-        function comments(rules) {
-          var c;
-          rules = rules || [];
-          while (c = comment()) {
-            if (c !== false) {
-              rules.push(c);
-            }
-          }
-          return rules;
-        }
-        function comment() {
-          var pos = position3();
-          if (FORWARD_SLASH != style.charAt(0) || ASTERISK != style.charAt(1)) return;
-          var i = 2;
-          while (EMPTY_STRING != style.charAt(i) && (ASTERISK != style.charAt(i) || FORWARD_SLASH != style.charAt(i + 1))) {
-            ++i;
-          }
-          i += 2;
-          if (EMPTY_STRING === style.charAt(i - 1)) {
-            return error("End of comment missing");
-          }
-          var str = style.slice(2, i - 2);
-          column += 2;
-          updatePosition(str);
-          style = style.slice(i);
-          column += 2;
-          return pos({
-            type: TYPE_COMMENT,
-            comment: str
-          });
-        }
-        function declaration() {
-          var pos = position3();
-          var prop = match(PROPERTY_REGEX);
-          if (!prop) return;
-          comment();
-          if (!match(COLON_REGEX)) return error("property missing ':'");
-          var val = match(VALUE_REGEX);
-          var ret = pos({
-            type: TYPE_DECLARATION,
-            property: trim(prop[0].replace(COMMENT_REGEX, EMPTY_STRING)),
-            value: val ? trim(val[0].replace(COMMENT_REGEX, EMPTY_STRING)) : EMPTY_STRING
-          });
-          match(SEMICOLON_REGEX);
-          return ret;
-        }
-        function declarations() {
-          var decls = [];
-          comments(decls);
-          var decl;
-          while (decl = declaration()) {
-            if (decl !== false) {
-              decls.push(decl);
-              comments(decls);
-            }
-          }
-          return decls;
-        }
-        whitespace2();
-        return declarations();
-      }
-      function trim(str) {
-        return str ? str.replace(TRIM_REGEX, EMPTY_STRING) : EMPTY_STRING;
-      }
-      module.exports = index2;
-    }
-  });
-
-  // ../../../node_modules/style-to-object/cjs/index.js
-  var require_cjs2 = __commonJS({
-    "../../../node_modules/style-to-object/cjs/index.js"(exports) {
-      "use strict";
-      var __importDefault = exports && exports.__importDefault || function(mod) {
-        return mod && mod.__esModule ? mod : { "default": mod };
-      };
-      Object.defineProperty(exports, "__esModule", { value: true });
-      exports.default = StyleToObject;
-      var inline_style_parser_1 = __importDefault(require_cjs());
-      function StyleToObject(style, iterator) {
-        let styleObject = null;
-        if (!style || typeof style !== "string") {
-          return styleObject;
-        }
-        const declarations = (0, inline_style_parser_1.default)(style);
-        const hasIterator = typeof iterator === "function";
-        declarations.forEach((declaration) => {
-          if (declaration.type !== "declaration") {
-            return;
-          }
-          const { property, value } = declaration;
-          if (hasIterator) {
-            iterator(property, value, declaration);
-          } else if (value) {
-            styleObject = styleObject || {};
-            styleObject[property] = value;
-          }
-        });
-        return styleObject;
-      }
-    }
-  });
-
-  // ../../../node_modules/style-to-js/cjs/utilities.js
-  var require_utilities = __commonJS({
-    "../../../node_modules/style-to-js/cjs/utilities.js"(exports) {
-      "use strict";
-      Object.defineProperty(exports, "__esModule", { value: true });
-      exports.camelCase = void 0;
-      var CUSTOM_PROPERTY_REGEX = /^--[a-zA-Z0-9_-]+$/;
-      var HYPHEN_REGEX = /-([a-z])/g;
-      var NO_HYPHEN_REGEX = /^[^-]+$/;
-      var VENDOR_PREFIX_REGEX = /^-(webkit|moz|ms|o|khtml)-/;
-      var MS_VENDOR_PREFIX_REGEX = /^-(ms)-/;
-      var skipCamelCase = function(property) {
-        return !property || NO_HYPHEN_REGEX.test(property) || CUSTOM_PROPERTY_REGEX.test(property);
-      };
-      var capitalize = function(match, character) {
-        return character.toUpperCase();
-      };
-      var trimHyphen = function(match, prefix) {
-        return "".concat(prefix, "-");
-      };
-      var camelCase = function(property, options) {
-        if (options === void 0) {
-          options = {};
-        }
-        if (skipCamelCase(property)) {
-          return property;
-        }
-        property = property.toLowerCase();
-        if (options.reactCompat) {
-          property = property.replace(MS_VENDOR_PREFIX_REGEX, trimHyphen);
-        } else {
-          property = property.replace(VENDOR_PREFIX_REGEX, trimHyphen);
-        }
-        return property.replace(HYPHEN_REGEX, capitalize);
-      };
-      exports.camelCase = camelCase;
-    }
-  });
-
-  // ../../../node_modules/style-to-js/cjs/index.js
-  var require_cjs3 = __commonJS({
-    "../../../node_modules/style-to-js/cjs/index.js"(exports, module) {
-      "use strict";
-      var __importDefault = exports && exports.__importDefault || function(mod) {
-        return mod && mod.__esModule ? mod : { "default": mod };
-      };
-      var style_to_object_1 = __importDefault(require_cjs2());
-      var utilities_1 = require_utilities();
-      function StyleToJS(style, options) {
-        var output = {};
-        if (!style || typeof style !== "string") {
-          return output;
-        }
-        (0, style_to_object_1.default)(style, function(property, value) {
-          if (property && value) {
-            output[(0, utilities_1.camelCase)(property, options)] = value;
-          }
-        });
-        return output;
-      }
-      StyleToJS.default = StyleToJS;
-      module.exports = StyleToJS;
     }
   });
 
@@ -1885,9 +3138,9 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
     }
   });
 
-  // ../../../node_modules/react-dom/cjs/react-dom.development.js
+  // node_modules/react-dom/cjs/react-dom.development.js
   var require_react_dom_development = __commonJS({
-    "../../../node_modules/react-dom/cjs/react-dom.development.js"(exports) {
+    "node_modules/react-dom/cjs/react-dom.development.js"(exports) {
       "use strict";
       (function() {
         function noop() {
@@ -2123,15 +3376,15 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
         exports.useFormStatus = function() {
           return resolveDispatcher().useHostTransitionStatus();
         };
-        exports.version = "19.2.4";
+        exports.version = "19.2.3";
         "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop(Error());
       })();
     }
   });
 
-  // ../../../node_modules/react-dom/index.js
+  // node_modules/react-dom/index.js
   var require_react_dom = __commonJS({
-    "../../../node_modules/react-dom/index.js"(exports, module) {
+    "node_modules/react-dom/index.js"(exports, module) {
       "use strict";
       if (false) {
         checkDCE();
@@ -2142,9 +3395,9 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
     }
   });
 
-  // ../../../node_modules/react-dom/cjs/react-dom-client.development.js
+  // node_modules/react-dom/cjs/react-dom-client.development.js
   var require_react_dom_client_development = __commonJS({
-    "../../../node_modules/react-dom/cjs/react-dom-client.development.js"(exports) {
+    "node_modules/react-dom/cjs/react-dom-client.development.js"(exports) {
       "use strict";
       (function() {
         function findHook(fiber, id) {
@@ -21915,9 +23168,9 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
         };
         (function() {
           var isomorphicReactPackageVersion = React5.version;
-          if ("19.2.4" !== isomorphicReactPackageVersion)
+          if ("19.2.3" !== isomorphicReactPackageVersion)
             throw Error(
-              'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' + (isomorphicReactPackageVersion + "\n  - react-dom:  19.2.4\nLearn more: https://react.dev/warnings/version-mismatch")
+              'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' + (isomorphicReactPackageVersion + "\n  - react-dom:  19.2.3\nLearn more: https://react.dev/warnings/version-mismatch")
             );
         })();
         "function" === typeof Map && null != Map.prototype && "function" === typeof Map.prototype.forEach && "function" === typeof Set && null != Set.prototype && "function" === typeof Set.prototype.clear && "function" === typeof Set.prototype.forEach || console.error(
@@ -21941,10 +23194,10 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
         if (!(function() {
           var internals = {
             bundleType: 1,
-            version: "19.2.4",
+            version: "19.2.3",
             rendererPackageName: "react-dom",
             currentDispatcherRef: ReactSharedInternals,
-            reconcilerVersion: "19.2.4"
+            reconcilerVersion: "19.2.3"
           };
           internals.overrideHookState = overrideHookState;
           internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -22035,15 +23288,15 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
           listenToAllSupportedEvents(container);
           return new ReactDOMHydrationRoot(initialChildren);
         };
-        exports.version = "19.2.4";
+        exports.version = "19.2.3";
         "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop(Error());
       })();
     }
   });
 
-  // ../../../node_modules/react-dom/client.js
+  // node_modules/react-dom/client.js
   var require_client = __commonJS({
-    "../../../node_modules/react-dom/client.js"(exports, module) {
+    "node_modules/react-dom/client.js"(exports, module) {
       "use strict";
       if (false) {
         checkDCE();
@@ -22169,6 +23422,30 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
 
   // ProductListUI.tsx
   var import_react2 = __toESM(require_react());
+
+  // productlist.module.css
+  var productlist_default = {
+    container: "productlist_container",
+    message: "productlist_message",
+    productList: "productlist_productList",
+    productCard: "productlist_productCard",
+    productImageWrap: "productlist_productImageWrap",
+    productInfo: "productlist_productInfo",
+    productName: "productlist_productName",
+    productMeta: "productlist_productMeta",
+    productPrice: "productlist_productPrice",
+    actionRow: "productlist_actionRow",
+    btn: "productlist_btn",
+    primary: "productlist_primary",
+    modalOverlay: "productlist_modalOverlay",
+    fadeIn: "productlist_fadeIn",
+    modalTitle: "productlist_modalTitle",
+    sizeGrid: "productlist_sizeGrid",
+    sizeBtn: "productlist_sizeBtn",
+    closeModalBtn: "productlist_closeModalBtn"
+  };
+
+  // ProductListUI.tsx
   var import_jsx_runtime2 = __toESM(require_jsx_runtime());
   function ProductListUI({
     products = [],
@@ -22185,6 +23462,25 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
     resolveImageSrc,
     classNames
   }) {
+    const mergedClassNames = {
+      container: classNames?.container ?? productlist_default.container,
+      message: classNames?.message ?? productlist_default.message,
+      productList: classNames?.productList ?? productlist_default.productList,
+      productCard: classNames?.productCard ?? productlist_default.productCard,
+      productImageWrap: classNames?.productImageWrap ?? productlist_default.productImageWrap,
+      productInfo: classNames?.productInfo ?? productlist_default.productInfo,
+      productName: classNames?.productName ?? productlist_default.productName,
+      productMeta: classNames?.productMeta ?? productlist_default.productMeta,
+      productPrice: classNames?.productPrice ?? productlist_default.productPrice,
+      actionRow: classNames?.actionRow ?? productlist_default.actionRow,
+      btn: classNames?.btn ?? productlist_default.btn,
+      primary: classNames?.primary ?? productlist_default.primary,
+      modalOverlay: classNames?.modalOverlay ?? productlist_default.modalOverlay,
+      modalTitle: classNames?.modalTitle ?? productlist_default.modalTitle,
+      sizeGrid: classNames?.sizeGrid ?? productlist_default.sizeGrid,
+      sizeBtn: classNames?.sizeBtn ?? productlist_default.sizeBtn,
+      closeModalBtn: classNames?.closeModalBtn ?? productlist_default.closeModalBtn
+    };
     const uniqueSizes = import_react2.default.useMemo(() => {
       const map = /* @__PURE__ */ new Map();
       options.forEach((option) => {
@@ -22195,13 +23491,13 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
       });
       return Array.from(map.entries()).map(([size, opt]) => ({ size, opt }));
     }, [options]);
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: classNames?.container, children: [
-      message && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: classNames?.message, children: message }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: classNames?.productList, children: products.map((product) => {
+    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: mergedClassNames.container, children: [
+      message && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: mergedClassNames.message, children: message }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: mergedClassNames.productList, children: products.map((product) => {
         const selectedLabel = selectedSizeLabelByProduct[product.id];
         const imgUrl = resolveImageSrc?.(product) ?? product.image_url;
-        return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: classNames?.productCard, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: classNames?.productImageWrap, children: imgUrl ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+        return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: mergedClassNames.productCard, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: mergedClassNames.productImageWrap, children: imgUrl ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
             "img",
             {
               src: imgUrl,
@@ -22209,24 +23505,24 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
               style: { width: "100%", height: "100%", objectFit: "cover" }
             }
           ) : null }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: classNames?.productInfo, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: mergedClassNames.productInfo, children: [
             /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("h4", { className: classNames?.productName, children: product.name }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { className: classNames?.productMeta, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("h4", { className: mergedClassNames.productName, children: product.name }),
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { className: mergedClassNames.productMeta, children: [
                 product.category && `${product.category} | `,
                 product.color && `${product.color} `
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { className: classNames?.productPrice, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { className: mergedClassNames.productPrice, children: [
                 Math.round(product.price ?? 0).toLocaleString(),
                 "\uC6D0"
               ] })
             ] }),
-            purchaseEnabled ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: classNames?.actionRow, children: [
+            purchaseEnabled ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: mergedClassNames.actionRow, children: [
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
                 "button",
                 {
                   type: "button",
-                  className: classNames?.btn,
+                  className: mergedClassNames.btn,
                   onClick: () => onOpenSizeModal?.(product.id),
                   children: selectedLabel || "\uC0AC\uC774\uC988 \uC120\uD0DD"
                 }
@@ -22235,7 +23531,7 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
                 "button",
                 {
                   type: "button",
-                  className: classNames?.btn,
+                  className: mergedClassNames.btn,
                   onClick: () => onAddToCart?.(product.id, false),
                   children: "\uC7A5\uBC14\uAD6C\uB2C8"
                 }
@@ -22244,19 +23540,19 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
                 "button",
                 {
                   type: "button",
-                  className: [classNames?.btn, classNames?.primary].filter(Boolean).join(" "),
+                  className: [mergedClassNames.btn, mergedClassNames.primary].filter(Boolean).join(" "),
                   onClick: () => onAddToCart?.(product.id, true),
                   children: "\uBC14\uB85C \uAD6C\uB9E4"
                 }
               )
             ] }) : null
           ] }),
-          purchaseEnabled && sizeModalOpenFor === product.id && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: classNames?.modalOverlay, onClick: () => onCloseSizeModal?.(), children: [
+          purchaseEnabled && sizeModalOpenFor === product.id && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: mergedClassNames.modalOverlay, onClick: () => onCloseSizeModal?.(), children: [
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
               "button",
               {
                 type: "button",
-                className: classNames?.closeModalBtn,
+                className: mergedClassNames.closeModalBtn,
                 onClick: () => onCloseSizeModal?.(),
                 children: "\u2715"
               }
@@ -22267,12 +23563,12 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
                 style: { width: "100%", maxWidth: "240px" },
                 onClick: (event) => event.stopPropagation(),
                 children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("h4", { className: classNames?.modalTitle, children: "\uC0AC\uC774\uC988 \uC120\uD0DD" }),
-                  optionsLoading ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { style: { fontSize: "12px" }, children: "\uBD88\uB7EC\uC624\uB294 \uC911..." }) : uniqueSizes.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { style: { fontSize: "12px", color: "#666" }, children: "\uC120\uD0DD \uAC00\uB2A5\uD55C \uC0AC\uC774\uC988\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4." }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: classNames?.sizeGrid, children: uniqueSizes.map(({ size, opt }) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("h4", { className: mergedClassNames.modalTitle, children: "\uC0AC\uC774\uC988 \uC120\uD0DD" }),
+                  optionsLoading ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { style: { fontSize: "12px" }, children: "\uBD88\uB7EC\uC624\uB294 \uC911..." }) : uniqueSizes.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { style: { fontSize: "12px", color: "#666" }, children: "\uC120\uD0DD \uAC00\uB2A5\uD55C \uC0AC\uC774\uC988\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4." }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: mergedClassNames.sizeGrid, children: uniqueSizes.map(({ size, opt }) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
                     "button",
                     {
                       type: "button",
-                      className: classNames?.sizeBtn,
+                      className: mergedClassNames.sizeBtn,
                       onClick: () => onSelectOption?.(product.id, opt),
                       children: size
                     },
@@ -22565,7 +23861,7 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
       if (_isTextMessage(message)) {
         return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_react3.default.Fragment, { children: renderTextMessage ? renderTextMessage(message, index2) : message.role === "user" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: chatbot_widget_default.widgetTextMessage, children: message.text }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: chatbot_widget_default.widgetTextMessage, children: message.text }) }, renderKey);
       }
-      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_react3.default.Fragment, { children: capabilities === void 0 || capabilities === "full" ? renderFallback?.(message, index2) ?? null : null }, renderKey);
+      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_react3.default.Fragment, { children: renderFallback?.(message, index2) ?? null }, renderKey);
     }) }) });
   }
   var ChatbotWidget_default = ChatbotWidget;
@@ -24445,8 +25741,8 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
   };
 
   // ../../../node_modules/react-markdown/lib/index.js
-  var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
-  var import_react4 = __toESM(require_react(), 1);
+  var import_jsx_runtime4 = __toESM(require_jsx_runtime2(), 1);
+  var import_react4 = __toESM(require_react2(), 1);
 
   // ../../../node_modules/mdast-util-to-string/lib/index.js
   var emptyOptions2 = {};
@@ -32608,7 +33904,6 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
 
   // chatbotfab.tsx
   var import_jsx_runtime7 = __toESM(require_jsx_runtime());
-  var INITIAL_BOT_MESSAGE = { role: "bot", type: "text", text: "\uC548\uB155\uD558\uC138\uC694. MOYEO \uCC57\uBD07\uC785\uB2C8\uB2E4." };
   var resolveImageUrl = (source) => {
     if (!source) return "";
     if (typeof source === "string") return source;
@@ -32644,6 +33939,38 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
     ...HF_MODELS.map((id) => ({ id, provider: "huggingface", label: id })),
     ...VLLM_MODELS.map((id) => ({ id, provider: "vllm", label: `${id} (RunPod)` }))
   ];
+  function normalizeSiteBrandLabel(value) {
+    return String(value ?? "").trim().replace(/\s+/g, " ");
+  }
+  function deriveAssistantBrandDisplayName(host) {
+    const explicitDisplayName = normalizeSiteBrandLabel(host?.brandDisplayName);
+    if (explicitDisplayName) {
+      return explicitDisplayName;
+    }
+    const siteId = normalizeSiteBrandLabel(host?.siteId).toLowerCase();
+    if (siteId) {
+      return siteId.replace(/[_-]+/g, " ");
+    }
+    return "moyeo";
+  }
+  function resolveAssistantTitle(host) {
+    const explicitTitle = normalizeSiteBrandLabel(host?.assistantTitle);
+    if (explicitTitle) {
+      return explicitTitle;
+    }
+    return `${deriveAssistantBrandDisplayName(host)} AI \uACE0\uAC1D\uC0C1\uB2F4\uC0AC`;
+  }
+  function buildInitialBotMessage(host) {
+    const explicitGreeting = normalizeSiteBrandLabel(host?.initialGreeting);
+    if (explicitGreeting) {
+      return { role: "bot", type: "text", text: explicitGreeting };
+    }
+    return {
+      role: "bot",
+      type: "text",
+      text: `\uC548\uB155\uD558\uC138\uC694. ${deriveAssistantBrandDisplayName(host)} \uCC57\uBD07\uC785\uB2C8\uB2E4.`
+    };
+  }
   function resolveProviderByModel(modelId) {
     if (VLLM_MODELS.includes(modelId)) {
       return "vllm";
@@ -32930,10 +34257,12 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
     const effectiveHost = host ?? SHARED_WIDGET_HOST;
     const effectiveCapabilities = capabilities ?? ORDER_CS_ONLY_CAPABILITIES;
     const capabilityProfile = effectiveHost.capabilityProfile ?? (effectiveCapabilities === "full" ? "full" : "order_cs_only");
+    const initialBotMessage = buildInitialBotMessage(effectiveHost);
+    const assistantTitle = resolveAssistantTitle(effectiveHost);
     const imageUploadEnabled = typeof effectiveHost.widgetFeatures?.imageUpload === "boolean" ? Boolean(effectiveHost.widgetFeatures?.imageUpload) : effectiveCapabilities === "full";
     const [open, setOpen] = (0, import_react7.useState)(false);
     const [input, setInput] = (0, import_react7.useState)("");
-    const [messages, setMessages] = (0, import_react7.useState)([INITIAL_BOT_MESSAGE]);
+    const [messages, setMessages] = (0, import_react7.useState)(() => [initialBotMessage]);
     const [conversationState, setConversationState] = (0, import_react7.useState)(null);
     const [isLoading, setIsLoading] = (0, import_react7.useState)(false);
     const [statusMessage, setStatusMessage] = (0, import_react7.useState)(null);
@@ -32964,7 +34293,7 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
     };
     const resetConversationSession = () => {
       clearPendingImage();
-      setMessages([INITIAL_BOT_MESSAGE]);
+      setMessages([buildInitialBotMessage(effectiveHost)]);
       setConversationState(null);
       setStatusMessage(null);
       setStreamingText("");
@@ -33095,7 +34424,8 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
     };
     const sendMessage = async (textOverride, hidden = false, resumePayload) => {
       const text5 = typeof textOverride === "string" ? textOverride : input.trim();
-      if (!text5 || isLoading) return;
+      const isResumeSubmission = Boolean(hidden && resumePayload);
+      if (!text5 || isLoading && !isResumeSubmission) return;
       setIsLoading(true);
       setStatusMessage(null);
       setStreamingText("");
@@ -33128,7 +34458,9 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
             model: selectedModel,
             bootstrap,
             fetchImpl: sharedFetch,
-            capabilityProfile
+            capabilityProfile,
+            enabledRetrievalCorpora: effectiveHost.enabledRetrievalCorpora,
+            widgetFeatures: effectiveHost.widgetFeatures
           },
           {
             onStatusChange: (status) => {
@@ -33574,7 +34906,7 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
             /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: chatbotfab_default.resizeHandleTop, onMouseDown: (e) => onResizeStart(e, "top") }),
             /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: chatbotfab_default.resizeHandleCorner, onMouseDown: (e) => onResizeStart(e, "corner") }),
             /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("header", { className: chatbotfab_default.panelHeader, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: chatbotfab_default.title, children: "MOYEO AI \uACE0\uAC1D\uC0C1\uB2F4\uC0AC" }),
+              /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: chatbotfab_default.title, children: assistantTitle }),
               /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { type: "button", className: chatbotfab_default.closeBtn, onClick: toggle, "aria-label": "\uB2EB\uAE30", children: "\u2715" })
             ] }),
             /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: chatbotfab_default.msgList, ref: listRef, children: [
@@ -33937,6 +35269,11 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
       "auth-bootstrap-path": element3.getAttribute("auth-bootstrap-path"),
       "widget-bundle-path": element3.getAttribute("widget-bundle-path"),
       "mount-mode": element3.getAttribute("mount-mode"),
+      "site-id": element3.getAttribute("site-id"),
+      "brand-display-name": element3.getAttribute("brand-display-name"),
+      "brand-store-label": element3.getAttribute("brand-store-label"),
+      "assistant-title": element3.getAttribute("assistant-title"),
+      "initial-greeting": element3.getAttribute("initial-greeting"),
       capabilities: element3.getAttribute("capabilities"),
       "capability-profile": element3.getAttribute("capability-profile"),
       "enabled-retrieval-corpora": element3.getAttribute("enabled-retrieval-corpora")
@@ -33965,6 +35302,11 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
         globalContract.widgetElementTag ?? DEFAULT_SHARED_WIDGET_HOST_CONTRACT2.widgetElementTag
       ),
       mountMode: DEFAULT_SHARED_WIDGET_HOST_CONTRACT2.mountMode,
+      siteId: normalizeString2(globalContract.siteId),
+      brandDisplayName: normalizeString2(globalContract.brandDisplayName),
+      brandStoreLabel: normalizeString2(globalContract.brandStoreLabel),
+      assistantTitle: normalizeString2(globalContract.assistantTitle),
+      initialGreeting: normalizeString2(globalContract.initialGreeting),
       capabilityProfile: normalizeString2(globalContract.capabilityProfile),
       enabledRetrievalCorpora: Array.isArray(globalContract.enabledRetrievalCorpora) ? globalContract.enabledRetrievalCorpora.map((item) => String(item).trim()).filter(Boolean) : void 0,
       widgetFeatures: globalContract.widgetFeatures && typeof globalContract.widgetFeatures === "object" ? { imageUpload: Boolean(globalContract.widgetFeatures.imageUpload) } : void 0
@@ -33985,6 +35327,11 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
       // The custom element tag is fixed at registration time.
       widgetElementTag: ORDER_CS_WIDGET_TAG,
       mountMode: contract.mountMode,
+      siteId: normalizeString2(attributeOverrides["site-id"] ?? contract.siteId),
+      brandDisplayName: normalizeString2(attributeOverrides["brand-display-name"] ?? contract.brandDisplayName),
+      brandStoreLabel: normalizeString2(attributeOverrides["brand-store-label"] ?? contract.brandStoreLabel),
+      assistantTitle: normalizeString2(attributeOverrides["assistant-title"] ?? contract.assistantTitle),
+      initialGreeting: normalizeString2(attributeOverrides["initial-greeting"] ?? contract.initialGreeting),
       capabilityProfile: normalizeString2(
         attributeOverrides["capability-profile"] ?? contract.capabilityProfile
       ),
@@ -33998,6 +35345,11 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
       chatbotApiBase: contract.chatbotServerBaseUrl,
       chatPath: "/api/chat",
       streamPath: "/api/v1/chat/stream",
+      siteId: contract.siteId,
+      brandDisplayName: contract.brandDisplayName,
+      brandStoreLabel: contract.brandStoreLabel,
+      assistantTitle: contract.assistantTitle,
+      initialGreeting: contract.initialGreeting,
       capabilityProfile: contract.capabilityProfile,
       enabledRetrievalCorpora: contract.enabledRetrievalCorpora,
       widgetFeatures: contract.widgetFeatures
@@ -34081,6 +35433,7 @@ globalThis.__ORDER_CS_WIDGET_CSS__ = "/* chatbot-widget.module.css */\n.chatbot_
 /*! Bundled license information:
 
 react/cjs/react.development.js:
+react/cjs/react.development.js:
   (**
    * @license React
    * react.development.js
@@ -34091,6 +35444,7 @@ react/cjs/react.development.js:
    * LICENSE file in the root directory of this source tree.
    *)
 
+react/cjs/react-jsx-runtime.development.js:
 react/cjs/react-jsx-runtime.development.js:
   (**
    * @license React

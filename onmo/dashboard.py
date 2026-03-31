@@ -1063,6 +1063,17 @@ def _build_validation_details(
         stage_status=stage_status,
     )
     progress = _summarize_validation_progress(checks)
+    fixture_manifest = dict(conversation_payload.get("fixture_manifest") or {})
+    demo_auth = dict(fixture_manifest.get("auth") or {})
+    real_login_available = bool(host_bootstrap.get("real_login_passed"))
+    bridge_fallback_used = bool(host_bootstrap.get("bridge_fallback_used"))
+    warning_notes: list[str] = []
+    if bridge_fallback_used and not real_login_available:
+        warning_notes.append("실제 사이트 로그인 불가")
+    conversation_summary = str(conversation_payload.get("failure_summary") or "").strip()
+    if conversation_summary:
+        warning_notes.append(conversation_summary)
+    validation_warning_summary = " / ".join(dict.fromkeys(note for note in warning_notes if note))
 
     return {
         "passed": bool(bundle.get("passed")),
@@ -1073,6 +1084,10 @@ def _build_validation_details(
         "flow_reports": normalized_flow_reports,
         "sampled_order_id": str(widget_e2e.get("sampled_order_id") or ""),
         "validated_user_id": str((adapter_auth.get("validated_user") or {}).get("id") or ""),
+        "real_login_available": real_login_available,
+        "bridge_fallback_used": bridge_fallback_used,
+        "demo_auth": demo_auth,
+        "validation_warning_summary": validation_warning_summary,
         "progress": progress,
         "status": _validation_overall_status(bundle=bundle, stage_status=stage_status, progress=progress),
         "status_label": VALIDATION_CHECK_STATUS_LABELS_KO.get(

@@ -916,6 +916,7 @@ def _derive_integration_plan(
             ),
             api_strategy=integration_strategy.frontend_api_strategy,
             api_client_target=api_client_target,
+            site_id=site_id,
             auth_bootstrap_path="/api/chat/auth-token",
             chatbot_server_base_url=normalized_chatbot_server_base_url,
             chatbot_server_base_url_expression=_resolve_chatbot_server_base_url_expression(
@@ -1145,9 +1146,23 @@ def _build_rag_corpus_plan(
     faq_row_source_strategy = None
     faq_row_source_module = None
     faq_row_source_callable = None
+    discovery_row_source_strategy = None
+    discovery_row_source_module = None
+    discovery_row_source_callable = None
+    discovery_row_source_endpoint = None
     if corpus == "faq":
         faq_row_source_strategy, faq_row_source_module, faq_row_source_callable = _resolve_faq_row_source(
             records=records,
+        )
+    elif corpus == "discovery_image":
+        (
+            discovery_row_source_strategy,
+            discovery_row_source_module,
+            discovery_row_source_callable,
+            discovery_row_source_endpoint,
+        ) = _resolve_discovery_image_row_source(
+            records=records,
+            product_search_endpoint=product_search_endpoint,
         )
 
     if corpus != "discovery_image":
@@ -1174,6 +1189,13 @@ def _build_rag_corpus_plan(
         ),
         "image_url",
     )
+    sparse_text_paths, payload_paths, row_enrichment_strategy, auxiliary_relation_hints = (
+        _resolve_discovery_image_enrichment_contract(
+            records=records,
+            row_source_strategy=discovery_row_source_strategy,
+            image_field=image_field or "image_url",
+        )
+    )
     return RagCorpusPlan(
         corpus=corpus,
         enabled=True,
@@ -1184,10 +1206,17 @@ def _build_rag_corpus_plan(
         smoke_queries=smoke_queries,
         minimum_expected_documents=1,
         loader_strategy=loader_strategy,
-        row_source_strategy="host_api_fetch",
-        row_source_endpoint=product_search_endpoint,
+        row_source_strategy=discovery_row_source_strategy,
+        row_source_endpoint=discovery_row_source_endpoint,
+        row_source_module=discovery_row_source_module,
+        row_source_callable=discovery_row_source_callable,
         row_id_field="product_id",
         row_image_url_field=image_field or "image_url",
+        dense_image_field=image_field or "image_url",
+        sparse_text_paths=sparse_text_paths,
+        payload_paths=payload_paths,
+        row_enrichment_strategy=row_enrichment_strategy,
+        auxiliary_relation_hints=auxiliary_relation_hints,
         pagination_strategy={
             "type": "page_number",
             "page_param": "page",
@@ -1242,6 +1271,78 @@ def _resolve_faq_row_source(
         if normalized_path.endswith("backend/models/faq.py"):
             return ("host_python_fetch", "models.faq", "get_all_faq")
     return ("static_source_scan", None, None)
+
+
+def _resolve_discovery_image_row_source(
+    *,
+    records: list[Any],
+    product_search_endpoint: str,
+) -> tuple[str, str | None, str | None, str | None]:
+    for record in records:
+        details = getattr(record, "details", {}) or {}
+        strategy = str(details.get("row_source_strategy") or "").strip()
+        module_name = str(details.get("row_source_module") or "").strip()
+        callable_name = str(details.get("row_source_callable") or "").strip()
+        if strategy == "host_python_fetch":
+            return (
+                "host_python_fetch",
+                module_name or "models.product",
+                callable_name or "get_all_products",
+                None,
+            )
+        normalized_path = str(getattr(record, "path", "") or "").replace("\\", "/").lower()
+        if normalized_path.endswith("backend/models/product.py"):
+            return ("host_python_fetch", "models.product", "get_all_products", None)
+    return ("host_api_fetch", None, None, product_search_endpoint)
+
+
+def _resolve_discovery_image_enrichment_contract(
+    *,
+    records: list[Any],
+    row_source_strategy: str | None,
+    image_field: str,
+) -> tuple[list[str], list[str], str | None, list[dict[str, Any]]]:
+    sparse_text_paths: list[str] = []
+    payload_paths: list[str] = []
+    auxiliary_relation_hints: list[dict[str, Any]] = []
+
+    def _append_unique(target: list[str], value: str) -> None:
+        normalized = str(value or "").strip()
+        if normalized and normalized not in target:
+            target.append(normalized)
+
+    for record in records:
+        details = getattr(record, "details", {}) or {}
+        for field_name in details.get("text_field_candidates") or []:
+            _append_unique(sparse_text_paths, str(field_name))
+        for path in details.get("nested_text_paths") or []:
+            _append_unique(sparse_text_paths, str(path))
+        for field_name in details.get("payload_field_candidates") or []:
+            _append_unique(payload_paths, str(field_name))
+        for hint in details.get("auxiliary_relation_hints") or []:
+            if isinstance(hint, dict):
+                auxiliary_relation_hints.append(dict(hint))
+
+    for hint in auxiliary_relation_hints:
+        merge_as = str(hint.get("merge_as") or "").strip()
+        for field_name in hint.get("text_fields") or []:
+            if merge_as:
+                _append_unique(sparse_text_paths, f"{merge_as}.{field_name}")
+        if merge_as:
+            _append_unique(payload_paths, merge_as)
+
+    for required in ("product_id", image_field, "name", "brand", "category", "description", "price"):
+        _append_unique(payload_paths, required)
+    for preferred in ("name", "brand", "category", "description"):
+        _append_unique(sparse_text_paths, preferred)
+
+    row_enrichment_strategy = None
+    if auxiliary_relation_hints and row_source_strategy == "host_python_fetch":
+        row_enrichment_strategy = "host_python_wrapper"
+    elif sparse_text_paths or payload_paths:
+        row_enrichment_strategy = "row_contract"
+
+    return sparse_text_paths, payload_paths, row_enrichment_strategy, auxiliary_relation_hints
 
 
 def _build_capability_upgrade(
@@ -1360,6 +1461,8 @@ def _derive_chatbot_bridge_contract(
         domain_integration=domain_integration,
         site_id=site_id,
         order_lookup_target=order_lookup_target,
+        auth_validation_endpoint=auth_validation_endpoint,
+        current_user_endpoint=current_user_endpoint,
     )
     order_action_contract = _infer_bridge_order_action_contract(
         domain_integration=domain_integration,
@@ -1389,7 +1492,10 @@ def _infer_bridge_response_contract(
     domain_integration: DomainIntegration,
     site_id: str,
     order_lookup_target: str | None = None,
+    auth_validation_endpoint: str = "",
+    current_user_endpoint: str = "",
 ) -> ResolvedResponseContract:
+    del site_id
     order_list_endpoint = str(domain_integration.order_list_endpoint or "").strip()
     order_detail_endpoint = str(domain_integration.order_detail_endpoint or "").strip()
     lookup_source = _read_bridge_source(
@@ -1417,8 +1523,13 @@ def _infer_bridge_response_contract(
         or "orders = raw.get(\"orders\"" in lookup_source
         or "orders = raw.get('orders'" in lookup_source
     ):
+        bootstrap_auth_path = (current_user_endpoint or auth_validation_endpoint).strip().lower()
         return ResolvedResponseContract(
-            user_profile="orders_collection_user_id",
+            user_profile=(
+                "wrapped_user"
+                if bootstrap_auth_path.endswith("/auth-token")
+                else "orders_collection_user_id"
+            ),
             product_profile="products_wrapper_collection",
             order_profile="orders_collection_scan",
             delivery_profile="orders_collection_scan",
@@ -1443,20 +1554,23 @@ def _infer_bridge_order_action_contract(
     response_contract: ResolvedResponseContract,
 ) -> ResolvedOrderActionContract:
     request_fields = ResolvedRequestFieldContract()
-    if response_contract.order_profile == "orders_collection_scan":
+    order_action_endpoints = {
+        str(action).strip(): str(path).strip()
+        for action, path in (domain_integration.order_action_endpoints or {}).items()
+        if str(action).strip() and str(path).strip()
+    }
+    shared_order_action_endpoint = str(domain_integration.order_action_endpoint or "").strip()
+    has_mutation_surface = bool(shared_order_action_endpoint or order_action_endpoints)
+
+    if response_contract.order_profile == "orders_collection_scan" and not has_mutation_surface:
         return ResolvedOrderActionContract(
             submission_mode="read_only",
             supported_actions=["list_orders", "get_order_status"],
             request_fields=request_fields,
         )
 
-    order_action_endpoints = {
-        str(action).strip(): str(path).strip()
-        for action, path in (domain_integration.order_action_endpoints or {}).items()
-        if str(action).strip() and str(path).strip()
-    }
     if order_action_endpoints and any(
-        path != str(domain_integration.order_action_endpoint or "").strip()
+        path != shared_order_action_endpoint
         for path in order_action_endpoints.values()
     ):
         mutation_actions = [

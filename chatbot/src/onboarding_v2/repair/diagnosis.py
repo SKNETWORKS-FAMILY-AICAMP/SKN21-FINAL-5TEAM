@@ -147,6 +147,57 @@ def _build_host_external_dependency_decision(
     )
 
 
+def _is_generated_auth_mapping_failure(
+    failure_bundle: FailureBundle,
+    validation_payload: dict[str, Any],
+) -> bool:
+    if failure_bundle.failed_stage != "validation":
+        return False
+    host_auth_passed = False
+    chatbot_mapping_failed = False
+    for check_name, context in _iter_validation_contexts(validation_payload):
+        if check_name == "host_auth_bootstrap":
+            host_auth_passed = bool(context.get("passed"))
+        if (
+            check_name == "chatbot_adapter_auth"
+            and str(context.get("failure_origin") or "").strip() == "generated_runtime"
+            and str(context.get("failure_code") or "").strip() == "validated_user_missing_id"
+        ):
+            chatbot_mapping_failed = True
+    return host_auth_passed and chatbot_mapping_failed
+
+
+def _build_generated_auth_mapping_decision(
+    failure_bundle: FailureBundle,
+) -> RepairDecision:
+    return RepairDecision(
+        failure_signature=failure_bundle.failure_signature,
+        diagnosis=(
+            "generated chatbot auth mapping mismatch detected during validation; "
+            "rewind to planning so the auth response contract can be reselected before recompiling"
+        ),
+        rewind_to="planning",
+        preserve_artifacts=["analysis"],
+        required_rechecks=[],
+        additional_discovery=[],
+        artifact_overrides={
+            "planning": {
+                "chatbot_bridge": {
+                    "response_contract": {
+                        "user_profile": "wrapped_user",
+                    }
+                },
+                "planning_notes_append": (
+                    "repair override: host auth bootstrap validated bootstrap_payload.user.id; "
+                    "prefer wrapped_user auth mapping over orders-derived user inference"
+                ),
+            }
+        },
+        stop=False,
+        stop_reason=None,
+    )
+
+
 def _is_host_auth_bootstrap_failure(
     failure_bundle: FailureBundle,
     validation_payload: dict[str, Any],
@@ -254,6 +305,20 @@ def diagnose_failure(
                 stage="repair",
                 prompt=payload,
                 response={"heuristic": "host_external_dependency_failure"},
+                normalized_response=decision.model_dump(mode="json"),
+                parse_result={"status": "heuristic"},
+                artifact_refs=failure_bundle.related_artifacts,
+            ),
+        )
+        return decision
+    if _is_generated_auth_mapping_failure(failure_bundle, validation_payload):
+        decision = _build_generated_auth_mapping_decision(failure_bundle)
+        debug_store.write_record(
+            stage="repair",
+            record=DebugRecord(
+                stage="repair",
+                prompt=payload,
+                response={"heuristic": "generated_auth_mapping_failure"},
                 normalized_response=decision.model_dump(mode="json"),
                 parse_result={"status": "heuristic"},
                 artifact_refs=failure_bundle.related_artifacts,

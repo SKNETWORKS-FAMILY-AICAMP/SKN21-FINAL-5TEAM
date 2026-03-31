@@ -103,3 +103,18 @@ def test_server_fastapi_bootstrap_unifies_src_runtime_singletons(monkeypatch) ->
     assert chatbot_adapter_setup is src_adapter_setup
     assert chatbot_adapter_base is src_adapter_base
     assert chatbot_adapter_base.AdapterRegistry is src_adapter_base.AdapterRegistry
+
+
+def test_discovery_subagent_imports_without_optional_ecommerce_backend(monkeypatch) -> None:
+    _purge_modules(
+        "chatbot.src.graph.nodes.discovery_subagent",
+        "src.graph.nodes.discovery_subagent",
+        "chatbot.src.tools.recommendation_tools",
+        "src.tools.recommendation_tools",
+        "ecommerce",
+    )
+    _block_optional_ecommerce_imports(monkeypatch)
+
+    module = importlib.import_module("chatbot.src.graph.nodes.discovery_subagent")
+
+    assert getattr(module, "discovery_subagent_node", None) is not None

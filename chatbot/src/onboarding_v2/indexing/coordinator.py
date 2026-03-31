@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import time
@@ -420,6 +421,13 @@ def _build_rag_corpus_plan(
         ),
         "image_url",
     )
+    sparse_text_paths, payload_paths, row_enrichment_strategy, auxiliary_relation_hints = (
+        _resolve_discovery_image_enrichment_contract(
+            records=records,
+            row_source_strategy="host_api_fetch",
+            image_field=image_field or "image_url",
+        )
+    )
     return RagCorpusPlan(
         corpus=corpus,
         enabled=True,
@@ -434,6 +442,11 @@ def _build_rag_corpus_plan(
         row_source_endpoint=product_search_endpoint,
         row_id_field="product_id",
         row_image_url_field=image_field or "image_url",
+        dense_image_field=image_field or "image_url",
+        sparse_text_paths=sparse_text_paths,
+        payload_paths=payload_paths,
+        row_enrichment_strategy=row_enrichment_strategy,
+        auxiliary_relation_hints=auxiliary_relation_hints,
         pagination_strategy={
             "type": "page_number",
             "page_param": "page",
@@ -466,6 +479,55 @@ def _resolve_loader_strategy(
         if candidate in discovered:
             return candidate
     return default_loader
+
+
+def _resolve_discovery_image_enrichment_contract(
+    *,
+    records: list[Any],
+    row_source_strategy: str | None,
+    image_field: str,
+) -> tuple[list[str], list[str], str | None, list[dict[str, Any]]]:
+    sparse_text_paths: list[str] = []
+    payload_paths: list[str] = []
+    auxiliary_relation_hints: list[dict[str, Any]] = []
+
+    def _append_unique(target: list[str], value: str) -> None:
+        normalized = str(value or "").strip()
+        if normalized and normalized not in target:
+            target.append(normalized)
+
+    for record in records:
+        details = getattr(record, "details", {}) or {}
+        for field_name in details.get("text_field_candidates") or []:
+            _append_unique(sparse_text_paths, str(field_name))
+        for path in details.get("nested_text_paths") or []:
+            _append_unique(sparse_text_paths, str(path))
+        for field_name in details.get("payload_field_candidates") or []:
+            _append_unique(payload_paths, str(field_name))
+        for hint in details.get("auxiliary_relation_hints") or []:
+            if isinstance(hint, dict):
+                auxiliary_relation_hints.append(dict(hint))
+
+    for hint in auxiliary_relation_hints:
+        merge_as = str(hint.get("merge_as") or "").strip()
+        for field_name in hint.get("text_fields") or []:
+            if merge_as:
+                _append_unique(sparse_text_paths, f"{merge_as}.{field_name}")
+        if merge_as:
+            _append_unique(payload_paths, merge_as)
+
+    for required in ("product_id", image_field, "name", "brand", "category", "description", "price"):
+        _append_unique(payload_paths, required)
+    for preferred in ("name", "brand", "category", "description"):
+        _append_unique(sparse_text_paths, preferred)
+
+    row_enrichment_strategy = None
+    if auxiliary_relation_hints and row_source_strategy == "host_python_fetch":
+        row_enrichment_strategy = "host_python_wrapper"
+    elif sparse_text_paths or payload_paths:
+        row_enrichment_strategy = "row_contract"
+
+    return sparse_text_paths, payload_paths, row_enrichment_strategy, auxiliary_relation_hints
 
 
 def chunk_faq_source(source_path: str | Path) -> list[dict[str, Any]]:
@@ -873,7 +935,8 @@ def _ingest_discovery_image_corpus(
 ) -> dict[str, Any]:
     if _cancelled(cancel_event):
         return _cancelled_result(corpus_plan=corpus_plan)
-    if str(corpus_plan.row_source_strategy or "").strip() != "host_api_fetch":
+    row_source_strategy = str(corpus_plan.row_source_strategy or "").strip()
+    if row_source_strategy not in {"host_api_fetch", "host_python_fetch"}:
         return _failure_result(
             corpus_plan=corpus_plan,
             reason="unsupported_row_source_strategy",
@@ -885,27 +948,80 @@ def _ingest_discovery_image_corpus(
             reason="unsupported_loader_strategy",
             warning_codes=["unsupported_loader_strategy"],
         )
-    if not str(corpus_plan.row_source_endpoint or "").strip():
+    if row_source_strategy == "host_api_fetch" and not str(corpus_plan.row_source_endpoint or "").strip():
         return _failure_result(
             corpus_plan=corpus_plan,
             reason="missing_row_source_endpoint",
             warning_codes=["missing_row_source_endpoint"],
         )
 
-    rows = _fetch_rows(
+    raw_rows = _fetch_raw_rows(
         corpus_plan=corpus_plan,
         host_context=host_context,
         cancel_event=cancel_event,
         deps=deps,
     )
-    rows = _ensure_resolved_image_rows(rows=rows, corpus_plan=corpus_plan)
+    rows = _ensure_resolved_image_rows(rows=raw_rows, corpus_plan=corpus_plan)
+    diagnostics: dict[str, Any] = {
+        "preseed_attempted": False,
+        "preseed_reason": None,
+        "preseed_outcome": "not_needed",
+    }
+    if not raw_rows:
+        diagnostics.update(
+            _run_discovery_image_seed_script(
+                corpus_plan=corpus_plan,
+                host_context=host_context,
+                cancel_event=cancel_event,
+                deps=deps,
+                reason="no_product_rows",
+            )
+        )
+        if diagnostics.get("preseed_outcome") == "failed":
+            return _with_optional_diagnostics(
+                _failure_result(
+                    corpus_plan=corpus_plan,
+                    reason="fixture_seed_failed",
+                    warning_codes=["fixture_seed_failed"],
+                    error=str(diagnostics.get("preseed_error") or "seed failed"),
+                ),
+                diagnostics,
+            )
+        raw_rows = _fetch_raw_rows(
+            corpus_plan=corpus_plan,
+            host_context=host_context,
+            cancel_event=cancel_event,
+            deps=deps,
+        )
+        rows = _ensure_resolved_image_rows(rows=raw_rows, corpus_plan=corpus_plan)
     if _cancelled(cancel_event):
         return _cancelled_result(corpus_plan=corpus_plan)
+    diagnostics["preseed_raw_row_count"] = len(raw_rows)
+    diagnostics["preseed_indexable_row_count"] = len(rows)
+    if not raw_rows:
+        return _with_optional_diagnostics(
+            _skipped_result(
+                corpus_plan=corpus_plan,
+                reason="no_product_rows",
+                warning_codes=["no_product_rows"],
+            ),
+            diagnostics,
+        )
     if not rows:
-        return _skipped_result(
-            corpus_plan=corpus_plan,
-            reason="no_product_rows",
-            warning_codes=["no_product_rows"],
+        diagnostics["preseed_attempted"] = bool(diagnostics.get("preseed_attempted"))
+        if not diagnostics["preseed_attempted"]:
+            diagnostics["preseed_reason"] = "raw_product_rows_present"
+            diagnostics["preseed_outcome"] = "raw_product_rows_present"
+        else:
+            diagnostics["preseed_reason"] = diagnostics.get("preseed_reason") or "raw_product_rows_present"
+            diagnostics["preseed_outcome"] = diagnostics.get("preseed_outcome") or "raw_product_rows_present"
+        return _with_optional_diagnostics(
+            _skipped_result(
+                corpus_plan=corpus_plan,
+                reason="no_indexable_image_rows",
+                warning_codes=["no_indexable_image_rows"],
+            ),
+            diagnostics,
         )
 
     image_entries: list[tuple[dict[str, Any], bytes]] = []
@@ -928,6 +1044,10 @@ def _ingest_discovery_image_corpus(
 
     embedder = deps.image_embedder or _embed_image_bytes_batch
     vectors = embedder([payload for _, payload in image_entries])
+    sparse_texts = [
+        _build_discovery_image_sparse_text(row=row, corpus_plan=corpus_plan) for row, _ in image_entries
+    ]
+    sparse_vectors = _maybe_embed_sparse(sparse_texts, deps=deps)
     if _cancelled(cancel_event):
         return _cancelled_result(corpus_plan=corpus_plan)
     client = _get_qdrant_client(deps)
@@ -942,17 +1062,16 @@ def _ingest_discovery_image_corpus(
         return _cancelled_result(corpus_plan=corpus_plan)
     points: list[models.PointStruct] = []
     for index, (row, _image_bytes) in enumerate(image_entries):
-        payload = {
-            "product_id": int(row["product_id"]),
-            "image_url": str(row["resolved_image_url"]),
-            "site_id": site_id,
-            "corpus": "discovery_image",
-            **{
-                key: value
-                for key, value in row.items()
-                if key not in {"product_id", "resolved_image_url"} and value is not None
-            },
-        }
+        retrieval_text = sparse_texts[index]
+        payload = _build_discovery_image_payload(
+            row=row,
+            corpus_plan=corpus_plan,
+            site_id=site_id,
+            retrieval_text=retrieval_text,
+        )
+        vector_payload: dict[str, Any] = {"": vectors[index]}
+        if sparse_vectors is not None:
+            vector_payload["text-sparse"] = sparse_vectors[index]
         points.append(
             models.PointStruct(
                 id=_build_point_id(
@@ -960,17 +1079,40 @@ def _ingest_discovery_image_corpus(
                     corpus="discovery_image",
                     logical_id=f"{row['product_id']}:{index}",
                 ),
-                vector={"": vectors[index]},
+                vector=vector_payload,
                 payload=payload,
             )
         )
     if _cancelled(cancel_event):
         return _cancelled_result(corpus_plan=corpus_plan)
-    upsert_points(
-        collection_name=corpus_plan.build_collection,
-        points=points,
-        client=client,
-    )
+    diagnostics["documents_prepared"] = len(points)
+    diagnostics["batches_attempted"] = 0
+    diagnostics["batches_completed"] = 0
+    diagnostics["last_successful_product_id"] = None
+    batch_size = _discovery_image_batch_size()
+    try:
+        for batch_start in range(0, len(points), batch_size):
+            batch = points[batch_start : batch_start + batch_size]
+            diagnostics["batches_attempted"] += 1
+            upsert_points(
+                collection_name=corpus_plan.build_collection,
+                points=batch,
+                client=client,
+            )
+            diagnostics["batches_completed"] += 1
+            last_payload = dict(getattr(batch[-1], "payload", {}) or {})
+            if last_payload.get("product_id") not in (None, ""):
+                diagnostics["last_successful_product_id"] = last_payload.get("product_id")
+    except Exception as exc:
+        return _with_optional_diagnostics(
+            _failure_result(
+                corpus_plan=corpus_plan,
+                reason="worker_exception",
+                warning_codes=["worker_exception"],
+                error=str(exc),
+            ),
+            diagnostics,
+        )
     if _cancelled(cancel_event):
         return _cancelled_result(corpus_plan=corpus_plan)
     swap_alias(
@@ -979,15 +1121,45 @@ def _ingest_discovery_image_corpus(
         client=client,
     )
     documents_indexed = len(points)
-    return _success_result(
-        corpus_plan=corpus_plan,
-        documents_indexed=documents_indexed,
-        warning_codes=warnings,
-        smoke_passed=documents_indexed >= max(1, corpus_plan.minimum_expected_documents),
+    return _with_optional_diagnostics(
+        _success_result(
+            corpus_plan=corpus_plan,
+            documents_indexed=documents_indexed,
+            warning_codes=warnings,
+            smoke_passed=documents_indexed >= max(1, corpus_plan.minimum_expected_documents),
+        ),
+        diagnostics,
     )
 
 
+def _discovery_image_batch_size() -> int:
+    raw_value = str(os.environ.get("ONBOARDING_DISCOVERY_IMAGE_UPSERT_BATCH_SIZE") or "").strip()
+    try:
+        return max(1, int(raw_value))
+    except (TypeError, ValueError):
+        return 32
+
+
 def _fetch_rows(
+    *,
+    corpus_plan: RagCorpusPlan,
+    host_context: HostExportContext | None,
+    cancel_event: Event | None,
+    deps: _IndexingDeps,
+) -> list[dict[str, Any]]:
+    raw_rows = _fetch_raw_rows(
+        corpus_plan=corpus_plan,
+        host_context=host_context,
+        cancel_event=cancel_event,
+        deps=deps,
+    )
+    strategy = str(corpus_plan.row_source_strategy or "").strip()
+    if strategy == "host_api_fetch":
+        return _ensure_resolved_image_rows(rows=raw_rows, corpus_plan=corpus_plan)
+    return raw_rows
+
+
+def _fetch_raw_rows(
     *,
     corpus_plan: RagCorpusPlan,
     host_context: HostExportContext | None,
@@ -1034,11 +1206,12 @@ def _fetch_product_rows_from_host_api(
     runtime_plan, _runtime_state = shared_host_runtime.ensure_runtime(corpus_plan=corpus_plan)
     try:
         base_url = f"http://127.0.0.1:{runtime_plan.listen_port}"
-        return _paginate_product_rows(
+        rows = _paginate_product_rows(
             base_url=base_url,
             corpus_plan=corpus_plan,
             cancel_event=cancel_event,
         )
+        return [{**row, "__host_base_url": base_url} for row in rows]
     except httpx.HTTPError as exc:
         raise _IndexingError(
             "row source fetch failed",
@@ -1069,6 +1242,7 @@ def _fetch_rows_from_host_python(
             "host python fetch contract is incomplete",
             warning_codes=["host_python_fetch_failed"],
         )
+    auxiliary_relation_hints = _sanitize_auxiliary_relation_hints(corpus_plan.auxiliary_relation_hints)
     script = "\n".join(
         [
             "import importlib, json, sys",
@@ -1094,9 +1268,57 @@ def _fetch_rows_from_host_python(
             "        except Exception:",
             "            pass",
             "    return str(obj)",
+            "def _merge_auxiliary_rows(rows, hints, key_field):",
+            "    if not rows or not hints:",
+            "        return rows",
+            "    from models import get_connection",
+            "    conn = get_connection()",
+            "    cursor = conn.cursor()",
+            "    try:",
+            "        for hint in hints:",
+            "            table_name = hint.get('table_name')",
+            "            merge_as = hint.get('merge_as') or table_name",
+            "            relation_key = hint.get('key_field') or key_field",
+            "            text_fields = [item for item in hint.get('text_fields') or [] if item]",
+            "            if not table_name or not merge_as or not relation_key or not text_fields:",
+            "                continue",
+            "            query = f\"SELECT {relation_key}, {', '.join(text_fields)} FROM {table_name}\"",
+            "            cursor.execute(query)",
+            "            merged = {}",
+            "            for record in cursor.fetchall():",
+            "                related_key = record[0]",
+            "                payload = {}",
+            "                for index, field_name in enumerate(text_fields, start=1):",
+            "                    value = record[index]",
+            "                    normalized = _json_default(value) if value is not None else None",
+            "                    if normalized not in (None, ''):",
+            "                        payload[field_name] = normalized",
+            "                if payload:",
+            "                    merged[str(related_key)] = payload",
+            "            for row in rows:",
+            "                row_key = row.get(key_field)",
+            "                payload = merged.get(str(row_key))",
+            "                if not payload:",
+            "                    continue",
+            "                existing = row.get(merge_as)",
+            "                if isinstance(existing, dict):",
+            "                    updated = dict(payload)",
+            "                    updated.update(existing)",
+            "                    row[merge_as] = updated",
+            "                elif existing in (None, '', {}):",
+            "                    row[merge_as] = payload",
+            "        return rows",
+            "    finally:",
+            "        cursor.close()",
+            "        conn.close()",
             f"module = importlib.import_module({module_name!r})",
             f"callable_obj = getattr(module, {callable_name!r})",
             "rows = callable_obj()",
+            "if rows is None:",
+            "    rows = []",
+            "elif not isinstance(rows, list):",
+            "    rows = list(rows)",
+            f"rows = _merge_auxiliary_rows(rows, {auxiliary_relation_hints!r}, {str(corpus_plan.row_id_field or 'product_id')!r}) if {str(corpus_plan.row_enrichment_strategy or '')!r} == 'host_python_wrapper' else rows",
             "print(json.dumps(rows, ensure_ascii=False, default=_json_default))",
         ]
     )
@@ -1143,6 +1365,7 @@ def _paginate_product_rows(
     page = 1
     rows: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
+    row_id_field = str(corpus_plan.row_id_field or "product_id")
     with httpx.Client(timeout=20.0, follow_redirects=True) as client:
         while page <= 100:
             if _cancelled(cancel_event):
@@ -1156,17 +1379,20 @@ def _paginate_product_rows(
             batch = _extract_product_rows(payload)
             if not batch:
                 break
-            normalized_batch = _normalize_product_rows(
-                rows=batch,
-                row_id_field=str(corpus_plan.row_id_field or "product_id"),
-                row_image_url_field=str(corpus_plan.row_image_url_field or "image_url"),
-                base_url=base_url,
-            )
-            new_rows = [row for row in normalized_batch if str(row["product_id"]) not in seen_ids]
+            new_rows: list[dict[str, Any]] = []
+            for row in batch:
+                row_id = row.get(row_id_field)
+                if row_id is None:
+                    new_rows.append(row)
+                    continue
+                normalized_id = str(row_id)
+                if normalized_id in seen_ids:
+                    continue
+                seen_ids.add(normalized_id)
+                new_rows.append(row)
             if not new_rows:
                 break
             rows.extend(new_rows)
-            seen_ids.update(str(row["product_id"]) for row in new_rows)
             page += 1
     return rows
 
@@ -1200,7 +1426,8 @@ def _normalize_product_rows(
         image_url = row.get(row_image_url_field)
         if product_id is None or not str(image_url or "").strip():
             continue
-        resolved_image_url = urljoin(base_url, str(image_url).strip())
+        raw_image_url = str(image_url).strip()
+        resolved_image_url = urljoin(base_url, raw_image_url) if base_url else raw_image_url
         normalized.append(
             {
                 **row,
@@ -1209,6 +1436,55 @@ def _normalize_product_rows(
             }
         )
     return normalized
+
+
+def _run_discovery_image_seed_script(
+    *,
+    corpus_plan: RagCorpusPlan,
+    host_context: HostExportContext | None,
+    cancel_event: Event | None,
+    deps: _IndexingDeps,
+    reason: str,
+) -> dict[str, Any]:
+    diagnostics: dict[str, Any] = {
+        "preseed_attempted": True,
+        "preseed_reason": reason,
+        "preseed_outcome": "seed_unavailable",
+    }
+    if _cancelled(cancel_event):
+        diagnostics["preseed_outcome"] = "cancelled"
+        return diagnostics
+    shared_host_runtime = deps.shared_host_runtime
+    if shared_host_runtime is None:
+        return diagnostics
+    try:
+        prep_result, backend_root = shared_host_runtime.ensure_prepared(corpus_plan=corpus_plan)
+    except Exception as exc:
+        diagnostics["preseed_error"] = str(exc)
+        return diagnostics
+    seed_path_text = str(getattr(prep_result, "seed_source_path", "") or "").strip()
+    python_executable = Path(str(getattr(prep_result, "python_executable", "") or "")).resolve()
+    if not seed_path_text:
+        return diagnostics
+    seed_path = Path(seed_path_text).resolve()
+    if not seed_path.exists():
+        return diagnostics
+    result = subprocess.run(
+        [str(python_executable), str(seed_path)],
+        cwd=backend_root,
+        env=build_backend_subprocess_env(backend_root=backend_root),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    diagnostics["preseed_stdout"] = str(result.stdout or "").strip() or None
+    diagnostics["preseed_stderr"] = str(result.stderr or "").strip() or None
+    if result.returncode != 0:
+        diagnostics["preseed_outcome"] = "failed"
+        diagnostics["preseed_error"] = diagnostics["preseed_stderr"] or diagnostics["preseed_stdout"] or "seed failed"
+        return diagnostics
+    diagnostics["preseed_outcome"] = "seeded"
+    return diagnostics
 
 
 def _ensure_resolved_image_rows(
@@ -1224,11 +1500,14 @@ def _ensure_resolved_image_rows(
         image_url = row.get("resolved_image_url", row.get(row_image_url_field))
         if product_id is None or not str(image_url or "").strip():
             continue
+        resolved_image_url = str(image_url).strip()
+        if "resolved_image_url" not in row:
+            resolved_image_url = urljoin(str(row.get("__host_base_url") or "").strip(), resolved_image_url)
         normalized.append(
             {
                 **row,
                 "product_id": product_id,
-                "resolved_image_url": str(image_url).strip(),
+                "resolved_image_url": resolved_image_url,
             }
         )
     return normalized
@@ -1261,6 +1540,199 @@ def _build_policy_payload(chunk: dict[str, Any], site_id: str) -> dict[str, Any]
         "corpus": "policy",
         "category": str(chunk.get("heading") or "").strip() or "document",
     }
+
+
+def _flatten_retrieval_text_value(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        normalized = value.strip()
+        return [normalized] if normalized else []
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return [str(value)]
+    if isinstance(value, dict):
+        flattened: list[str] = []
+        for item in value.values():
+            flattened.extend(_flatten_retrieval_text_value(item))
+        return flattened
+    if isinstance(value, (list, tuple, set)):
+        flattened = []
+        for item in value:
+            flattened.extend(_flatten_retrieval_text_value(item))
+        return flattened
+    return []
+
+
+def _build_discovery_image_retrieval_text(row: dict[str, Any]) -> str:
+    preferred_fields = (
+        "product_display_name",
+        "product_name",
+        "name",
+        "title",
+        "brand",
+        "brand_name",
+        "manufacturer",
+        "category",
+        "main_category",
+        "sub_category",
+        "subcategory",
+        "description",
+        "summary",
+        "details",
+        "keywords",
+        "tags",
+        "benefits",
+        "usage",
+        "skin_type",
+        "variant_name",
+        "option_name",
+        "options",
+    )
+    ignored_fields = {
+        "product_id",
+        "id",
+        "image_url",
+        "resolved_image_url",
+        "__host_base_url",
+        "site_id",
+        "corpus",
+    }
+    fragments: list[str] = []
+    seen: set[str] = set()
+
+    def _append(value: Any) -> None:
+        for token in _flatten_retrieval_text_value(value):
+            normalized = token.strip()
+            if not normalized:
+                continue
+            lowered = normalized.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            fragments.append(normalized)
+
+    for field in preferred_fields:
+        _append(row.get(field))
+    for key, value in row.items():
+        if key in ignored_fields or key in preferred_fields:
+            continue
+        _append(value)
+    return " ".join(fragments)
+
+
+def _sanitize_auxiliary_relation_hints(hints: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    sanitized: list[dict[str, Any]] = []
+    for hint in hints or []:
+        table_name = str(hint.get("table_name") or "").strip()
+        key_field = str(hint.get("key_field") or "").strip()
+        merge_as = str(hint.get("merge_as") or "").strip()
+        text_fields = [str(item).strip() for item in hint.get("text_fields") or [] if str(item).strip()]
+        if not (_is_safe_sql_identifier(table_name) and _is_safe_sql_identifier(key_field) and _is_safe_sql_identifier(merge_as)):
+            continue
+        valid_fields = [field for field in text_fields if _is_safe_sql_identifier(field)]
+        if not valid_fields:
+            continue
+        sanitized.append(
+            {
+                "table_name": table_name,
+                "key_field": key_field,
+                "merge_as": merge_as,
+                "text_fields": valid_fields,
+            }
+        )
+    return sanitized
+
+
+def _is_safe_sql_identifier(value: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", str(value or "").strip()))
+
+
+def _extract_discovery_image_path_values(row: dict[str, Any], path: str) -> list[Any]:
+    parts = [part for part in str(path or "").split(".") if part]
+    if not parts:
+        return []
+    current_values: list[Any] = [row]
+    for part in parts:
+        next_values: list[Any] = []
+        for current in current_values:
+            if isinstance(current, dict) and part in current:
+                next_values.append(current[part])
+            elif isinstance(current, (list, tuple)):
+                for item in current:
+                    if isinstance(item, dict) and part in item:
+                        next_values.append(item[part])
+        current_values = next_values
+        if not current_values:
+            return []
+    return current_values
+
+
+def _assign_nested_payload_path(target: dict[str, Any], path: str, value: Any) -> None:
+    parts = [part for part in str(path or "").split(".") if part]
+    if not parts:
+        return
+    cursor = target
+    for part in parts[:-1]:
+        current = cursor.get(part)
+        if not isinstance(current, dict):
+            current = {}
+            cursor[part] = current
+        cursor = current
+    cursor[parts[-1]] = value
+
+
+def _build_discovery_image_sparse_text(*, row: dict[str, Any], corpus_plan: RagCorpusPlan) -> str:
+    if corpus_plan.sparse_text_paths:
+        fragments: list[str] = []
+        seen: set[str] = set()
+        for path in corpus_plan.sparse_text_paths:
+            for value in _extract_discovery_image_path_values(row, path):
+                for token in _flatten_retrieval_text_value(value):
+                    normalized = token.strip()
+                    lowered = normalized.lower()
+                    if not normalized or lowered in seen:
+                        continue
+                    seen.add(lowered)
+                    fragments.append(normalized)
+        if fragments:
+            return " ".join(fragments)
+    return _build_discovery_image_retrieval_text(row)
+
+
+def _build_discovery_image_payload(
+    *,
+    row: dict[str, Any],
+    corpus_plan: RagCorpusPlan,
+    site_id: str,
+    retrieval_text: str,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "product_id": int(row["product_id"]),
+        "image_url": str(row["resolved_image_url"]),
+        "site_id": site_id,
+        "corpus": "discovery_image",
+        "retrieval_text": retrieval_text,
+    }
+    if corpus_plan.payload_paths:
+        selected: dict[str, Any] = {}
+        for path in corpus_plan.payload_paths:
+            values = _extract_discovery_image_path_values(row, path)
+            if not values:
+                continue
+            value = values[0] if len(values) == 1 else values
+            if value in (None, "", [], {}):
+                continue
+            _assign_nested_payload_path(selected, path, value)
+        payload.update(selected)
+        return payload
+    payload.update(
+        {
+            key: value
+            for key, value in row.items()
+            if key not in {"product_id", "resolved_image_url", "__host_base_url"} and value is not None
+        }
+    )
+    return payload
 
 
 def _build_faq_chunks_from_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1451,3 +1923,11 @@ def _success_result(
         "alias_swapped": True,
         "smoke_passed": bool(smoke_passed),
     }
+
+
+def _with_optional_diagnostics(result: dict[str, Any], diagnostics: dict[str, Any]) -> dict[str, Any]:
+    for key, value in diagnostics.items():
+        if value is None:
+            continue
+        result[key] = value
+    return result

@@ -8,6 +8,11 @@ export type SharedWidgetHostConfig = {
   chatbotApiBase: string;
   chatPath?: string;
   streamPath?: string;
+  siteId?: string;
+  brandDisplayName?: string;
+  brandStoreLabel?: string;
+  assistantTitle?: string;
+  initialGreeting?: string;
   capabilityProfile?: string;
   enabledRetrievalCorpora?: string[];
   widgetFeatures?: {
@@ -739,9 +744,7 @@ export function ChatbotWidget<TMessage extends { type: string; role?: string }>(
 
         return (
           <React.Fragment key={renderKey}>
-            {capabilities === undefined || capabilities === 'full'
-              ? renderFallback?.(message, index) ?? null
-              : null}
+            {renderFallback?.(message, index) ?? null}
           </React.Fragment>
         );
       })}

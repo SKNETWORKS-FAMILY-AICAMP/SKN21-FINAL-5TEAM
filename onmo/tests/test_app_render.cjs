@@ -153,6 +153,8 @@ function loadApp(options = {}) {
     "stage-detail",
     "site",
     "repo-url",
+    "github-env-file",
+    "github-env-target",
   ];
   ids.forEach((id) => elements.set(id, createElement(id)));
   const sessionStorage = createStorage(options.sessionStorage || {});
@@ -167,6 +169,15 @@ function loadApp(options = {}) {
   const context = {
     console,
     URLSearchParams,
+    FormData: class FormData {
+      constructor() {
+        this.entries = [];
+      }
+
+      append(key, value) {
+        this.entries.push([key, value]);
+      }
+    },
     setTimeout() {
       return 1;
     },
@@ -444,6 +455,78 @@ function compileRewindGraphPayload() {
       { stage: "apply", label: "Apply", status: "pending", status_label: "Waiting" },
       { stage: "export", label: "Export", status: "pending", status_label: "Waiting" },
       { stage: "indexing", label: "Indexing", status: "pending", status_label: "Waiting" },
+      { stage: "validation", label: "Validation", status: "failed", status_label: "Failed" },
+    ],
+  };
+}
+
+function repairLiveRerunPayload() {
+  return {
+    run: {
+      site: "food",
+      run_id: "food-v2-repair-live-012",
+      status: "running",
+      status_label: "Running",
+    },
+    process: { running: true, log_path: "/tmp/onmo.log" },
+    demo: { status: "disabled", status_label: "GitHub Mode" },
+    services: [],
+    story: {
+      headline: "현재 검증 단계에서 실패가 감지되었습니다.",
+      summary: "계획 단계부터 다시 실행 중입니다.",
+      current_stage: { stage: "validation", label: "Validation", status: "failed", status_label: "Failed" },
+      focus_stage: { stage: "planning", label: "Planning", status: "running", status_label: "Running" },
+      steps: [
+        { stage: "analysis", label: "Analysis", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "planning", label: "Planning", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "compile", label: "Compile", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "apply", label: "Apply", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "export", label: "Export", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "indexing", label: "Indexing", status: "completed", status_label: "Completed", emphasis: "default" },
+        { stage: "validation", label: "Validation", status: "failed", status_label: "Failed", emphasis: "failed" },
+      ],
+      retrieval: { active: false, headline: "", summary: "", items: [] },
+    },
+    repair_story: {
+      active: true,
+      headline: "Repair Rewind",
+      summary: "검증 실패 이후 계획 단계부터 다시 실행 중입니다.",
+      status_label: "계획 단계로 되감기",
+      failed_stage: "validation",
+      failed_stage_label: "검증",
+      rewind_to: "planning",
+      rewind_to_label: "계획",
+      problem: "검증 단계에서 문제가 발생했습니다.",
+      diagnosis: "계획 단계부터 다시 확인해야 합니다.",
+      current_action: "계획 단계 재실행 진행 중입니다.",
+      steps: [
+        { kind: "failure", label: "검증 실패 감지", status: "completed", timestamp: "2026-03-30T11:20:01+09:00" },
+        { kind: "diagnosis", label: "원인 진단 완료", status: "completed", timestamp: "2026-03-30T11:20:04+09:00" },
+        { kind: "rewind", label: "계획으로 되감기 결정", status: "completed", timestamp: "2026-03-30T11:20:08+09:00" },
+        { kind: "rerun", label: "계획 재실행 시작", status: "running", timestamp: "2026-03-30T11:20:10+09:00" },
+      ],
+    },
+    repair: {
+      active: true,
+      status: "running",
+      status_label: "계획 단계로 되감기",
+      failed_stage_label: "검증",
+      effective_rewind_label: "계획",
+      current_action: "계획 단계 재실행 진행 중입니다.",
+    },
+    details: {
+      planning: {
+        cards: [{ label: "Current", value: "planning rerun active" }],
+      },
+    },
+    recent_events: [],
+    stages: [
+      { stage: "analysis", label: "Analysis", status: "completed", status_label: "Completed" },
+      { stage: "planning", label: "Planning", status: "completed", status_label: "Completed" },
+      { stage: "compile", label: "Compile", status: "completed", status_label: "Completed" },
+      { stage: "apply", label: "Apply", status: "completed", status_label: "Completed" },
+      { stage: "export", label: "Export", status: "completed", status_label: "Completed" },
+      { stage: "indexing", label: "Indexing", status: "completed", status_label: "Completed" },
       { stage: "validation", label: "Validation", status: "failed", status_label: "Failed" },
     ],
   };
@@ -869,6 +952,27 @@ test("rerun lane keeps original stage columns and starts from the rewind stage",
   assert.match(rerunHtml, /추출/);
 });
 
+test("rerun lane shows the rewind stage as live when repair is running even if the original current stage already failed", async () => {
+  const api = loadApp();
+  const payload = repairLiveRerunPayload();
+  api.state.lastPayload = payload;
+  api.state.selectedStage = "planning";
+
+  api.renderSelectedStage(payload);
+
+  const rerunHtml = api.refs.runStoryShell.innerHTML;
+  const rerunLaneHtml = rerunHtml.split('<div class="story-lane story-strip-rerun">')[1] || "";
+
+  assert.match(rerunHtml, /계획부터 다시 실행/);
+  assert.match(rerunLaneHtml, /story-step warn current[\s\S]*계획[\s\S]*진행 중/);
+  assert.doesNotMatch(rerunLaneHtml, /story-step ok default[\s\S]*생성[\s\S]*완료/);
+  assert.match(rerunLaneHtml, /생성[\s\S]*대기/);
+  assert.match(rerunLaneHtml, /적용[\s\S]*대기/);
+  assert.match(rerunLaneHtml, /추출[\s\S]*대기/);
+  assert.match(rerunLaneHtml, /인덱싱[\s\S]*대기/);
+  assert.match(rerunLaneHtml, /검증[\s\S]*대기/);
+});
+
 test("left rail marks the live current stage separately from the selected stage", async () => {
   const api = loadApp();
   const payload = dashboardPayload();
@@ -904,12 +1008,29 @@ test("cleanup pass removes redundant site and repair status surfaces", async () 
   assert.doesNotMatch(api.refs.stageDetail.innerHTML, /Run Story Snapshot/);
 });
 
+test("github import env file input does not filter hidden dotfiles", async () => {
+  const indexPath = path.resolve(__dirname, "../static/index.html");
+  const indexHtml = fs.readFileSync(indexPath, "utf8");
+
+  assert.match(indexHtml, /id="github-env-file"/);
+  assert.doesNotMatch(indexHtml, /id="github-env-file"[^>]*accept=/);
+  assert.match(indexHtml, /Cmd\+Shift\+\./);
+});
+
 test("rerun lane removes dashed framing so nodes align with the original columns", async () => {
   const stylesPath = path.resolve(__dirname, "../static/styles.css");
   const styles = fs.readFileSync(stylesPath, "utf8");
 
   assert.doesNotMatch(styles, /\.story-strip-rerun\s*\{[^}]*border:\s*1px dashed/s);
   assert.doesNotMatch(styles, /\.story-rewind-connector::before[\s\S]*border-top:\s*1px dashed/s);
+});
+
+test("repair entry marker reserves vertical space so the label does not overlap the upper lane text", async () => {
+  const stylesPath = path.resolve(__dirname, "../static/styles.css");
+  const styles = fs.readFileSync(stylesPath, "utf8");
+
+  assert.match(styles, /\.story-rewind-graph\s*\{[^}]*gap:\s*32px/s);
+  assert.match(styles, /\.story-strip-rerun\s*\{[^}]*padding-top:\s*28px/s);
 });
 
 test("developer log renders the full event count and uses an internal scroll area", async () => {

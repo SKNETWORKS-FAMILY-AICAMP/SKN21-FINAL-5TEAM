@@ -1,4 +1,5 @@
 import React from 'react';
+import productListStyles from './productlist.module.css';
 
 export type UiProduct = {
   id: number;
@@ -70,6 +71,26 @@ export default function ProductListUI({
   resolveImageSrc,
   classNames,
 }: ProductListUIProps) {
+  const mergedClassNames = {
+    container: classNames?.container ?? productListStyles.container,
+    message: classNames?.message ?? productListStyles.message,
+    productList: classNames?.productList ?? productListStyles.productList,
+    productCard: classNames?.productCard ?? productListStyles.productCard,
+    productImageWrap: classNames?.productImageWrap ?? productListStyles.productImageWrap,
+    productInfo: classNames?.productInfo ?? productListStyles.productInfo,
+    productName: classNames?.productName ?? productListStyles.productName,
+    productMeta: classNames?.productMeta ?? productListStyles.productMeta,
+    productPrice: classNames?.productPrice ?? productListStyles.productPrice,
+    actionRow: classNames?.actionRow ?? productListStyles.actionRow,
+    btn: classNames?.btn ?? productListStyles.btn,
+    primary: classNames?.primary ?? productListStyles.primary,
+    modalOverlay: classNames?.modalOverlay ?? productListStyles.modalOverlay,
+    modalTitle: classNames?.modalTitle ?? productListStyles.modalTitle,
+    sizeGrid: classNames?.sizeGrid ?? productListStyles.sizeGrid,
+    sizeBtn: classNames?.sizeBtn ?? productListStyles.sizeBtn,
+    closeModalBtn: classNames?.closeModalBtn ?? productListStyles.closeModalBtn,
+  } as const;
+
   const uniqueSizes = React.useMemo(() => {
     const map = new Map<string, ProductOption>();
     options.forEach((option) => {
@@ -82,16 +103,16 @@ export default function ProductListUI({
   }, [options]);
 
   return (
-    <div className={classNames?.container}>
-      {message && <div className={classNames?.message}>{message}</div>}
-      <div className={classNames?.productList}>
+    <div className={mergedClassNames.container}>
+      {message && <div className={mergedClassNames.message}>{message}</div>}
+      <div className={mergedClassNames.productList}>
         {products.map((product) => {
           const selectedLabel = selectedSizeLabelByProduct[product.id];
           const imgUrl = resolveImageSrc?.(product) ?? product.image_url;
 
           return (
-            <div key={product.id} className={classNames?.productCard}>
-              <div className={classNames?.productImageWrap}>
+            <div key={product.id} className={mergedClassNames.productCard}>
+              <div className={mergedClassNames.productImageWrap}>
                 {imgUrl ? (
                   <img
                     src={imgUrl}
@@ -101,35 +122,35 @@ export default function ProductListUI({
                 ) : null}
               </div>
 
-              <div className={classNames?.productInfo}>
+              <div className={mergedClassNames.productInfo}>
                 <div>
-                  <h4 className={classNames?.productName}>{product.name}</h4>
-                  <p className={classNames?.productMeta}>
+                  <h4 className={mergedClassNames.productName}>{product.name}</h4>
+                  <p className={mergedClassNames.productMeta}>
                     {product.category && `${product.category} | `}
                     {product.color && `${product.color} `}
                   </p>
-                  <p className={classNames?.productPrice}>{Math.round(product.price ?? 0).toLocaleString()}원</p>
+                  <p className={mergedClassNames.productPrice}>{Math.round(product.price ?? 0).toLocaleString()}원</p>
                 </div>
 
                 {purchaseEnabled ? (
-                  <div className={classNames?.actionRow}>
+                  <div className={mergedClassNames.actionRow}>
                     <button
                       type="button"
-                      className={classNames?.btn}
+                      className={mergedClassNames.btn}
                       onClick={() => onOpenSizeModal?.(product.id)}
                     >
                       {selectedLabel || '사이즈 선택'}
                     </button>
                     <button
                       type="button"
-                      className={classNames?.btn}
+                      className={mergedClassNames.btn}
                       onClick={() => onAddToCart?.(product.id, false)}
                     >
                       장바구니
                     </button>
                     <button
                       type="button"
-                      className={[classNames?.btn, classNames?.primary].filter(Boolean).join(' ')}
+                      className={[mergedClassNames.btn, mergedClassNames.primary].filter(Boolean).join(' ')}
                       onClick={() => onAddToCart?.(product.id, true)}
                     >
                       바로 구매
@@ -139,10 +160,10 @@ export default function ProductListUI({
               </div>
 
               {purchaseEnabled && sizeModalOpenFor === product.id && (
-                <div className={classNames?.modalOverlay} onClick={() => onCloseSizeModal?.()}>
+                <div className={mergedClassNames.modalOverlay} onClick={() => onCloseSizeModal?.()}>
                   <button
                     type="button"
-                    className={classNames?.closeModalBtn}
+                    className={mergedClassNames.closeModalBtn}
                     onClick={() => onCloseSizeModal?.()}
                   >
                     ✕
@@ -151,18 +172,18 @@ export default function ProductListUI({
                     style={{ width: '100%', maxWidth: '240px' }}
                     onClick={(event) => event.stopPropagation()}
                   >
-                    <h4 className={classNames?.modalTitle}>사이즈 선택</h4>
+                    <h4 className={mergedClassNames.modalTitle}>사이즈 선택</h4>
                     {optionsLoading ? (
                       <p style={{ fontSize: '12px' }}>불러오는 중...</p>
                     ) : uniqueSizes.length === 0 ? (
                       <p style={{ fontSize: '12px', color: '#666' }}>선택 가능한 사이즈가 없습니다.</p>
                     ) : (
-                      <div className={classNames?.sizeGrid}>
+                      <div className={mergedClassNames.sizeGrid}>
                         {uniqueSizes.map(({ size, opt }) => (
                           <button
                             key={size}
                             type="button"
-                            className={classNames?.sizeBtn}
+                            className={mergedClassNames.sizeBtn}
                             onClick={() => onSelectOption?.(product.id, opt)}
                           >
                             {size}

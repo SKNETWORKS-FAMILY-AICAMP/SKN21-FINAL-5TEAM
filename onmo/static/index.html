@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ONMO</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260327l" />
+    <link rel="stylesheet" href="/static/styles.css?v=__ONMO_ASSET_VERSION__" />
   </head>
   <body>
     <div class="shell">
@@ -30,7 +30,15 @@
                     />
                     <button class="launch-button" type="submit" id="github-launch-button">가져오기</button>
                   </div>
+                  <div class="github-row">
+                    <input id="github-env-file" name="env_file" type="file" />
+                    <select id="github-env-target" name="env_target_path">
+                      <option value=".env">루트 .env</option>
+                      <option value="backend/.env">backend/.env</option>
+                    </select>
+                  </div>
                   <p class="field-hint">public repo는 바로 시작하고, 접근 권한이 필요하면 GitHub 승인으로 이어집니다.</p>
+                  <p class="field-hint">운영 환경파일이 필요하면 여기서 첨부하고 주입 경로를 고를 수 있습니다. macOS에서 숨김 파일이 안 보이면 파일 선택기에서 Cmd+Shift+. 를 눌러 표시하세요.</p>
                 </form>
               </div>
             </div>
@@ -61,6 +69,6 @@
       </main>
     </div>
 
-    <script src="/static/app.js?v=20260327l" defer></script>
+    <script src="/static/app.js?v=__ONMO_ASSET_VERSION__" defer></script>
   </body>
 </html>

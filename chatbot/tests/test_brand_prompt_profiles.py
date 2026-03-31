@@ -17,6 +17,7 @@ from chatbot.src.graph.nodes import (
     policy_rag_subagent,
 )
 from chatbot.src.graph.brand_profiles import resolve_brand_profile
+from chatbot.src.prompts.system_prompts import get_ecommerce_system_prompt
 from chatbot.src.schemas.planner import TaskIntent
 
 
@@ -56,7 +57,15 @@ class _CapturingLLM:
 
 def test_resolve_brand_profile_falls_back_to_moyeo():
     assert resolve_brand_profile(None).display_name == "moyeo"
-    assert resolve_brand_profile("unknown-site").display_name == "moyeo"
+    assert resolve_brand_profile("unknown-site").display_name == "unknown site"
+    assert resolve_brand_profile("bilyeo").display_name == "bilyeo"
+
+
+def test_site_aware_system_prompt_uses_runtime_brand():
+    prompt = get_ecommerce_system_prompt(provider="openai", model_name="gpt-4o-mini", site_id="bilyeo")
+
+    assert "bilyeo 쇼핑몰" in prompt
+    assert "MOYEO" not in prompt
 
 
 def test_planner_messages_use_food_branding():

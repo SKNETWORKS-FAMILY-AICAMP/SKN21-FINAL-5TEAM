@@ -7,6 +7,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,7 +18,7 @@ from threading import Lock, Thread
 from typing import Any, TextIO
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -61,6 +62,28 @@ GITHUB_IMPORT_ROOT_NAME = "_github_imports"
 GITHUB_IMPORT_TTL = timedelta(hours=12)
 GITHUB_OAUTH_STATE_TTL = timedelta(minutes=15)
 GITHUB_MODE_MESSAGE = "GitHub 가져오기 런은 라이브 프리뷰를 실행하지 않습니다."
+GITHUB_IMPORT_ENV_TARGET_PATHS = {".env", "backend/.env"}
+STATIC_ASSET_VERSION_TOKEN = "__ONMO_ASSET_VERSION__"
+
+
+@dataclass(frozen=True, slots=True)
+class BootstrapLaunchProfile:
+    compose_service: str
+    wait_strategy: str | None = None
+    wait_target: str | None = None
+    timeout_seconds: int = 120
+
+
+@dataclass(frozen=True, slots=True)
+class LaunchServiceProfile:
+    relative_root: str
+    required_path: str
+    command: tuple[str, ...]
+    env_overrides: dict[str, str] = field(default_factory=dict)
+    healthcheck_port: int | None = None
+    healthcheck_url: str | None = None
+    prepare_command: tuple[str, ...] | None = None
+    prepare_sentinel: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,8 +93,13 @@ class KnownLaunchProfile:
     preview_url: str
     backend_url: str
     frontend_url: str
+    frontend_api_base_template: str = "{backend_url}"
     chatbot_url: str = "http://127.0.0.1:8100"
-    bootstrap_service: str | None = None
+    preview_workspace_preference: str = "export_replay_then_apply_then_source"
+    bootstrap: BootstrapLaunchProfile | None = None
+    backend: LaunchServiceProfile | None = None
+    frontend: LaunchServiceProfile | None = None
+    chatbot: LaunchServiceProfile | None = None
 
 
 KNOWN_LAUNCH_PROFILES: dict[str, KnownLaunchProfile] = {
@@ -81,7 +109,44 @@ KNOWN_LAUNCH_PROFILES: dict[str, KnownLaunchProfile] = {
         preview_url="http://127.0.0.1:3000/bilyeo/",
         backend_url="http://127.0.0.1:5000",
         frontend_url="http://127.0.0.1:3000/bilyeo/",
-        bootstrap_service="bilyeo-oracle",
+        frontend_api_base_template="/api",
+        bootstrap=BootstrapLaunchProfile(
+            compose_service="bilyeo-oracle",
+            wait_strategy="tcp_port",
+            wait_target="127.0.0.1:1521",
+            timeout_seconds=60,
+        ),
+        backend=LaunchServiceProfile(
+            relative_root="backend",
+            required_path="app.py",
+            command=("{python}", "app.py"),
+            healthcheck_port=5000,
+        ),
+        frontend=LaunchServiceProfile(
+            relative_root="frontend",
+            required_path="package.json",
+            command=("npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "3000"),
+            healthcheck_port=3000,
+            env_overrides={
+                "VITE_API_BASE": "{frontend_api_base}",
+                "VITE_CHATBOT_SERVER_BASE_URL": "{chatbot_url}",
+                "VITE_CAPABILITY_PROFILE": "{capability_profile}",
+                "VITE_ENABLED_RETRIEVAL_CORPORA": "{enabled_retrieval_corpora_csv}",
+            },
+            prepare_command=("npm", "install"),
+            prepare_sentinel="node_modules",
+        ),
+        chatbot=LaunchServiceProfile(
+            relative_root=".",
+            required_path="server_fastapi.py",
+            command=("{python}", "-m", "uvicorn", "server_fastapi:app", "--host", "127.0.0.1", "--port", "8100"),
+            healthcheck_url="{chatbot_url}/widget.js",
+            env_overrides={
+                "PYTHONPATH": "{chatbot_root}",
+                "BACKEND_API_URL": "{backend_url}",
+                "BILYEO_API_URL": "{backend_url}",
+            },
+        ),
     ),
     "food": KnownLaunchProfile(
         site="food",
@@ -89,6 +154,39 @@ KNOWN_LAUNCH_PROFILES: dict[str, KnownLaunchProfile] = {
         preview_url="http://127.0.0.1:3000/",
         backend_url="http://127.0.0.1:8000",
         frontend_url="http://127.0.0.1:3000/",
+        frontend_api_base_template="{backend_url}",
+        backend=LaunchServiceProfile(
+            relative_root="backend",
+            required_path="manage.py",
+            command=("{python}", "manage.py", "runserver", "127.0.0.1:8000"),
+            healthcheck_port=8000,
+            env_overrides={"DJANGO_SETTINGS_MODULE": "foodshop.settings"},
+        ),
+        frontend=LaunchServiceProfile(
+            relative_root="frontend",
+            required_path="package.json",
+            command=("npm", "run", "dev"),
+            healthcheck_port=3000,
+            env_overrides={
+                "PORT": "3000",
+                "BROWSER": "none",
+                "DANGEROUSLY_DISABLE_HOST_CHECK": "true",
+                "REACT_APP_API_URL": "{frontend_api_base}",
+                "REACT_APP_CHATBOT_SERVER_BASE_URL": "{chatbot_url}",
+            },
+            prepare_command=("npm", "install"),
+            prepare_sentinel="node_modules",
+        ),
+        chatbot=LaunchServiceProfile(
+            relative_root=".",
+            required_path="server_fastapi.py",
+            command=("{python}", "-m", "uvicorn", "server_fastapi:app", "--host", "127.0.0.1", "--port", "8100"),
+            healthcheck_url="{chatbot_url}/widget.js",
+            env_overrides={
+                "PYTHONPATH": "{chatbot_root}",
+                "BACKEND_API_URL": "{backend_url}",
+            },
+        ),
     ),
     "ecommerce": KnownLaunchProfile(
         site="ecommerce",
@@ -96,7 +194,49 @@ KNOWN_LAUNCH_PROFILES: dict[str, KnownLaunchProfile] = {
         preview_url="http://127.0.0.1:3000/",
         backend_url="http://127.0.0.1:8000",
         frontend_url="http://127.0.0.1:3000/",
-        bootstrap_service="mysql",
+        frontend_api_base_template="{backend_url}",
+        bootstrap=BootstrapLaunchProfile(
+            compose_service="mysql",
+            wait_strategy="tcp_port",
+            wait_target="127.0.0.1:3306",
+            timeout_seconds=60,
+        ),
+        backend=LaunchServiceProfile(
+            relative_root="backend",
+            required_path="app/main.py",
+            command=("{python}", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"),
+            healthcheck_url="{backend_url}/",
+            env_overrides={
+                "PYTHONPATH": "{service_root}",
+                "DB_HOST": "127.0.0.1",
+                "DB_PORT": "3306",
+                "DB_USER": "ecom_user",
+                "DB_PASSWORD": "ecopchatbot!",
+                "DB_NAME": "ecommerce",
+            },
+        ),
+        frontend=LaunchServiceProfile(
+            relative_root="frontend",
+            required_path="package.json",
+            command=("npm", "run", "dev", "--", "--hostname", "127.0.0.1", "--port", "3000"),
+            healthcheck_port=3000,
+            env_overrides={
+                "NEXT_PUBLIC_API_URL": "{frontend_api_base}",
+                "NEXT_PUBLIC_CHATBOT_API_URL": "{chatbot_url}",
+            },
+            prepare_command=("npm", "install"),
+            prepare_sentinel="node_modules",
+        ),
+        chatbot=LaunchServiceProfile(
+            relative_root=".",
+            required_path="server_fastapi.py",
+            command=("{python}", "-m", "uvicorn", "server_fastapi:app", "--host", "127.0.0.1", "--port", "8100"),
+            healthcheck_url="{chatbot_url}/widget.js",
+            env_overrides={
+                "PYTHONPATH": "{chatbot_root}",
+                "BACKEND_API_URL": "{backend_url}",
+            },
+        ),
     ),
 }
 
@@ -121,6 +261,9 @@ class GitHubImportRun:
     workdir_root: str = ""
     finished_at: str | None = None
     demo_enabled: bool = False
+    env_target_path: str = ""
+    env_attachment_name: str = ""
+    env_attachment_path: str = ""
 
 
 @dataclass(slots=True)
@@ -132,6 +275,7 @@ class GitHubOAuthState:
 
 class GitHubImportRequest(BaseModel):
     repo_url: str = Field(..., min_length=1)
+    env_target_path: str = Field("", min_length=0)
 
     model_config = ConfigDict(extra="ignore")
 
@@ -169,6 +313,63 @@ def _github_public_base_url(request: Request | None = None) -> str:
     if request is not None:
         return str(request.base_url).rstrip("/")
     return "http://127.0.0.1:8899"
+
+
+def _normalize_github_env_target_path(value: str | None) -> str:
+    raw = str(value or "").strip().replace("\\", "/")
+    if not raw:
+        return ""
+    if raw.startswith("./"):
+        raw = raw[2:]
+    if raw not in GITHUB_IMPORT_ENV_TARGET_PATHS:
+        allowed = ", ".join(sorted(GITHUB_IMPORT_ENV_TARGET_PATHS))
+        raise HTTPException(status_code=400, detail=f"Unsupported env target path. Allowed values: {allowed}")
+    return raw
+
+
+def _github_import_attachment_root(*, runtime_root: str | Path, site: str, run_id: str) -> Path:
+    return _github_import_root(runtime_root) / site / "_attachments" / run_id
+
+
+def _store_github_import_env_attachment(
+    *,
+    record: GitHubImportRun,
+    filename: str,
+    content: bytes,
+    target_path: str,
+) -> GitHubImportRun:
+    safe_name = Path(str(filename or "").strip() or ".env").name
+    if not safe_name:
+        safe_name = ".env"
+    attachment_root = _github_import_attachment_root(
+        runtime_root=record.runtime_root,
+        site=record.site,
+        run_id=record.run_id,
+    )
+    attachment_root.mkdir(parents=True, exist_ok=True)
+    attachment_path = attachment_root / safe_name
+    attachment_path.write_bytes(content)
+    updated = _update_github_import_run(
+        record.run_id,
+        env_target_path=target_path,
+        env_attachment_name=safe_name,
+        env_attachment_path=str(attachment_path.resolve()),
+    )
+    return updated or record
+
+
+def _inject_github_import_env_attachment(*, record: GitHubImportRun, source_root: Path) -> Path | None:
+    attachment_raw = str(record.env_attachment_path or "").strip()
+    target_path = str(record.env_target_path or "").strip()
+    if not attachment_raw or not target_path:
+        return None
+    attachment_path = Path(attachment_raw)
+    if not attachment_path.exists():
+        raise GitHubImportError("첨부한 .env 파일을 찾을 수 없습니다.")
+    destination = source_root / target_path
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(attachment_path, destination)
+    return destination
 
 
 def _github_callback_url(request: Request | None = None) -> str:
@@ -390,6 +591,7 @@ class ServiceLaunchSpec:
     env_overrides: dict[str, str] = field(default_factory=dict)
     prepare_command: list[str] | None = None
     prepare_sentinel: str | None = None
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -408,8 +610,16 @@ class ServiceProcessRecord:
     healthcheck_url: str | None = None
     healthcheck_port: int | None = None
     env_overrides: dict[str, str] = field(default_factory=dict)
+    diagnostics: dict[str, Any] = field(default_factory=dict)
     finished_at: str | None = None
     returncode: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PreviewWorkspaceSelection:
+    source_kind: str
+    host_root: Path
+    chatbot_root: Path
 
 
 class StartRunRequest(BaseModel):
@@ -441,6 +651,29 @@ _RUN_REGISTRY: dict[str, RunProcessRecord] = {}
 _SERVICE_REGISTRY: dict[str, ServiceProcessRecord] = {}
 _GITHUB_IMPORT_REGISTRY: dict[str, GitHubImportRun] = {}
 _GITHUB_OAUTH_STATE_REGISTRY: dict[str, GitHubOAuthState] = {}
+
+
+def _shutdown_child_processes() -> None:
+    with _REGISTRY_LOCK:
+        service_records = list(_SERVICE_REGISTRY.values())
+        run_records = list(_RUN_REGISTRY.values())
+        _SERVICE_REGISTRY.clear()
+        _RUN_REGISTRY.clear()
+    for record in service_records:
+        try:
+            _terminate_service(record)
+        except Exception:
+            continue
+    for record in run_records:
+        try:
+            _terminate_run(record)
+        except Exception:
+            continue
+
+
+@app.on_event("shutdown")
+def _shutdown_onmo_children() -> None:
+    _shutdown_child_processes()
 
 
 def _sync_record(record: RunProcessRecord) -> RunProcessRecord:
@@ -520,6 +753,66 @@ def _read_run_summary(run_root: Path) -> dict[str, Any]:
         return {}
 
 
+def _read_latest_artifact_payload(run_root: Path, *parts: str) -> dict[str, Any]:
+    artifact_dir = run_root.joinpath("artifacts", *parts)
+    if not artifact_dir.exists():
+        return {}
+    candidates = sorted(artifact_dir.glob("v*.json"))
+    if not candidates:
+        return {}
+    try:
+        payload = json.loads(candidates[-1].read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    if isinstance(payload, dict):
+        nested = payload.get("payload")
+        if isinstance(nested, dict):
+            return nested
+        return payload
+    return {}
+
+
+def _resolve_existing_repo_path(raw_path: str | None) -> Path | None:
+    value = str(raw_path or "").strip()
+    if not value:
+        return None
+    path = _resolve_repo_path(value)
+    if not path.exists():
+        return None
+    return path
+
+
+def _resolve_preview_workspace_selection(*, run_root: Path, run_payload: dict[str, Any]) -> PreviewWorkspaceSelection:
+    replay_payload = _read_latest_artifact_payload(run_root, "06-export", "replay-result")
+    replay_host = _resolve_existing_repo_path(replay_payload.get("host_replay_workspace_path"))
+    replay_chatbot = _resolve_existing_repo_path(replay_payload.get("chatbot_replay_workspace_path"))
+    if replay_host is not None and replay_chatbot is not None:
+        return PreviewWorkspaceSelection(
+            source_kind="export_replay_workspace",
+            host_root=replay_host,
+            chatbot_root=replay_chatbot,
+        )
+
+    apply_payload = _read_latest_artifact_payload(run_root, "04-apply", "apply-result")
+    apply_host = _resolve_existing_repo_path(apply_payload.get("host_workspace_path"))
+    apply_chatbot = _resolve_existing_repo_path(apply_payload.get("chatbot_workspace_path"))
+    if apply_host is not None and apply_chatbot is not None:
+        return PreviewWorkspaceSelection(
+            source_kind="apply_workspace",
+            host_root=apply_host,
+            chatbot_root=apply_chatbot,
+        )
+
+    source_root = _resolve_existing_repo_path((run_payload.get("run") or {}).get("source_root"))
+    if source_root is None:
+        source_root = ROOT
+    return PreviewWorkspaceSelection(
+        source_kind="source_root",
+        host_root=source_root,
+        chatbot_root=(ROOT / "chatbot").resolve(),
+    )
+
+
 def _maybe_autostart_demo_services(record: RunProcessRecord) -> list[dict[str, Any]]:
     if not record.demo_enabled:
         return []
@@ -544,6 +837,7 @@ def _maybe_autostart_demo_services(record: RunProcessRecord) -> list[dict[str, A
     return _ensure_demo_services(
         site=synced.site,
         run_id=synced.run_id,
+        run_root=run_root,
         run_payload=payload,
         preview_url=preview_url,
     )
@@ -667,6 +961,14 @@ def _launch_profile_preview_url(profile: KnownLaunchProfile | None, *, fallback:
     if fallback is None:
         return ""
     return str(fallback or DEFAULT_PREVIEW_URL).strip()
+
+
+def _render_launch_value(value: str, context: dict[str, str]) -> str:
+    return str(value).format_map(context)
+
+
+def _render_launch_values(values: dict[str, str], context: dict[str, str]) -> dict[str, str]:
+    return {key: _render_launch_value(value, context) for key, value in values.items()}
 
 
 def _probe_github_repository(repo_url: str, access_token: str | None = None) -> GitHubRepoProbe:
@@ -825,6 +1127,8 @@ def _run_github_import_job(*, run_id: str, access_token: str | None = None) -> N
         if source_root.exists():
             shutil.rmtree(source_root, ignore_errors=True)
         shutil.move(str(selected_source_root), str(source_root))
+        record = _lookup_github_import_run(run_id) or record
+        _inject_github_import_env_attachment(record=record, source_root=source_root)
         _update_github_import_run(
             run_id,
             owner=probe.owner,
@@ -1028,6 +1332,69 @@ def _probe_http_url(url: str, *, timeout: float = 0.7) -> bool:
         return False
 
 
+def _port_in_use(port: int, *, host: str = "127.0.0.1") -> bool:
+    return _probe_tcp_port(port, host=host)
+
+
+def _service_bind_port(spec: ServiceLaunchSpec) -> int | None:
+    if spec.healthcheck_port is not None:
+        return spec.healthcheck_port
+    for candidate in (spec.healthcheck_url, spec.url):
+        raw = str(candidate or "").strip()
+        if not raw:
+            continue
+        parsed = urllib.parse.urlparse(raw)
+        if parsed.port is not None:
+            return int(parsed.port)
+    return None
+
+
+def _release_bound_port(*, port: int, label: str, protected_pids: set[int]) -> str | None:
+    if port <= 0 or not _port_in_use(port):
+        return None
+    try:
+        result = subprocess.run(
+            ["lsof", "-ti", f"tcp:{port}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            creationflags=_subprocess_creationflags(),
+        )
+    except FileNotFoundError:
+        return f"{label} could not inspect port {port}: lsof not found"
+    except subprocess.TimeoutExpired:
+        return f"{label} could not inspect port {port}: lsof timed out"
+
+    pids = [
+        token
+        for token in str(result.stdout or "").splitlines()
+        if token.strip().isdigit() and int(token.strip()) not in protected_pids
+    ]
+    if not pids:
+        return f"{label} port {port} is already in use"
+
+    try:
+        subprocess.run(
+            ["kill", "-TERM", *pids],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            creationflags=_subprocess_creationflags(),
+        )
+    except FileNotFoundError:
+        return f"{label} could not stop process on port {port}: kill not found"
+    except subprocess.TimeoutExpired:
+        return f"{label} could not stop process on port {port}: kill timed out"
+
+    for _ in range(10):
+        if not _port_in_use(port):
+            return None
+        time.sleep(0.2)
+    return f"{label} port {port} is already in use"
+
+
 def _service_ready(record: ServiceProcessRecord) -> bool:
     if record.returncode is not None:
         return False
@@ -1053,8 +1420,9 @@ def _service_snapshot(
     started_at: str | None = None,
     finished_at: str | None = None,
     returncode: int | None = None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    snapshot = {
         "name": service_name,
         "label": label,
         "run_id": run_id,
@@ -1072,6 +1440,9 @@ def _service_snapshot(
         "finished_at": finished_at,
         "returncode": returncode,
     }
+    if diagnostics:
+        snapshot.update(diagnostics)
+    return snapshot
 
 
 def _snapshot_from_service_record(record: ServiceProcessRecord | None) -> dict[str, Any] | None:
@@ -1105,6 +1476,7 @@ def _snapshot_from_service_record(record: ServiceProcessRecord | None) -> dict[s
         started_at=synced.started_at,
         finished_at=synced.finished_at,
         returncode=synced.returncode,
+        diagnostics=synced.diagnostics,
     )
 
 
@@ -1153,6 +1525,7 @@ def _launch_service(*, site: str, run_id: str, spec: ServiceLaunchSpec) -> Servi
         healthcheck_url=spec.healthcheck_url,
         healthcheck_port=spec.healthcheck_port,
         env_overrides=dict(spec.env_overrides),
+        diagnostics=dict(spec.diagnostics),
     )
 
 
@@ -1192,8 +1565,10 @@ def _ensure_service_process(*, site: str, run_id: str, spec: ServiceLaunchSpec) 
     key = _service_key(site, spec.service_name)
     with _REGISTRY_LOCK:
         existing = _SERVICE_REGISTRY.get(key)
+        protected_pids = {os.getpid()}
         if existing is not None:
             synced = _sync_service_record(existing)
+            protected_pids.add(synced.process.pid)
             if (
                 synced.returncode is None
                 and synced.run_id == run_id
@@ -1206,8 +1581,28 @@ def _ensure_service_process(*, site: str, run_id: str, spec: ServiceLaunchSpec) 
                     run_id=run_id,
                     status="starting",
                     url=spec.url,
+                    diagnostics=spec.diagnostics,
                 )
             _terminate_service(synced)
+        bind_port = _service_bind_port(spec)
+        if bind_port is not None:
+            port_failure = _release_bound_port(
+                port=bind_port,
+                label=spec.label,
+                protected_pids=protected_pids,
+            )
+            if port_failure:
+                return _service_snapshot(
+                    spec.service_name,
+                    spec.label,
+                    run_id=run_id,
+                    status="blocked",
+                    reason=port_failure,
+                    url=spec.url,
+                    working_directory=str(spec.working_directory),
+                    command=spec.command,
+                    diagnostics=spec.diagnostics,
+                )
         prepare_failure = _prepare_service_launch(spec)
         if prepare_failure:
             return _service_snapshot(
@@ -1219,6 +1614,7 @@ def _ensure_service_process(*, site: str, run_id: str, spec: ServiceLaunchSpec) 
                 url=spec.url,
                 working_directory=str(spec.working_directory),
                 command=spec.command,
+                diagnostics=spec.diagnostics,
             )
         record = _launch_service(site=site, run_id=run_id, spec=spec)
         _SERVICE_REGISTRY[key] = record
@@ -1228,6 +1624,7 @@ def _ensure_service_process(*, site: str, run_id: str, spec: ServiceLaunchSpec) 
             run_id=run_id,
             status="starting",
             url=spec.url,
+            diagnostics=spec.diagnostics,
         )
 
 
@@ -1239,7 +1636,13 @@ def _launch_profile_labels(profile: KnownLaunchProfile) -> dict[str, str]:
     }
 
 
-def _blocked_launch_snapshots(profile: KnownLaunchProfile, *, run_id: str, reason: str) -> list[dict[str, Any]]:
+def _blocked_launch_snapshots(
+    profile: KnownLaunchProfile,
+    *,
+    run_id: str,
+    reason: str,
+    diagnostics: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     labels = _launch_profile_labels(profile)
     return [
         _service_snapshot(
@@ -1253,17 +1656,24 @@ def _blocked_launch_snapshots(profile: KnownLaunchProfile, *, run_id: str, reaso
                 if name == "chatbot"
                 else profile.backend_url if name == "backend" else profile.frontend_url
             ),
+            diagnostics=diagnostics,
         )
         for name in DEMO_SERVICE_NAMES
     ]
 
 
-def _bootstrap_launch_profile(profile: KnownLaunchProfile) -> str | None:
-    if not profile.bootstrap_service:
-        return None
+def _bootstrap_launch_profile(profile: KnownLaunchProfile) -> dict[str, Any]:
+    bootstrap = profile.bootstrap
+    if bootstrap is None:
+        return {"status": "skipped", "ready": True, "reason": "", "wait_target": ""}
     compose_path = ROOT / "docker" / "AWS" / "docker-compose.yml"
     if not compose_path.exists():
-        return f"자동 실행 환경 파일을 찾을 수 없습니다: {compose_path}"
+        return {
+            "status": "failed",
+            "ready": False,
+            "reason": f"자동 실행 환경 파일을 찾을 수 없습니다: {compose_path}",
+            "wait_target": str(bootstrap.wait_target or ""),
+        }
     try:
         result = subprocess.run(
             [
@@ -1273,7 +1683,7 @@ def _bootstrap_launch_profile(profile: KnownLaunchProfile) -> str | None:
                 str(compose_path),
                 "up",
                 "-d",
-                profile.bootstrap_service,
+                bootstrap.compose_service,
             ],
             cwd=str(ROOT),
             capture_output=True,
@@ -1282,268 +1692,240 @@ def _bootstrap_launch_profile(profile: KnownLaunchProfile) -> str | None:
             check=False,
         )
     except FileNotFoundError:
-        return "docker compose를 찾을 수 없습니다."
+        return {"status": "failed", "ready": False, "reason": "docker compose를 찾을 수 없습니다.", "wait_target": ""}
     except subprocess.TimeoutExpired:
-        return f"{profile.label} 자동 실행 환경 준비 시간이 초과되었습니다."
-    if result.returncode == 0:
-        return None
-    output = str(result.stderr or result.stdout or "").strip()
-    return output or f"{profile.label} 자동 실행 환경 준비에 실패했습니다."
+        return {
+            "status": "failed",
+            "ready": False,
+            "reason": f"{profile.label} 자동 실행 환경 준비 시간이 초과되었습니다.",
+            "wait_target": str(bootstrap.wait_target or ""),
+        }
+    if result.returncode != 0:
+        output = str(result.stderr or result.stdout or "").strip()
+        return {
+            "status": "failed",
+            "ready": False,
+            "reason": output or f"{profile.label} 자동 실행 환경 준비에 실패했습니다.",
+            "wait_target": str(bootstrap.wait_target or ""),
+        }
 
+    wait_strategy = str(bootstrap.wait_strategy or "").strip()
+    wait_target = str(bootstrap.wait_target or "").strip()
+    if not wait_strategy or not wait_target:
+        return {"status": "ready", "ready": True, "reason": "", "wait_target": wait_target}
 
-def _chatbot_service_spec(*, profile: KnownLaunchProfile) -> ServiceLaunchSpec:
-    env_overrides = {
-        "PYTHONPATH": str(ROOT),
-        "BACKEND_API_URL": profile.backend_url,
+    deadline = time.monotonic() + max(int(bootstrap.timeout_seconds), 1)
+    while time.monotonic() < deadline:
+        if wait_strategy == "tcp_port":
+            host, _, port_raw = wait_target.partition(":")
+            port = int(port_raw or "0")
+            if port and _probe_tcp_port(port, host=host or "127.0.0.1"):
+                return {"status": "ready", "ready": True, "reason": "", "wait_target": wait_target}
+        elif wait_strategy == "http_url":
+            if _probe_http_url(wait_target):
+                return {"status": "ready", "ready": True, "reason": "", "wait_target": wait_target}
+        else:
+            return {
+                "status": "failed",
+                "ready": False,
+                "reason": f"Unsupported bootstrap wait strategy: {wait_strategy}",
+                "wait_target": wait_target,
+            }
+        time.sleep(0.5)
+
+    return {
+        "status": "failed",
+        "ready": False,
+        "reason": f"{profile.label} bootstrap readiness timed out",
+        "wait_target": wait_target,
     }
-    if profile.site == "bilyeo":
-        env_overrides["BILYEO_API_URL"] = profile.backend_url
-    return ServiceLaunchSpec(
-        service_name="chatbot",
-        label="Chatbot server",
-        working_directory=ROOT,
-        command=[
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "chatbot.server_fastapi:app",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            "8100",
-        ],
-        url=profile.chatbot_url,
-        healthcheck_url=f"{profile.chatbot_url.rstrip('/')}/widget.js",
-        env_overrides=env_overrides,
+def _build_launch_render_context(
+    *,
+    profile: KnownLaunchProfile,
+    service_root: Path,
+    chatbot_root: Path,
+    capability_profile: str | None = None,
+    enabled_retrieval_corpora: list[str] | None = None,
+) -> dict[str, str]:
+    normalized_corpora = [
+        str(item).strip()
+        for item in (enabled_retrieval_corpora or [])
+        if str(item).strip()
+    ]
+    context = {
+        "python": sys.executable,
+        "backend_url": profile.backend_url,
+        "frontend_url": profile.frontend_url,
+        "chatbot_url": profile.chatbot_url.rstrip("/"),
+        "service_root": str(service_root.resolve()),
+        "chatbot_root": str(chatbot_root.resolve()),
+        "capability_profile": str(capability_profile or "").strip(),
+        "enabled_retrieval_corpora_csv": ",".join(normalized_corpora),
+    }
+    context["frontend_api_base"] = _render_launch_value(profile.frontend_api_base_template, context)
+    return context
+
+
+def _service_spec_from_profile(
+    *,
+    service_name: str,
+    label: str,
+    url: str,
+    root: Path,
+    launch_profile: KnownLaunchProfile,
+    profile: LaunchServiceProfile | None,
+    chatbot_root: Path,
+    diagnostics: dict[str, Any],
+    capability_profile: str | None = None,
+    enabled_retrieval_corpora: list[str] | None = None,
+) -> tuple[ServiceLaunchSpec | None, dict[str, Any] | None]:
+    if profile is None:
+        return None, None
+
+    service_root = (root / profile.relative_root).resolve()
+    required_path = service_root / profile.required_path
+    if not required_path.exists():
+        return None, _service_snapshot(
+            service_name,
+            label,
+            run_id="",
+            status="blocked",
+            reason=f"{required_path} not found",
+            url=url,
+            working_directory=str(service_root),
+            diagnostics=diagnostics,
+        )
+
+    context = _build_launch_render_context(
+        profile=launch_profile,
+        service_root=service_root,
+        chatbot_root=chatbot_root,
+        capability_profile=capability_profile,
+        enabled_retrieval_corpora=enabled_retrieval_corpora,
+    )
+    return (
+        ServiceLaunchSpec(
+            service_name=service_name,
+            label=label,
+            working_directory=service_root,
+            command=[_render_launch_value(token, context) for token in profile.command],
+            url=url,
+            healthcheck_url=(
+                _render_launch_value(profile.healthcheck_url, context) if profile.healthcheck_url else None
+            ),
+            healthcheck_port=profile.healthcheck_port,
+            env_overrides=_render_launch_values(profile.env_overrides, context),
+            prepare_command=(
+                [_render_launch_value(token, context) for token in profile.prepare_command]
+                if profile.prepare_command
+                else None
+            ),
+            prepare_sentinel=profile.prepare_sentinel,
+            diagnostics=diagnostics,
+        ),
+        None,
     )
 
 
-def _bilyeo_service_specs(*, profile: KnownLaunchProfile, source_root: Path) -> tuple[list[ServiceLaunchSpec], list[dict[str, Any]]]:
-    specs: list[ServiceLaunchSpec] = [_chatbot_service_spec(profile=profile)]
+def _site_service_specs(
+    *,
+    profile: KnownLaunchProfile,
+    host_root: Path,
+    chatbot_root: Path,
+    diagnostics: dict[str, Any],
+    capability_profile: str | None = None,
+    enabled_retrieval_corpora: list[str] | None = None,
+) -> tuple[list[ServiceLaunchSpec], list[dict[str, Any]]]:
+    labels = _launch_profile_labels(profile)
+    service_inputs = (
+        ("chatbot", chatbot_root, profile.chatbot, profile.chatbot_url),
+        ("backend", host_root, profile.backend, profile.backend_url),
+        ("frontend", host_root, profile.frontend, profile.frontend_url),
+    )
+    specs: list[ServiceLaunchSpec] = []
     blocked: list[dict[str, Any]] = []
-
-    backend_root = (source_root / "backend").resolve()
-    backend_entrypoint = backend_root / "app.py"
-    if not backend_entrypoint.exists():
-        blocked.append(
-            _service_snapshot(
-                "backend",
-                f"{profile.label} backend",
-                run_id="",
-                status="blocked",
-                reason=f"{profile.site} backend/app.py not found",
-                url=profile.backend_url,
-            )
+    for service_name, root, service_profile, url in service_inputs:
+        spec, blocked_snapshot = _service_spec_from_profile(
+            service_name=service_name,
+            label=labels[service_name],
+            url=url,
+            root=root,
+            launch_profile=profile,
+            profile=service_profile,
+            chatbot_root=chatbot_root,
+            diagnostics=diagnostics,
+            capability_profile=capability_profile,
+            enabled_retrieval_corpora=enabled_retrieval_corpora,
         )
-    else:
-        specs.append(
-            ServiceLaunchSpec(
-                service_name="backend",
-                label=f"{profile.label} backend",
-                working_directory=backend_root,
-                command=[sys.executable, "app.py"],
-                url=profile.backend_url,
-                healthcheck_port=5000,
-            )
-        )
-
-    frontend_root = (source_root / "frontend").resolve()
-    package_json = frontend_root / "package.json"
-    if not package_json.exists():
-        blocked.append(
-            _service_snapshot(
-                "frontend",
-                f"{profile.label} frontend",
-                run_id="",
-                status="blocked",
-                reason=f"{profile.site} frontend/package.json not found",
-                url=profile.frontend_url,
-            )
-        )
-    else:
-        specs.append(
-            ServiceLaunchSpec(
-                service_name="frontend",
-                label=f"{profile.label} frontend",
-                working_directory=frontend_root,
-                command=["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "3000"],
-                url=profile.frontend_url,
-                healthcheck_port=3000,
-                env_overrides={"VITE_CHATBOT_SERVER_BASE_URL": profile.chatbot_url},
-                prepare_command=["npm", "install"],
-                prepare_sentinel="node_modules",
-            )
-        )
+        if blocked_snapshot is not None:
+            blocked.append(blocked_snapshot)
+        elif spec is not None:
+            specs.append(spec)
     return specs, blocked
+
+
+def _bilyeo_service_specs(*, profile: KnownLaunchProfile, source_root: Path) -> tuple[list[ServiceLaunchSpec], list[dict[str, Any]]]:
+    return _site_service_specs(
+        profile=profile,
+        host_root=source_root,
+        chatbot_root=(ROOT / "chatbot").resolve(),
+        diagnostics={},
+    )
 
 
 def _food_service_specs(*, profile: KnownLaunchProfile, source_root: Path) -> tuple[list[ServiceLaunchSpec], list[dict[str, Any]]]:
-    specs: list[ServiceLaunchSpec] = [_chatbot_service_spec(profile=profile)]
-    blocked: list[dict[str, Any]] = []
-
-    backend_root = (source_root / "backend").resolve()
-    manage_py = backend_root / "manage.py"
-    if not manage_py.exists():
-        blocked.append(
-            _service_snapshot(
-                "backend",
-                f"{profile.label} backend",
-                run_id="",
-                status="blocked",
-                reason=f"{profile.site} backend/manage.py not found",
-                url=profile.backend_url,
-            )
-        )
-    else:
-        specs.append(
-            ServiceLaunchSpec(
-                service_name="backend",
-                label=f"{profile.label} backend",
-                working_directory=backend_root,
-                command=[sys.executable, "manage.py", "runserver", "127.0.0.1:8000"],
-                url=profile.backend_url,
-                healthcheck_port=8000,
-                env_overrides={"DJANGO_SETTINGS_MODULE": "foodshop.settings"},
-            )
-        )
-
-    frontend_root = (source_root / "frontend").resolve()
-    package_json = frontend_root / "package.json"
-    if not package_json.exists():
-        blocked.append(
-            _service_snapshot(
-                "frontend",
-                f"{profile.label} frontend",
-                run_id="",
-                status="blocked",
-                reason=f"{profile.site} frontend/package.json not found",
-                url=profile.frontend_url,
-            )
-        )
-    else:
-        specs.append(
-            ServiceLaunchSpec(
-                service_name="frontend",
-                label=f"{profile.label} frontend",
-                working_directory=frontend_root,
-                command=["npm", "run", "dev"],
-                url=profile.frontend_url,
-                healthcheck_port=3000,
-                env_overrides={
-                    "PORT": "3000",
-                    "BROWSER": "none",
-                    "DANGEROUSLY_DISABLE_HOST_CHECK": "true",
-                    "REACT_APP_API_URL": profile.backend_url,
-                    "REACT_APP_CHATBOT_SERVER_BASE_URL": profile.chatbot_url,
-                },
-                prepare_command=["npm", "install"],
-                prepare_sentinel="node_modules",
-            )
-        )
-    return specs, blocked
+    return _site_service_specs(
+        profile=profile,
+        host_root=source_root,
+        chatbot_root=(ROOT / "chatbot").resolve(),
+        diagnostics={},
+    )
 
 
 def _ecommerce_service_specs(*, profile: KnownLaunchProfile, source_root: Path) -> tuple[list[ServiceLaunchSpec], list[dict[str, Any]]]:
-    specs: list[ServiceLaunchSpec] = [_chatbot_service_spec(profile=profile)]
-    blocked: list[dict[str, Any]] = []
-
-    backend_root = (source_root / "backend").resolve()
-    backend_entrypoint = backend_root / "app" / "main.py"
-    if not backend_entrypoint.exists():
-        blocked.append(
-            _service_snapshot(
-                "backend",
-                f"{profile.label} backend",
-                run_id="",
-                status="blocked",
-                reason=f"{profile.site} backend/app/main.py not found",
-                url=profile.backend_url,
-            )
-        )
-    else:
-        specs.append(
-            ServiceLaunchSpec(
-                service_name="backend",
-                label=f"{profile.label} backend",
-                working_directory=backend_root,
-                command=[sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
-                url=profile.backend_url,
-                healthcheck_url=f"{profile.backend_url.rstrip('/')}/",
-                env_overrides={
-                    "PYTHONPATH": str(backend_root),
-                    "DB_HOST": "127.0.0.1",
-                    "DB_PORT": "3306",
-                    "DB_USER": "ecom_user",
-                    "DB_PASSWORD": "ecopchatbot!",
-                    "DB_NAME": "ecommerce",
-                },
-            )
-        )
-
-    frontend_root = (source_root / "frontend").resolve()
-    package_json = frontend_root / "package.json"
-    if not package_json.exists():
-        blocked.append(
-            _service_snapshot(
-                "frontend",
-                f"{profile.label} frontend",
-                run_id="",
-                status="blocked",
-                reason=f"{profile.site} frontend/package.json not found",
-                url=profile.frontend_url,
-            )
-        )
-    else:
-        specs.append(
-            ServiceLaunchSpec(
-                service_name="frontend",
-                label=f"{profile.label} frontend",
-                working_directory=frontend_root,
-                command=["npm", "run", "dev", "--", "--hostname", "127.0.0.1", "--port", "3000"],
-                url=profile.frontend_url,
-                healthcheck_port=3000,
-                env_overrides={
-                    "NEXT_PUBLIC_API_URL": profile.backend_url,
-                    "NEXT_PUBLIC_CHATBOT_API_URL": profile.chatbot_url,
-                },
-                prepare_command=["npm", "install"],
-                prepare_sentinel="node_modules",
-            )
-        )
-    return specs, blocked
+    return _site_service_specs(
+        profile=profile,
+        host_root=source_root,
+        chatbot_root=(ROOT / "chatbot").resolve(),
+        diagnostics={},
+    )
 
 
 def _build_demo_service_specs(
     *,
     site: str,
     run_id: str,
-    source_root: Path,
+    host_root: Path,
+    chatbot_root: Path,
     preview_url: str,
+    launch_profile: KnownLaunchProfile | None = None,
+    diagnostics: dict[str, Any] | None = None,
+    capability_profile: str | None = None,
+    enabled_retrieval_corpora: list[str] | None = None,
 ) -> tuple[list[ServiceLaunchSpec], list[dict[str, Any]]]:
-    profile = _resolve_launch_profile(site=site, source_root=source_root)
+    profile = launch_profile or _resolve_launch_profile(site=site, source_root=host_root)
     if profile is None:
         return [], []
-
-    chatbot_entrypoint = (ROOT / "chatbot" / "server_fastapi.py").resolve()
-    if not chatbot_entrypoint.exists():
+    combined_diagnostics = dict(diagnostics or {})
+    bootstrap_result = _bootstrap_launch_profile(profile)
+    combined_diagnostics.setdefault("bootstrap_status", bootstrap_result["status"])
+    combined_diagnostics.setdefault("bootstrap_wait_target", bootstrap_result["wait_target"])
+    if not bootstrap_result["ready"]:
         return [], _blocked_launch_snapshots(
             profile,
             run_id=run_id,
-            reason="chatbot/server_fastapi.py not found",
+            reason=str(bootstrap_result["reason"] or "자동 실행 환경 준비에 실패했습니다."),
+            diagnostics=combined_diagnostics,
         )
 
-    bootstrap_failure = _bootstrap_launch_profile(profile)
-    if bootstrap_failure:
-        return [], _blocked_launch_snapshots(profile, run_id=run_id, reason=bootstrap_failure)
-
-    if profile.site == "bilyeo":
-        specs, blocked = _bilyeo_service_specs(profile=profile, source_root=source_root)
-    elif profile.site == "food":
-        specs, blocked = _food_service_specs(profile=profile, source_root=source_root)
-    elif profile.site == "ecommerce":
-        specs, blocked = _ecommerce_service_specs(profile=profile, source_root=source_root)
-    else:
-        specs, blocked = [], []
+    specs, blocked = _site_service_specs(
+        profile=profile,
+        host_root=host_root,
+        chatbot_root=chatbot_root,
+        diagnostics=combined_diagnostics,
+        capability_profile=capability_profile,
+        enabled_retrieval_corpora=enabled_retrieval_corpora,
+    )
 
     normalized_blocked = [
         {
@@ -1602,6 +1984,19 @@ def _build_demo_payload(
     launch_status = "idle"
     launch_label = "자동 실행 대기"
     blocked_reason = str(blocked_services[0].get("reason") or "").strip() if blocked_services else ""
+    validation_details = dict(((run_payload.get("details") or {}).get("validation") or {}))
+    real_login_available = bool(validation_details.get("real_login_available"))
+    bridge_fallback_used = bool(validation_details.get("bridge_fallback_used"))
+    retrieval_status = dict(((run_payload.get("run") or {}).get("retrieval_status") or {}))
+    enabled_retrieval_corpora = list((run_payload.get("run") or {}).get("enabled_retrieval_corpora") or [])
+    missing_retrieval_corpora = [
+        corpus
+        for corpus, payload in retrieval_status.items()
+        if corpus not in enabled_retrieval_corpora
+        and str((payload or {}).get("status") or "").strip() not in {"completed", "enabled"}
+    ]
+    validation_warning_summary = str(validation_details.get("validation_warning_summary") or "").strip() or None
+    demo_auth = dict(validation_details.get("demo_auth") or {})
 
     if validation_passed and not launch_supported:
         status = "disabled"
@@ -1652,6 +2047,7 @@ def _build_demo_payload(
         if launch_status == "ready" and normalized_preview_url
         else None
     )
+    diagnostic_source = next((item for item in ordered_services if item), {})
 
     return {
         "status": status,
@@ -1664,6 +2060,17 @@ def _build_demo_payload(
         "open_url": normalized_preview_url if launch_status == "ready" else None,
         "blocked_reason": blocked_reason or None,
         "primary_action": primary_action,
+        "preview_source_kind": diagnostic_source.get("preview_source_kind"),
+        "preview_host_root": diagnostic_source.get("preview_host_root"),
+        "preview_chatbot_root": diagnostic_source.get("preview_chatbot_root"),
+        "bootstrap_status": diagnostic_source.get("bootstrap_status"),
+        "bootstrap_wait_target": diagnostic_source.get("bootstrap_wait_target"),
+        "real_login_available": real_login_available,
+        "bridge_fallback_used": bridge_fallback_used,
+        "enabled_retrieval_corpora": enabled_retrieval_corpora,
+        "missing_retrieval_corpora": missing_retrieval_corpora,
+        "validation_warning_summary": validation_warning_summary,
+        "demo_auth": demo_auth,
         "services": ordered_services,
     }
 
@@ -1698,7 +2105,14 @@ def _github_mode_enabled_for_run(
     return False
 
 
-def _ensure_demo_services(*, site: str, run_id: str, run_payload: dict[str, Any], preview_url: str) -> list[dict[str, Any]]:
+def _ensure_demo_services(
+    *,
+    site: str,
+    run_id: str,
+    run_root: Path | None = None,
+    run_payload: dict[str, Any],
+    preview_url: str,
+) -> list[dict[str, Any]]:
     details = run_payload.get("details") or {}
     validation_details = details.get("validation") or {}
     launch_profile = _launch_profile_from_run(site=site, run_id=run_id, run_payload=run_payload)
@@ -1706,8 +2120,28 @@ def _ensure_demo_services(*, site: str, run_id: str, run_payload: dict[str, Any]
     if not bool(validation_details.get("passed")):
         return _collect_service_snapshots(site=site, run_id=run_id)
 
-    source_root = _resolve_source_root_for_run(site=site, run_id=run_id, run_payload=run_payload)
-    if not source_root.exists():
+    effective_run_root = run_root
+    if effective_run_root is None:
+        record = _lookup_record(site, run_id)
+        if record is not None:
+            effective_run_root = _run_root_from_record(record)
+    selection = _resolve_preview_workspace_selection(
+        run_root=effective_run_root or Path(),
+        run_payload=run_payload,
+    )
+    capability_profile = str((run_payload.get("run") or {}).get("final_capability_profile") or "").strip()
+    enabled_retrieval_corpora = [
+        str(item).strip()
+        for item in list((run_payload.get("run") or {}).get("enabled_retrieval_corpora") or [])
+        if str(item).strip()
+    ]
+    diagnostics = {
+        "preview_source_kind": selection.source_kind,
+        "preview_host_root": str(selection.host_root),
+        "preview_chatbot_root": str(selection.chatbot_root),
+    }
+
+    if not selection.host_root.exists():
         profile = launch_profile or KnownLaunchProfile(
             site=site,
             label=site.title() or "Site",
@@ -1721,31 +2155,39 @@ def _ensure_demo_services(*, site: str, run_id: str, run_payload: dict[str, Any]
                 f"{profile.label} backend",
                 run_id=run_id,
                 status="blocked",
-                reason=f"source root not found: {source_root}",
+                reason=f"host preview root not found: {selection.host_root}",
                 url=profile.backend_url,
+                diagnostics=diagnostics,
             ),
             _service_snapshot(
                 "chatbot",
                 "Chatbot server",
                 run_id=run_id,
                 status="blocked",
-                reason=f"source root not found: {source_root}",
+                reason=f"chatbot preview root not found: {selection.chatbot_root}",
                 url=profile.chatbot_url,
+                diagnostics=diagnostics,
             ),
             _service_snapshot(
                 "frontend",
                 f"{profile.label} frontend",
                 run_id=run_id,
                 status="blocked",
-                reason=f"source root not found: {source_root}",
+                reason=f"host preview root not found: {selection.host_root}",
                 url=preview_url,
+                diagnostics=diagnostics,
             ),
         ]
     specs, blocked = _build_demo_service_specs(
         site=site,
         run_id=run_id,
-        source_root=source_root,
+        host_root=selection.host_root,
+        chatbot_root=selection.chatbot_root,
         preview_url=preview_url,
+        launch_profile=launch_profile,
+        diagnostics=diagnostics,
+        capability_profile=capability_profile,
+        enabled_retrieval_corpora=enabled_retrieval_corpora,
     )
 
     live: list[dict[str, Any]] = []
@@ -1794,8 +2236,24 @@ def _decorate_dashboard_with_github_import(payload: dict[str, Any], run_id: str)
 
 
 @app.get("/")
-def index() -> FileResponse:
-    return FileResponse(STATIC_ROOT / "index.html")
+def index() -> HTMLResponse:
+    html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(html.replace(STATIC_ASSET_VERSION_TOKEN, _static_asset_version()))
+
+
+def _static_asset_version() -> str:
+    relevant_paths = [
+        STATIC_ROOT / "index.html",
+        STATIC_ROOT / "app.js",
+        STATIC_ROOT / "styles.css",
+    ]
+    latest_mtime_ns = 0
+    for path in relevant_paths:
+        try:
+            latest_mtime_ns = max(latest_mtime_ns, path.stat().st_mtime_ns)
+        except OSError:
+            continue
+    return format(latest_mtime_ns or int(time.time_ns()), "x")
 
 
 @app.get("/health")
@@ -1854,13 +2312,51 @@ def start_onboarding(request: StartRunRequest) -> dict[str, object]:
 
 
 @app.post("/api/onboarding/github/imports")
-def create_github_import(request: GitHubImportRequest, http_request: Request) -> dict[str, object]:
+async def create_github_import(http_request: Request) -> dict[str, object]:
     _cleanup_expired_github_imports()
+    content_type = str(http_request.headers.get("content-type") or "").lower()
+    repo_url = ""
+    env_target_path = ""
+    env_file_name = ""
+    env_file_content = b""
+    if "multipart/form-data" in content_type or "application/x-www-form-urlencoded" in content_type:
+        form = await http_request.form()
+        repo_url = str(form.get("repo_url") or "").strip()
+        env_target_path = _normalize_github_env_target_path(form.get("env_target_path") or ".env")
+        env_file = form.get("env_file")
+        if hasattr(env_file, "filename") and hasattr(env_file, "read"):
+            env_file_name = str(getattr(env_file, "filename", "") or "").strip()
+            env_file_content = await env_file.read()
+            close = getattr(env_file, "close", None)
+            if callable(close):
+                await close()
+        elif env_file not in (None, ""):
+            raise HTTPException(status_code=400, detail="Invalid env file upload")
+        if env_file_name and not env_file_content:
+            raise HTTPException(status_code=400, detail="Uploaded env file is empty")
+        if not env_file_name:
+            env_target_path = ""
+    else:
+        try:
+            payload = GitHubImportRequest.model_validate(await http_request.json())
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid GitHub import request") from exc
+        repo_url = payload.repo_url.strip()
+        env_target_path = _normalize_github_env_target_path(payload.env_target_path)
     try:
-        repo_probe = _probe_github_repository(request.repo_url.strip())
+        repo_probe = _probe_github_repository(repo_url)
     except GitHubImportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     import_run = _store_github_import_run(_new_github_import_run(repo_probe=repo_probe))
+    if env_file_name:
+        import_run = _store_github_import_run(
+            _store_github_import_env_attachment(
+                record=import_run,
+                filename=env_file_name,
+                content=env_file_content,
+                target_path=env_target_path or ".env",
+            )
+        )
     if repo_probe.requires_auth:
         return {
             "status": "auth_required",
@@ -1977,7 +2473,13 @@ def get_run_dashboard(
         or str((payload.get("process") or {}).get("preview_url") or "").strip()
         or _launch_profile_preview_url(launch_profile)
     )
-    services = _ensure_demo_services(site=site, run_id=run_id, run_payload=payload, preview_url=preview_url)
+    services = _ensure_demo_services(
+        site=site,
+        run_id=run_id,
+        run_root=run_root,
+        run_payload=payload,
+        preview_url=preview_url,
+    )
     payload["services"] = services
     payload["demo"] = _build_demo_payload(
         run_payload=payload,

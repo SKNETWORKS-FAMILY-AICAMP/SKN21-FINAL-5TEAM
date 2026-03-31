@@ -878,6 +878,7 @@ def run_planning_stage(
 ) -> None:
     if state.snapshot is None or state.analysis_ref is None or state.analysis_bundle is None:
         raise ValueError("analysis snapshot is required before planning")
+    previous_retrieval_plan = None if state.plan is None else state.plan.retrieval_index_plan
     started = event_store.write_event(
         run_id=run_id,
         stage="planning",
@@ -970,6 +971,10 @@ def run_planning_stage(
         state.planning_bundle_ref = planning_bundle_ref
         state.plan = plan
         state.plan_ref = plan_ref
+        _reconcile_preserved_indexing_after_planning(
+            state=state,
+            previous_retrieval_plan=previous_retrieval_plan,
+        )
         _mark_required_stage_rechecks_satisfied(state=state, satisfied=["planning"])
     except Exception as exc:
         failure_signature = build_failure_signature(check_name="planning", summary=str(exc))
@@ -2535,10 +2540,15 @@ def _clear_state_for_failure(
 ) -> None:
     del failed_stage
     rerun_stages = set(_stages_from(rewind_to))
+    transiently_preserved = (
+        {"indexing"} if _should_transiently_preserve_indexing(state=state, rewind_to=rewind_to) else set()
+    )
     preserved = {
         stage for stage in preserve_artifacts if stage in _stage_order() and stage not in rerun_stages
     }
     for stage in _stage_order():
+        if stage in transiently_preserved:
+            continue
         if stage in rerun_stages or stage not in preserved:
             _clear_from_stage_exact(state, stage)
 
@@ -2731,17 +2741,61 @@ def _apply_planning_overrides(
         overrides.get("frontend_integration") or overrides.get("host_frontend") or {}
     )
     chatbot_override = dict(overrides.get("chatbot_bridge") or {})
+    chatbot_response_contract_override = dict(chatbot_override.pop("response_contract", {}) or {})
     notes_append = str(overrides.get("planning_notes_append") or "").strip()
     rationale = list(plan.planning_notes.llm_rationale)
     if notes_append:
         rationale.append(notes_append)
+    chatbot_bridge = plan.chatbot_bridge.model_copy(update=chatbot_override)
+    if chatbot_response_contract_override:
+        chatbot_bridge = chatbot_bridge.model_copy(
+            update={
+                "response_contract": chatbot_bridge.response_contract.model_copy(
+                    update=chatbot_response_contract_override
+                )
+            }
+        )
     return plan.model_copy(
         update={
             "host_backend": plan.host_backend.model_copy(update=backend_override),
             "host_frontend": plan.host_frontend.model_copy(update=frontend_override),
-            "chatbot_bridge": plan.chatbot_bridge.model_copy(update=chatbot_override),
+            "chatbot_bridge": chatbot_bridge,
             "planning_notes": plan.planning_notes.model_copy(
                 update={"llm_rationale": rationale}
             ),
         }
+    )
+
+
+def _retrieval_plan_signature(retrieval_plan: Any) -> dict[str, Any] | None:
+    if retrieval_plan is None:
+        return None
+    if hasattr(retrieval_plan, "model_dump"):
+        return retrieval_plan.model_dump(mode="json")
+    return dict(retrieval_plan)
+
+
+def _should_transiently_preserve_indexing(
+    *,
+    state: _RunState,
+    rewind_to: str,
+) -> bool:
+    return rewind_to == "planning" and state.indexing_result is not None
+
+
+def _reconcile_preserved_indexing_after_planning(
+    *,
+    state: _RunState,
+    previous_retrieval_plan: Any,
+) -> None:
+    if state.plan is None or state.indexing_result is None:
+        return
+    if _retrieval_plan_signature(previous_retrieval_plan) != _retrieval_plan_signature(
+        state.plan.retrieval_index_plan
+    ):
+        _clear_from_stage_exact(state, "indexing")
+        return
+    state.plan = _apply_indexing_result_to_plan(
+        plan=state.plan,
+        indexing_result=state.indexing_result,
     )

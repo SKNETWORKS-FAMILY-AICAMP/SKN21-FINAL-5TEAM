@@ -1633,6 +1633,13 @@ def test_resolve_bridge_auth_material_prefers_nested_auth_contract_over_legacy_f
 def test_validate_host_auth_bootstrap_falls_back_to_validation_bridge_when_login_fails(
     monkeypatch, tmp_path: Path
 ):
+    analysis_bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
+    planning_bundle = build_planning_bundle(
+        snapshot=analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+        strict_coverage=True,
+    )
     captured_urls: list[str] = []
 
     class _Response:
@@ -1671,13 +1678,6 @@ def test_validate_host_auth_bootstrap_falls_back_to_validation_bridge_when_login
         "chatbot.src.onboarding_v2.validation.runner.httpx.Client",
         lambda **kwargs: _Client(),
     )
-    analysis_bundle = build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
-    planning_bundle = build_planning_bundle(
-        snapshot=analysis_bundle.snapshot,
-        analysis_bundle=analysis_bundle,
-        chatbot_server_base_url="http://localhost:8100",
-        strict_coverage=True,
-    )
     runtime_plan = BackendRuntimePlan(
         framework="flask",
         backend_root=str(tmp_path / "backend"),
@@ -1697,6 +1697,9 @@ def test_validate_host_auth_bootstrap_falls_back_to_validation_bridge_when_login
     assert result["passed"] is True
     assert result["bootstrap_mode"] == "validation_bridge"
     assert result["failure_origin"] == "login"
+    assert result["real_login_passed"] is False
+    assert result["bridge_fallback_used"] is True
+    assert result["degraded_auth_bootstrap"] is True
 
 
 def test_load_runtime_chat_modules_clears_chatbot_src_cache(tmp_path: Path):
@@ -2318,9 +2321,152 @@ def test_runtime_fixture_manifest_seeds_only_when_live_orders_are_missing(
     assert observed["list_orders_calls"] == 2
     assert manifest["available"] is True
     assert manifest["orders"]["lookup_order_id"] == "10"
+    assert manifest["seed_source"]["runtime_seed_purpose"] == "order_fixture_probe"
     assert manifest["seed_source"]["runtime_seeded"] is True
     assert manifest["seed_source"]["runtime_seed_stdout"] == "seed ok"
     assert observed["seed_kwargs"]["name"] == "seed"
+
+
+def test_runtime_fixture_manifest_prefers_bootstrap_user_email_for_demo_auth(
+    monkeypatch, tmp_path: Path
+):
+    class _FakeClient:
+        async def list_orders(self, headers):
+            del headers
+            return [{"order_id": "10"}]
+
+    class _FakeAdapter:
+        def __init__(self):
+            self.client = _FakeClient()
+            self.response_contract = ResolvedResponseContract()
+
+    class _FakeAdapterSetup:
+        def resolve_site_adapter(self, site_id: str):
+            assert site_id == "food"
+            return _FakeAdapter()
+
+    monkeypatch.setitem(
+        _build_runtime_fixture_manifest.__globals__,
+        "_load_runtime_validation_modules",
+        lambda **kwargs: (object(), object(), _FakeAdapterSetup(), object(), {}),
+    )
+    monkeypatch.setitem(
+        _build_runtime_fixture_manifest.__globals__,
+        "_build_generated_auth_headers",
+        lambda **kwargs: {"Authorization": "Bearer 1"},
+    )
+
+    manifest = _build_runtime_fixture_manifest(
+        chatbot_runtime_workspace=tmp_path / "chatbot",
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path / "backend"),
+            command=["python"],
+            readiness_url="http://127.0.0.1:8123/api/chat/auth-token",
+            listen_port=8123,
+        ),
+        plan=_build_food_plan(),
+        prep_result=BackendRuntimePrepResult(
+            framework="django",
+            passed=True,
+            backend_root=str(tmp_path / "backend"),
+            python_executable=str(tmp_path / "venv" / "bin" / "python"),
+            fixture_manifest={"available": True, "seed_source": {}, "auth": {}},
+        ),
+        bootstrap_result={
+            "passed": True,
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "validation-food",
+                "user": {"id": "7", "email": "test@example.com"},
+            },
+            "session_cookies": {},
+        },
+        adapter_auth_result={"passed": True, "validated_user": {"id": "7"}},
+        onboarding_credentials=None,
+    )
+
+    assert manifest["auth"]["email"] == "test@example.com"
+    assert manifest["auth"]["password"] == "password123"
+
+
+def test_runtime_fixture_manifest_selects_mutation_fixtures_by_action_eligibility(
+    monkeypatch, tmp_path: Path
+):
+    class _FakeClient:
+        async def list_orders(self, headers):
+            del headers
+            return [
+                {"order_id": "1", "can_cancel": False, "can_return": False, "can_exchange": False},
+                {"order_id": "2", "can_cancel": True, "can_return": False, "can_exchange": False},
+                {"order_id": "3", "can_cancel": False, "can_return": True, "can_exchange": False},
+                {
+                    "order_id": "4",
+                    "can_cancel": False,
+                    "can_return": False,
+                    "can_exchange": True,
+                    "option_id": "opt-4",
+                },
+            ]
+
+    class _FakeAdapter:
+        def __init__(self):
+            self.client = _FakeClient()
+            self.response_contract = ResolvedResponseContract()
+
+    class _FakeAdapterSetup:
+        def resolve_site_adapter(self, site_id: str):
+            assert site_id == "food"
+            return _FakeAdapter()
+
+    monkeypatch.setitem(
+        _build_runtime_fixture_manifest.__globals__,
+        "_load_runtime_validation_modules",
+        lambda **kwargs: (object(), object(), _FakeAdapterSetup(), object(), {}),
+    )
+    monkeypatch.setitem(
+        _build_runtime_fixture_manifest.__globals__,
+        "_build_generated_auth_headers",
+        lambda **kwargs: {"Authorization": "Bearer 1"},
+    )
+
+    manifest = _build_runtime_fixture_manifest(
+        chatbot_runtime_workspace=tmp_path / "chatbot",
+        runtime_plan=BackendRuntimePlan(
+            framework="django",
+            backend_root=str(tmp_path / "backend"),
+            command=["python"],
+            readiness_url="http://127.0.0.1:8123/api/chat/auth-token",
+            listen_port=8123,
+        ),
+        plan=_build_food_plan(),
+        prep_result=BackendRuntimePrepResult(
+            framework="django",
+            passed=True,
+            backend_root=str(tmp_path / "backend"),
+            python_executable=str(tmp_path / "venv" / "bin" / "python"),
+            fixture_manifest={"available": True, "seed_source": {}, "auth": {}},
+        ),
+        bootstrap_result={
+            "passed": True,
+            "bootstrap_payload": {
+                "authenticated": True,
+                "site_id": "food",
+                "access_token": "validation-food",
+                "user": {"id": "7"},
+            },
+            "session_cookies": {"session_token": "session-1"},
+        },
+        adapter_auth_result={"passed": True, "validated_user": {"id": "7"}},
+        onboarding_credentials=None,
+    )
+
+    assert manifest["orders"]["lookup_order_id"] == "1"
+    assert manifest["orders"]["cancel_order_id"] == "2"
+    assert manifest["orders"]["refund_order_id"] == "3"
+    assert manifest["orders"]["exchange_order_id"] == "4"
+    assert manifest["orders"]["exchange_new_option_id"] == "opt-4"
 
 
 def test_validate_conversation_runtime_replays_runtime_subprocess_events(

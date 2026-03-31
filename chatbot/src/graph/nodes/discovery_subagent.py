@@ -37,20 +37,11 @@ from chatbot.src.tools.recommendation_tools import (
     search_by_text_clip,
 )
 from chatbot.src.infrastructure.openai import get_openai_client
-from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR
+from chatbot.src.runtime.uploads import UPLOAD_ROOT as CHATBOT_UPLOAD_DIR
 
 
 CURRENT_FILE = Path(__file__).resolve()
 REPO_ROOT = CURRENT_FILE.parents[4]
-
-# ── 도구 목록 (TEXT 경로) ──────────────────────────────────
-
-DISCOVERY_TOOLS = [
-    search_by_text_clip,
-    recommend_clothes,
-]
-
-# ── 프롬프트 ──────────────────────────────────────────────
 
 DISCOVERY_SYSTEM_PROMPT = """당신은 {brand_store_label}의 Discovery SubAgent입니다.
 사용자가 원하는 상품을 찾아주는 역할을 합니다.
@@ -65,6 +56,21 @@ DISCOVERY_SYSTEM_PROMPT = """당신은 {brand_store_label}의 Discovery SubAgent
 [중요]
 - 사용자가 상품명/색상/카테고리를 이미 말했으면 되묻지 말고 먼저 `search_by_text_clip`을 호출하세요.
 - 한국어 질의도 바로 검색 도구를 호출해도 됩니다.
+
+[User Context]
+{user_context}
+"""
+
+NON_ECOMMERCE_DISCOVERY_SYSTEM_PROMPT = """당신은 {brand_store_label}의 Discovery SubAgent입니다.
+사용자가 원하는 상품을 찾아주는 역할을 합니다.
+
+[도구 선택 기준]
+- `search_by_text_clip` : 텍스트 기반 상품 검색과 유사 상품 추천.
+  예) "수분크림 추천", "흰색 린넨 셔츠", "짜장면 비슷한 메뉴"
+
+[중요]
+- 사용자가 상품명/색상/카테고리를 이미 말했으면 되묻지 말고 먼저 `search_by_text_clip`을 호출하세요.
+- 카테고리/가격/브랜드 조건이 포함되면 그대로 검색어에 반영하세요.
 
 [User Context]
 {user_context}
@@ -244,9 +250,10 @@ def _text_search_pipeline(
     llm = make_chat_llm(provider=provider, model=model, temperature=0)
     agent = create_react_agent(
         model=llm,
-        tools=DISCOVERY_TOOLS,
+        tools=_resolve_discovery_tools(site_id),
         prompt=SystemMessage(
-            content=DISCOVERY_SYSTEM_PROMPT.format(
+            content=_build_discovery_system_prompt(
+                site_id,
                 brand_store_label=brand_profile.store_label,
                 user_context=user_context,
             )
@@ -495,6 +502,29 @@ def _detect_image_search_mode(query: str) -> str:
         if keyword in lowered:
             return "opposite"
     return "similar"
+
+
+def _resolve_discovery_tools(site_id: str | None) -> list:
+    if str(site_id or "").strip() == "site-c":
+        return [search_by_text_clip, recommend_clothes]
+    return [search_by_text_clip]
+
+
+def _build_discovery_system_prompt(
+    site_id: str | None,
+    *,
+    brand_store_label: str,
+    user_context: str,
+) -> str:
+    template = (
+        DISCOVERY_SYSTEM_PROMPT
+        if str(site_id or "").strip() == "site-c"
+        else NON_ECOMMERCE_DISCOVERY_SYSTEM_PROMPT
+    )
+    return template.format(
+        brand_store_label=brand_store_label,
+        user_context=user_context,
+    )
 
 
 def _should_direct_text_search(query: str) -> bool:

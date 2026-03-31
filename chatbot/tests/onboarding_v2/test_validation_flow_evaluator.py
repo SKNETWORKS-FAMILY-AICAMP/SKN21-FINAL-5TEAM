@@ -151,6 +151,81 @@ def test_conversation_scenario_builder_allows_selection_first_bilyeo_paths():
     assert ["get_order_status"] in followup_scenario["allowed_paths"]
 
 
+def test_conversation_scenario_builder_skips_mutation_scenarios_for_read_only_contract():
+    from chatbot.src.onboarding_v2.validation.flow_contracts import (
+        build_conversation_scenarios,
+        build_validation_capability_contract,
+    )
+
+    fixture_manifest = {
+        "orders": {
+            "lookup_order_id": "7",
+            "status_order_id": "7",
+            "cancel_order_id": "7",
+            "refund_order_id": "7",
+            "exchange_order_id": "7",
+            "exchange_new_option_id": "option-7",
+        },
+        "enabled_retrieval_corpora": ["faq", "policy"],
+    }
+    plan = _build_bilyeo_plan().model_copy(
+        update={
+            "chatbot_bridge": _build_bilyeo_plan().chatbot_bridge.model_copy(
+                update={
+                    "order_action_contract": ResolvedOrderActionContract(
+                        submission_mode="read_only",
+                        supported_actions=["list_orders", "get_order_status"],
+                    )
+                }
+            )
+        }
+    )
+    contract = build_validation_capability_contract(
+        plan=plan,
+        fixture_manifest=fixture_manifest,
+    )
+
+    scenarios = build_conversation_scenarios(
+        fixture_manifest=fixture_manifest,
+        capability_contract=contract,
+    )
+
+    scenario_ids = [item["scenario_id"] for item in scenarios]
+    assert "cancel_order" not in scenario_ids
+    assert "refund_order" not in scenario_ids
+    assert "exchange_order" not in scenario_ids
+    assert contract.available_actions == ["list_orders", "get_order_status"]
+    assert contract.supports_retrieval is True
+
+
+def test_conversation_scenario_builder_skips_mutation_scenarios_without_eligible_fixture_orders():
+    from chatbot.src.onboarding_v2.validation.flow_contracts import (
+        build_conversation_scenarios,
+        build_validation_capability_contract,
+    )
+
+    fixture_manifest = {
+        "orders": {
+            "lookup_order_id": "7",
+            "status_order_id": "7",
+        }
+    }
+    contract = build_validation_capability_contract(
+        plan=_build_bilyeo_plan(),
+        fixture_manifest=fixture_manifest,
+    )
+
+    scenarios = build_conversation_scenarios(
+        fixture_manifest=fixture_manifest,
+        capability_contract=contract,
+    )
+
+    scenario_ids = [item["scenario_id"] for item in scenarios]
+    assert "cancel_order" not in scenario_ids
+    assert "refund_order" not in scenario_ids
+    assert "exchange_order" not in scenario_ids
+
+
 def test_conversation_scenario_builder_emits_valid_nested_contract_payload():
     from chatbot.src.onboarding_v2.validation.flow_contracts import (
         build_conversation_scenarios,

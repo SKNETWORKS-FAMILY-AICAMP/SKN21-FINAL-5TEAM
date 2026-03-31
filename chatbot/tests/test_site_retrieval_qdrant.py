@@ -85,7 +85,7 @@ def test_ensure_build_collection_creates_dense_sparse_text_collection():
     assert ("site_demo__faq__run_001", "main_category", "keyword") in client.payload_indexes
 
 
-def test_ensure_build_collection_creates_dense_only_image_collection():
+def test_ensure_build_collection_creates_multimodal_image_collection():
     client = _FakeQdrantClient()
 
     site_retrieval.ensure_build_collection(
@@ -98,7 +98,9 @@ def test_ensure_build_collection_creates_dense_only_image_collection():
     created = client.collections["site_demo__discovery_image__run_001"]
     assert isinstance(created["vectors_config"], dict)
     assert created["vectors_config"][""].size == 8
-    assert "sparse_vectors_config" not in created
+    assert "text-sparse" in created["sparse_vectors_config"]
+    assert ("site_demo__discovery_image__run_001", "product_id", "integer") in client.payload_indexes
+    assert ("site_demo__discovery_image__run_001", "image_url", "keyword") in client.payload_indexes
 
 
 def test_swap_alias_repoints_live_alias_atomically():

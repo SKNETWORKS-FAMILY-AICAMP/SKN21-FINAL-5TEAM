@@ -11,10 +11,15 @@ os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
 os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
 from chatbot.src.onboarding_v2.engine import (
+    _RunState,
+    _apply_planning_overrides,
     _build_retrieval_smoke_payload,
+    _clear_state_for_failure,
+    _reconcile_preserved_indexing_after_planning,
     run_onboarding_generation_v2,
 )
 from chatbot.src.onboarding_v2.compile.preflight import CompilePreflightResult
+from chatbot.src.onboarding_v2.models import ArtifactRef
 from chatbot.src.onboarding_v2.models.repair import RepairDecision
 from chatbot.src.onboarding_v2.models.validation import (
     BackendRuntimePlan,
@@ -56,6 +61,16 @@ def _stub_indexing_execution(monkeypatch):
                 for item in plan.corpora
             },
         },
+    )
+
+
+def _artifact_ref(stage: str, artifact_type: str, path: str) -> ArtifactRef:
+    return ArtifactRef(
+        stage=stage,
+        artifact_type=artifact_type,
+        version=1,
+        path=path,
+        content_hash="test-hash",
     )
 
 
@@ -673,6 +688,148 @@ def test_engine_entry_passes_snapshot_roots_and_allowlists_to_export(monkeypatch
 
     assert result["status"] == "exported"
     assert str(captured["host_baseline_root"]).endswith("source-snapshot/host")
+
+
+def test_apply_planning_overrides_updates_nested_chatbot_response_contract():
+    analysis_bundle = analyzer_module.build_analysis_bundle(site="bilyeo", source_root=ROOT / "bilyeo")
+    plan = planner_module.build_integration_plan(
+        analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+    )
+
+    updated = _apply_planning_overrides(
+        plan=plan,
+        overrides={
+            "chatbot_bridge": {
+                "response_contract": {
+                    "user_profile": "wrapped_user",
+                }
+            }
+        },
+    )
+
+    assert updated.chatbot_bridge.response_contract.user_profile == "wrapped_user"
+    assert updated.chatbot_bridge.response_contract.order_profile == (
+        plan.chatbot_bridge.response_contract.order_profile
+    )
+    assert updated.chatbot_bridge.response_contract.order_status_profile == (
+        plan.chatbot_bridge.response_contract.order_status_profile
+    )
+
+
+def test_clear_state_for_failure_preserves_indexing_across_planning_rewind():
+    state = _RunState(
+        indexing_result={"site_id": "food", "site_slug": "food", "corpora": {"faq": {"status": "completed"}}},
+        retrieval_source_manifest_ref=_artifact_ref("indexing", "retrieval-source-manifest", "v0001.json"),
+        indexing_plan_ref=_artifact_ref("indexing", "indexing-plan", "v0001.json"),
+        indexing_result_ref=_artifact_ref("indexing", "indexing-result", "v0001.json"),
+        retrieval_smoke_ref=_artifact_ref("indexing", "retrieval-smoke", "v0001.json"),
+        validation_ref=_artifact_ref("validation", "validation-bundle", "v0001.json"),
+    )
+
+    _clear_state_for_failure(
+        state=state,
+        failed_stage="validation",
+        rewind_to="planning",
+        preserve_artifacts=["analysis"],
+    )
+
+    assert state.indexing_result is not None
+    assert state.indexing_result_ref is not None
+    assert state.validation_ref is None
+
+
+def test_reconcile_preserved_indexing_after_planning_reapplies_when_retrieval_plan_matches():
+    analysis_bundle = analyzer_module.build_analysis_bundle(site="food", source_root=ROOT / "food")
+    original_plan = planner_module.build_integration_plan(
+        analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+    )
+    state = _RunState(
+        plan=original_plan.model_copy(),
+        indexing_result={
+            "site_id": "food",
+            "site_slug": "food",
+            "corpora": {
+                "faq": {
+                    "status": "completed",
+                    "enabled": True,
+                    "documents_indexed": 42,
+                }
+            },
+        },
+        retrieval_source_manifest_ref=_artifact_ref("indexing", "retrieval-source-manifest", "v0001.json"),
+        indexing_plan_ref=_artifact_ref("indexing", "indexing-plan", "v0001.json"),
+        indexing_result_ref=_artifact_ref("indexing", "indexing-result", "v0001.json"),
+        retrieval_smoke_ref=_artifact_ref("indexing", "retrieval-smoke", "v0001.json"),
+    )
+
+    _reconcile_preserved_indexing_after_planning(
+        state=state,
+        previous_retrieval_plan=original_plan.retrieval_index_plan,
+    )
+
+    assert state.indexing_result is not None
+    assert state.plan is not None
+    assert state.plan.host_backend.enabled_retrieval_corpora == ["faq"]
+    assert state.plan.host_backend.capability_profile == "order_cs_plus_retrieval"
+
+
+def test_reconcile_preserved_indexing_after_planning_clears_when_retrieval_plan_changes():
+    analysis_bundle = analyzer_module.build_analysis_bundle(site="food", source_root=ROOT / "food")
+    original_plan = planner_module.build_integration_plan(
+        analysis_bundle.snapshot,
+        analysis_bundle=analysis_bundle,
+        chatbot_server_base_url="http://localhost:8100",
+    )
+    changed_plan = original_plan.model_copy(
+        update={
+            "retrieval_index_plan": RetrievalIndexPlan(
+                site_id="food",
+                site_slug="food",
+                corpora=[
+                    *list(original_plan.retrieval_index_plan.corpora),
+                    RagCorpusPlan(
+                        corpus="policy",
+                        chunking_strategy="markdown_sections",
+                        collection_alias="food-policy",
+                        loader_strategy="static_files",
+                        build_collection="food_policy_v2",
+                        minimum_expected_documents=1,
+                    ),
+                ],
+            )
+        }
+    )
+    state = _RunState(
+        plan=changed_plan,
+        indexing_result={
+            "site_id": "food",
+            "site_slug": "food",
+            "corpora": {
+                "faq": {
+                    "status": "completed",
+                    "enabled": True,
+                    "documents_indexed": 42,
+                }
+            },
+        },
+        retrieval_source_manifest_ref=_artifact_ref("indexing", "retrieval-source-manifest", "v0001.json"),
+        indexing_plan_ref=_artifact_ref("indexing", "indexing-plan", "v0001.json"),
+        indexing_result_ref=_artifact_ref("indexing", "indexing-result", "v0001.json"),
+        retrieval_smoke_ref=_artifact_ref("indexing", "retrieval-smoke", "v0001.json"),
+    )
+
+    _reconcile_preserved_indexing_after_planning(
+        state=state,
+        previous_retrieval_plan=original_plan.retrieval_index_plan,
+    )
+
+    assert state.indexing_result is None
+    assert state.indexing_result_ref is None
+    assert state.retrieval_smoke_ref is None
 
 
 def test_engine_entry_stops_at_export_when_replay_verification_fails(monkeypatch, tmp_path: Path):

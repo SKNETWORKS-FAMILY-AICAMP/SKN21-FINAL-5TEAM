@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from chatbot.src.graph.brand_profiles import resolve_brand_profile
 from chatbot.src.onboarding_v2.models.compile import EditOperation, FrontendMountBundle
 from chatbot.src.onboarding_v2.models.planning import HostFrontendPlan
 
@@ -55,6 +56,7 @@ def _build_react_mount_updated_lines(
             updated_lines,
             _build_shared_widget_bootstrap_lines(
                 chatbot_server_base_url_expression=chatbot_server_base_url_expression,
+                site_id=plan.site_id,
                 auth_bootstrap_path=auth_bootstrap_path,
                 capability_profile=capability_profile,
                 enabled_retrieval_corpora=enabled_retrieval_corpora,
@@ -74,11 +76,13 @@ def _build_react_mount_updated_lines(
 def _build_shared_widget_bootstrap_lines(
     *,
     chatbot_server_base_url_expression: str,
+    site_id: str | None,
     auth_bootstrap_path: str,
     capability_profile: str,
     enabled_retrieval_corpora: list[str],
     widget_features: dict[str, object],
 ) -> list[str]:
+    brand_profile = resolve_brand_profile(site_id)
     lines = [
         "const ORDER_CS_WIDGET_HOST_CONTRACT = {\n",
         f"  chatbotServerBaseUrl: {chatbot_server_base_url_expression},\n",
@@ -86,6 +90,11 @@ def _build_shared_widget_bootstrap_lines(
         '  widgetBundlePath: "/widget.js",\n',
         '  widgetElementTag: "order-cs-widget",\n',
         '  mountMode: "floating_launcher",\n',
+        f'  siteId: "{str(site_id or "").strip()}",\n',
+        f'  brandDisplayName: "{brand_profile.display_name}",\n',
+        f'  brandStoreLabel: "{brand_profile.store_label}",\n',
+        f'  assistantTitle: "{brand_profile.assistant_title}",\n',
+        f'  initialGreeting: "{brand_profile.initial_greeting}",\n',
     ]
     if capability_profile and capability_profile != "order_cs_only":
         lines.append(f'  capabilityProfile: "{capability_profile}",\n')

@@ -273,6 +273,10 @@ def test_execute_indexing_plan_discovery_image_uses_host_api_rows_and_allows_par
         ],
         image_fetcher=lambda url: b"ok" if url.endswith("ok.jpg") else (_ for _ in ()).throw(RuntimeError("download failed")),
         image_embedder=lambda payloads: [[0.1, 0.2] for _ in payloads],
+        sparse_embedder=lambda texts: [
+            models.SparseVector(indices=[0, 1], values=[1.0, float(len(texts[0]))])
+            for _ in texts
+        ],
     )
 
     discovery = result["corpora"]["discovery_image"]
@@ -281,6 +285,10 @@ def test_execute_indexing_plan_discovery_image_uses_host_api_rows_and_allows_par
     assert discovery["alias_swapped"] is True
     assert "image_fetch_failed" in discovery["warning_codes"]
     assert fake_client.aliases["site_demo-shop__discovery_image"] == "site_demo-shop__discovery_image__run_demo"
+    point = fake_client.upserts[0][1][0]
+    assert "text-sparse" in dict(point.vector)
+    assert point.payload["retrieval_text"]
+    assert "jacket" in point.payload["retrieval_text"].lower()
     UUID(str(fake_client.upserts[0][1][0].id))
 
 
@@ -331,6 +339,201 @@ def test_execute_indexing_plan_marks_discovery_image_without_rows_as_skipped(tmp
     assert discovery["documents_indexed"] == 0
     assert discovery["reason"] == "no_product_rows"
     assert "no_product_rows" in discovery["warning_codes"]
+    assert discovery["alias_swapped"] is False
+
+
+def test_execute_indexing_plan_preseeds_discovery_image_when_raw_product_rows_are_empty(
+    tmp_path: Path,
+    monkeypatch,
+):
+    plan = RetrievalIndexPlan(
+        site_id="demo-shop",
+        site_slug="demo-shop",
+        corpora=[
+            RagCorpusPlan(
+                corpus="discovery_image",
+                chunking_strategy="product_image_rows",
+                collection_alias="site_demo-shop__discovery_image",
+                build_collection="site_demo-shop__discovery_image__run_demo",
+                sources=["product_crawling.py"],
+                smoke_queries=["검은색 자켓"],
+                minimum_expected_documents=1,
+                loader_strategy="public_url_fetch",
+                row_source_strategy="host_api_fetch",
+                row_source_endpoint="/api/products",
+                row_id_field="product_id",
+                row_image_url_field="image_url",
+            )
+        ],
+    )
+    host_context = HostExportContext()
+    host_context.host_runtime_workspace = tmp_path
+    host_context.snapshot = object()
+    host_context.export_ready.set()
+    fake_client = _FakeQdrantClient()
+    calls = {"row_fetch": 0, "seed": 0}
+
+    def _fake_row_fetcher(**kwargs):
+        del kwargs
+        calls["row_fetch"] += 1
+        if calls["row_fetch"] == 1:
+            return []
+        return [{"product_id": 101, "image_url": "https://cdn.example.com/ok.jpg", "name": "jacket"}]
+
+    def _fake_seed_runner(**kwargs):
+        del kwargs
+        calls["seed"] += 1
+        return {
+            "preseed_attempted": True,
+            "preseed_outcome": "seeded",
+            "preseed_reason": "no_product_rows",
+        }
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator._run_discovery_image_seed_script",
+        _fake_seed_runner,
+    )
+
+    result = execute_indexing_plan(
+        plan=plan,
+        root=tmp_path,
+        host_context=host_context,
+        qdrant_client=fake_client,
+        row_fetcher=_fake_row_fetcher,
+        image_fetcher=lambda url: b"ok",
+        image_embedder=lambda payloads: [[0.1, 0.2] for _ in payloads],
+    )
+
+    discovery = result["corpora"]["discovery_image"]
+    assert discovery["status"] == "completed"
+    assert discovery["documents_indexed"] == 1
+    assert discovery["preseed_attempted"] is True
+    assert discovery["preseed_outcome"] == "seeded"
+    assert discovery["preseed_reason"] == "no_product_rows"
+    assert calls == {"row_fetch": 2, "seed": 1}
+
+
+def test_execute_indexing_plan_does_not_seed_when_raw_products_exist_but_images_are_missing(
+    tmp_path: Path,
+    monkeypatch,
+):
+    plan = RetrievalIndexPlan(
+        site_id="demo-shop",
+        site_slug="demo-shop",
+        corpora=[
+            RagCorpusPlan(
+                corpus="discovery_image",
+                chunking_strategy="product_image_rows",
+                collection_alias="site_demo-shop__discovery_image",
+                build_collection="site_demo-shop__discovery_image__run_demo",
+                sources=["product_crawling.py"],
+                smoke_queries=["검은색 자켓"],
+                minimum_expected_documents=1,
+                loader_strategy="public_url_fetch",
+                row_source_strategy="host_api_fetch",
+                row_source_endpoint="/api/products",
+                row_id_field="product_id",
+                row_image_url_field="image_url",
+            )
+        ],
+    )
+    host_context = HostExportContext()
+    host_context.host_runtime_workspace = tmp_path
+    host_context.snapshot = object()
+    host_context.export_ready.set()
+    seed_calls = {"count": 0}
+
+    def _fake_seed_runner(**kwargs):
+        del kwargs
+        seed_calls["count"] += 1
+        return {
+            "preseed_attempted": True,
+            "preseed_outcome": "seeded",
+            "preseed_reason": "no_product_rows",
+        }
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator._run_discovery_image_seed_script",
+        _fake_seed_runner,
+    )
+
+    result = execute_indexing_plan(
+        plan=plan,
+        root=tmp_path,
+        host_context=host_context,
+        qdrant_client=_FakeQdrantClient(),
+        row_fetcher=lambda **kwargs: [{"product_id": 101, "name": "jacket"}],
+    )
+
+    discovery = result["corpora"]["discovery_image"]
+    assert discovery["status"] == "skipped"
+    assert discovery["reason"] == "no_indexable_image_rows"
+    assert "no_indexable_image_rows" in discovery["warning_codes"]
+    assert discovery["preseed_attempted"] is False
+    assert discovery["preseed_outcome"] == "raw_product_rows_present"
+    assert seed_calls["count"] == 0
+
+
+def test_execute_indexing_plan_batches_discovery_image_upserts_and_reports_partial_progress(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setenv("ONBOARDING_DISCOVERY_IMAGE_UPSERT_BATCH_SIZE", "2")
+    plan = RetrievalIndexPlan(
+        site_id="demo-shop",
+        site_slug="demo-shop",
+        corpora=[
+            RagCorpusPlan(
+                corpus="discovery_image",
+                chunking_strategy="product_image_rows",
+                collection_alias="site_demo-shop__discovery_image",
+                build_collection="site_demo-shop__discovery_image__run_demo",
+                sources=["product_crawling.py"],
+                smoke_queries=["검은색 자켓"],
+                minimum_expected_documents=1,
+                loader_strategy="public_url_fetch",
+                row_source_strategy="host_api_fetch",
+                row_source_endpoint="/api/products",
+                row_id_field="product_id",
+                row_image_url_field="image_url",
+            )
+        ],
+    )
+    host_context = HostExportContext()
+    host_context.host_runtime_workspace = tmp_path
+    host_context.snapshot = object()
+    host_context.export_ready.set()
+
+    class _FlakyClient(_FakeQdrantClient):
+        def upsert(self, collection_name: str, points: list[models.PointStruct]) -> None:
+            super().upsert(collection_name, points)
+            if len(self.upserts) >= 2:
+                raise TimeoutError("The write operation timed out")
+
+    fake_client = _FlakyClient()
+    rows = [
+        {"product_id": 101, "image_url": "https://cdn.example.com/1.jpg", "name": "jacket-1"},
+        {"product_id": 102, "image_url": "https://cdn.example.com/2.jpg", "name": "jacket-2"},
+        {"product_id": 103, "image_url": "https://cdn.example.com/3.jpg", "name": "jacket-3"},
+    ]
+
+    result = execute_indexing_plan(
+        plan=plan,
+        root=tmp_path,
+        host_context=host_context,
+        qdrant_client=fake_client,
+        row_fetcher=lambda **kwargs: rows,
+        image_fetcher=lambda url: b"ok",
+        image_embedder=lambda payloads: [[0.1, 0.2] for _ in payloads],
+    )
+
+    discovery = result["corpora"]["discovery_image"]
+    assert discovery["status"] == "failed"
+    assert discovery["reason"] == "worker_exception"
+    assert discovery["documents_prepared"] == 3
+    assert discovery["batches_attempted"] == 2
+    assert discovery["batches_completed"] == 1
+    assert discovery["last_successful_product_id"] == 102
     assert discovery["alias_swapped"] is False
 
 
@@ -927,6 +1130,173 @@ def test_fetch_rows_from_host_python_serializes_lob_like_values(tmp_path: Path, 
             "answer": "2일",
         }
     ]
+
+
+def test_execute_indexing_plan_discovery_image_can_ingest_via_host_python_fetch(tmp_path: Path, monkeypatch):
+    backend_model = tmp_path / "backend" / "models"
+    backend_model.mkdir(parents=True)
+    (backend_model / "__init__.py").write_text("", encoding="utf-8")
+    (backend_model / "product.py").write_text(
+        "def get_all_products(category=None, search=None):\n"
+        "    return [{\"product_id\": 1, \"image_url\": \"https://cdn.example.com/item.jpg\", \"name\": \"텐트\", "
+        "\"product_info\": {\"ingredients\": \"판테놀\", \"review\": \"촉촉해요\"}}]\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator.prepare_backend_runtime",
+        lambda **kwargs: type(
+            "PrepResult",
+            (),
+            {
+                "passed": True,
+                "failure_summary": None,
+                "python_executable": sys.executable,
+                "seed_source_path": None,
+            },
+        )(),
+    )
+
+    host_context = HostExportContext()
+    host_context.host_runtime_workspace = tmp_path
+    host_context.snapshot = object()
+    host_context.export_ready.set()
+
+    plan = RetrievalIndexPlan(
+        site_id="demo-shop",
+        site_slug="demo-shop",
+        corpora=[
+            RagCorpusPlan(
+                corpus="discovery_image",
+                chunking_strategy="image_level",
+                collection_alias="site_demo_shop__discovery_image",
+                build_collection="site_demo_shop__discovery_image__run_demo",
+                sources=["backend/models/product.py"],
+                smoke_queries=["텐트"],
+                minimum_expected_documents=1,
+                loader_strategy="public_url_fetch",
+                row_source_strategy="host_python_fetch",
+                row_source_module="models.product",
+                row_source_callable="get_all_products",
+                row_id_field="product_id",
+                row_image_url_field="image_url",
+            )
+        ],
+    )
+
+    fake_client = _FakeQdrantClient()
+    result = execute_indexing_plan(
+        plan=plan,
+        root=tmp_path,
+        host_context=host_context,
+        qdrant_client=fake_client,
+        image_fetcher=lambda _url: b"fake-image-bytes",
+        image_embedder=lambda images: [[0.25, 0.75] for _ in images],
+    )
+
+    assert result["corpora"]["discovery_image"]["status"] == "completed"
+    assert result["corpora"]["discovery_image"]["documents_indexed"] == 1
+    point = fake_client.upserts[0][1][0]
+    assert "판테놀" in point.payload["retrieval_text"]
+    assert "촉촉해요" in point.payload["retrieval_text"]
+
+
+def test_execute_indexing_plan_discovery_image_host_python_wrapper_merges_auxiliary_text(tmp_path: Path, monkeypatch):
+    backend_model = tmp_path / "backend" / "models"
+    backend_model.mkdir(parents=True)
+    db_path = tmp_path / "backend" / "products.sqlite3"
+    (backend_model / "__init__.py").write_text(
+        "import sqlite3\n"
+        f"DB_PATH = {str(db_path)!r}\n"
+        "def get_connection():\n"
+        "    return sqlite3.connect(DB_PATH)\n",
+        encoding="utf-8",
+    )
+    (backend_model / "product.py").write_text(
+        "def get_all_products(category=None, search=None):\n"
+        "    return [{\"product_id\": 1, \"image_url\": \"https://cdn.example.com/item.jpg\", \"name\": \"로션\", \"brand\": \"브랜드A\"}]\n",
+        encoding="utf-8",
+    )
+
+    import sqlite3
+
+    connection = sqlite3.connect(db_path)
+    cursor = connection.cursor()
+    cursor.execute("CREATE TABLE product_info (product_id INTEGER, ingredients TEXT, review TEXT)")
+    cursor.execute("INSERT INTO product_info (product_id, ingredients, review) VALUES (1, '판테놀', '촉촉해요')")
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+    monkeypatch.setattr(
+        "chatbot.src.onboarding_v2.indexing.coordinator.prepare_backend_runtime",
+        lambda **kwargs: type(
+            "PrepResult",
+            (),
+            {
+                "passed": True,
+                "failure_summary": None,
+                "python_executable": sys.executable,
+                "seed_source_path": None,
+            },
+        )(),
+    )
+
+    host_context = HostExportContext()
+    host_context.host_runtime_workspace = tmp_path
+    host_context.snapshot = object()
+    host_context.export_ready.set()
+
+    plan = RetrievalIndexPlan(
+        site_id="demo-shop",
+        site_slug="demo-shop",
+        corpora=[
+            RagCorpusPlan(
+                corpus="discovery_image",
+                chunking_strategy="image_level",
+                collection_alias="site_demo_shop__discovery_image",
+                build_collection="site_demo_shop__discovery_image__run_demo",
+                sources=["backend/models/product.py"],
+                smoke_queries=["로션"],
+                minimum_expected_documents=1,
+                loader_strategy="public_url_fetch",
+                row_source_strategy="host_python_fetch",
+                row_source_module="models.product",
+                row_source_callable="get_all_products",
+                row_id_field="product_id",
+                row_image_url_field="image_url",
+                dense_image_field="image_url",
+                sparse_text_paths=["name", "brand", "product_info.ingredients", "product_info.review"],
+                payload_paths=["product_id", "name", "brand", "product_info"],
+                row_enrichment_strategy="host_python_wrapper",
+                auxiliary_relation_hints=[
+                    {
+                        "table_name": "product_info",
+                        "key_field": "product_id",
+                        "merge_as": "product_info",
+                        "text_fields": ["ingredients", "review"],
+                    }
+                ],
+            )
+        ],
+    )
+
+    fake_client = _FakeQdrantClient()
+    result = execute_indexing_plan(
+        plan=plan,
+        root=tmp_path,
+        host_context=host_context,
+        qdrant_client=fake_client,
+        image_fetcher=lambda _url: b"fake-image-bytes",
+        image_embedder=lambda images: [[0.25, 0.75] for _ in images],
+    )
+
+    assert result["corpora"]["discovery_image"]["status"] == "completed"
+    point = fake_client.upserts[0][1][0]
+    assert point.payload["product_info"]["ingredients"] == "판테놀"
+    assert point.payload["product_info"]["review"] == "촉촉해요"
+    assert "판테놀" in point.payload["retrieval_text"]
+    assert "촉촉해요" in point.payload["retrieval_text"]
 
 
 def test_embed_image_bytes_batch_accepts_pooler_output(monkeypatch):

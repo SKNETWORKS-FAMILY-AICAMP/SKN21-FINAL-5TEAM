@@ -28,6 +28,7 @@ from chatbot.src.onboarding_v2.models.analysis import (
     VerifiedContracts,
     WorkspaceProfile,
 )
+from chatbot.src.onboarding_v2.models.planning import ResolvedResponseContract
 from chatbot.src.onboarding_v2.planning import planner as planner_module
 from chatbot.src.onboarding_v2.planning import build_integration_plan, build_planning_bundle
 
@@ -324,9 +325,77 @@ def test_planner_accepts_bilyeo_strict_coverage_with_verified_flask_endpoints():
     assert plan.chatbot_bridge.auth_validation_endpoint == "/api/chat/auth-token"
     assert plan.chatbot_bridge.current_user_endpoint == "/api/chat/auth-token"
     assert plan.chatbot_bridge.auth_transport == "bearer_token"
+    assert plan.chatbot_bridge.response_contract.user_profile == "wrapped_user"
     assert plan.chatbot_bridge.response_contract.order_profile == "orders_collection_scan"
-    assert plan.chatbot_bridge.order_action_contract.submission_mode == "read_only"
+    assert plan.chatbot_bridge.order_action_contract.submission_mode == "per_action_query_endpoint"
     assert plan.chatbot_bridge.order_action_contract.supported_actions == [
+        "list_orders",
+        "get_order_status",
+        "cancel",
+        "refund",
+        "exchange",
+    ]
+
+
+def test_planner_orders_collection_scan_prefers_per_action_endpoints_over_read_only():
+    order_action_contract = planner_module._infer_bridge_order_action_contract(
+        domain_integration=DomainIntegration(
+            order_action_endpoint="/api/orders/{order_id}/exchange",
+            order_action_endpoints={
+                "cancel": "/api/orders/{order_id}/cancel",
+                "refund": "/api/orders/{order_id}/refund",
+                "exchange": "/api/orders/{order_id}/exchange",
+            },
+        ),
+        response_contract=ResolvedResponseContract(
+            order_profile="orders_collection_scan",
+        ),
+    )
+
+    assert order_action_contract.submission_mode == "per_action_query_endpoint"
+    assert order_action_contract.supported_actions == [
+        "list_orders",
+        "get_order_status",
+        "cancel",
+        "refund",
+        "exchange",
+    ]
+
+
+def test_planner_orders_collection_scan_uses_single_endpoint_when_shared_mutation_path_exists():
+    order_action_contract = planner_module._infer_bridge_order_action_contract(
+        domain_integration=DomainIntegration(
+            order_action_endpoint="/api/orders/{order_id}/actions",
+            order_action_endpoints={},
+        ),
+        response_contract=ResolvedResponseContract(
+            order_profile="orders_collection_scan",
+        ),
+    )
+
+    assert order_action_contract.submission_mode == "single_endpoint_json_body"
+    assert order_action_contract.supported_actions == [
+        "list_orders",
+        "get_order_status",
+        "cancel",
+        "refund",
+        "exchange",
+    ]
+
+
+def test_planner_orders_collection_scan_stays_read_only_when_mutation_surface_is_missing():
+    order_action_contract = planner_module._infer_bridge_order_action_contract(
+        domain_integration=DomainIntegration(
+            order_action_endpoint="",
+            order_action_endpoints={},
+        ),
+        response_contract=ResolvedResponseContract(
+            order_profile="orders_collection_scan",
+        ),
+    )
+
+    assert order_action_contract.submission_mode == "read_only"
+    assert order_action_contract.supported_actions == [
         "list_orders",
         "get_order_status",
     ]
@@ -654,6 +723,80 @@ def test_planner_uses_host_python_fetch_for_db_backed_faq_sources():
     assert faq_plan.row_source_strategy == "host_python_fetch"
     assert faq_plan.row_source_module == "models.faq"
     assert faq_plan.row_source_callable == "get_all_faq"
+
+
+def test_planner_prefers_host_python_fetch_for_db_backed_discovery_image_sources():
+    retrieval_index_plan = planner_module._build_retrieval_index_plan(
+        site_id="bilyeo",
+        rag_sources=RagSources(
+            discovery_image=[
+                RagSourceRecord(
+                    path="backend/models/product.py",
+                    kind="code_file",
+                    corpus="discovery_image",
+                    reason="db-backed product model",
+                    details={
+                        "image_field": "image_url",
+                        "source_surface": "db_table",
+                        "loader_candidates": ["public_url_fetch", "bucket_list_and_fetch"],
+                        "row_source_strategy": "host_python_fetch",
+                        "row_source_module": "models.product",
+                        "row_source_callable": "get_all_products",
+                    },
+                )
+            ]
+        ),
+        run_id="runtime",
+        product_search_endpoint="/api/products",
+    )
+
+    discovery_plan = next(item for item in retrieval_index_plan.corpora if item.corpus == "discovery_image")
+    assert discovery_plan.row_source_strategy == "host_python_fetch"
+    assert discovery_plan.row_source_module == "models.product"
+    assert discovery_plan.row_source_callable == "get_all_products"
+    assert discovery_plan.row_source_endpoint is None
+
+
+def test_planner_builds_discovery_image_enrichment_contract_from_analysis_hints():
+    retrieval_index_plan = planner_module._build_retrieval_index_plan(
+        site_id="bilyeo",
+        rag_sources=RagSources(
+            discovery_image=[
+                RagSourceRecord(
+                    path="backend/models/product.py",
+                    kind="code_file",
+                    corpus="discovery_image",
+                    reason="db-backed product model",
+                    details={
+                        "image_field": "image_url",
+                        "row_source_strategy": "host_python_fetch",
+                        "row_source_module": "models.product",
+                        "row_source_callable": "get_all_products",
+                        "text_field_candidates": ["name", "brand", "category"],
+                        "payload_field_candidates": ["product_id", "name", "brand", "category"],
+                        "nested_text_paths": ["product_info.ingredients"],
+                        "auxiliary_relation_hints": [
+                            {
+                                "table_name": "product_info",
+                                "key_field": "product_id",
+                                "merge_as": "product_info",
+                                "text_fields": ["ingredients", "review"],
+                            }
+                        ],
+                    },
+                )
+            ]
+        ),
+        run_id="runtime",
+        product_search_endpoint="/api/products",
+    )
+
+    discovery_plan = next(item for item in retrieval_index_plan.corpora if item.corpus == "discovery_image")
+    assert discovery_plan.dense_image_field == "image_url"
+    assert "product_info.ingredients" in discovery_plan.sparse_text_paths
+    assert "product_info.review" in discovery_plan.sparse_text_paths
+    assert "product_info" in discovery_plan.payload_paths
+    assert discovery_plan.row_enrichment_strategy == "host_python_wrapper"
 
 
 def test_planner_keeps_static_source_scan_for_materialized_faq_files():

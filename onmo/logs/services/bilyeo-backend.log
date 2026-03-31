@@ -1,0 +1,32 @@
+[bilyeo] Oracle schema ready (attempt 1/30)
+ * Serving Flask app 'app'
+ * Debug mode: on
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.30:5000
+[33mPress CTRL+C to quit[0m
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 108-210-125
+127.0.0.1 - - [31/Mar/2026 10:03:21] "GET /api/products/categories HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:03:21] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:03:30] "[31m[1mPOST /api/auth/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [31/Mar/2026 10:03:33] "POST /api/auth/login HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:03:33] "GET /api/products/categories HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:03:33] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:03:35] "POST /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:04:04] "GET /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:04:15] "GET /api/products/categories HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:04:15] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:04:32] "POST /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:04:40] "GET /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:08:08] "GET /api/products/categories HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:08:08] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:08:09] "POST /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:08:16] "GET /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:09:21] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:09:21] "GET /api/products/categories HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:09:21] "GET /api/products/categories HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:09:21] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:09:22] "POST /api/chat/auth-token HTTP/1.1" 200 -

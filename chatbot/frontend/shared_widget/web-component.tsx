@@ -8,6 +8,11 @@ type SharedWidgetHostContract = {
   widgetBundlePath: string;
   widgetElementTag: string;
   mountMode: 'floating_launcher';
+  siteId?: string;
+  brandDisplayName?: string;
+  brandStoreLabel?: string;
+  assistantTitle?: string;
+  initialGreeting?: string;
   capabilityProfile?: string;
   enabledRetrievalCorpora?: string[];
   widgetFeatures?: {
@@ -43,6 +48,11 @@ type HostAttributeName =
   | 'auth-bootstrap-path'
   | 'widget-bundle-path'
   | 'mount-mode'
+  | 'site-id'
+  | 'brand-display-name'
+  | 'brand-store-label'
+  | 'assistant-title'
+  | 'initial-greeting'
   | 'capabilities'
   | 'capability-profile'
   | 'enabled-retrieval-corpora';
@@ -63,6 +73,11 @@ function readAttributeOverrides(element: HTMLElement): AttributeOverrides {
     'auth-bootstrap-path': element.getAttribute('auth-bootstrap-path'),
     'widget-bundle-path': element.getAttribute('widget-bundle-path'),
     'mount-mode': element.getAttribute('mount-mode'),
+    'site-id': element.getAttribute('site-id'),
+    'brand-display-name': element.getAttribute('brand-display-name'),
+    'brand-store-label': element.getAttribute('brand-store-label'),
+    'assistant-title': element.getAttribute('assistant-title'),
+    'initial-greeting': element.getAttribute('initial-greeting'),
     capabilities: element.getAttribute('capabilities'),
     'capability-profile': element.getAttribute('capability-profile'),
     'enabled-retrieval-corpora': element.getAttribute('enabled-retrieval-corpora'),
@@ -96,6 +111,11 @@ function readGlobalContract(): SharedWidgetHostContract {
       globalContract.widgetElementTag ?? DEFAULT_SHARED_WIDGET_HOST_CONTRACT.widgetElementTag,
     ),
     mountMode: DEFAULT_SHARED_WIDGET_HOST_CONTRACT.mountMode,
+    siteId: normalizeString(globalContract.siteId),
+    brandDisplayName: normalizeString(globalContract.brandDisplayName),
+    brandStoreLabel: normalizeString(globalContract.brandStoreLabel),
+    assistantTitle: normalizeString(globalContract.assistantTitle),
+    initialGreeting: normalizeString(globalContract.initialGreeting),
     capabilityProfile: normalizeString(globalContract.capabilityProfile),
     enabledRetrievalCorpora: Array.isArray(globalContract.enabledRetrievalCorpora)
       ? globalContract.enabledRetrievalCorpora.map((item) => String(item).trim()).filter(Boolean)
@@ -125,6 +145,11 @@ export function resolveOrderCsWidgetHostContract(
     // The custom element tag is fixed at registration time.
     widgetElementTag: ORDER_CS_WIDGET_TAG,
     mountMode: contract.mountMode,
+    siteId: normalizeString(attributeOverrides['site-id'] ?? contract.siteId),
+    brandDisplayName: normalizeString(attributeOverrides['brand-display-name'] ?? contract.brandDisplayName),
+    brandStoreLabel: normalizeString(attributeOverrides['brand-store-label'] ?? contract.brandStoreLabel),
+    assistantTitle: normalizeString(attributeOverrides['assistant-title'] ?? contract.assistantTitle),
+    initialGreeting: normalizeString(attributeOverrides['initial-greeting'] ?? contract.initialGreeting),
     capabilityProfile: normalizeString(
       attributeOverrides['capability-profile'] ?? contract.capabilityProfile,
     ),
@@ -141,6 +166,11 @@ function toHostedWidgetConfig(contract: SharedWidgetHostContract): SharedWidgetH
     chatbotApiBase: contract.chatbotServerBaseUrl,
     chatPath: '/api/chat',
     streamPath: '/api/v1/chat/stream',
+    siteId: contract.siteId,
+    brandDisplayName: contract.brandDisplayName,
+    brandStoreLabel: contract.brandStoreLabel,
+    assistantTitle: contract.assistantTitle,
+    initialGreeting: contract.initialGreeting,
     capabilityProfile: contract.capabilityProfile,
     enabledRetrievalCorpora: contract.enabledRetrievalCorpora,
     widgetFeatures: contract.widgetFeatures,

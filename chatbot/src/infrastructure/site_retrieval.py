@@ -100,6 +100,11 @@ def ensure_build_collection(
                 distance=models.Distance.COSINE,
             )
         },
+        sparse_vectors_config={
+            "text-sparse": models.SparseVectorParams(
+                index=models.SparseIndexParams(on_disk=False)
+            )
+        },
     )
     client.create_payload_index(
         collection_name=collection_name,

@@ -1291,7 +1291,7 @@ body {
 
 .story-rewind-graph {
   display: grid;
-  gap: 18px;
+  gap: 32px;
 }
 
 .story-strip-primary {
@@ -1299,7 +1299,10 @@ body {
 }
 
 .story-strip-rerun {
-  padding: 0;
+  padding-top: 28px;
+  padding-right: 0;
+  padding-bottom: 0;
+  padding-left: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -1316,10 +1319,11 @@ body {
 .story-rerun-entry-link {
   position: absolute;
   left: 0;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + 12px);
   display: grid;
   gap: 3px;
   min-width: 120px;
+  z-index: 1;
 }
 
 .story-rerun-entry-link::after {
@@ -1328,7 +1332,7 @@ body {
   left: 14px;
   top: calc(100% + 2px);
   width: 1px;
-  height: 16px;
+  height: 20px;
   background: rgba(125, 112, 94, 0.24);
 }
 

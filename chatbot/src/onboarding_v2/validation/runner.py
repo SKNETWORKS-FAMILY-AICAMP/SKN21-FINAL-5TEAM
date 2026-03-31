@@ -229,6 +229,27 @@ def _emit_validation_check_boundary(
     )
 
 
+def _resolve_demo_auth_credentials(
+    *,
+    onboarding_credentials: dict[str, str] | None,
+    fixture_auth: dict[str, str] | None,
+    bootstrap_payload: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    credentials: dict[str, str] = {
+        "password": "password123",
+    }
+    for source in (fixture_auth or {}, onboarding_credentials or {}):
+        credentials.update({key: value for key, value in source.items() if value})
+    user = dict((bootstrap_payload or {}).get("user") or {})
+    if not credentials.get("email"):
+        email = str(user.get("email") or "").strip()
+        if email:
+            credentials["email"] = email
+    credentials.setdefault("email", "test1@example.com")
+    credentials.setdefault("password", "password123")
+    return credentials
+
+
 def _append_text(path: Path | None, content: str) -> None:
     if path is None:
         return
@@ -610,6 +631,7 @@ def run_validation_cycle(
                 snapshot=snapshot,
                 plan=plan,
                 onboarding_credentials=onboarding_credentials,
+                fixture_auth=dict((prep_result.fixture_manifest or {}).get("auth") or {}),
             )
             _emit_validation_check_boundary(
                 event_callback,
@@ -962,18 +984,16 @@ def validate_host_auth_bootstrap(
     snapshot: AnalysisSnapshot,
     plan: IntegrationPlan,
     onboarding_credentials: dict[str, str] | None = None,
+    fixture_auth: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     del run_root, host_runtime_workspace, snapshot
     base_url = _runtime_base_url(
         runtime_plan,
         chat_auth_contract_path=plan.host_backend.chat_auth_contract_path,
     ).rstrip("/")
-    credentials = {
-        "email": "test1@example.com",
-        "password": "password123",
-    }
-    credentials.update(
-        {key: value for key, value in (onboarding_credentials or {}).items() if value}
+    credentials = _resolve_demo_auth_credentials(
+        onboarding_credentials=onboarding_credentials,
+        fixture_auth=fixture_auth,
     )
     login_path = str(plan.host_backend.login_endpoint or "").strip()
     if login_path and not login_path.startswith("/"):
@@ -1019,6 +1039,8 @@ def validate_host_auth_bootstrap(
         if login_response is not None and login_response.status_code == 200
         else "validation_bridge"
     )
+    real_login_passed = login_response is not None and login_response.status_code == 200
+    bridge_fallback_used = bootstrap_mode == "validation_bridge"
     passed, summary = _evaluate_bootstrap_contract(
         bootstrap_status=None if bootstrap_response is None else bootstrap_response.status_code,
         payload=payload,
@@ -1058,6 +1080,9 @@ def validate_host_auth_bootstrap(
         "passed": passed,
         "failure_summary": summary,
         "bootstrap_payload": payload,
+        "real_login_passed": bool(real_login_passed),
+        "bridge_fallback_used": bool(bridge_fallback_used),
+        "degraded_auth_bootstrap": bool(passed and bridge_fallback_used),
         "login_status": None if login_response is None else login_response.status_code,
         "bootstrap_status": None if bootstrap_response is None else bootstrap_response.status_code,
         "login_url": login_url,
@@ -2147,11 +2172,11 @@ def _build_runtime_fixture_manifest(
     module_origins: dict[str, str] = {}
     auth = dict(manifest.get("auth") or {})
     seed_source = dict(manifest.get("seed_source") or {})
-    credentials = {
-        "email": "test1@example.com",
-        "password": "password123",
-    }
-    credentials.update({key: value for key, value in (onboarding_credentials or {}).items() if value})
+    credentials = _resolve_demo_auth_credentials(
+        onboarding_credentials=onboarding_credentials,
+        fixture_auth=auth,
+        bootstrap_payload=dict(bootstrap_result.get("bootstrap_payload") or {}),
+    )
     auth.setdefault("email", credentials.get("email"))
     auth.setdefault("password", credentials.get("password"))
     manifest["auth"] = auth
@@ -2251,6 +2276,7 @@ def _build_runtime_fixture_manifest(
                     ),
                     missing_stdout="seed script not found; skipped seed",
                 )
+                seed_source["runtime_seed_purpose"] = "order_fixture_probe"
                 seed_source["runtime_seeded"] = bool(seed_result.passed)
                 if seed_result.stdout:
                     seed_source["runtime_seed_stdout"] = seed_result.stdout
@@ -2261,7 +2287,7 @@ def _build_runtime_fixture_manifest(
                 manifest["seed_source"] = seed_source
                 if not seed_result.passed:
                     manifest["available"] = False
-                    manifest["reason"] = "runtime fixtures unavailable: seed script failed"
+                    manifest["reason"] = "runtime order fixtures unavailable: seed script failed"
                     manifest["error_summary"] = (
                         str(seed_result.stderr or seed_result.stdout or "seed failed").strip()
                     )
@@ -2279,23 +2305,32 @@ def _build_runtime_fixture_manifest(
         order_ids = [
             order_id
             for order_id in (
-                resolve_visible_order_id_from_contract(response_contract, item)
+                _visible_runtime_order_id(response_contract=response_contract, raw_order=item)
                 for item in order_candidates
                 if isinstance(item, dict)
             )
             if order_id
         ]
-        option_ids = [option_id for option_id in (_extract_option_id(item) for item in order_candidates) if option_id]
         if order_ids:
+            mutation_orders = _select_runtime_mutation_orders(
+                order_candidates=order_candidates,
+                response_contract=response_contract,
+            )
             manifest["available"] = True
-            manifest["orders"] = {
+            orders_manifest = {
                 "lookup_order_id": str(order_ids[0]),
                 "status_order_id": str(order_ids[1] if len(order_ids) > 1 else order_ids[0]),
-                "cancel_order_id": str(order_ids[2] if len(order_ids) > 2 else order_ids[0]),
-                "refund_order_id": str(order_ids[3] if len(order_ids) > 3 else order_ids[0]),
-                "exchange_order_id": str(order_ids[4] if len(order_ids) > 4 else order_ids[0]),
-                "exchange_new_option_id": str(option_ids[0] if option_ids else "synthetic-option-1"),
             }
+            if mutation_orders.get("cancel_order_id"):
+                orders_manifest["cancel_order_id"] = str(mutation_orders["cancel_order_id"])
+            if mutation_orders.get("refund_order_id"):
+                orders_manifest["refund_order_id"] = str(mutation_orders["refund_order_id"])
+            if mutation_orders.get("exchange_order_id"):
+                orders_manifest["exchange_order_id"] = str(mutation_orders["exchange_order_id"])
+                orders_manifest["exchange_new_option_id"] = str(
+                    mutation_orders.get("exchange_new_option_id") or "synthetic-option-1"
+                )
+            manifest["orders"] = orders_manifest
             manifest.pop("reason", None)
             manifest.pop("error_summary", None)
             manifest.pop("failure_origin", None)
@@ -2774,6 +2809,78 @@ def _extract_order_id(raw_order: dict[str, Any]) -> str | None:
     return None
 
 
+def _truthy_runtime_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    normalized = str(value or "").strip().lower()
+    return normalized in {"true", "1", "yes", "y", "available", "enabled"}
+
+
+def _visible_runtime_order_id(
+    *,
+    response_contract: ResolvedResponseContract,
+    raw_order: dict[str, Any],
+) -> str | None:
+    return resolve_visible_order_id_from_contract(response_contract, raw_order) or _extract_order_id(raw_order)
+
+
+def _select_order_for_action(
+    *,
+    order_candidates: list[dict[str, Any]],
+    response_contract: ResolvedResponseContract,
+    eligibility_keys: tuple[str, ...],
+) -> dict[str, Any] | None:
+    for item in order_candidates:
+        if not isinstance(item, dict):
+            continue
+        if not _visible_runtime_order_id(response_contract=response_contract, raw_order=item):
+            continue
+        if any(_truthy_runtime_flag(item.get(key)) for key in eligibility_keys):
+            return item
+    return None
+
+
+def _select_runtime_mutation_orders(
+    *,
+    order_candidates: list[dict[str, Any]],
+    response_contract: ResolvedResponseContract,
+) -> dict[str, str]:
+    selected: dict[str, str] = {}
+    cancel_order = _select_order_for_action(
+        order_candidates=order_candidates,
+        response_contract=response_contract,
+        eligibility_keys=("can_cancel", "cancelable", "cancellable"),
+    )
+    refund_order = _select_order_for_action(
+        order_candidates=order_candidates,
+        response_contract=response_contract,
+        eligibility_keys=("can_return", "can_refund", "returnable", "refundable"),
+    )
+    exchange_order = _select_order_for_action(
+        order_candidates=order_candidates,
+        response_contract=response_contract,
+        eligibility_keys=("can_exchange", "exchangeable", "can_change_option"),
+    )
+    if cancel_order is not None:
+        order_id = _visible_runtime_order_id(response_contract=response_contract, raw_order=cancel_order)
+        if order_id:
+            selected["cancel_order_id"] = order_id
+    if refund_order is not None:
+        order_id = _visible_runtime_order_id(response_contract=response_contract, raw_order=refund_order)
+        if order_id:
+            selected["refund_order_id"] = order_id
+    if exchange_order is not None:
+        order_id = _visible_runtime_order_id(response_contract=response_contract, raw_order=exchange_order)
+        if order_id:
+            selected["exchange_order_id"] = order_id
+        option_id = _extract_option_id(exchange_order)
+        if option_id:
+            selected["exchange_new_option_id"] = option_id
+    return selected
+
+
 def _extract_option_id(raw_order: dict[str, Any]) -> str | None:
     candidates = [
         raw_order.get("option_id"),
@@ -2783,6 +2890,20 @@ def _extract_option_id(raw_order: dict[str, Any]) -> str | None:
         raw_order.get("variant_id"),
         raw_order.get("variantId"),
     ]
+    for collection_key in ("options", "option_list", "variants"):
+        collection = raw_order.get(collection_key)
+        if isinstance(collection, list):
+            for item in collection:
+                if isinstance(item, dict):
+                    candidates.extend(
+                        [
+                            item.get("id"),
+                            item.get("option_id"),
+                            item.get("optionId"),
+                            item.get("variant_id"),
+                            item.get("variantId"),
+                        ]
+                    )
     product = raw_order.get("product")
     if isinstance(product, dict):
         candidates.extend(
@@ -2793,6 +2914,20 @@ def _extract_option_id(raw_order: dict[str, Any]) -> str | None:
                 product.get("variantId"),
             ]
         )
+        for collection_key in ("options", "variants"):
+            collection = product.get(collection_key)
+            if isinstance(collection, list):
+                for item in collection:
+                    if isinstance(item, dict):
+                        candidates.extend(
+                            [
+                                item.get("id"),
+                                item.get("option_id"),
+                                item.get("optionId"),
+                                item.get("variant_id"),
+                                item.get("variantId"),
+                            ]
+                        )
     option = raw_order.get("option")
     if isinstance(option, dict):
         candidates.extend([option.get("id"), option.get("option_id")])

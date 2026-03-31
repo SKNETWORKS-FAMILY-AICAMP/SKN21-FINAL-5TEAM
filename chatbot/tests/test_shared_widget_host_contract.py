@@ -156,3 +156,18 @@ def test_shared_widget_runtime_exposes_site_without_site_id():
     assert payload["enabledRetrievalCorpora"] == ["faq"]
     assert payload["widgetFeatures"] == {"image_upload": False}
     assert "site_id" not in payload
+
+
+def test_shared_widget_runtime_payload_exposes_branding_metadata():
+    module = _load_runtime_module()
+
+    payload = module.build_widget_runtime_payload(
+        site="bilyeo",
+        chatbot_server_base_url="http://127.0.0.1:8100/",
+    )
+
+    assert payload["siteId"] == "bilyeo"
+    assert payload["brandDisplayName"] == "bilyeo"
+    assert payload["brandStoreLabel"] == "bilyeo 쇼핑몰"
+    assert payload["assistantTitle"] == "bilyeo AI 고객상담사"
+    assert payload["initialGreeting"] == "안녕하세요. bilyeo 챗봇입니다."

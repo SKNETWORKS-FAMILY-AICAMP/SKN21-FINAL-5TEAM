@@ -85,9 +85,9 @@ def build_conversation_scenarios(
     orders = dict(fixture_manifest.get("orders") or {})
     lookup_order_id = str(orders.get("lookup_order_id") or "")
     status_order_id = str(orders.get("status_order_id") or lookup_order_id)
-    cancel_order_id = str(orders.get("cancel_order_id") or lookup_order_id)
-    refund_order_id = str(orders.get("refund_order_id") or lookup_order_id)
-    exchange_order_id = str(orders.get("exchange_order_id") or lookup_order_id)
+    cancel_order_id = str(orders.get("cancel_order_id") or "")
+    refund_order_id = str(orders.get("refund_order_id") or "")
+    exchange_order_id = str(orders.get("exchange_order_id") or "")
     exchange_new_option_id = str(
         orders.get("exchange_new_option_id") or "synthetic-option-1"
     )
@@ -116,49 +116,6 @@ def build_conversation_scenarios(
             previous_state_from="authenticated_list_orders",
         ),
         ConversationScenarioContract(
-            scenario_id="cancel_order",
-            mode="mutating",
-            prompt=f"주문 {cancel_order_id} 취소해줘",
-            expected_milestones=_expected_milestones_for_action(
-                action="cancel",
-                capability_contract=capability_contract,
-            ),
-            allowed_paths=_action_allowed_paths(
-                action="cancel",
-                capability_contract=capability_contract,
-            ),
-            sampled_order_id=cancel_order_id or None,
-        ),
-        ConversationScenarioContract(
-            scenario_id="refund_order",
-            mode="mutating",
-            prompt=f"주문 {refund_order_id} 환불해줘",
-            expected_milestones=_expected_milestones_for_action(
-                action="refund",
-                capability_contract=capability_contract,
-            ),
-            allowed_paths=_action_allowed_paths(
-                action="refund",
-                capability_contract=capability_contract,
-            ),
-            sampled_order_id=refund_order_id or None,
-        ),
-        ConversationScenarioContract(
-            scenario_id="exchange_order",
-            mode="mutating",
-            prompt=f"주문 {exchange_order_id} 옵션을 {exchange_new_option_id}로 교환해줘",
-            expected_milestones=_expected_milestones_for_action(
-                action="exchange",
-                capability_contract=capability_contract,
-            ),
-            allowed_paths=_action_allowed_paths(
-                action="exchange",
-                capability_contract=capability_contract,
-            ),
-            sampled_order_id=exchange_order_id or None,
-            sampled_option_id=exchange_new_option_id or None,
-        ),
-        ConversationScenarioContract(
             scenario_id="session_continuity",
             mode="read_only",
             prompt="방금 조회한 주문 다시 이어서 설명해줘",
@@ -181,6 +138,58 @@ def build_conversation_scenarios(
             prompt="주문 관련해서 도와줘",
         ),
     ]
+    if "cancel" in capability_contract.available_actions and cancel_order_id:
+        scenarios.append(
+            ConversationScenarioContract(
+                scenario_id="cancel_order",
+                mode="mutating",
+                prompt=f"주문 {cancel_order_id} 취소해줘",
+                expected_milestones=_expected_milestones_for_action(
+                    action="cancel",
+                    capability_contract=capability_contract,
+                ),
+                allowed_paths=_action_allowed_paths(
+                    action="cancel",
+                    capability_contract=capability_contract,
+                ),
+                sampled_order_id=cancel_order_id or None,
+            )
+        )
+    if "refund" in capability_contract.available_actions and refund_order_id:
+        scenarios.append(
+            ConversationScenarioContract(
+                scenario_id="refund_order",
+                mode="mutating",
+                prompt=f"주문 {refund_order_id} 환불해줘",
+                expected_milestones=_expected_milestones_for_action(
+                    action="refund",
+                    capability_contract=capability_contract,
+                ),
+                allowed_paths=_action_allowed_paths(
+                    action="refund",
+                    capability_contract=capability_contract,
+                ),
+                sampled_order_id=refund_order_id or None,
+            )
+        )
+    if "exchange" in capability_contract.available_actions and exchange_order_id:
+        scenarios.append(
+            ConversationScenarioContract(
+                scenario_id="exchange_order",
+                mode="mutating",
+                prompt=f"주문 {exchange_order_id} 옵션을 {exchange_new_option_id}로 교환해줘",
+                expected_milestones=_expected_milestones_for_action(
+                    action="exchange",
+                    capability_contract=capability_contract,
+                ),
+                allowed_paths=_action_allowed_paths(
+                    action="exchange",
+                    capability_contract=capability_contract,
+                ),
+                sampled_order_id=exchange_order_id or None,
+                sampled_option_id=exchange_new_option_id or None,
+            )
+        )
     return [_scenario_payload(item) for item in scenarios]
 
 

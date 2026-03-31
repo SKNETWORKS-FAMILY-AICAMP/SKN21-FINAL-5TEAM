@@ -1420,13 +1420,193 @@ def _build_discovery_image_source_details(*, path: str, content: str) -> dict[st
         if candidate in loader_candidates and candidate not in ordered_candidates:
             ordered_candidates.append(candidate)
 
-    return {
+    details = {
         "image_field": image_field,
         "source_surface": source_surface,
         "loader_candidates": ordered_candidates,
         "sample_host": sample_host,
         "access_mode": access_mode,
     }
+    details.update(_infer_discovery_image_field_hints(content))
+    details.update(_infer_discovery_image_auxiliary_relation_hints(content))
+    details.update(_infer_discovery_image_host_python_row_source(path=path, content=content, source_surface=source_surface))
+    return details
+
+
+def _infer_discovery_image_field_hints(content: str) -> dict[str, Any]:
+    text_field_candidates: list[str] = []
+    payload_field_candidates: list[str] = []
+    nested_text_paths: list[str] = []
+
+    preferred_text_fields = {
+        "product_id",
+        "name",
+        "product_name",
+        "product_display_name",
+        "brand",
+        "brand_name",
+        "category",
+        "main_category",
+        "sub_category",
+        "subcategory",
+        "description",
+        "summary",
+        "details",
+        "keywords",
+        "tags",
+        "benefits",
+        "usage",
+        "skin_type",
+        "variant_name",
+        "option_name",
+        "options",
+        "price",
+    }
+
+    discovered_keys = re.findall(r'["\']([A-Za-z_][A-Za-z0-9_]*)["\']\s*:', content)
+    for key in discovered_keys:
+        if key in preferred_text_fields and key not in text_field_candidates:
+            text_field_candidates.append(key)
+        if key in preferred_text_fields and key not in payload_field_candidates:
+            payload_field_candidates.append(key)
+
+    product_info_targets = re.findall(r'["\'][^"\']+["\']\s*:\s*["\']([A-Za-z_][A-Za-z0-9_]*)["\']', content)
+    if 'product["product_info"] = info' in content or "product['product_info'] = info" in content:
+        for field_name in product_info_targets:
+            nested_path = f"product_info.{field_name}"
+            if nested_path not in nested_text_paths:
+                nested_text_paths.append(nested_path)
+        if "product_info" not in payload_field_candidates:
+            payload_field_candidates.append("product_info")
+
+    details: dict[str, Any] = {}
+    if text_field_candidates:
+        details["text_field_candidates"] = text_field_candidates
+    if payload_field_candidates:
+        details["payload_field_candidates"] = payload_field_candidates
+    if nested_text_paths:
+        details["nested_text_paths"] = nested_text_paths
+    return details
+
+
+def _infer_discovery_image_auxiliary_relation_hints(content: str) -> dict[str, Any]:
+    hints: list[dict[str, Any]] = []
+    for match in re.finditer(r"CREATE TABLE\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((.*?)\)\s*", content, re.IGNORECASE | re.DOTALL):
+        table_name = match.group(1)
+        columns_block = match.group(2)
+        column_names = [
+            column_match.group(1)
+            for column_match in re.finditer(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s+[A-Za-z]", columns_block, re.MULTILINE)
+        ]
+        if "product_id" not in column_names or table_name.lower() in {"products", "product"}:
+            continue
+        text_fields = [
+            name
+            for name in column_names
+            if name not in {"product_id", "info_id", "id", "created_at", "updated_at"}
+            and not name.endswith("_id")
+        ]
+        if not text_fields:
+            continue
+        hints.append(
+            {
+                "table_name": table_name,
+                "key_field": "product_id",
+                "merge_as": table_name,
+                "text_fields": text_fields,
+            }
+        )
+    return {"auxiliary_relation_hints": hints} if hints else {}
+
+
+def _infer_discovery_image_host_python_row_source(
+    *,
+    path: str,
+    content: str,
+    source_surface: str,
+) -> dict[str, Any]:
+    normalized_path = path.replace("\\", "/").strip()
+    lowered_path = normalized_path.lower()
+    if source_surface != "db_table" or not lowered_path.endswith(".py") or "/models/" not in lowered_path:
+        return {}
+
+    module_name = _module_name_from_python_path(normalized_path)
+    callable_name = _select_product_row_callable(content)
+    if not module_name or not callable_name:
+        return {}
+
+    return {
+        "row_source_strategy": "host_python_fetch",
+        "row_source_module": module_name,
+        "row_source_callable": callable_name,
+    }
+
+
+def _module_name_from_python_path(path: str) -> str | None:
+    normalized = path.replace("\\", "/").strip().strip("/")
+    if not normalized.endswith(".py"):
+        return None
+    relative = normalized[:-3]
+    if relative.endswith("/__init__"):
+        relative = relative[: -len("/__init__")]
+    if relative.startswith("backend/"):
+        relative = relative[len("backend/") :]
+    module_name = relative.replace("/", ".").strip(".")
+    return module_name or None
+
+
+def _select_product_row_callable(content: str) -> str | None:
+    preferred_exact = (
+        "get_all_products",
+        "list_products",
+        "get_products",
+        "fetch_products",
+        "load_products",
+    )
+    discovered: list[tuple[str, str]] = re.findall(
+        r"^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*:",
+        content,
+        flags=re.MULTILINE,
+    )
+    if not discovered:
+        return None
+
+    candidates: list[tuple[str, str]] = []
+    for function_name, signature in discovered:
+        lowered_name = function_name.lower()
+        if "product" not in lowered_name:
+            continue
+        if not lowered_name.startswith(("get_", "list_", "fetch_", "load_")):
+            continue
+        if not _callable_accepts_no_required_args(signature):
+            continue
+        candidates.append((function_name, lowered_name))
+
+    if not candidates:
+        return None
+
+    for preferred_name in preferred_exact:
+        for function_name, lowered_name in candidates:
+            if lowered_name == preferred_name:
+                return function_name
+    return candidates[0][0]
+
+
+def _callable_accepts_no_required_args(signature: str) -> bool:
+    normalized = signature.strip()
+    if not normalized:
+        return True
+    for raw_param in normalized.split(","):
+        param = raw_param.strip()
+        if not param or param in {"/", "*"}:
+            continue
+        if param.startswith(("**", "*")):
+            continue
+        if param.split(":", 1)[0].strip() in {"self", "cls"}:
+            continue
+        if "=" not in param:
+            return False
+    return True
 
 
 def _resolve_endpoint_path(

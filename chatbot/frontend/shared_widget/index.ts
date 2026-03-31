@@ -6,6 +6,11 @@ export type SharedWidgetHostContract = {
   widgetBundlePath: string;
   widgetElementTag: string;
   mountMode: SharedWidgetMountMode;
+  siteId?: string;
+  brandDisplayName?: string;
+  brandStoreLabel?: string;
+  assistantTitle?: string;
+  initialGreeting?: string;
   capabilityProfile?: string;
   enabledRetrievalCorpora?: string[];
   widgetFeatures?: {

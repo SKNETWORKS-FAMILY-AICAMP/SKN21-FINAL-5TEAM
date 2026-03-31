@@ -1295,6 +1295,9 @@ def _build_seed_source(
     if seed_path is not None:
         source["seed_path"] = str(seed_path)
         source["seed_command"] = [str(python_executable), str(seed_path)]
+        demo_auth = _extract_seed_auth_credentials(seed_path)
+        if demo_auth:
+            source["demo_auth"] = demo_auth
     if reset_path is not None:
         source["reset_path"] = str(reset_path)
         source["reset_command"] = [str(python_executable), str(reset_path)]
@@ -1309,13 +1312,56 @@ def _build_fixture_manifest(
 ) -> dict[str, object]:
     manifest: dict[str, object] = {
         "available": available,
-        "auth": {},
+        "auth": dict(seed_source.get("demo_auth") or {}),
         "orders": {},
         "seed_source": seed_source,
     }
     if reason:
         manifest["reason"] = reason
     return manifest
+
+
+def _extract_seed_auth_credentials(seed_path: Path | None) -> dict[str, str]:
+    if seed_path is None or not seed_path.exists():
+        return {}
+    try:
+        tree = ast.parse(seed_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.List, ast.Tuple)):
+            continue
+        values = list(node.elts)
+        if len(values) < 2:
+            continue
+        email = _extract_seed_auth_email(values[0])
+        password = _extract_seed_auth_password(values[1])
+        if email and password:
+            return {"email": email, "password": password}
+    return {}
+
+
+def _extract_seed_auth_email(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str) and "@" in node.value:
+        return str(node.value).strip()
+    return None
+
+
+def _extract_seed_auth_password(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return str(node.value).strip() or None
+    if isinstance(node, ast.Call):
+        func = node.func
+        func_name = None
+        if isinstance(func, ast.Name):
+            func_name = func.id
+        elif isinstance(func, ast.Attribute):
+            func_name = func.attr
+        if func_name == "generate_password_hash" and node.args:
+            first_arg = node.args[0]
+            if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
+                return str(first_arg.value).strip() or None
+    return None
 
 
 def _prep_failure_summary(step_name: str, result: BackendRuntimeCommandResult) -> str:

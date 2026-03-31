@@ -485,6 +485,97 @@ def test_diagnose_failure_prefers_structured_host_contract_failures(tmp_path: Pa
     assert decision.required_rechecks == ["host_auth_bootstrap"]
 
 
+def test_diagnose_failure_rewinds_to_planning_for_generated_auth_mapping_mismatch(
+    tmp_path: Path,
+):
+    debug_store = DebugStore(tmp_path / "generated" / "bilyeo" / "bilyeo-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="validation",
+        failure_signature="chatbot_adapter_auth_chatbot_adapter_auth_missing_user_id",
+        failure_summary="chatbot adapter auth missing user.id",
+        trigger_event_id="evt-chatbot-auth-user-id",
+        related_artifacts=[],
+        related_files=[
+            "src/adapters/generated/bilyeo/adapter.py",
+            "src/adapters/generated/bilyeo/auth.py",
+            "src/adapters/setup.py",
+        ],
+        related_file_samples=[],
+        input_artifact_versions={"validation": 2},
+        attempt_number=1,
+        repeat_count=1,
+    )
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
+        snapshot_payload={"repo_profile": {"site": "bilyeo"}},
+        planning_bundle_payload={},
+        plan_payload={
+            "chatbot_bridge": {
+                "site_key": "bilyeo",
+                "auth_validation_endpoint": "/api/chat/auth-token",
+                "response_contract": {
+                    "user_profile": "orders_collection_user_id",
+                },
+            }
+        },
+        edit_program_payload={},
+        validation_payload={
+            "checks": [
+                {
+                    "name": "host_auth_bootstrap",
+                    "passed": True,
+                    "summary": "host auth bootstrap passed",
+                    "details": {
+                        "passed": True,
+                        "failure_origin": "login",
+                        "bootstrap_payload": {
+                            "user": {
+                                "id": "1",
+                            }
+                        },
+                    },
+                },
+                {
+                    "name": "chatbot_adapter_auth",
+                    "passed": False,
+                    "summary": "chatbot adapter auth missing user.id",
+                    "details": {
+                        "failure_origin": "generated_runtime",
+                        "failure_code": "validated_user_missing_id",
+                        "validated_user": {"id": "", "siteId": "bilyeo"},
+                    },
+                },
+            ]
+        },
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+        llm_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("LLM should not be called for generated auth mapping heuristic")
+        ),
+    )
+
+    assert decision.stop is False
+    assert decision.rewind_to == "planning"
+    assert decision.required_rechecks == []
+    assert "mapping" in decision.diagnosis.lower()
+    assert decision.artifact_overrides == {
+        "planning": {
+            "chatbot_bridge": {
+                "response_contract": {
+                    "user_profile": "wrapped_user",
+                }
+            },
+            "planning_notes_append": (
+                "repair override: host auth bootstrap validated bootstrap_payload.user.id; "
+                "prefer wrapped_user auth mapping over orders-derived user inference"
+            ),
+        }
+    }
+
+
 def test_diagnose_failure_stops_on_host_external_dependency_unavailable(tmp_path: Path):
     debug_store = DebugStore(tmp_path / "generated" / "bilyeo" / "bilyeo-run-v2")
     failure_bundle = FailureBundle(

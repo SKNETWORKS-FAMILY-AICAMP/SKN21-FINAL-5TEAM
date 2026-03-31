@@ -46,6 +46,7 @@ class Settings(BaseSettings):
 
     # Backend API
     BACKEND_API_URL: str = "http://localhost:3000"
+    CHATBOT_UPLOAD_DIR: str = "chatbot/.runtime/uploads"
 
     # Collections
     COLLECTION_CLIP_IMAGE: str = "fashion_clip_images"

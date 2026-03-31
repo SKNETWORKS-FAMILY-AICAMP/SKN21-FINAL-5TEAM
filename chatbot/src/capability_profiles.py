@@ -71,6 +71,8 @@ def _task_allowed_for_retrieval_profile(task: str, enabled_corpora: set[str]) ->
         return True
     if task == TaskIntent.POLICY_RAG.value:
         return bool(enabled_corpora & {"faq", "policy"})
+    if task == TaskIntent.SEARCH_SIMILAR_TEXT.value:
+        return "discovery_image" in enabled_corpora
     if task == TaskIntent.SEARCH_SIMILAR_IMAGE.value:
         return "discovery_image" in enabled_corpora
     return False
