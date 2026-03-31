@@ -16,8 +16,6 @@ import ProductListUI, { type UiProduct } from './ProductListUI';
 import ReviewFormUI from './ReviewFormUI';
 import UsedSaleFormUI from './UsedSaleFormUI';
 
-const INITIAL_BOT_MESSAGE: TextMessage = { role: 'bot', type: 'text', text: '안녕하세요. MOYEO 챗봇입니다.' };
-
 type TextMessage = { role: 'user' | 'bot'; type: 'text'; text: string; isStreaming?: boolean; showDivider?: boolean };
 type OrderListMessage = {
   role: 'bot';
@@ -220,12 +218,54 @@ const ORDER_LIST_BASE_MESSAGE = '최근 30일간의 주문 목록입니다.';
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.2'] as const;
 const HF_MODELS = ['Qwen/Qwen3-0.6B'] as const;
 const VLLM_MODELS = ['Qwen/Qwen3.5-35B-A3B'] as const;
+const ORDER_CS_ONLY_CAPABILITIES: SharedWidgetCapabilities = [
+  'orders_view',
+  'orders_cancel',
+  'orders_exchange',
+  'orders_return',
+];
 
 const MODEL_OPTIONS: ModelOption[] = [
   ...OPENAI_MODELS.map((id) => ({ id, provider: 'openai' as const, label: id })),
   ...HF_MODELS.map((id) => ({ id, provider: 'huggingface' as const, label: id })),
   ...VLLM_MODELS.map((id) => ({ id, provider: 'vllm' as const, label: `${id} (RunPod)` })),
 ];
+
+function normalizeSiteBrandLabel(value?: string | null): string {
+  return String(value ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function deriveAssistantBrandDisplayName(host?: SharedWidgetHostConfig): string {
+  const explicitDisplayName = normalizeSiteBrandLabel(host?.brandDisplayName);
+  if (explicitDisplayName) {
+    return explicitDisplayName;
+  }
+  const siteId = normalizeSiteBrandLabel(host?.siteId).toLowerCase();
+  if (siteId) {
+    return siteId.replace(/[_-]+/g, ' ');
+  }
+  return 'moyeo';
+}
+
+export function resolveAssistantTitle(host?: SharedWidgetHostConfig): string {
+  const explicitTitle = normalizeSiteBrandLabel(host?.assistantTitle);
+  if (explicitTitle) {
+    return explicitTitle;
+  }
+  return `${deriveAssistantBrandDisplayName(host)} AI 고객상담사`;
+}
+
+export function buildInitialBotMessage(host?: SharedWidgetHostConfig): TextMessage {
+  const explicitGreeting = normalizeSiteBrandLabel(host?.initialGreeting);
+  if (explicitGreeting) {
+    return { role: 'bot', type: 'text', text: explicitGreeting };
+  }
+  return {
+    role: 'bot',
+    type: 'text',
+    text: `안녕하세요. ${deriveAssistantBrandDisplayName(host)} 챗봇입니다.`,
+  };
+}
 
 function resolveProviderByModel(modelId: string): LlmProvider {
   if (VLLM_MODELS.includes(modelId as (typeof VLLM_MODELS)[number])) {
@@ -626,14 +666,26 @@ function OptionSelectCard({
 export default function ChatbotFab({
   isLoggedIn,
   host,
+  capabilities,
 }: {
   isLoggedIn: boolean;
   host?: SharedWidgetHostConfig;
+  capabilities?: SharedWidgetCapabilities;
 }) {
   const effectiveHost = host ?? SHARED_WIDGET_HOST;
+  const effectiveCapabilities = capabilities ?? ORDER_CS_ONLY_CAPABILITIES;
+  const capabilityProfile =
+    effectiveHost.capabilityProfile ??
+    (effectiveCapabilities === 'full' ? 'full' : 'order_cs_only');
+  const initialBotMessage = buildInitialBotMessage(effectiveHost);
+  const assistantTitle = resolveAssistantTitle(effectiveHost);
+  const imageUploadEnabled =
+    typeof effectiveHost.widgetFeatures?.imageUpload === 'boolean'
+      ? Boolean(effectiveHost.widgetFeatures?.imageUpload)
+      : effectiveCapabilities === 'full';
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<ChatMsg[]>([INITIAL_BOT_MESSAGE]);
+  const [messages, setMessages] = useState<ChatMsg[]>(() => [initialBotMessage]);
   const [conversationState, setConversationState] = useState<Record<string, unknown> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -667,7 +719,7 @@ export default function ChatbotFab({
 
   const resetConversationSession = () => {
     clearPendingImage();
-    setMessages([INITIAL_BOT_MESSAGE]);
+    setMessages([buildInitialBotMessage(effectiveHost)]);
     setConversationState(null);
     setStatusMessage(null);
     setStreamingText('');
@@ -835,7 +887,8 @@ export default function ChatbotFab({
     resumePayload?: Record<string, unknown> | null,
   ) => {
     const text = typeof textOverride === 'string' ? textOverride : input.trim();
-    if (!text || isLoading) return;
+    const isResumeSubmission = Boolean(hidden && resumePayload);
+    if (!text || (isLoading && !isResumeSubmission)) return;
     setIsLoading(true);
     setStatusMessage(null); // 초기화
     setStreamingText('');
@@ -871,6 +924,9 @@ export default function ChatbotFab({
           model: selectedModel,
           bootstrap,
           fetchImpl: sharedFetch,
+          capabilityProfile,
+          enabledRetrievalCorpora: effectiveHost.enabledRetrievalCorpora,
+          widgetFeatures: effectiveHost.widgetFeatures,
         },
         {
           onStatusChange: (status) => {
@@ -1204,19 +1260,11 @@ export default function ChatbotFab({
 
     // interrupt resume payload 전송
     const inferredAction = priorAction || getInferredAction();
-    const normalizedAction = String(inferredAction || '').toLowerCase();
     const resumePayload: Record<string, unknown> = {
       selected_order_id: selectedOrderIds[0],
       selected_order_ids: selectedOrderIds,
       ...(inferredAction ? { action: inferredAction } : {}),
     };
-
-    // 환불은 주문 선택 직후 승인까지 함께 수집
-    if (normalizedAction === 'refund') {
-      const approved = window.confirm('선택한 주문으로 반품 접수를 진행할까요?');
-      resumePayload.approved = approved;
-      resumePayload.confirmed = approved;
-    }
 
     // 사용자 채팅에는 숨기고 resume_payload만 전달
     sendMessage('주문 선택 완료', true, resumePayload);
@@ -1408,7 +1456,7 @@ export default function ChatbotFab({
         <div className={styles.resizeHandleCorner} onMouseDown={(e) => onResizeStart(e, 'corner')} />
 
         <header className={styles.panelHeader}>
-          <div className={styles.title}>MOYEO AI 고객상담사</div>
+          <div className={styles.title}>{assistantTitle}</div>
 
           <button type="button" className={styles.closeBtn} onClick={toggle} aria-label="닫기">
             ✕
@@ -1418,7 +1466,7 @@ export default function ChatbotFab({
         <div className={styles.msgList} ref={listRef}>
           <ChatbotWidget
             messages={messages}
-            capabilities="full"
+            capabilities={effectiveCapabilities}
             renderTextMessage={(message, index) => {
               if (message.role === 'user') {
                 return (
@@ -1681,16 +1729,18 @@ export default function ChatbotFab({
             </div>
           ) : null}
           <div className={styles.inputBar}>
-            <button
-              type="button"
-              className={styles.uploadBtn}
-              onClick={openImagePicker}
-              disabled={isUploadingImage || isLoading}
-              aria-label="이미지 업로드"
-              title="이미지 업로드"
-            >
-              <span className={styles.uploadBtnIcon}>+</span>
-            </button>
+            {imageUploadEnabled ? (
+              <button
+                type="button"
+                className={styles.uploadBtn}
+                onClick={openImagePicker}
+                disabled={isUploadingImage || isLoading}
+                aria-label="이미지 업로드"
+                title="이미지 업로드"
+              >
+                <span className={styles.uploadBtnIcon}>+</span>
+              </button>
+            ) : null}
             <textarea
               ref={inputRef}
               className={styles.input}
@@ -1709,13 +1759,15 @@ export default function ChatbotFab({
             >
               전송
             </button>
-            <input
-              type="file"
-              accept="image/*"
-              ref={fileInputRef}
-              onChange={handleImageSelect}
-              className={styles.imageInputField}
-            />
+            {imageUploadEnabled ? (
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                onChange={handleImageSelect}
+                className={styles.imageInputField}
+              />
+            ) : null}
           </div>
           {uploadNotice && (
             <div

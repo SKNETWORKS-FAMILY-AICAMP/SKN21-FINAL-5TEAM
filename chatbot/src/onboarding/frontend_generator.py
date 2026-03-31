@@ -14,7 +14,9 @@ DEFAULT_VUE_WIDGET_PATH = DEFAULT_WIDGET_PATH
 LEGACY_WIDGET_MARKER = "SharedChatbotWidget"
 
 
-def build_frontend_mount_contract(*, chatbot_server_base_url: str = "") -> dict[str, str]:
+def build_frontend_mount_contract(*, chatbot_server_base_url: str | None = None) -> dict[str, str]:
+    if chatbot_server_base_url is None:
+        return build_shared_widget_host_contract()
     return build_shared_widget_host_contract(
         chatbot_server_base_url=chatbot_server_base_url,
     )

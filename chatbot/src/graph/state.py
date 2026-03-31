@@ -51,6 +51,9 @@ class GlobalAgentState(TypedDict):
     # ---------------------------------------------------------
     llm_provider: str   # "openai" | "vllm"
     llm_model: str      # 예: "gpt-4o-mini", "Qwen/Qwen2.5-7B-Instruct"
+    capability_profile: Optional[str]
+    enabled_retrieval_corpora: list[str]
+    widget_features: Dict[str, Any]
 
     # ---------------------------------------------------------
     # 7. Agent Results (Final Generator 전용 취합 필드)

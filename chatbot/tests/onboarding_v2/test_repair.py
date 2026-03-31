@@ -9,7 +9,14 @@ os.environ.setdefault("QDRANT_URL", "http://localhost:6333")
 os.environ.setdefault("QDRANT_API_KEY", "test-key")
 
 from chatbot.src.onboarding_v2.models import ArtifactRef, FailureBundle
+from chatbot.src.onboarding_v2.models.repair import RepairDecision
+from chatbot.src.onboarding_v2.engine import (
+    _derive_effective_rewind_to,
+    _normalize_required_rechecks,
+)
 from chatbot.src.onboarding_v2.repair import diagnose_failure, synthesize_failure
+from chatbot.src.onboarding_v2.repair.synthesis import collect_file_samples
+from chatbot.src.onboarding_v2.stage_tools import build_repair_tool_runtime
 from chatbot.src.onboarding_v2.storage import DebugStore
 
 
@@ -45,6 +52,85 @@ def test_synthesize_failure_collects_related_file_samples(tmp_path: Path):
     assert "list_orders" in bundle.related_file_samples[0]["content"]
 
 
+def test_synthesize_failure_enriches_compile_preflight_failures_with_runtime_context(
+    tmp_path: Path,
+):
+    workspace = tmp_path / "workspace"
+    server_fastapi = workspace / "server_fastapi.py"
+    adapter_tool = workspace / "src" / "tools" / "adapter_order_tools.py"
+    server_fastapi.parent.mkdir(parents=True, exist_ok=True)
+    adapter_tool.parent.mkdir(parents=True, exist_ok=True)
+    server_fastapi.write_text(
+        "from src.tools.adapter_order_tools import register_exchange_via_adapter\napp = object()\n",
+        encoding="utf-8",
+    )
+    adapter_tool.write_text(
+        "from ecommerce.backend.app.database import SessionLocal\n",
+        encoding="utf-8",
+    )
+
+    bundle = synthesize_failure(
+        failed_stage="compile",
+        failure_signature="chatbot_runtime_import_banned_import_detected",
+        failure_summary="banned import detected: ecommerce.backend, SessionLocal",
+        trigger_event_id="evt-preflight",
+        related_artifacts=[
+            ArtifactRef(
+                stage="compile",
+                artifact_type="compile-preflight",
+                version=1,
+                path="v0001.json",
+                content_hash="hash",
+            )
+        ],
+        related_files=["src/tools/adapter_order_tools.py"],
+        workspace_root=workspace,
+        input_artifact_versions={"compile": 2},
+        attempt_number=1,
+        repeat_count=1,
+    )
+
+    assert bundle.related_files == [
+        "server_fastapi.py",
+        "src/tools/adapter_order_tools.py",
+    ]
+    sample_paths = {sample["path"] for sample in bundle.related_file_samples}
+    assert "server_fastapi.py" in sample_paths
+    assert "src/tools/adapter_order_tools.py" in sample_paths
+    context_sample = next(
+        sample
+        for sample in bundle.related_file_samples
+        if sample["path"] == "__failure_context__/compile-preflight.json"
+    )
+    assert "banned import detected" in context_sample["content"]
+    assert "compile-preflight" in context_sample["content"]
+
+
+def test_collect_file_samples_skips_paths_outside_workspace(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    inside = workspace / "src" / "safe.py"
+    outside = tmp_path / "outside.py"
+    inside.parent.mkdir(parents=True, exist_ok=True)
+    inside.write_text("SAFE = True\n", encoding="utf-8")
+    outside.write_text("LEAK = True\n", encoding="utf-8")
+
+    samples = collect_file_samples(
+        workspace_root=workspace,
+        related_files=[
+            "src/safe.py",
+            "../outside.py",
+            str(outside),
+        ],
+    )
+
+    assert samples == [
+        {
+            "path": "src/safe.py",
+            "content": "SAFE = True",
+        }
+    ]
+
+
 def test_diagnose_failure_returns_stop_when_llm_unavailable(tmp_path: Path):
     debug_store = DebugStore(tmp_path / "generated" / "food" / "food-run-v2")
     failure_bundle = FailureBundle(
@@ -62,7 +148,9 @@ def test_diagnose_failure_returns_stop_when_llm_unavailable(tmp_path: Path):
 
     decision = diagnose_failure(
         failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
         snapshot_payload={"repo_profile": {"site": "food"}},
+        planning_bundle_payload={},
         plan_payload={},
         edit_program_payload={},
         validation_payload={"passed": False},
@@ -74,6 +162,142 @@ def test_diagnose_failure_returns_stop_when_llm_unavailable(tmp_path: Path):
 
     assert decision.stop is True
     assert decision.stop_reason == "repair_llm_unavailable"
+
+
+def test_diagnose_failure_prefers_compile_rewind_for_import_graph_preflight_failure(
+    tmp_path: Path,
+):
+    debug_store = DebugStore(tmp_path / "generated" / "food" / "food-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="compile",
+        failure_signature="chatbot_runtime_import_banned_import_detected",
+        failure_summary="banned import detected: ecommerce.backend, SessionLocal",
+        trigger_event_id="evt-compile-preflight",
+        related_artifacts=[
+            ArtifactRef(
+                stage="compile",
+                artifact_type="compile-preflight",
+                version=1,
+                path="v0001.json",
+                content_hash="hash",
+            )
+        ],
+        related_files=["server_fastapi.py", "src/tools/adapter_order_tools.py"],
+        related_file_samples=[
+            {"path": "server_fastapi.py", "content": "from src.tools.adapter_order_tools import x\n"},
+            {
+                "path": "src/tools/adapter_order_tools.py",
+                "content": "from ecommerce.backend.app.database import SessionLocal\n",
+            },
+        ],
+        input_artifact_versions={"compile": 2},
+        attempt_number=1,
+        repeat_count=1,
+    )
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
+        snapshot_payload={"repo_profile": {"site": "food"}},
+        planning_bundle_payload={},
+        plan_payload={},
+        edit_program_payload={},
+        validation_payload={},
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+        llm_factory=lambda: (_ for _ in ()).throw(AssertionError("LLM should not be called")),
+    )
+
+    assert decision.stop is False
+    assert decision.rewind_to == "compile"
+    assert decision.required_rechecks == ["compile_preflight"]
+    assert "import" in decision.diagnosis.lower()
+
+
+def test_synthesize_failure_does_not_inject_chatbot_runtime_file_for_host_import_smoke(
+    tmp_path: Path,
+):
+    workspace = tmp_path / "workspace"
+    app_path = workspace / "backend" / "app.py"
+    chat_auth_path = workspace / "backend" / "chat_auth.py"
+    route_path = workspace / "backend" / "routes" / "order.py"
+    route_path.parent.mkdir(parents=True, exist_ok=True)
+    app_path.write_text("from routes.order import order_bp\n", encoding="utf-8")
+    chat_auth_path.write_text("chat_auth_bp = object()\n", encoding="utf-8")
+    route_path.write_text("from chat_auth import get_authenticated_user\n", encoding="utf-8")
+
+    bundle = synthesize_failure(
+        failed_stage="compile",
+        failure_signature="host_backend_import_host_backend_import_failed",
+        failure_summary="host backend import failed",
+        trigger_event_id="evt-host-import-smoke",
+        related_artifacts=[
+            ArtifactRef(
+                stage="compile",
+                artifact_type="host-import-smoke",
+                version=1,
+                path="v0001.json",
+                content_hash="hash",
+            )
+        ],
+        related_files=["backend/app.py", "backend/routes/order.py", "backend/chat_auth.py"],
+        workspace_root=workspace,
+        input_artifact_versions={"compile": 2},
+        attempt_number=1,
+        repeat_count=1,
+    )
+
+    assert bundle.related_files == [
+        "backend/app.py",
+        "backend/routes/order.py",
+        "backend/chat_auth.py",
+    ]
+    sample_paths = {sample["path"] for sample in bundle.related_file_samples}
+    assert "server_fastapi.py" not in sample_paths
+
+
+def test_diagnose_failure_prefers_compile_rewind_for_host_import_smoke_failure(tmp_path: Path):
+    debug_store = DebugStore(tmp_path / "generated" / "bilyeo" / "bilyeo-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="compile",
+        failure_signature="host_backend_import_host_backend_import_failed",
+        failure_summary="host backend import failed",
+        trigger_event_id="evt-host-import-smoke",
+        related_artifacts=[
+            ArtifactRef(
+                stage="compile",
+                artifact_type="host-import-smoke",
+                version=1,
+                path="v0001.json",
+                content_hash="hash",
+            )
+        ],
+        related_files=["backend/app.py", "backend/routes/order.py", "backend/chat_auth.py"],
+        related_file_samples=[],
+        input_artifact_versions={"compile": 1},
+        attempt_number=1,
+        repeat_count=1,
+    )
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
+        snapshot_payload={"repo_profile": {"site": "bilyeo"}},
+        planning_bundle_payload={},
+        plan_payload={},
+        edit_program_payload={},
+        validation_payload={},
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+        llm_factory=lambda: (_ for _ in ()).throw(AssertionError("LLM should not be called")),
+    )
+
+    assert decision.stop is False
+    assert decision.rewind_to == "compile"
+    assert decision.required_rechecks == ["compile_preflight"]
+    assert "import" in decision.diagnosis.lower()
 
 
 def test_diagnose_failure_parses_v2_repair_decision(tmp_path: Path):
@@ -112,7 +336,9 @@ def test_diagnose_failure_parses_v2_repair_decision(tmp_path: Path):
 
     decision = diagnose_failure(
         failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
         snapshot_payload={"repo_profile": {"site": "food"}},
+        planning_bundle_payload={},
         plan_payload={},
         edit_program_payload={},
         validation_payload={"passed": False},
@@ -124,3 +350,401 @@ def test_diagnose_failure_parses_v2_repair_decision(tmp_path: Path):
 
     assert decision.stop is False
     assert decision.rewind_to == "validation"
+
+
+def test_diagnose_failure_prefers_validation_for_host_auth_bootstrap_failure(tmp_path: Path):
+    debug_store = DebugStore(tmp_path / "generated" / "bilyeo" / "bilyeo-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="validation",
+        failure_signature="host_auth_bootstrap_host_login_failed_with_status_500",
+        failure_summary="host login failed with status 500",
+        trigger_event_id="evt-host-auth",
+        related_artifacts=[
+            ArtifactRef(
+                stage="export",
+                artifact_type="host-approved.patch",
+                version=2,
+                path="v0002.patch",
+                content_hash="same-patch",
+            )
+        ],
+        related_files=["backend/routes/auth.py", "backend/chat_auth.py"],
+        related_file_samples=[],
+        input_artifact_versions={"validation": 2},
+        attempt_number=2,
+        repeat_count=1,
+    )
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
+        snapshot_payload={"repo_profile": {"site": "bilyeo"}},
+        planning_bundle_payload={},
+        plan_payload={},
+        edit_program_payload={},
+        validation_payload={"failure_signature": failure_bundle.failure_signature},
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+        llm_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("LLM should not be called for auth bootstrap heuristic")
+        ),
+    )
+
+    assert decision.stop is False
+    assert decision.rewind_to == "validation"
+    assert decision.required_rechecks == ["host_auth_bootstrap"]
+    assert "bootstrap" in decision.diagnosis.lower()
+
+
+def test_diagnose_failure_stops_on_platform_validation_bug(tmp_path: Path):
+    debug_store = DebugStore(tmp_path / "generated" / "food" / "food-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="validation",
+        failure_signature="widget_bundle_fetch_runtime_module_origin_error",
+        failure_summary="widget bundle fetch failed: runtime module origin drift",
+        trigger_event_id="evt-platform-validation",
+        related_artifacts=[],
+        related_files=["server_fastapi.py"],
+        related_file_samples=[],
+        input_artifact_versions={"validation": 1},
+        attempt_number=1,
+        repeat_count=1,
+    )
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
+        snapshot_payload={"repo_profile": {"site": "food"}},
+        planning_bundle_payload={},
+        plan_payload={},
+        edit_program_payload={},
+        validation_payload={
+            "failure_origin": "platform_validation",
+            "failure_code": "runtime_module_origin_error",
+        },
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+        llm_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("LLM should not be called for platform validation heuristic")
+        ),
+    )
+
+    assert decision.stop is True
+    assert decision.stop_reason == "platform_validation_bug"
+    assert decision.rewind_to == "validation"
+    assert decision.preserve_artifacts == ["analysis", "planning", "compile", "apply", "export"]
+
+
+def test_diagnose_failure_prefers_structured_host_contract_failures(tmp_path: Path):
+    debug_store = DebugStore(tmp_path / "generated" / "food" / "food-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="validation",
+        failure_signature="validation_failed",
+        failure_summary="validation failed",
+        trigger_event_id="evt-structured-host-auth",
+        related_artifacts=[],
+        related_files=["backend/chat_auth.py"],
+        related_file_samples=[],
+        input_artifact_versions={"validation": 1},
+        attempt_number=1,
+        repeat_count=1,
+    )
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
+        snapshot_payload={"repo_profile": {"site": "food"}},
+        planning_bundle_payload={},
+        plan_payload={},
+        edit_program_payload={},
+        validation_payload={
+            "checks": [
+                {
+                    "name": "host_auth_bootstrap",
+                    "passed": False,
+                    "summary": "host auth bootstrap failed",
+                    "details": {
+                        "failure_origin": "host_contract",
+                        "failure_code": "bootstrap_contract_missing_access_token",
+                    },
+                }
+            ]
+        },
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+        llm_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("LLM should not be called for structured host auth heuristic")
+        ),
+    )
+
+    assert decision.stop is False
+    assert decision.rewind_to == "validation"
+    assert decision.required_rechecks == ["host_auth_bootstrap"]
+
+
+def test_diagnose_failure_rewinds_to_planning_for_generated_auth_mapping_mismatch(
+    tmp_path: Path,
+):
+    debug_store = DebugStore(tmp_path / "generated" / "bilyeo" / "bilyeo-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="validation",
+        failure_signature="chatbot_adapter_auth_chatbot_adapter_auth_missing_user_id",
+        failure_summary="chatbot adapter auth missing user.id",
+        trigger_event_id="evt-chatbot-auth-user-id",
+        related_artifacts=[],
+        related_files=[
+            "src/adapters/generated/bilyeo/adapter.py",
+            "src/adapters/generated/bilyeo/auth.py",
+            "src/adapters/setup.py",
+        ],
+        related_file_samples=[],
+        input_artifact_versions={"validation": 2},
+        attempt_number=1,
+        repeat_count=1,
+    )
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
+        snapshot_payload={"repo_profile": {"site": "bilyeo"}},
+        planning_bundle_payload={},
+        plan_payload={
+            "chatbot_bridge": {
+                "site_key": "bilyeo",
+                "auth_validation_endpoint": "/api/chat/auth-token",
+                "response_contract": {
+                    "user_profile": "orders_collection_user_id",
+                },
+            }
+        },
+        edit_program_payload={},
+        validation_payload={
+            "checks": [
+                {
+                    "name": "host_auth_bootstrap",
+                    "passed": True,
+                    "summary": "host auth bootstrap passed",
+                    "details": {
+                        "passed": True,
+                        "failure_origin": "login",
+                        "bootstrap_payload": {
+                            "user": {
+                                "id": "1",
+                            }
+                        },
+                    },
+                },
+                {
+                    "name": "chatbot_adapter_auth",
+                    "passed": False,
+                    "summary": "chatbot adapter auth missing user.id",
+                    "details": {
+                        "failure_origin": "generated_runtime",
+                        "failure_code": "validated_user_missing_id",
+                        "validated_user": {"id": "", "siteId": "bilyeo"},
+                    },
+                },
+            ]
+        },
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+        llm_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("LLM should not be called for generated auth mapping heuristic")
+        ),
+    )
+
+    assert decision.stop is False
+    assert decision.rewind_to == "planning"
+    assert decision.required_rechecks == []
+    assert "mapping" in decision.diagnosis.lower()
+    assert decision.artifact_overrides == {
+        "planning": {
+            "chatbot_bridge": {
+                "response_contract": {
+                    "user_profile": "wrapped_user",
+                }
+            },
+            "planning_notes_append": (
+                "repair override: host auth bootstrap validated bootstrap_payload.user.id; "
+                "prefer wrapped_user auth mapping over orders-derived user inference"
+            ),
+        }
+    }
+
+
+def test_diagnose_failure_stops_on_host_external_dependency_unavailable(tmp_path: Path):
+    debug_store = DebugStore(tmp_path / "generated" / "bilyeo" / "bilyeo-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="validation",
+        failure_signature="backend_runtime_prep_external_dependency_unavailable",
+        failure_summary="reset failed: oracle unavailable",
+        trigger_event_id="evt-host-dependency",
+        related_artifacts=[],
+        related_files=["backend/config.py"],
+        related_file_samples=[],
+        input_artifact_versions={"validation": 1},
+        attempt_number=1,
+        repeat_count=1,
+    )
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={},
+        snapshot_payload={"repo_profile": {"site": "bilyeo"}},
+        planning_bundle_payload={},
+        plan_payload={},
+        edit_program_payload={},
+        validation_payload={
+            "failure_origin": "host_contract",
+            "failure_code": "backend_runtime_prep_external_dependency_unavailable",
+        },
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+        llm_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("LLM should not be called for host dependency heuristic")
+        ),
+    )
+
+    assert decision.stop is True
+    assert decision.stop_reason == "host_external_dependency_unavailable"
+    assert decision.rewind_to == "validation"
+    assert decision.required_rechecks == ["backend_runtime_prep"]
+
+
+def test_diagnose_failure_routes_non_heuristic_cases_through_shared_llm_runtime(tmp_path: Path, monkeypatch):
+    debug_store = DebugStore(tmp_path / "generated" / "food" / "food-run-v2")
+    failure_bundle = FailureBundle(
+        failed_stage="validation",
+        failure_signature="smoke_failed",
+        failure_summary="step login returned 500",
+        trigger_event_id="evt-shared-runtime",
+        related_artifacts=[],
+        related_files=["backend/app.py"],
+        related_file_samples=[],
+        input_artifact_versions={"validation": 1},
+        attempt_number=1,
+        repeat_count=1,
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_invoke_structured_stage(**kwargs):
+        captured.update(kwargs)
+        return RepairDecision(
+            failure_signature="smoke_failed",
+            diagnosis="shared runtime",
+            rewind_to="validation",
+            preserve_artifacts=[],
+            required_rechecks=[],
+            additional_discovery=[],
+            artifact_overrides={},
+            stop=False,
+            stop_reason=None,
+        )
+
+    monkeypatch.setattr("chatbot.src.onboarding_v2.repair.diagnosis.invoke_structured_stage", _fake_invoke_structured_stage)
+
+    decision = diagnose_failure(
+        failure_bundle=failure_bundle,
+        analysis_bundle_payload={"read_queue": [{"path": "backend/routes/auth.py"}]},
+        snapshot_payload={"repo_profile": {"site": "food"}},
+        planning_bundle_payload={},
+        plan_payload={},
+        edit_program_payload={},
+        validation_payload={"passed": False},
+        llm_provider="openai",
+        llm_model="gpt-5-mini",
+        debug_store=debug_store,
+        event_callback=lambda payload: payload,
+        heartbeat_interval_s=0.05,
+    )
+
+    assert decision.diagnosis == "shared runtime"
+    tool_runtime = captured["tool_runtime"]
+    assert tool_runtime.stage == "repair"
+    assert "backend/app.py" in tool_runtime.allowed_paths
+    assert "backend/routes/auth.py" in tool_runtime.allowed_paths
+    assert captured["heartbeat_interval_s"] == 0.05
+    assert callable(captured["event_callback"])
+
+
+def test_read_repair_path_rejects_paths_outside_allowlist():
+    runtime = build_repair_tool_runtime(
+        root=ROOT,
+        failure_bundle=FailureBundle(
+            failed_stage="validation",
+            failure_signature="smoke_failed",
+            failure_summary="step login returned 500",
+            trigger_event_id="evt-read-repair",
+            related_artifacts=[],
+            related_files=["backend/app.py"],
+            related_file_samples=[],
+            input_artifact_versions={"validation": 1},
+            attempt_number=1,
+            repeat_count=1,
+        ),
+        analysis_bundle_payload={"read_queue": [{"path": "backend/routes/auth.py"}]},
+    )
+
+    read_tool = next(tool for tool in runtime.tools if tool.name == "read_repair_path")
+    result = read_tool.invoke({"path": "../secrets.py"})
+
+    assert result["error"] == "path_not_allowed"
+
+
+def test_derive_effective_rewind_to_promotes_compile_override():
+    decision = RepairDecision(
+        failure_signature="host_auth_bootstrap_missing_site_id",
+        diagnosis="compile override required",
+        rewind_to="validation",
+        preserve_artifacts=["analysis", "planning", "compile", "apply", "export"],
+        required_rechecks=["compile_preflight"],
+        additional_discovery=[],
+        artifact_overrides={"compile": {"supporting_files": [{"path": "backend/chat_auth.py"}]}},
+        stop=False,
+        stop_reason=None,
+    )
+
+    assert _derive_effective_rewind_to(decision) == "compile"
+
+
+def test_derive_effective_rewind_to_promotes_planning_and_analysis_overrides():
+    planning_decision = RepairDecision(
+        failure_signature="binding_drift",
+        diagnosis="planning override required",
+        rewind_to="validation",
+        preserve_artifacts=["analysis"],
+        required_rechecks=[],
+        additional_discovery=[],
+        artifact_overrides={"planning": {"target_bindings": [{"capability": "route_registration"}]}},
+        stop=False,
+        stop_reason=None,
+    )
+    analysis_decision = RepairDecision(
+        failure_signature="missing_fact",
+        diagnosis="analysis override required",
+        rewind_to="compile",
+        preserve_artifacts=[],
+        required_rechecks=[],
+        additional_discovery=[],
+        artifact_overrides={"analysis": {"verified_contracts": {"api_endpoints": []}}},
+        stop=False,
+        stop_reason=None,
+    )
+
+    assert _derive_effective_rewind_to(planning_decision) == "planning"
+    assert _derive_effective_rewind_to(analysis_decision) == "analysis"
+
+
+def test_normalize_required_rechecks_splits_stage_and_check_tokens():
+    normalized = _normalize_required_rechecks(
+        ["compile_preflight", "validation", "host_auth_bootstrap", "unknown_token", ""]
+    )
+
+    assert normalized["stage_rechecks"] == ["validation"]
+    assert normalized["check_rechecks"] == ["compile_preflight", "host_auth_bootstrap"]
+    assert normalized["ignored_rechecks"] == ["unknown_token"]

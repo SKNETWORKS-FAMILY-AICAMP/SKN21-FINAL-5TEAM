@@ -5,6 +5,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -15,10 +17,20 @@ def _load_runtime_module():
     return importlib.import_module("chatbot.src.onboarding.shared_widget_runtime")
 
 
+def test_site_a_shared_widget_runtime_requires_non_empty_chatbot_server_base_url():
+    module = _load_runtime_module()
+
+    with pytest.raises(ValueError, match="chatbot_server_base_url"):
+        module.build_widget_runtime_payload(site="food", chatbot_server_base_url="")
+
+
 def test_site_a_shared_widget_runtime_uses_shared_host_contract():
     module = _load_runtime_module()
 
-    payload = module.build_widget_runtime_payload(site="food")
+    payload = module.build_widget_runtime_payload(
+        site="food",
+        chatbot_server_base_url="http://127.0.0.1:8100/",
+    )
 
     assert payload["site"] == "food"
     assert {
@@ -28,7 +40,7 @@ def test_site_a_shared_widget_runtime_uses_shared_host_contract():
         "widgetElementTag": payload["widgetElementTag"],
         "mountMode": payload["mountMode"],
     } == {
-        "chatbotServerBaseUrl": "",
+        "chatbotServerBaseUrl": "http://127.0.0.1:8100",
         "authBootstrapPath": "/api/chat/auth-token",
         "widgetBundlePath": "/widget.js",
         "widgetElementTag": "order-cs-widget",

@@ -9,6 +9,7 @@
 """
 
 import asyncio
+import sys
 from typing import Callable
 
 from langchain_core.tools import tool
@@ -24,13 +25,121 @@ from chatbot.src.adapters.schema import (
     ProductSearchFilter,
     SubmitOrderActionInput,
 )
+from chatbot.src.adapters.auth_headers import build_auth_headers_from_contract
 from chatbot.src.adapters.setup import ORDER_CS_BRIDGE_OPERATIONS, get_adapter
-from chatbot.src.tools.order_tools import (
-    _extract_optional_confirmation_from_resume,
-    _extract_order_id_from_resume,
-    _is_langgraph_interrupt_error,
-    _require_human_confirmation,
-)
+
+
+def _register_adapter_order_tools_aliases() -> None:
+    current_module = sys.modules.get(__name__)
+    if current_module is None:
+        return
+    for alias in (
+        "chatbot.src.tools.adapter_order_tools",
+        "src.tools.adapter_order_tools",
+    ):
+        sys.modules[alias] = current_module
+    for package_name in (
+        "chatbot.src.tools",
+        "src.tools",
+    ):
+        package = sys.modules.get(package_name)
+        if package is not None:
+            setattr(package, "adapter_order_tools", current_module)
+
+
+_register_adapter_order_tools_aliases()
+
+
+def _canonical_adapter_order_tools_module():
+    return (
+        sys.modules.get("chatbot.src.tools.adapter_order_tools")
+        or sys.modules.get("src.tools.adapter_order_tools")
+        or sys.modules[__name__]
+    )
+
+
+def _is_langgraph_interrupt_error(error: Exception) -> bool:
+    """LangGraph interrupt 예외 여부를 안전하게 판별합니다."""
+    name = error.__class__.__name__
+    if name in {"GraphInterrupt", "NodeInterrupt"}:
+        return True
+    return "Interrupt(value=" in str(error)
+
+
+def _resolve_confirmation_from_resume(resume_value: object) -> bool:
+    extracted = _extract_optional_confirmation_from_resume(resume_value)
+    if extracted is not None:
+        return extracted
+    return False
+
+
+def _extract_optional_confirmation_from_resume(resume_value: object) -> bool | None:
+    if isinstance(resume_value, bool):
+        return resume_value
+
+    if isinstance(resume_value, dict):
+        for key in ("approved", "confirmed", "confirm", "proceed"):
+            if key in resume_value:
+                raw = resume_value.get(key)
+                if isinstance(raw, bool):
+                    return raw
+
+    return None
+
+
+def _extract_order_id_from_resume(resume_value: object) -> str | None:
+    if isinstance(resume_value, dict):
+        for key in ("selected_order_id", "order_id", "selectedOrderId"):
+            value = resume_value.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    return None
+
+
+def _extract_new_option_id_from_resume(resume_value: object) -> int | str | None:
+    if not isinstance(resume_value, dict):
+        return None
+
+    for key in (
+        "new_option_id",
+        "selected_option_id",
+        "option_id",
+        "selectedOptionId",
+    ):
+        value = resume_value.get(key)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip()
+            if not normalized:
+                continue
+            if normalized.isdigit():
+                return int(normalized)
+            return normalized
+
+    return None
+
+
+def _require_human_confirmation(
+    *,
+    action: str,
+    prompt: str,
+    context: dict,
+    confirmed: bool | None,
+) -> bool:
+    if confirmed is not None:
+        return confirmed
+
+    resume_value = interrupt(
+        {
+            "ui_action": "confirm_order_action",
+            "action": action,
+            "message": prompt,
+            **context,
+        }
+    )
+    return _resolve_confirmation_from_resume(resume_value)
 
 
 def _run(coro):
@@ -52,12 +161,16 @@ def _build_ctx(
     user_id: str,
     site_id: str,
     access_token: str | None = None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
 ) -> AuthenticatedContext:
     """LangGraph state의 user_info에서 AuthenticatedContext를 구성합니다."""
     return AuthenticatedContext(
         userId=str(user_id),
         siteId=site_id,
         accessToken=access_token,
+        cookies=dict(cookies or {}) or None,
+        metadata=dict(auth_metadata or {}) or None,
     )
 
 
@@ -67,20 +180,8 @@ def _get_site_adapter(site_id: str | None):
     return get_adapter(effective_site_id)
 
 
-def _build_auth_headers(ctx: AuthenticatedContext) -> dict[str, str]:
-    if ctx.siteId == "site-a":
-        from chatbot.src.adapters.site_a.auth import build_site_a_auth_headers
-
-        return build_site_a_auth_headers(ctx)
-    if ctx.siteId == "site-b":
-        from chatbot.src.adapters.site_b.auth import build_site_b_auth_headers
-
-        return build_site_b_auth_headers(ctx)
-    if ctx.siteId == "site-c":
-        from chatbot.src.adapters.site_c.auth import build_site_c_auth_headers
-
-        return build_site_c_auth_headers(ctx)
-    return {}
+def _build_auth_headers(adapter, ctx: AuthenticatedContext) -> dict[str, str]:
+    return build_auth_headers_from_contract(adapter.auth_contract, ctx)
 
 
 def _build_order_list_message(action_context: str | None, days: int) -> str:
@@ -119,13 +220,15 @@ def _derive_site_order_actions(
 
 
 def _build_order_ui_item(adapter, raw_order: dict) -> dict:
+    shipping = raw_order.get("shipping") or {}
     normalized_status = _normalize_site_order_status(
         adapter,
         raw_order.get("status", "unknown"),
     )
     actions = _derive_site_order_actions(
         normalized_status,
-        raw_order.get("payment_status"),
+        raw_order.get("payment_status")
+        or (raw_order.get("payment") or {}).get("status"),
     )
     product = raw_order.get("product") or {}
     items = raw_order.get("items") or []
@@ -133,21 +236,23 @@ def _build_order_ui_item(adapter, raw_order: dict) -> dict:
     total_amount = raw_order.get("total_price")
     if total_amount is None:
         total_amount = raw_order.get("total_amount")
+    if total_amount is None:
+        total_amount = (raw_order.get("payment") or {}).get("amount")
     product_name = product.get("name")
     if not product_name and isinstance(first_item, dict):
         product_name = first_item.get("product_name") or first_item.get("productTitle")
+    order_id = raw_order.get("id")
+    if order_id is None:
+        order_id = raw_order.get("order_id")
+    delivered_at = raw_order.get("delivered_at") or shipping.get("delivered_at")
     return {
-        "order_id": str(raw_order.get("id")),
+        "order_id": "" if order_id is None else str(order_id),
         "date": str(raw_order.get("created_at", ""))[:10],
         "status": normalized_status,
         "status_label": raw_order.get("status_label") or normalized_status,
         "product_name": product_name or "상품 정보 없음",
         "amount": float(total_amount or 0),
-        "delivered_at": (
-            str(raw_order.get("created_at", ""))[:10]
-            if normalized_status == "delivered"
-            else None
-        ),
+        "delivered_at": str(delivered_at)[:10] if delivered_at else None,
         **actions,
     }
 
@@ -160,7 +265,7 @@ def _list_orders_via_adapter(
     if hasattr(adapter, "list_orders") and callable(getattr(adapter, "list_orders")):
         raw_orders = _run(adapter.list_orders(ctx, limit=limit))
     elif hasattr(adapter, "client") and hasattr(adapter.client, "list_orders"):
-        raw_orders = _run(adapter.client.list_orders(_build_auth_headers(ctx)))
+        raw_orders = _run(adapter.client.list_orders(_build_auth_headers(adapter, ctx)))
     else:
         raise AdapterError(
             "NOT_SUPPORTED",
@@ -189,6 +294,8 @@ def get_user_orders_for_site(
     user_id: int = 1,
     site_id: str | None = None,
     access_token: str | None = None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
     limit: int = 5,
     days: int = 30,
     requires_selection: bool = False,
@@ -196,7 +303,13 @@ def get_user_orders_for_site(
 ) -> dict:
     effective_site_id = (site_id or "site-c").strip()
     adapter = _get_site_adapter(effective_site_id)
-    ctx = _build_ctx(user_id, adapter.site_id, access_token)
+    ctx = _build_ctx(
+        user_id,
+        adapter.site_id,
+        access_token,
+        cookies=cookies,
+        auth_metadata=auth_metadata,
+    )
     raw_list = _list_orders_via_adapter(adapter, ctx, limit)
     ui_data = [
         _build_order_ui_item(adapter, raw_order)
@@ -239,22 +352,34 @@ def get_user_orders_for_site(
 
 
 def _normalize_order_list_bridge_payload(payload: dict) -> dict:
+    orders = payload.get("ui_data", [])
     return {
         "operation": "list_orders",
+        "ui_action": payload.get("ui_action", "show_order_list"),
         "message": payload.get("message"),
         "total_orders": payload.get("total_orders", 0),
-        "orders": payload.get("ui_data", []),
+        "orders": orders,
+        "ui_data": orders,
         "requires_selection": payload.get("requires_selection", False),
         "prior_action": payload.get("prior_action"),
     }
 
 
 def _normalize_action_bridge_payload(operation: str, payload: dict) -> dict:
-    if isinstance(payload, dict) and payload.get("operation") == operation:
-        return payload
     normalized = dict(payload or {})
-    normalized.setdefault("operation", operation)
+    normalized["operation"] = operation
     return normalized
+
+
+def _build_exchange_option_selection_payload(message: str, options: list[dict]) -> dict:
+    return {
+        "success": False,
+        "ui_action": "show_option_list",
+        "action": "select_option",
+        "message": message,
+        "ui_data": options,
+        "prior_action": "exchange",
+    }
 
 
 def build_order_cs_bridge(
@@ -262,24 +387,69 @@ def build_order_cs_bridge(
     site_id: str,
     user_id: int = 1,
     access_token: str | None = None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
 ) -> dict[str, Callable[..., dict]]:
+    canonical_module = _canonical_adapter_order_tools_module()
+    if getattr(canonical_module, "build_order_cs_bridge", None) is not build_order_cs_bridge:
+        return canonical_module.build_order_cs_bridge(
+            site_id=site_id,
+            user_id=user_id,
+            access_token=access_token,
+            cookies=cookies,
+            auth_metadata=auth_metadata,
+        )
     effective_site_id = (site_id or "site-c").strip()
 
+    def _resolve_bridge_context(
+        kwargs: dict,
+    ) -> tuple[int, str, str | None, dict[str, str] | None, dict | None]:
+        local_user_id = int(kwargs.pop("user_id", user_id))
+        local_site_id = str(kwargs.pop("site_id", effective_site_id) or effective_site_id).strip()
+        local_access_token = kwargs.pop("access_token", access_token)
+        local_cookies = kwargs.pop("cookies", cookies)
+        local_auth_metadata = kwargs.pop("auth_metadata", auth_metadata)
+        return (
+            local_user_id,
+            local_site_id,
+            local_access_token,
+            local_cookies,
+            local_auth_metadata,
+        )
+
     def list_orders(**kwargs) -> dict:
+        (
+            local_user_id,
+            local_site_id,
+            local_access_token,
+            local_cookies,
+            local_auth_metadata,
+        ) = _resolve_bridge_context(kwargs)
         payload = get_user_orders_for_site(
-            user_id=user_id,
-            site_id=effective_site_id,
-            access_token=access_token,
+            user_id=local_user_id,
+            site_id=local_site_id,
+            access_token=local_access_token,
+            cookies=local_cookies,
+            auth_metadata=local_auth_metadata,
             **kwargs,
         )
         return _normalize_order_list_bridge_payload(payload)
 
     def get_order_status(order_id: str, **kwargs) -> dict:
+        (
+            local_user_id,
+            local_site_id,
+            local_access_token,
+            local_cookies,
+            local_auth_metadata,
+        ) = _resolve_bridge_context(kwargs)
         payload = get_order_status_via_adapter.invoke(
             {
-                "user_id": user_id,
-                "site_id": effective_site_id,
-                "access_token": access_token,
+                "user_id": local_user_id,
+                "site_id": local_site_id,
+                "access_token": local_access_token,
+                "cookies": local_cookies,
+                "auth_metadata": local_auth_metadata,
                 "order_id": order_id,
                 **kwargs,
             }
@@ -287,11 +457,20 @@ def build_order_cs_bridge(
         return _normalize_action_bridge_payload("get_order_status", payload)
 
     def cancel(order_id: str = "", confirmed: bool = True, **kwargs) -> dict:
+        (
+            local_user_id,
+            local_site_id,
+            local_access_token,
+            local_cookies,
+            local_auth_metadata,
+        ) = _resolve_bridge_context(kwargs)
         payload = cancel_order_via_adapter.invoke(
             {
-                "user_id": user_id,
-                "site_id": effective_site_id,
-                "access_token": access_token,
+                "user_id": local_user_id,
+                "site_id": local_site_id,
+                "access_token": local_access_token,
+                "cookies": local_cookies,
+                "auth_metadata": local_auth_metadata,
                 "order_id": order_id,
                 "confirmed": confirmed,
                 **kwargs,
@@ -300,11 +479,20 @@ def build_order_cs_bridge(
         return _normalize_action_bridge_payload("cancel", payload)
 
     def refund(order_id: str = "", confirmed: bool = True, **kwargs) -> dict:
+        (
+            local_user_id,
+            local_site_id,
+            local_access_token,
+            local_cookies,
+            local_auth_metadata,
+        ) = _resolve_bridge_context(kwargs)
         payload = register_return_via_adapter.invoke(
             {
-                "user_id": user_id,
-                "site_id": effective_site_id,
-                "access_token": access_token,
+                "user_id": local_user_id,
+                "site_id": local_site_id,
+                "access_token": local_access_token,
+                "cookies": local_cookies,
+                "auth_metadata": local_auth_metadata,
                 "order_id": order_id,
                 "confirmed": confirmed,
                 **kwargs,
@@ -313,11 +501,20 @@ def build_order_cs_bridge(
         return _normalize_action_bridge_payload("refund", payload)
 
     def exchange(order_id: str = "", confirmed: bool = True, **kwargs) -> dict:
+        (
+            local_user_id,
+            local_site_id,
+            local_access_token,
+            local_cookies,
+            local_auth_metadata,
+        ) = _resolve_bridge_context(kwargs)
         payload = register_exchange_via_adapter.invoke(
             {
-                "user_id": user_id,
-                "site_id": effective_site_id,
-                "access_token": access_token,
+                "user_id": local_user_id,
+                "site_id": local_site_id,
+                "access_token": local_access_token,
+                "cookies": local_cookies,
+                "auth_metadata": local_auth_metadata,
                 "order_id": order_id,
                 "confirmed": confirmed,
                 **kwargs,
@@ -332,7 +529,13 @@ def build_order_cs_bridge(
         "refund": refund,
         "exchange": exchange,
     }
-    return {name: bridge[name] for name in ORDER_CS_BRIDGE_OPERATIONS}
+    adapter = _get_site_adapter(effective_site_id)
+    supported_operations = tuple(
+        str(action).strip()
+        for action in list(getattr(adapter.order_action_contract, "supported_actions", []) or [])
+        if str(action).strip()
+    ) or ORDER_CS_BRIDGE_OPERATIONS
+    return {name: bridge[name] for name in supported_operations if name in bridge}
 
 
 def _resolve_order_id_or_payload_for_site(
@@ -341,6 +544,8 @@ def _resolve_order_id_or_payload_for_site(
     order_id: str | None,
     site_id: str | None,
     access_token: str | None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
     action_context: str,
     limit: int = 5,
     days: int = 30,
@@ -353,6 +558,8 @@ def _resolve_order_id_or_payload_for_site(
         user_id=user_id,
         site_id=site_id,
         access_token=access_token,
+        cookies=cookies,
+        auth_metadata=auth_metadata,
         limit=limit,
         days=days,
         requires_selection=True,
@@ -384,6 +591,8 @@ def _resolve_order_with_confirmation_for_site(
     order_id: str | None,
     site_id: str | None,
     access_token: str | None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
     action_context: str,
     confirmed: bool | None,
 ) -> tuple[str | None, bool | None, dict | None]:
@@ -395,6 +604,8 @@ def _resolve_order_with_confirmation_for_site(
         user_id=user_id,
         site_id=site_id,
         access_token=access_token,
+        cookies=cookies,
+        auth_metadata=auth_metadata,
         limit=5,
         days=30,
         requires_selection=True,
@@ -439,9 +650,91 @@ def _build_site_adapter_context(
     user_id: int,
     site_id: str | None,
     access_token: str | None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
 ):
     adapter = _get_site_adapter(site_id)
-    return adapter, _build_ctx(user_id, adapter.site_id, access_token)
+    return adapter, _build_ctx(
+        user_id,
+        adapter.site_id,
+        access_token,
+        cookies=cookies,
+        auth_metadata=auth_metadata,
+    )
+
+
+def _list_exchange_options_via_adapter(
+    *,
+    adapter,
+    ctx: AuthenticatedContext,
+    current_product_id: str | None,
+) -> list[dict]:
+    search_result = _run(
+        adapter.search_products(
+            ctx,
+            ProductSearchFilter(query="", inStockOnly=True, limit=10),
+        )
+    )
+    options = []
+    for item in getattr(search_result, "items", []) or []:
+        option_id = str(getattr(item, "id", "") or "").strip()
+        if not option_id or option_id == str(current_product_id or "").strip():
+            continue
+        options.append(
+            {
+                "option_id": option_id,
+                "label": str(getattr(item, "title", "") or option_id),
+                "in_stock": bool(getattr(item, "inStock", True)),
+            }
+        )
+    return options
+
+
+def _resolve_exchange_option_for_site(
+    *,
+    adapter,
+    ctx: AuthenticatedContext,
+    current_product_id: str | None,
+    new_option_id: str | None,
+) -> tuple[str | None, dict | None]:
+    provided = str(new_option_id or "").strip()
+    options = _list_exchange_options_via_adapter(
+        adapter=adapter,
+        ctx=ctx,
+        current_product_id=current_product_id,
+    )
+    offered_option_ids = {str(option.get("option_id", "")).strip() for option in options if option.get("option_id")}
+
+    if provided:
+        if provided in offered_option_ids:
+            return provided, None
+        return None, _build_exchange_option_selection_payload(
+            "선택한 옵션이 목록에 없습니다. 다시 선택해주세요.",
+            options,
+        )
+
+    if not options:
+        return None, _build_exchange_option_selection_payload(
+            "교환 가능한 옵션을 찾을 수 없습니다.",
+            options,
+        )
+
+    while True:
+        resume_value = interrupt(
+            {
+                "ui_action": "show_option_list",
+                "action": "select_option",
+                "message": "교환할 옵션을 선택해주세요.",
+                "ui_data": options,
+                "prior_action": "exchange",
+            }
+        )
+        selected_option_id = _extract_new_option_id_from_resume(resume_value)
+        if selected_option_id is None:
+            continue
+        selected_option = str(selected_option_id).strip()
+        if selected_option in offered_option_ids:
+            return selected_option, None
 
 
 @tool("cancel")
@@ -450,6 +743,8 @@ def cancel_order_via_adapter(
     user_id: int = 1,
     site_id: str | None = None,
     access_token: str | None = None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
     reason: str = "단순 변심",
     confirmed: bool | None = None,
 ) -> dict:
@@ -460,6 +755,8 @@ def cancel_order_via_adapter(
             order_id=order_id,
             site_id=site_id,
             access_token=access_token,
+            cookies=cookies,
+            auth_metadata=auth_metadata,
             action_context="cancel",
         )
         if not resolved_order_id:
@@ -475,6 +772,8 @@ def cancel_order_via_adapter(
             user_id=user_id,
             site_id=site_id,
             access_token=access_token,
+            cookies=cookies,
+            auth_metadata=auth_metadata,
         )
 
         try:
@@ -531,6 +830,7 @@ def cancel_order_via_adapter(
             )
         )
         return {
+            "operation": "cancel",
             "success": result.success,
             "message": (
                 result.message
@@ -553,6 +853,8 @@ def register_return_via_adapter(
     user_id: int = 1,
     site_id: str | None = None,
     access_token: str | None = None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
     reason: str = "단순 변심",
     confirmed: bool | None = None,
 ) -> dict:
@@ -564,6 +866,8 @@ def register_return_via_adapter(
                 order_id=order_id,
                 site_id=site_id,
                 access_token=access_token,
+                cookies=cookies,
+                auth_metadata=auth_metadata,
                 action_context="refund",
                 confirmed=confirmed,
             )
@@ -581,6 +885,8 @@ def register_return_via_adapter(
             user_id=user_id,
             site_id=site_id,
             access_token=access_token,
+            cookies=cookies,
+            auth_metadata=auth_metadata,
         )
 
         try:
@@ -642,6 +948,7 @@ def register_return_via_adapter(
             )
         )
         return {
+            "operation": "refund",
             "success": result.success,
             "message": (
                 result.message
@@ -664,8 +971,11 @@ def register_exchange_via_adapter(
     user_id: int = 1,
     site_id: str | None = None,
     access_token: str | None = None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
     reason: str = "교환 요청",
     confirmed: bool | None = None,
+    new_option_id: str | None = None,
 ) -> dict:
     """교환을 접수합니다. (어댑터 기반 - 다중 사이트 지원)"""
     try:
@@ -675,6 +985,8 @@ def register_exchange_via_adapter(
                 order_id=order_id,
                 site_id=site_id,
                 access_token=access_token,
+                cookies=cookies,
+                auth_metadata=auth_metadata,
                 action_context="exchange",
                 confirmed=confirmed,
             )
@@ -692,6 +1004,8 @@ def register_exchange_via_adapter(
             user_id=user_id,
             site_id=site_id,
             access_token=access_token,
+            cookies=cookies,
+            auth_metadata=auth_metadata,
         )
 
         try:
@@ -718,11 +1032,27 @@ def register_exchange_via_adapter(
                 )
             }
 
+        resolved_new_option_id, option_selection_payload = _resolve_exchange_option_for_site(
+            adapter=adapter,
+            ctx=ctx,
+            current_product_id=order_result.order.items[0].productId if order_result.order.items else None,
+            new_option_id=new_option_id,
+        )
+        if not resolved_new_option_id:
+            if option_selection_payload:
+                return option_selection_payload
+            return {
+                "success": False,
+                "message": "교환할 옵션을 선택해주세요.",
+                "order_id": resolved_order_id,
+            }
+
         approved = _require_human_confirmation(
             action="exchange",
             prompt=f"주문({resolved_order_id})의 교환을 접수할까요?",
             context={
                 "order_id": resolved_order_id,
+                "new_option_id": resolved_new_option_id,
                 "reason": reason,
             },
             confirmed=confirmed,
@@ -743,10 +1073,12 @@ def register_exchange_via_adapter(
                     actionType=OrderActionType.EXCHANGE,
                     reasonCode=OrderActionReason.CHANGED_MIND,
                     reasonText=reason,
+                    newOptionId=resolved_new_option_id,
                 ),
             )
         )
         return {
+            "operation": "exchange",
             "success": result.success,
             "message": (
                 result.message
@@ -754,6 +1086,7 @@ def register_exchange_via_adapter(
             ),
             "status": "exchange_requested",
             "order_id": resolved_order_id,
+            "new_option_id": resolved_new_option_id,
         }
     except Exception as e:
         if isinstance(e, AdapterError):
@@ -769,6 +1102,8 @@ def get_shipping_via_adapter(
     user_id: int = 1,
     site_id: str | None = None,
     access_token: str | None = None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
 ) -> dict:
     """주문의 배송 현황과 택배사 정보를 조회합니다. (어댑터 기반 - 다중 사이트 지원)"""
     try:
@@ -777,6 +1112,8 @@ def get_shipping_via_adapter(
             order_id=order_id,
             site_id=site_id,
             access_token=access_token,
+            cookies=cookies,
+            auth_metadata=auth_metadata,
             action_context="shipping",
         )
         if not resolved_order_id:
@@ -792,6 +1129,8 @@ def get_shipping_via_adapter(
             user_id=user_id,
             site_id=site_id,
             access_token=access_token,
+            cookies=cookies,
+            auth_metadata=auth_metadata,
         )
 
         result = _run(
@@ -829,6 +1168,8 @@ def get_order_status_via_adapter(
     user_id: int = 1,
     site_id: str | None = None,
     access_token: str | None = None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
 ) -> dict:
     """특정 주문의 현재 상태를 조회합니다. (어댑터 기반 - 다중 사이트 지원)"""
     try:
@@ -836,6 +1177,8 @@ def get_order_status_via_adapter(
             user_id=user_id,
             site_id=site_id,
             access_token=access_token,
+            cookies=cookies,
+            auth_metadata=auth_metadata,
         )
         result = _run(
             adapter.get_order_status(
@@ -845,6 +1188,7 @@ def get_order_status_via_adapter(
         )
         order = result.order
         return {
+            "operation": "get_order_status",
             "order_id": order.orderId,
             "status": order.status.value,
             "user_id": order.userId,
@@ -878,6 +1222,8 @@ def search_products_via_adapter(
     user_id: int = 1,
     site_id: str | None = None,
     access_token: str | None = None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
     min_price: float | None = None,
     max_price: float | None = None,
     limit: int = 10,
@@ -888,6 +1234,8 @@ def search_products_via_adapter(
             user_id=user_id,
             site_id=site_id,
             access_token=access_token,
+            cookies=cookies,
+            auth_metadata=auth_metadata,
         )
         result = _run(
             adapter.search_products(

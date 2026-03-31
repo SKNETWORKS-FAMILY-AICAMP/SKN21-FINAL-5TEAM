@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     EMBEDDING_DIM: int = 1024
 
     # Qdrant
-    QDRANT_URL: str
-    QDRANT_API_KEY: str
+    QDRANT_URL: str = ""
+    QDRANT_API_KEY: str = ""
 
     # Langfuse (nodes_v3 observability)
     LANGFUSE_SECRET_KEY: str = ""
@@ -46,6 +46,7 @@ class Settings(BaseSettings):
 
     # Backend API
     BACKEND_API_URL: str = "http://localhost:3000"
+    CHATBOT_UPLOAD_DIR: str = "chatbot/.runtime/uploads"
 
     # Collections
     COLLECTION_CLIP_IMAGE: str = "fashion_clip_images"

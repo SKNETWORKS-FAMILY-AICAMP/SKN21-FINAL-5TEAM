@@ -6,6 +6,16 @@ export type SharedWidgetHostContract = {
   widgetBundlePath: string;
   widgetElementTag: string;
   mountMode: SharedWidgetMountMode;
+  siteId?: string;
+  brandDisplayName?: string;
+  brandStoreLabel?: string;
+  assistantTitle?: string;
+  initialGreeting?: string;
+  capabilityProfile?: string;
+  enabledRetrievalCorpora?: string[];
+  widgetFeatures?: {
+    imageUpload?: boolean;
+  };
 };
 
 export const DEFAULT_SHARED_WIDGET_HOST_CONTRACT: SharedWidgetHostContract = {

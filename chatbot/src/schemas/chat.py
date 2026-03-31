@@ -41,8 +41,23 @@ class ChatRequest(BaseModel):
     access_token: str | None = Field(
         None, description="Bridge token or session token for the shared chat server"
     )
+    user_id: str | None = Field(
+        None, description="Authenticated bridge user id from the host auth bootstrap"
+    )
     # 어느 사이트(어댑터)로부터 호출되었는지 식별 (예: "site-a", "site-b", "site-c")
     site_id: str | None = Field(None, description="Adapter site ID (site-a|site-b|site-c)")
+    capability_profile: str | None = Field(
+        None,
+        description="Capability profile for runtime routing (for example order_cs_only|full)",
+    )
+    enabled_retrieval_corpora: list[str] | None = Field(
+        None,
+        description="Enabled retrieval corpora for runtime gating (faq|policy|discovery_image)",
+    )
+    widget_features: Dict[str, Any] | None = Field(
+        None,
+        description="Explicit widget feature flags such as image_upload",
+    )
     model_config = ConfigDict(extra="ignore")
 
     @field_validator("message")

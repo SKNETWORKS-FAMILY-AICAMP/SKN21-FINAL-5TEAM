@@ -515,6 +515,31 @@ def test_cli_parser_accepts_engine_v2():
     assert args.engine == "v2"
 
 
+def test_cli_parser_accepts_chatbot_server_base_url():
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "--site",
+            "food",
+            "--source-root",
+            "food",
+            "--generated-root",
+            "generated",
+            "--runtime-root",
+            "runtime",
+            "--run-id",
+            "food-run-engine-v2",
+            "--engine",
+            "v2",
+            "--chatbot-server-base-url",
+            "http://localhost:8100",
+        ]
+    )
+
+    assert args.chatbot_server_base_url == "http://localhost:8100"
+
+
 def test_cli_parser_accepts_llm_patch_draft_flag():
     parser = build_parser()
 
@@ -1277,18 +1302,24 @@ def test_cli_runner_dispatches_v2_engine(monkeypatch, capsys):
         "chatbot.scripts.run_onboarding_generation.run_onboarding_generation",
         lambda **kwargs: pytest.fail("legacy engine should not run when --engine v2 is used"),
     )
-    monkeypatch.setattr(
-        "chatbot.scripts.run_onboarding_generation.run_onboarding_generation_v2",
-        lambda **kwargs: {
+    captured_kwargs = {}
+
+    def _fake_v2_runner(**kwargs):
+        captured_kwargs.update(kwargs)
+        return {
             "engine": "v2",
             "run_root": "/tmp/generated/food/food-run-v2",
             "status": "exported",
             "latest_analysis_artifact": "/tmp/generated/food/food-run-v2/artifacts/01-analysis/snapshot/v0001.json",
             "latest_plan_artifact": "/tmp/generated/food/food-run-v2/artifacts/02-planning/integration-plan/v0001.json",
-            "latest_compile_artifact": "/tmp/generated/food/food-run-v2/artifacts/03-compile/edit-program/v0001.json",
+            "latest_compile_artifact": "/tmp/generated/food/food-run-v2/artifacts/03-compile/host-edit-program/v0001.json",
             "latest_validation_artifact": "/tmp/generated/food/food-run-v2/artifacts/05-validation/validation-bundle/v0001.json",
             "latest_export_artifact": "/tmp/generated/food/food-run-v2/artifacts/06-export/export-bundle/v0001.json",
-        },
+        }
+
+    monkeypatch.setattr(
+        "chatbot.scripts.run_onboarding_generation.run_onboarding_generation_v2",
+        _fake_v2_runner,
     )
     monkeypatch.setattr(
         sys,
@@ -1307,6 +1338,8 @@ def test_cli_runner_dispatches_v2_engine(monkeypatch, capsys):
             "food-run-v2",
             "--engine",
             "v2",
+            "--chatbot-server-base-url",
+            "http://localhost:8100",
         ],
     )
 
@@ -1316,3 +1349,4 @@ def test_cli_runner_dispatches_v2_engine(monkeypatch, capsys):
     assert exit_code == 0
     assert payload["engine"] == "v2"
     assert payload["status"] == "exported"
+    assert captured_kwargs["max_repair_attempts"] == 2

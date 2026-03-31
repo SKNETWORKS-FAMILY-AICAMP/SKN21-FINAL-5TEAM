@@ -8,12 +8,23 @@ export type SharedWidgetHostConfig = {
   chatbotApiBase: string;
   chatPath?: string;
   streamPath?: string;
+  siteId?: string;
+  brandDisplayName?: string;
+  brandStoreLabel?: string;
+  assistantTitle?: string;
+  initialGreeting?: string;
+  capabilityProfile?: string;
+  enabledRetrievalCorpora?: string[];
+  widgetFeatures?: {
+    imageUpload?: boolean;
+  };
 };
 
 export type SharedWidgetAuthResult = {
   authenticated: boolean;
   siteId: string;
   accessToken: string;
+  userId: string;
 };
 
 export type SharedWidgetCapability =
@@ -47,6 +58,7 @@ export type SharedChatApiResponse = {
 export type SharedChatBootstrap = SharedWidgetAuthResult & {
   site_id: string;
   access_token: string;
+  user_id: string;
 };
 
 export type SharedChatStreamHandlers = {
@@ -215,8 +227,10 @@ export async function bootstrapSharedWidgetAuth(
       authenticated: false,
       siteId: String(payload.site_id ?? ''),
       accessToken: String(payload.access_token ?? ''),
+      userId: String(payload.user_id ?? payload.user?.id ?? ""),
       site_id: String(payload.site_id ?? ''),
       access_token: String(payload.access_token ?? ''),
+      user_id: String(payload.user_id ?? payload.user?.id ?? ""),
     };
   }
 
@@ -224,8 +238,10 @@ export async function bootstrapSharedWidgetAuth(
     authenticated: true,
     siteId: String(payload.site_id ?? ''),
     accessToken: String(payload.access_token ?? ''),
+    userId: String(payload.user_id ?? payload.user?.id ?? ""),
     site_id: String(payload.site_id ?? ''),
     access_token: String(payload.access_token ?? ''),
+    user_id: String(payload.user_id ?? payload.user?.id ?? ""),
   };
 }
 
@@ -243,7 +259,11 @@ export async function sendSharedChatRequest(
     message: string;
     accessToken: string;
     siteId: string;
+    userId: string;
     previousState?: Record<string, unknown> | null;
+    capabilityProfile?: string | null;
+    enabledRetrievalCorpora?: string[];
+    widgetFeatures?: Record<string, unknown> | null;
   },
 ): Promise<SharedChatApiResponse> {
   const response = await fetchImpl(_resolveChatEndpoint(host), {
@@ -257,6 +277,11 @@ export async function sendSharedChatRequest(
       previous_state: payload.previousState ?? null,
       site_id: payload.siteId,
       access_token: payload.accessToken,
+      user_id: payload.userId,
+      capability_profile: payload.capabilityProfile ?? host.capabilityProfile ?? undefined,
+      enabled_retrieval_corpora:
+        payload.enabledRetrievalCorpora ?? host.enabledRetrievalCorpora ?? undefined,
+      widget_features: payload.widgetFeatures ?? host.widgetFeatures ?? undefined,
     }),
   });
 
@@ -326,6 +351,9 @@ export async function streamSharedChatResponse(
     model?: string | null;
     bootstrap: SharedChatBootstrap;
     fetchImpl: FetchLike;
+    capabilityProfile?: string | null;
+    enabledRetrievalCorpora?: string[];
+    widgetFeatures?: Record<string, unknown> | null;
   },
   callbacks: SharedChatStreamHandlers = {},
 ): Promise<{ state: Record<string, unknown> | null }> {
@@ -343,6 +371,11 @@ export async function streamSharedChatResponse(
       model: args.model ?? undefined,
       site_id: args.bootstrap.site_id,
       access_token: args.bootstrap.access_token,
+      user_id: args.bootstrap.user_id,
+      capability_profile: args.capabilityProfile ?? args.host.capabilityProfile ?? undefined,
+      enabled_retrieval_corpora:
+        args.enabledRetrievalCorpora ?? args.host.enabledRetrievalCorpora ?? undefined,
+      widget_features: args.widgetFeatures ?? args.host.widgetFeatures ?? undefined,
     }),
   });
 
@@ -711,9 +744,7 @@ export function ChatbotWidget<TMessage extends { type: string; role?: string }>(
 
         return (
           <React.Fragment key={renderKey}>
-            {capabilities === undefined || capabilities === 'full'
-              ? renderFallback?.(message, index) ?? null
-              : null}
+            {renderFallback?.(message, index) ?? null}
           </React.Fragment>
         );
       })}

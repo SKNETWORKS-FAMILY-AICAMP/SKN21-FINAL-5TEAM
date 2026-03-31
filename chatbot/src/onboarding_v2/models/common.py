@@ -49,6 +49,8 @@ class EventRecord(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
     failure_signature: str | None = None
     rewind_to: str | None = None
+    requested_rewind_to: str | None = None
+    effective_rewind_to: str | None = None
     source: str = "deterministic"
 
     model_config = ConfigDict(extra="forbid")
@@ -71,6 +73,9 @@ class RunSummaryView(BaseModel):
     repair_attempt_count: int = 0
     stopped_for_review: bool = False
     latest_event_id: str | None = None
+    retrieval_status: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    final_capability_profile: str | None = None
+    enabled_retrieval_corpora: list[str] = Field(default_factory=list)
     stages: list[StageLatestView] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -86,6 +91,8 @@ class DebugRecord(BaseModel):
     token_usage: dict[str, Any] = Field(default_factory=dict)
     artifact_refs: list[ArtifactRef] = Field(default_factory=list)
     event_ref: str | None = None
+    requested_rewind_to: str | None = None
+    effective_rewind_to: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 

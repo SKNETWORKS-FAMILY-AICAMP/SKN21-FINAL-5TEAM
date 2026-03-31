@@ -55,47 +55,88 @@ def map_site_a_order(raw: Any, deps: Dict[str, Any]) -> GetOrderStatusResult:
     site_id = deps["site_id"]
     user_id = deps["current_user_id"]
     norm_order_status = deps["normalize_order_status"]
+    raw_order = raw.get("order", raw) if isinstance(raw, dict) else {}
 
-    product_data = raw.get("product", {})
+    items_data = raw_order.get("items") or []
+    first_item = items_data[0] if isinstance(items_data, list) and items_data else {}
+    product_data = raw_order.get("product", {})
+    if not product_data and isinstance(first_item, dict):
+        product_data = {
+            "id": first_item.get("product_id") or first_item.get("productId"),
+            "name": first_item.get("product_name") or first_item.get("productTitle"),
+            "price": first_item.get("price"),
+            "image_url": first_item.get("image_url"),
+        }
     unit_price = (
         Money(amount=float(product_data.get("price")), currency="KRW")
         if product_data.get("price") is not None
         else None
     )
     total_price = (
-        Money(amount=float(raw.get("total_price")), currency="KRW")
-        if raw.get("total_price") is not None
+        Money(amount=float(raw_order.get("total_price")), currency="KRW")
+        if raw_order.get("total_price") is not None
         else None
     )
-
-    item = OrderItem(
-        productId=str(product_data.get("id")),
-        productTitle=product_data.get("name", ""),
-        quantity=int(raw.get("quantity", 0)),
-        unitPrice=unit_price,
-        imageUrl=product_data.get("image_url"),
-    )
+    order_items: List[OrderItem] = []
+    if isinstance(items_data, list) and items_data:
+        for raw_item in items_data:
+            if not isinstance(raw_item, dict):
+                continue
+            raw_item_price = raw_item.get("price")
+            raw_item_unit_price = (
+                Money(amount=float(raw_item_price), currency="KRW")
+                if raw_item_price is not None
+                else None
+            )
+            order_items.append(
+                OrderItem(
+                    productId=str(
+                        raw_item.get("product_id")
+                        or raw_item.get("productId")
+                        or ""
+                    ),
+                    productTitle=raw_item.get("product_name")
+                    or raw_item.get("productTitle", ""),
+                    quantity=int(raw_item.get("quantity", 0) or 0),
+                    unitPrice=raw_item_unit_price,
+                    imageUrl=raw_item.get("image_url") or raw_item.get("imageUrl"),
+                )
+            )
+    if not order_items:
+        order_items.append(
+            OrderItem(
+                productId=str(product_data.get("id") or ""),
+                productTitle=product_data.get("name", ""),
+                quantity=int(raw_order.get("quantity", 0) or 0),
+                unitPrice=unit_price,
+                imageUrl=product_data.get("image_url"),
+            )
+        )
 
     order = OrderSummary(
-        orderId=str(raw.get("id")),
+        orderId=str(raw_order.get("id") or raw_order.get("order_id") or ""),
         siteId=site_id,
-        userId=user_id,
-        status=norm_order_status(raw.get("status", "unknown")),
-        items=[item],
+        userId=str(raw_order.get("user_id") or user_id),
+        status=norm_order_status(raw_order.get("status", "unknown")),
+        items=order_items,
         totalPrice=total_price,
-        orderedAt=raw.get("created_at"),
+        orderedAt=raw_order.get("created_at"),
     )
     return GetOrderStatusResult(order=order)
 
 
 def map_site_a_delivery(raw: Any, deps: Dict[str, Any]) -> GetDeliveryTrackingResult:
-    raw_status = str(raw.get("status", "unknown")).lower()
+    raw_order = raw.get("order", raw) if isinstance(raw, dict) else {}
+    shipping = raw_order.get("shipping") or {}
+    raw_status = str(shipping.get("status") or raw_order.get("status") or "unknown").lower()
     delivery_token = "in_transit" if raw_status == "shipping" else raw_status
 
     tracking = DeliveryTracking(
-        orderId=str(raw.get("id")),
+        orderId=str(raw_order.get("id") or raw_order.get("order_id") or ""),
         deliveryStatus=deps["normalize_delivery_status"](delivery_token),
-        lastUpdatedAt=raw.get("created_at"),
+        lastUpdatedAt=shipping.get("delivered_at")
+        or shipping.get("shipped_at")
+        or raw_order.get("created_at"),
     )
     return GetDeliveryTrackingResult(tracking=tracking)
 

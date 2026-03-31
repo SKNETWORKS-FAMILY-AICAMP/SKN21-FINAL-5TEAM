@@ -201,6 +201,7 @@ class SubmitOrderActionInput(BaseModel):
     reasonCode: OrderActionReason
     reasonText: Optional[str] = None
     itemIds: Optional[List[ID]] = None
+    newOptionId: Optional[ID] = None
 
 
 class SubmitOrderActionResult(BaseModel):

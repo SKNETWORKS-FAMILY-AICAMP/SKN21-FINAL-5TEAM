@@ -10,6 +10,10 @@ import oracledb
 # backend 디렉토리를 path에 추가
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "backend"))
 
+from env_bootstrap import ensure_backend_env_loaded
+
+ensure_backend_env_loaded()
+
 from models import get_connection, init_db
 
 

@@ -11,6 +11,11 @@ Supervisor Router 노드.
   - 큐(pending_tasks) 기반 순차 처리: 복합 요청도 한 번에 하나씩 처리.
 """
 
+from chatbot.src.capability_profiles import (
+    ORDER_CS_ONLY_UNSUPPORTED_MESSAGE,
+    RETRIEVAL_UNSUPPORTED_MESSAGE,
+    split_tasks_for_profile,
+)
 from chatbot.src.graph.state import GlobalAgentState
 from chatbot.src.schemas.planner import TaskIntent
 
@@ -35,6 +40,37 @@ def supervisor_node(state: GlobalAgentState) -> dict:
     처리한 작업은 큐에서 제거.
     """
     pending = list(state.get("pending_tasks", []))
+    allowed_tasks, disallowed_tasks = split_tasks_for_profile(
+        pending,
+        capability_profile=state.get("capability_profile"),
+        enabled_retrieval_corpora=state.get("enabled_retrieval_corpora"),
+    )
+    if disallowed_tasks:
+        notice = (
+            ORDER_CS_ONLY_UNSUPPORTED_MESSAGE
+            if str(state.get("capability_profile") or "").strip().lower() == "order_cs_only"
+            else RETRIEVAL_UNSUPPORTED_MESSAGE
+        )
+        result = {
+            "completed_tasks": [
+                *list(state.get("completed_tasks", [])),
+                TaskIntent.GENERAL_CHAT,
+            ],
+            "agent_results": {
+                **dict(state.get("agent_results", {})),
+                TaskIntent.GENERAL_CHAT: notice,
+            },
+        }
+        pending = [task for task in allowed_tasks if task != TaskIntent.GENERAL_CHAT]
+        if not pending:
+            result["current_active_task"] = None
+            result["pending_tasks"] = []
+            return result
+
+        current_task = pending.pop(0)
+        result["current_active_task"] = current_task
+        result["pending_tasks"] = pending
+        return result
 
     if not pending:
         # 큐가 비어 있음 → route_after_supervisor 에서 final_generator 로 분기

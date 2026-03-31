@@ -18,6 +18,7 @@ from chatbot.src.graph.nodes.policy_rag_subagent import (
     _normalize_policy_query,
 )
 from chatbot.src.tools.retrieval_tools import _build_filter, _score_policy_adjustment
+from chatbot.src.infrastructure.site_retrieval import resolve_site_collections
 
 
 def test_infer_policy_category_prefers_return_policy_for_shipping_fee_queries() -> None:
@@ -45,6 +46,14 @@ def test_build_filter_is_faq_only() -> None:
 
     assert faq_filter is not None
     assert _build_filter("배송", settings.COLLECTION_TERMS) is None
+
+
+def test_resolve_site_collections_uses_site_scoped_aliases() -> None:
+    collections = resolve_site_collections("demo-shop")
+
+    assert collections.faq == "site_demo-shop__faq"
+    assert collections.policy == "site_demo-shop__policy"
+    assert collections.discovery_image == "site_demo-shop__discovery_image"
 
 
 def test_build_retrieval_attempts_omits_none_category() -> None:

@@ -7,15 +7,23 @@ SK Networks Family AI Camp - Team 5 | End-to-End Full Stack Implementation
 > 기존 이커머스의 복잡한 필터링 및 키워드 검색 한계를 넘어,
 > 자연어 기반 의도 파악 및 개인화된 쇼핑 경험을 제공합니다.
 
-## 기술 스택
+## 🛠 기술 스택
 
-| 분야         | 기술                                           |
-| ------------ | ---------------------------------------------- |
-| **AI Core**  | LangGraph, LangChain, OpenAI API, RAG          |
-| **Backend**  | Python 3.13, FastAPI, SQLAlchemy               |
-| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS |
-| **Database** | MySQL 8.0 (관계형), Qdrant (벡터)              |
-| **DevOps**   | Docker, Docker Compose, Nginx, AWS             |
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)
+![LangGraph](https://img.shields.io/badge/LangGraph-0.2-1C3C3C?style=for-the-badge)
+![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o--mini-412991?style=for-the-badge&logo=openai&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge)
+
+| 분류             | 기술                                                                   |
+| ---------------- | ---------------------------------------------------------------------- |
+| Frontend         | React 18, TypeScript 5.0, Vite, TailwindCSS, Zustand                   |
+| Backend          | FastAPI 0.115, Python 3.12, SQLAlchemy 2.0, Pydantic, JWT              |
+| RAG Engine       | LangChain 0.3, LangGraph 0.2, OpenAI GPT-4o-mini, BGE-M3, BGE Reranker |
+| Database & Infra | MySQL, ChromaDB, Redis, S3                                             |
+| Deploy           | Docker, Nginx, AWS, RunPod                                             |
+| Testing          | RAGAS, Pytest, Playwright                                              |
 
 ## 프로젝트 구조
 

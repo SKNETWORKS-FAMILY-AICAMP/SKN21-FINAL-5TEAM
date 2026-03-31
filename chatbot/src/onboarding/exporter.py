@@ -4,14 +4,9 @@ import difflib
 import json
 from pathlib import Path
 
-IGNORED_EXPORT_PARTS = {
-    ".venv",
-    "node_modules",
-    "__pycache__",
-    ".next",
-    "dist",
-    "build",
-}
+from .onboarding_ignore import DEFAULT_IGNORED_PARTS
+
+IGNORED_EXPORT_PARTS = frozenset(DEFAULT_IGNORED_PARTS)
 
 _UNSET = object()
 

@@ -30,6 +30,8 @@ LangGraph 멀티-에이전트 그래프 정의.
   (supervisor가 pending_tasks를 소진하면 "final_generator"로 전환).
 """
 
+import importlib
+
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -59,11 +61,34 @@ from chatbot.src.graph.nodes.order_flow import (
     shipping_subagent_node,
     order_list_subagent_node,
 )
-from chatbot.src.graph.nodes.discovery_subagent import discovery_subagent_node
-from chatbot.src.graph.nodes.policy_rag_subagent import policy_rag_subagent_node
-from chatbot.src.graph.nodes.form_action_subagent import form_action_subagent_node
 from chatbot.src.graph.nodes.final_generator import final_generator_node
 from chatbot.src.graph.nodes.summarize import summarize_node
+
+
+def _load_node(module_name: str, attr_name: str):
+    module = importlib.import_module(module_name)
+    return getattr(module, attr_name)
+
+
+def discovery_subagent_node(state: GlobalAgentState) -> dict:
+    return _load_node(
+        "chatbot.src.graph.nodes.discovery_subagent",
+        "discovery_subagent_node",
+    )(state)
+
+
+def policy_rag_subagent_node(state: GlobalAgentState) -> dict:
+    return _load_node(
+        "chatbot.src.graph.nodes.policy_rag_subagent",
+        "policy_rag_subagent_node",
+    )(state)
+
+
+def form_action_subagent_node(state: GlobalAgentState) -> dict:
+    return _load_node(
+        "chatbot.src.graph.nodes.form_action_subagent",
+        "form_action_subagent_node",
+    )(state)
 
 
 # ── 라우팅 함수 (Direct Routing 모드 지원) ─────────────────

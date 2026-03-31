@@ -1,4 +1,6 @@
+import importlib
 import os
+import sys
 from .base import AdapterRegistry
 from .site_a.client import SiteAClient
 from .site_a.adapter import SiteAAdapter
@@ -66,5 +68,37 @@ get_adapter = resolve_site_adapter
 
 def get_order_cs_bridge_operations(site_id: str | None = None) -> tuple[str, ...]:
     if site_id:
-        resolve_site_adapter(site_id.strip())
+        adapter = resolve_site_adapter(site_id.strip())
+        supported_actions = tuple(
+            str(action).strip()
+            for action in list(getattr(adapter.order_action_contract, "supported_actions", []) or [])
+            if str(action).strip()
+        )
+        if supported_actions:
+            return supported_actions
     return ORDER_CS_BRIDGE_OPERATIONS
+
+
+def resolve_order_tool_registry(
+    site_id: str,
+    *,
+    user_id: int = 1,
+    access_token: str | None = None,
+    cookies: dict[str, str] | None = None,
+    auth_metadata: dict | None = None,
+) -> dict:
+    module = (
+        sys.modules.get("chatbot.src.tools.adapter_order_tools")
+        or sys.modules.get("src.tools.adapter_order_tools")
+        or importlib.import_module("chatbot.src.tools.adapter_order_tools")
+    )
+    build_order_cs_bridge = getattr(module, "build_order_cs_bridge")
+
+    resolve_site_adapter(site_id.strip())
+    return build_order_cs_bridge(
+        site_id=site_id.strip(),
+        user_id=user_id,
+        access_token=access_token,
+        cookies=cookies,
+        auth_metadata=auth_metadata,
+    )

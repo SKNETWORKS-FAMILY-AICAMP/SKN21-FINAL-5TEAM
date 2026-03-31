@@ -103,13 +103,13 @@
   border-color: #ccc;
 }
 
-.btn.primary {
+.primary {
   background: #111;
   color: #fff;
   border-color: #111;
 }
 
-.btn.primary:hover:not(:disabled) {
+.primary:hover:not(:disabled) {
   background: #333;
 }
 

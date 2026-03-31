@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ONMO</title>
+    <link rel="stylesheet" href="/static/styles.css?v=__ONMO_ASSET_VERSION__" />
+  </head>
+  <body>
+    <div class="shell">
+      <main class="frame">
+        <aside class="panel outline-panel">
+          <p class="box-label">단계</p>
+          <div id="stage-timeline" class="stage-menu"></div>
+        </aside>
+
+        <section class="main-panel">
+          <section class="panel site-panel">
+            <p class="box-label">GitHub 가져오기</p>
+            <div class="site-row">
+              <div class="launch-stack">
+                <form id="github-form" class="github-form">
+                  <div class="github-row">
+                    <input
+                      id="repo-url"
+                      name="repo_url"
+                      type="url"
+                      placeholder="https://github.com/owner/repo"
+                      required
+                    />
+                    <button class="launch-button" type="submit" id="github-launch-button">가져오기</button>
+                  </div>
+                  <div class="github-row">
+                    <input id="github-env-file" name="env_file" type="file" />
+                    <select id="github-env-target" name="env_target_path">
+                      <option value=".env">루트 .env</option>
+                      <option value="backend/.env">backend/.env</option>
+                    </select>
+                  </div>
+                  <p class="field-hint">public repo는 바로 시작하고, 접근 권한이 필요하면 GitHub 승인으로 이어집니다.</p>
+                  <p class="field-hint">운영 환경파일이 필요하면 여기서 첨부하고 주입 경로를 고를 수 있습니다. macOS에서 숨김 파일이 안 보이면 파일 선택기에서 Cmd+Shift+. 를 눌러 표시하세요.</p>
+                </form>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel run-story-panel">
+            <div id="run-story-shell" class="run-story-shell empty-state">
+              온보딩을 시작하면 전체 진행 흐름 그래프가 이 영역에 고정 표시됩니다.
+            </div>
+          </section>
+
+          <section class="panel stage-panel">
+            <div class="stage-top">
+              <div>
+                <p class="box-label">현재 단계</p>
+                <h2 id="detail-title">분석</h2>
+              </div>
+              <span id="detail-status" class="status-badge neutral">대기</span>
+            </div>
+            <p id="detail-description" class="detail-description">
+              저장소 구조를 읽고 어떤 연결점과 계약을 찾아냈는지 보여주는 단계입니다.
+            </p>
+            <div id="stage-detail" class="stage-detail empty-state">
+              실행을 시작하면 이 영역에 단계별 요약과 검증 결과가 표시됩니다.
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js?v=__ONMO_ASSET_VERSION__" defer></script>
+  </body>
+</html>

@@ -26,7 +26,9 @@ from urllib.request import urlopen
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
 
+from chatbot.src.graph.brand_profiles import resolve_brand_profile
 from chatbot.src.graph.state import GlobalAgentState
+from chatbot.src.infrastructure.site_retrieval import use_runtime_site_id
 from chatbot.src.schemas.planner import TaskIntent
 from chatbot.src.graph.llm_providers import make_chat_llm
 from chatbot.src.tools.recommendation_tools import (
@@ -35,22 +37,13 @@ from chatbot.src.tools.recommendation_tools import (
     search_by_text_clip,
 )
 from chatbot.src.infrastructure.openai import get_openai_client
-from ecommerce.backend.app.uploads import CHATBOT_UPLOAD_DIR
+from chatbot.src.runtime.uploads import UPLOAD_ROOT as CHATBOT_UPLOAD_DIR
 
 
 CURRENT_FILE = Path(__file__).resolve()
 REPO_ROOT = CURRENT_FILE.parents[4]
 
-# ── 도구 목록 (TEXT 경로) ──────────────────────────────────
-
-DISCOVERY_TOOLS = [
-    search_by_text_clip,
-    recommend_clothes,
-]
-
-# ── 프롬프트 ──────────────────────────────────────────────
-
-DISCOVERY_SYSTEM_PROMPT = """당신은 MOYEO 쇼핑몰의 Discovery SubAgent입니다.
+DISCOVERY_SYSTEM_PROMPT = """당신은 {brand_store_label}의 Discovery SubAgent입니다.
 사용자가 원하는 상품을 찾아주는 역할을 합니다.
 
 [도구 선택 기준]
@@ -63,6 +56,21 @@ DISCOVERY_SYSTEM_PROMPT = """당신은 MOYEO 쇼핑몰의 Discovery SubAgent입�
 [중요]
 - 사용자가 상품명/색상/카테고리를 이미 말했으면 되묻지 말고 먼저 `search_by_text_clip`을 호출하세요.
 - 한국어 질의도 바로 검색 도구를 호출해도 됩니다.
+
+[User Context]
+{user_context}
+"""
+
+NON_ECOMMERCE_DISCOVERY_SYSTEM_PROMPT = """당신은 {brand_store_label}의 Discovery SubAgent입니다.
+사용자가 원하는 상품을 찾아주는 역할을 합니다.
+
+[도구 선택 기준]
+- `search_by_text_clip` : 텍스트 기반 상품 검색과 유사 상품 추천.
+  예) "수분크림 추천", "흰색 린넨 셔츠", "짜장면 비슷한 메뉴"
+
+[중요]
+- 사용자가 상품명/색상/카테고리를 이미 말했으면 되묻지 말고 먼저 `search_by_text_clip`을 호출하세요.
+- 카테고리/가격/브랜드 조건이 포함되면 그대로 검색어에 반영하세요.
 
 [User Context]
 {user_context}
@@ -209,7 +217,9 @@ def _text_search_pipeline(
 ) -> dict:
     """텍스트 기반 상품 검색: ReAct 에이전트로 도구 선택."""
     latest_query = _extract_latest_user_query(state.get("messages", []))
-    direct_result = _run_direct_text_search(latest_query)
+    site_id = (state.get("user_info") or {}).get("site_id")
+    with use_runtime_site_id(site_id):
+        direct_result = _run_direct_text_search(latest_query)
     if direct_result is not None:
         retrieved_products = direct_result.get("products", [])
         answer_text = _build_direct_search_answer(latest_query, retrieved_products)
@@ -230,21 +240,28 @@ def _text_search_pipeline(
         }
 
     user_info = state.get("user_info", {})
+    brand_profile = resolve_brand_profile(user_info.get("site_id"))
     user_context = (
         f"User ID: {user_info.get('id', 'unknown')}, "
-        f"Name: {user_info.get('name', '고객')}"
+        f"Name: {user_info.get('name', '고객')}, "
+        f"Brand: {brand_profile.display_name}"
     )
 
     llm = make_chat_llm(provider=provider, model=model, temperature=0)
     agent = create_react_agent(
         model=llm,
-        tools=DISCOVERY_TOOLS,
+        tools=_resolve_discovery_tools(site_id),
         prompt=SystemMessage(
-            content=DISCOVERY_SYSTEM_PROMPT.format(user_context=user_context)
+            content=_build_discovery_system_prompt(
+                site_id,
+                brand_store_label=brand_profile.store_label,
+                user_context=user_context,
+            )
         ),
     )
 
-    result = agent.invoke({"messages": state["messages"]})
+    with use_runtime_site_id(site_id):
+        result = agent.invoke({"messages": state["messages"]})
     result_messages = result.get("messages", [])
 
     # 검색 결과 추출 → search_context 업데이트
@@ -290,6 +307,7 @@ def _image_search_pipeline(
             "agent_results": {**state.get("agent_results", {}), task: content},
         }
 
+    site_id = (state.get("user_info") or {}).get("site_id")
     query_text = str(state.get("search_context", {}).get("search_query") or "").strip()
     if not query_text:
         query_text = _extract_latest_user_query(state.get("messages", []))
@@ -321,7 +339,8 @@ def _image_search_pipeline(
         }
         if top_k is not None:
             search_args["top_k"] = top_k
-        image_result = search_by_image.invoke(search_args)
+        with use_runtime_site_id(site_id):
+            image_result = search_by_image.invoke(search_args)
 
         if isinstance(image_result, dict) and image_result.get("error"):
             raise RuntimeError(str(image_result["error"]))
@@ -383,11 +402,12 @@ def _image_search_pipeline(
 
     # ── Step 2. Retrieve: 설명 텍스트로 벡터 검색 ──────────
     requested_top_k = top_k if top_k is not None else 5
-    retrieval_result = search_by_text_clip.invoke({
-        "query": image_description,
-        "top_k": requested_top_k,
-        "search_mode": "similar",
-    })
+    with use_runtime_site_id(site_id):
+        retrieval_result = search_by_text_clip.invoke({
+            "query": image_description,
+            "top_k": requested_top_k,
+            "search_mode": "similar",
+        })
 
     retrieved_products = retrieval_result.get("products", []) if isinstance(retrieval_result, dict) else []
     found_count = len(retrieved_products)
@@ -482,6 +502,29 @@ def _detect_image_search_mode(query: str) -> str:
         if keyword in lowered:
             return "opposite"
     return "similar"
+
+
+def _resolve_discovery_tools(site_id: str | None) -> list:
+    if str(site_id or "").strip() == "site-c":
+        return [search_by_text_clip, recommend_clothes]
+    return [search_by_text_clip]
+
+
+def _build_discovery_system_prompt(
+    site_id: str | None,
+    *,
+    brand_store_label: str,
+    user_context: str,
+) -> str:
+    template = (
+        DISCOVERY_SYSTEM_PROMPT
+        if str(site_id or "").strip() == "site-c"
+        else NON_ECOMMERCE_DISCOVERY_SYSTEM_PROMPT
+    )
+    return template.format(
+        brand_store_label=brand_store_label,
+        user_context=user_context,
+    )
 
 
 def _should_direct_text_search(query: str) -> bool:

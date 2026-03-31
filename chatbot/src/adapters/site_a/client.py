@@ -70,6 +70,8 @@ class SiteAClient:
         payload: Dict[str, Any] = {"action": input_data.actionType.value}
         if input_data.reasonText:
             payload["reason"] = input_data.reasonText
+        if input_data.newOptionId:
+            payload["new_option_id"] = input_data.newOptionId
 
         return await self._request(
             "POST",

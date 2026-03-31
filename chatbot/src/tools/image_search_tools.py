@@ -12,6 +12,10 @@ from langchain_core.tools import tool
 from PIL import Image
 
 from chatbot.src.core.config import settings
+from chatbot.src.infrastructure.site_retrieval import (
+    get_current_runtime_site_id,
+    resolve_site_collections,
+)
 from chatbot.src.infrastructure.qdrant import get_qdrant_client
 
 try:
@@ -135,6 +139,7 @@ def _search_qdrant_by_embedding(
     top_k: int,
     candidate_k: int,
     search_mode: str = "similar",
+    site_id: str | None = None,
 ) -> List[SearchHit]:
     bounded_top_k = max(1, min(20, int(top_k)))
     bounded_candidate_k = max(bounded_top_k, min(300, int(candidate_k)))
@@ -144,8 +149,9 @@ def _search_qdrant_by_embedding(
         query_vector = [-v for v in query_vector]
 
     client = get_qdrant_client()
+    collection_name = resolve_site_collections(site_id or get_current_runtime_site_id()).discovery_image
     result = client.query_points(
-        collection_name=settings.COLLECTION_CLIP_IMAGE,
+        collection_name=collection_name,
         query=query_vector,
         using="",
         limit=bounded_candidate_k,
@@ -308,13 +314,14 @@ def _resolve_device() -> torch.device:
     return torch.device("cpu")
 
 
-def _search_clip(
+def _search_clip_hits(
     image: Optional[Image.Image] = None,
     text: Optional[str] = None,
     top_k: int = 5,
     search_mode: str = "similar",
     text_weight: float = 0.4,
-) -> List[int]:
+    site_id: str | None = None,
+) -> List[SearchHit]:
     _ensure_clip_runtime()
     if image is None and not text:
         raise ValueError("image 또는 text 중 하나는 필요합니다.")
@@ -335,11 +342,30 @@ def _search_clip(
         text_weight=text_weight,
     )
     candidate_k = max(top_k * 10, 80)
-    hits = _search_qdrant_by_embedding(
+    return _search_qdrant_by_embedding(
         query_embedding,
         top_k=top_k,
         candidate_k=candidate_k,
         search_mode=search_mode,
+        site_id=site_id,
+    )
+
+
+def _search_clip(
+    image: Optional[Image.Image] = None,
+    text: Optional[str] = None,
+    top_k: int = 5,
+    search_mode: str = "similar",
+    text_weight: float = 0.4,
+    site_id: str | None = None,
+) -> List[int]:
+    hits = _search_clip_hits(
+        image=image,
+        text=text,
+        top_k=top_k,
+        search_mode=search_mode,
+        text_weight=text_weight,
+        site_id=site_id,
     )
     return _rerank_hits_with_soft_boost(
         hits=hits,
@@ -362,24 +388,55 @@ def search_similar_images(image_path: str, top_k: int = 5) -> List[int]:
     return _search_clip(image=image, top_k=top_k)
 
 
-def search_similar_images_from_bytes(image_bytes: bytes, top_k: int = 5) -> List[int]:
+def search_similar_images_from_bytes(
+    image_bytes: bytes,
+    top_k: int = 5,
+    site_id: str | None = None,
+) -> List[int]:
     """Search similar images using in-memory bytes."""
     try:
         image = Image.open(BytesIO(image_bytes)).convert("RGB")
     except Exception as exc:
         raise ValueError(f"이미지 로딩 실패: {exc}") from exc
-    return _search_clip(image=image, top_k=top_k)
+    return _search_clip(image=image, top_k=top_k, site_id=site_id)
 
 
 def search_similar_products_from_text(
     text: str,
     top_k: int = 5,
     search_mode: str = "similar",
+    site_id: str | None = None,
 ) -> List[int]:
     query = (text or "").strip()
     if not query:
         raise ValueError("텍스트 질의가 비어 있습니다.")
-    return _search_clip(text=query, top_k=top_k, search_mode=search_mode)
+    return _search_clip(text=query, top_k=top_k, search_mode=search_mode, site_id=site_id)
+
+
+def search_similar_product_hits_from_text(
+    text: str,
+    top_k: int = 5,
+    search_mode: str = "similar",
+    site_id: str | None = None,
+) -> List[SearchHit]:
+    query = (text or "").strip()
+    if not query:
+        raise ValueError("텍스트 질의가 비어 있습니다.")
+    hits = _search_clip_hits(
+        text=query,
+        top_k=top_k,
+        search_mode=search_mode,
+        site_id=site_id,
+    )
+    ranked_ids = _rerank_hits_with_soft_boost(
+        hits=hits,
+        query_text=query,
+        top_k=top_k,
+        dense_weight=0.8,
+        boost_weight=0.2,
+    )
+    hits_by_id = {hit.product_id: hit for hit in hits}
+    return [hits_by_id[product_id] for product_id in ranked_ids if product_id in hits_by_id]
 
 
 def search_similar_products_multimodal(
@@ -388,6 +445,7 @@ def search_similar_products_multimodal(
     top_k: int = 5,
     search_mode: str = "similar",
     text_weight: float = 0.4,
+    site_id: str | None = None,
 ) -> List[int]:
     image = None
     if image_bytes is not None:
@@ -402,7 +460,42 @@ def search_similar_products_multimodal(
         top_k=top_k,
         search_mode=search_mode,
         text_weight=text_weight,
+        site_id=site_id,
     )
+
+
+def search_similar_product_hits_multimodal(
+    image_bytes: bytes | None,
+    text: str | None,
+    top_k: int = 5,
+    search_mode: str = "similar",
+    text_weight: float = 0.4,
+    site_id: str | None = None,
+) -> List[SearchHit]:
+    image = None
+    if image_bytes is not None:
+        try:
+            image = Image.open(BytesIO(image_bytes)).convert("RGB")
+        except Exception as exc:
+            raise ValueError(f"이미지 로딩 실패: {exc}") from exc
+    query_text = (text or "").strip() or None
+    hits = _search_clip_hits(
+        image=image,
+        text=query_text,
+        top_k=top_k,
+        search_mode=search_mode,
+        text_weight=text_weight,
+        site_id=site_id,
+    )
+    ranked_ids = _rerank_hits_with_soft_boost(
+        hits=hits,
+        query_text=query_text,
+        top_k=top_k,
+        dense_weight=0.8,
+        boost_weight=0.2,
+    )
+    hits_by_id = {hit.product_id: hit for hit in hits}
+    return [hits_by_id[product_id] for product_id in ranked_ids if product_id in hits_by_id]
 
 
 @tool

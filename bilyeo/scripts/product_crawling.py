@@ -9,6 +9,7 @@
   pip install playwright playwright-stealth
   playwright install chromium
 """
+
 import re
 import sys
 import os
@@ -18,16 +19,16 @@ import uuid
 import json
 import boto3
 from datetime import datetime
-from dotenv import load_dotenv
 from pathlib import Path
 from urllib.parse import urljoin
-
-# bilyeo/.env 파일 로드
-env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(env_path)
+import urllib.request
 
 # backend 디렉토리를 path에 추가
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "backend"))
+
+from env_bootstrap import ensure_backend_env_loaded
+
+ensure_backend_env_loaded()
 
 import oracledb
 from models import get_connection
@@ -44,15 +45,61 @@ R2_BUCKET = os.getenv("R2_BUCKET")
 R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
 R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
 R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL")
-FAST_SEED = os.getenv("BILYEO_FAST_SEED", "1").lower() not in {"0", "false", "no"}
+FAST_SEED = os.getenv("BILYEO_FAST_SEED", "0").lower() not in {"0", "false", "no"}
+CRAWL_EXPORT_DIR = os.getenv("BILYEO_CRAWL_EXPORT_DIR", "crawl_exports")
+IMAGE_SAVE_DIR = os.getenv(
+    "BILYEO_IMAGE_SAVE_DIR",
+    os.path.join(os.path.dirname(__file__), "downloaded_images"),
+)
 
 # ===== R2 무료 한도 (월별) =====
-CLASS_A_LIMIT = 1_000_000   # Class A (쓰기: PutObject, ListObjects 등)
+CLASS_A_LIMIT = 1_000_000  # Class A (쓰기: PutObject, ListObjects 등)
 CLASS_B_LIMIT = 10_000_000  # Class B (읽기: GetObject 등)
-STORAGE_LIMIT_GB = 10       # 저장 용량 10GB
+STORAGE_LIMIT_GB = 10  # 저장 용량 10GB
 
 # 사용량 파일 경로
 USAGE_FILE = os.path.join(os.path.dirname(__file__), "image_usage.json")
+
+
+def _resolve_crawl_export_dir(export_dir: str | os.PathLike[str] | None = None) -> Path:
+    raw = str(export_dir or CRAWL_EXPORT_DIR or "").strip()
+    if not raw:
+        raw = "crawl_exports"
+    path = Path(raw)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / path
+    return path
+
+
+def export_crawled_products(
+    products: list[dict],
+    *,
+    export_dir: str | os.PathLike[str] | None = None,
+    captured_at: datetime | None = None,
+) -> dict[str, str | int]:
+    export_root = _resolve_crawl_export_dir(export_dir)
+    export_root.mkdir(parents=True, exist_ok=True)
+
+    timestamp = captured_at or datetime.now()
+    payload = {
+        "site": "bilyeo",
+        "captured_at": timestamp.isoformat(),
+        "product_count": len(products),
+        "fast_seed": FAST_SEED,
+        "products": products,
+    }
+
+    latest_path = export_root / "latest-products.json"
+    snapshot_path = export_root / f"products-{timestamp.strftime('%Y%m%d-%H%M%S')}.json"
+    serialized = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+    latest_path.write_text(serialized, encoding="utf-8")
+    snapshot_path.write_text(serialized, encoding="utf-8")
+
+    return {
+        "latest_path": str(latest_path),
+        "snapshot_path": str(snapshot_path),
+        "product_count": len(products),
+    }
 
 
 def _load_usage() -> dict:
@@ -98,7 +145,9 @@ def _check_class_a_limit(operation_count: int = 1) -> bool:
     usage = _load_usage()
     current = usage["current"]
     if current["class_a"] + operation_count > CLASS_A_LIMIT:
-        print(f"  [R2 제한] Class A 한도 초과! ({current['class_a']:,}/{CLASS_A_LIMIT:,})")
+        print(
+            f"  [R2 제한] Class A 한도 초과! ({current['class_a']:,}/{CLASS_A_LIMIT:,})"
+        )
         return False
     return True
 
@@ -108,7 +157,9 @@ def _check_class_b_limit(operation_count: int = 1) -> bool:
     usage = _load_usage()
     current = usage["current"]
     if current["class_b"] + operation_count > CLASS_B_LIMIT:
-        print(f"  [R2 제한] Class B 한도 초과! ({current['class_b']:,}/{CLASS_B_LIMIT:,})")
+        print(
+            f"  [R2 제한] Class B 한도 초과! ({current['class_b']:,}/{CLASS_B_LIMIT:,})"
+        )
         return False
     return True
 
@@ -143,7 +194,9 @@ def _check_storage_limit(file_size: int) -> bool:
     limit_bytes = STORAGE_LIMIT_GB * 1024 * 1024 * 1024
     if current["storage_bytes"] + file_size > limit_bytes:
         used_gb = current["storage_bytes"] / (1024 * 1024 * 1024)
-        print(f"  [R2 제한] 저장 용량 한도 초과! ({used_gb:.2f} GB/{STORAGE_LIMIT_GB} GB)")
+        print(
+            f"  [R2 제한] 저장 용량 한도 초과! ({used_gb:.2f} GB/{STORAGE_LIMIT_GB} GB)"
+        )
         return False
     return True
 
@@ -157,6 +210,7 @@ def _increment_storage(file_size: int):
 def upload_image_to_r2(image_url: str, filename: str) -> bool:
     """이미지를 다운로드하여 R2에 업로드합니다. (Class A 1회 소모)"""
     import urllib.request
+
     if not _check_class_a_limit():
         return False
     try:
@@ -217,14 +271,15 @@ def check_r2_storage_usage():
     print(f"--- {current['month']} 월별 누적 ---")
     print(f"  Class A (쓰기): {current['class_a']:,} / {CLASS_A_LIMIT:,}")
     print(f"  Class B (읽기): {current['class_b']:,} / {CLASS_B_LIMIT:,}")
-    print(f"  누적 용량: {used_gb:.2f} GB / {STORAGE_LIMIT_GB} GB ({used_gb / STORAGE_LIMIT_GB * 100:.1f}%)")
+    print(
+        f"  누적 용량: {used_gb:.2f} GB / {STORAGE_LIMIT_GB} GB ({used_gb / STORAGE_LIMIT_GB * 100:.1f}%)"
+    )
     print(f"==============================")
     return total_count, total_size
 
 
 def download_image(image_url: str, filename: str) -> bool:
     """이미지를 다운로드하여 로컬에 저장합니다."""
-    import urllib.request
     os.makedirs(IMAGE_SAVE_DIR, exist_ok=True)
     filepath = os.path.join(IMAGE_SAVE_DIR, filename)
     if os.path.exists(filepath):
@@ -261,6 +316,7 @@ def normalize_image_url(image_url: str) -> str:
 
 
 # ===== HTTP 세션 =====
+
 
 def create_browser_page(playwright_instance):
     """Playwright 브라우저와 stealth 페이지를 생성합니다."""
@@ -307,16 +363,24 @@ class ProductHTMLParser(HTMLParser):
         if tag == "li" and attr.get("criteo-goods"):
             raw = attr.get("criteo-goods", "").strip()
             # goodsNo 형식: 영문자 1자 + 숫자 12자 (총 13자), 뒤에 옵션 suffix 제거
-            m = re.match(r'([A-Za-z][0-9]{12})', raw)
+            m = re.match(r"([A-Za-z][0-9]{12})", raw)
             goods_no = m.group(1) if m else raw
             detail_url = (
                 f"https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo={goods_no}"
-                if goods_no else ""
+                if goods_no
+                else ""
             )
             self._in_flag = True
-            self._current = {"name": "", "brand": "", "price": 0,
-                             "description": "", "image_url": "", "stock": 100,
-                             "goods_no": goods_no, "detail_url": detail_url}
+            self._current = {
+                "name": "",
+                "brand": "",
+                "price": 0,
+                "description": "",
+                "image_url": "",
+                "stock": 100,
+                "goods_no": goods_no,
+                "detail_url": detail_url,
+            }
         if not self._in_flag:
             return
         if "tx_name" in cls or "prd_name" in cls:
@@ -373,7 +437,6 @@ PRODUCT_INFO_FIELD_MAP = {
 }
 
 
-
 def extract_standard_code_from_html(html: str) -> str:
     """상세페이지 HTML에서 standardCode(바코드)를 추출합니다.
     \"standardCode\":\"...\" (이스케이프) 및 "standardCode":"..." 두 형태 모두 처리합니다."""
@@ -416,14 +479,15 @@ def extract_goods_option_info_list(page: "Page", goods_number: str) -> list:
     try:
         # goodsOptionInfoList 변수 할당 패턴
         match = re.search(
-            r'goodsOptionInfoList\s*[:=]\s*(\[[^\]]*standardCode[^\]]*\])',
-            html, re.DOTALL
+            r"goodsOptionInfoList\s*[:=]\s*(\[[^\]]*standardCode[^\]]*\])",
+            html,
+            re.DOTALL,
         )
         if match:
             # JS 객체 리터럴(키에 따옴표 없음)을 JSON으로 변환
             raw = match.group(1)
-            raw_json = re.sub(r'(\w+)\s*:', r'"\1":', raw)  # 키에 따옴표 추가
-            raw_json = re.sub(r',\s*}', '}', raw_json)      # trailing comma 제거
+            raw_json = re.sub(r"(\w+)\s*:", r'"\1":', raw)  # 키에 따옴표 추가
+            raw_json = re.sub(r",\s*}", "}", raw_json)  # trailing comma 제거
             parsed = json.loads(raw_json)
             if parsed:
                 return parsed
@@ -433,7 +497,9 @@ def extract_goods_option_info_list(page: "Page", goods_number: str) -> list:
     # 방법 2-B: 이스케이프된 JSON의 options 배열 파싱 (Next.js stringified JSON 대응)
     # HTML 내 데이터가 \"options\":[{\"standardCode\":\"...\",\"optionName\":\"...\"}] 형태인 경우
     try:
-        match = re.search(r'\\"options\\":\s*(\[(?:[^\[\]]|\[(?:[^\[\]])*\])*\])', html, re.DOTALL)
+        match = re.search(
+            r'\\"options\\":\s*(\[(?:[^\[\]]|\[(?:[^\[\]])*\])*\])', html, re.DOTALL
+        )
         if match:
             raw = match.group(1).replace('\\"', '"')
             parsed = json.loads(raw)
@@ -453,16 +519,18 @@ def extract_goods_option_info_list(page: "Page", goods_number: str) -> list:
         # 이스케이프 형태: \"standardCode\":\"12345678\",\"optionName\":\"이름\"
         pairs = re.findall(
             r'\\"standardCode\\":\\"([0-9]{8,14})\\"[^}]{0,300}?\\"optionName\\":\\"([^"\\]+)',
-            html
+            html,
         )
         if not pairs:
             # 일반 형태
             pairs = re.findall(
                 r'"standardCode"\s*:\s*"([0-9]{8,14})"[^}]{0,300}?"optionName"\s*:\s*"([^"]+)"',
-                html
+                html,
             )
         if pairs:
-            return [{"standardCode": sc, "optionName": name.strip()} for sc, name in pairs]
+            return [
+                {"standardCode": sc, "optionName": name.strip()} for sc, name in pairs
+            ]
     except Exception:
         pass
 
@@ -477,7 +545,8 @@ def extract_goods_option_info_list(page: "Page", goods_number: str) -> list:
 
 def _call_article_api(page: "Page", goods_number: str, option_list: list) -> dict:
     """제공고시 API를 한 번 호출하고 결과를 파싱합니다."""
-    result = page.evaluate("""
+    result = page.evaluate(
+        """
         async ([goodsNumber, goodsOptionInfoList]) => {
             const resp = await fetch('https://www.oliveyoung.co.kr/goods/api/v1/article', {
                 method: 'POST',
@@ -492,9 +561,13 @@ def _call_article_api(page: "Page", goods_number: str, option_list: list) -> dic
             try { data = await resp.json(); } catch(e) {}
             return { status: resp.status, data: data };
         }
-    """, [goods_number, option_list])
+    """,
+        [goods_number, option_list],
+    )
     if result["status"] != 200:
-        _debug_logs.append(f"  [제공고시] 응답 에러 코드: {result['status']}, options: {option_list}, body: {str(result['data'])[:300]}")
+        _debug_logs.append(
+            f"  [제공고시] 응답 에러 코드: {result['status']}, options: {option_list}, body: {str(result['data'])[:300]}"
+        )
     if result["status"] == 200 and result["data"]:
         article_list = result["data"].get("data", {}).get("articleInfoList", [])
         info = {}
@@ -511,11 +584,15 @@ def _call_article_api(page: "Page", goods_number: str, option_list: list) -> dic
         if info:
             return info
         if article_list:
-            _debug_logs.append(f"  [제공고시] articleInfoList 존재하나 매핑 실패. titles: {[item.get('title', '') for item in article_list[:5]]}")
+            _debug_logs.append(
+                f"  [제공고시] articleInfoList 존재하나 매핑 실패. titles: {[item.get('title', '') for item in article_list[:5]]}"
+            )
     return {}
 
 
-def fetch_product_article_api(page: "Page", goods_number: str, goods_option_info_list: list) -> dict:
+def fetch_product_article_api(
+    page: "Page", goods_number: str, goods_option_info_list: list
+) -> dict:
     """브라우저 컨텍스트에서 fetch()로 제공고시 API를 호출합니다.
     첫 시도 실패 시 빈 옵션 리스트로 재시도합니다."""
     # 시도할 옵션 리스트 후보
@@ -536,7 +613,8 @@ def fetch_product_article_api(page: "Page", goods_number: str, goods_option_info
 def fetch_first_review_api(page: "Page", goods_number: str) -> str:
     """브라우저 컨텍스트에서 fetch()로 리뷰 API를 호출합니다."""
     try:
-        result = page.evaluate("""
+        result = page.evaluate(
+            """
             async (goodsNumber) => {
                 const resp = await fetch('https://m.oliveyoung.co.kr/review/api/v2/reviews', {
                     method: 'POST',
@@ -553,7 +631,9 @@ def fetch_first_review_api(page: "Page", goods_number: str) -> str:
                 const data = await resp.json();
                 return { status: resp.status, data: data };
             }
-        """, goods_number)
+        """,
+            goods_number,
+        )
         if result["status"] == 200 and result["data"]:
             reviews = result["data"].get("data") or []
             if reviews:
@@ -572,7 +652,9 @@ def fetch_product_detail_info(page: "Page", goods_no: str) -> dict:
     if not goods_no:
         return result
 
-    detail_url = f"https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo={goods_no}"
+    detail_url = (
+        f"https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo={goods_no}"
+    )
 
     # 상세페이지 방문 (쿠키/Referer 확보)
     try:
@@ -598,6 +680,7 @@ def fetch_product_detail_info(page: "Page", goods_no: str) -> dict:
 
 # ===== DB 저장 =====
 
+
 def upsert_product(cursor, product: dict) -> int | None:
     """상품을 삽입하거나 기존 product_id를 반환합니다."""
     cursor.execute(
@@ -608,18 +691,21 @@ def upsert_product(cursor, product: dict) -> int | None:
     if row:
         return row[0]
 
-    cursor.execute("""
+    cursor.execute(
+        """
         INSERT INTO products (name, brand, price, description, image_url, category, stock)
         VALUES (:name, :brand, :price, :description, :image_url, :category, :stock)
-    """, {
-        "name": product["name"],
-        "brand": product["brand"],
-        "price": product["price"],
-        "description": product.get("description", ""),
-        "image_url": product.get("image_url", ""),
-        "category": product.get("category", ""),
-        "stock": product.get("stock", 100),
-    })
+    """,
+        {
+            "name": product["name"],
+            "brand": product["brand"],
+            "price": product["price"],
+            "description": product.get("description", ""),
+            "image_url": product.get("image_url", ""),
+            "category": product.get("category", ""),
+            "stock": product.get("stock", 100),
+        },
+    )
 
     cursor.execute(
         "SELECT product_id FROM products WHERE name = :name AND brand = :brand",
@@ -663,7 +749,8 @@ def upsert_product_info(cursor, product_id: int, info: dict) -> bool:
     }
 
     if existing:
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE product_info SET
                 volume_weight = :volume_weight,
                 main_spec = :main_spec,
@@ -678,9 +765,12 @@ def upsert_product_info(cursor, product_id: int, info: dict) -> bool:
                 consumer_hotline = :consumer_hotline,
                 review = :review
             WHERE product_id = :product_id
-        """, params)
+        """,
+            params,
+        )
     else:
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO product_info (
                 product_id, volume_weight, main_spec, expiry, usage_method,
                 manufacturer, country_of_origin, ingredients, functional_cosmetic,
@@ -690,7 +780,9 @@ def upsert_product_info(cursor, product_id: int, info: dict) -> bool:
                 :manufacturer, :country_of_origin, :ingredients, :functional_cosmetic,
                 :precautions, :quality_standard, :consumer_hotline, :review
             )
-        """, params)
+        """,
+            params,
+        )
     return True
 
 
@@ -713,12 +805,12 @@ MAX_PRODUCTS_PER_CATEGORY = 20  # 카테고리당 최대 수집 상품 수
 BASE_CATEGORY_URL = "https://www.oliveyoung.co.kr/store/display/getMCategoryList.do"
 
 SUBCATEGORY_URLS = {
-    "스킨/토너":        f"{BASE_CATEGORY_URL}?dispCatNo=100000100010013",
-    "에센스/세럼/앰플":  f"{BASE_CATEGORY_URL}?dispCatNo=100000100010014",
-    "크림":             f"{BASE_CATEGORY_URL}?dispCatNo=100000100010015",
-    "로션":             f"{BASE_CATEGORY_URL}?dispCatNo=100000100010016",
-    "미스트/오일":      f"{BASE_CATEGORY_URL}?dispCatNo=100000100010010",
-    "스킨케어세트":     f"{BASE_CATEGORY_URL}?dispCatNo=100000100010017",
+    "스킨/토너": f"{BASE_CATEGORY_URL}?dispCatNo=100000100010013",
+    "에센스/세럼/앰플": f"{BASE_CATEGORY_URL}?dispCatNo=100000100010014",
+    "크림": f"{BASE_CATEGORY_URL}?dispCatNo=100000100010015",
+    "로션": f"{BASE_CATEGORY_URL}?dispCatNo=100000100010016",
+    "미스트/오일": f"{BASE_CATEGORY_URL}?dispCatNo=100000100010010",
+    "스킨케어세트": f"{BASE_CATEGORY_URL}?dispCatNo=100000100010017",
     "스킨케어 디바이스": f"{BASE_CATEGORY_URL}?dispCatNo=100000100010018",
 }
 
@@ -741,7 +833,11 @@ def crawl_oliveyoung() -> list[dict]:
         try:
             # 1단계: 메인 페이지 접속으로 쿠키 획득
             print("\n[1단계] 올리브영 메인 페이지 접속 (쿠키 획득)...")
-            page.goto("https://www.oliveyoung.co.kr", timeout=30000, wait_until="domcontentloaded")
+            page.goto(
+                "https://www.oliveyoung.co.kr",
+                timeout=30000,
+                wait_until="domcontentloaded",
+            )
             print("  메인 페이지 로드 완료")
             time.sleep(random.uniform(3, 5))
 
@@ -772,7 +868,9 @@ def crawl_oliveyoung() -> list[dict]:
                         break
 
                     collected.extend(products)
-                    print(f"  페이지 {page_idx}: {len(products)}건 파싱 (누적 {len(collected)}건)")
+                    print(
+                        f"  페이지 {page_idx}: {len(products)}건 파싱 (누적 {len(collected)}건)"
+                    )
                     page_idx += 1
                     time.sleep(random.uniform(4, 8))
 
@@ -783,21 +881,29 @@ def crawl_oliveyoung() -> list[dict]:
                 print(f"  최종 수집: {len(collected)}건")
 
             if FAST_SEED:
-                print("\n[3단계] 빠른 시드 모드: 상세페이지/리뷰/R2 업로드를 건너뜁니다.")
+                print(
+                    "\n[3단계] 빠른 시드 모드: 상세페이지/리뷰/R2 업로드를 건너뜁니다."
+                )
                 print(f"\n올리브영 스킨케어 상품 수집 완료: 총 {len(all_products)}건")
                 return all_products
 
             # 3단계: 각 상품 상세페이지에서 상품정보 제공고시 + 첫 번째 리뷰 수집
-            print(f"\n[3단계] 상품 상세페이지 크롤링 시작 (총 {len(all_products)}건)...")
+            print(
+                f"\n[3단계] 상품 상세페이지 크롤링 시작 (총 {len(all_products)}건)..."
+            )
             for i, product in enumerate(all_products):
                 goods_no = product.get("goods_no", "")
                 name_short = product.get("name", "")[:25]
                 if not goods_no:
-                    print(f"  [{i+1}/{len(all_products)}] {name_short}: goodsNo 없음, 건너뜁니다.")
+                    print(
+                        f"  [{i + 1}/{len(all_products)}] {name_short}: goodsNo 없음, 건너뜁니다."
+                    )
                     product["product_info"] = {}
                     continue
 
-                print(f"  [{i+1}/{len(all_products)}] {name_short}: 상세페이지 크롤링... (goodsNo={goods_no})")
+                print(
+                    f"  [{i + 1}/{len(all_products)}] {name_short}: 상세페이지 크롤링... (goodsNo={goods_no})"
+                )
                 info = fetch_product_detail_info(page, goods_no)
                 product["product_info"] = info
 
@@ -837,12 +943,19 @@ def crawl_oliveyoung() -> list[dict]:
 
 # ===== 메인 =====
 
+
 def main():
     all_products = crawl_oliveyoung()
+    export_result = export_crawled_products(all_products)
+
+    print("\n=== 크롤링 결과 파일 저장 완료 ===")
+    print(f"  latest: {export_result['latest_path']}")
+    print(f"  snapshot: {export_result['snapshot_path']}")
+    print(f"  상품 수: {export_result['product_count']}건")
 
     if not all_products:
         print("\n크롤링된 상품이 없습니다.")
-        return
+        return export_result
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -863,20 +976,30 @@ def main():
                     if upsert_product_info(cursor, product_id, info):
                         inserted_infos += 1
                 except Exception as e:
-                    _debug_logs.append(f"  [DB] product_info 저장 실패 (product_id={product_id}): {e}")
+                    _debug_logs.append(
+                        f"  [DB] product_info 저장 실패 (product_id={product_id}): {e}"
+                    )
 
         conn.commit()
     finally:
         cursor.close()
         conn.close()
 
-    print(f"\n=== DB 저장 완료: 상품 {inserted_products}건, 상품정보 {inserted_infos}건 (총 {len(all_products)}건 수집) ===")
+    print(
+        f"\n=== DB 저장 완료: 상품 {inserted_products}건, 상품정보 {inserted_infos}건 (총 {len(all_products)}건 수집) ==="
+    )
 
     if _debug_logs:
         print(f"\n===== 디버그 로그 ({len(_debug_logs)}건) =====")
         for log in _debug_logs:
             print(log)
         print("=" * 40)
+
+    return {
+        **export_result,
+        "inserted_products": inserted_products,
+        "inserted_infos": inserted_infos,
+    }
 
 
 if __name__ == "__main__":

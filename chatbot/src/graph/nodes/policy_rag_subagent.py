@@ -16,8 +16,10 @@ Policy RAG SubAgent 노드.
 
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
+from chatbot.src.graph.brand_profiles import resolve_brand_profile
 from chatbot.src.graph.state import GlobalAgentState
 from chatbot.src.graph.llm_providers import make_chat_llm
+from chatbot.src.infrastructure.site_retrieval import use_runtime_site_id
 from chatbot.src.tools.retrieval_tools import search_knowledge_base
 
 # ── 프롬프트 ──────────────────────────────────────────────
@@ -71,7 +73,7 @@ QUERY_TRANSFORM_PROMPT = """당신은 검색 쿼리 최적화 전문가입니다
 출력: "상품 불량 보상 기준 교환 환불 절차"
 """
 
-POLICY_RAG_ANSWER_PROMPT = """당신은 MOYEO 쇼핑몰 CS 상담원입니다.
+POLICY_RAG_ANSWER_PROMPT = """당신은 {brand_store_label} CS 상담원입니다.
 아래 [참고 문서]를 바탕으로 사용자의 질문에 정확하고 간결하게 답변하세요.
 
 규칙:
@@ -88,9 +90,11 @@ def run_policy_rag_pipeline(
     messages: list,
     provider: str = "openai",
     model: str = "gpt-4o-mini",
+    site_id: str | None = None,
 ) -> dict:
     """실서비스와 동일한 Policy RAG 파이프라인을 실행하고 중간 산출물을 반환합니다."""
     llm = make_chat_llm(provider=provider, model=model, temperature=0)
+    brand_profile = resolve_brand_profile(site_id)
 
     user_query = _get_last_user_message(messages)
     if not user_query:
@@ -115,13 +119,14 @@ def run_policy_rag_pipeline(
     documents: list[str] = []
     used_fallback = False
 
-    for index, payload in enumerate(retrieval_attempts):
-        current_result = search_knowledge_base.invoke(payload)
-        retrieval_results.append(current_result)
+    with use_runtime_site_id(site_id):
+        for index, payload in enumerate(retrieval_attempts):
+            current_result = search_knowledge_base.invoke(payload)
+            retrieval_results.append(current_result)
 
-        current_documents = current_result.get("documents", [])
-        if current_documents and not documents:
-            used_fallback = index > 0
+            current_documents = current_result.get("documents", [])
+            if current_documents and not documents:
+                used_fallback = index > 0
 
     retrieval_result = _merge_retrieval_results(retrieval_results)
     documents = retrieval_result.get("documents", [])
@@ -129,7 +134,12 @@ def run_policy_rag_pipeline(
     context = "\n\n".join(documents) if documents else "관련 정책 문서를 찾을 수 없습니다."
 
     answer_response = llm.invoke([
-        SystemMessage(content=POLICY_RAG_ANSWER_PROMPT.format(context=context)),
+        SystemMessage(
+            content=POLICY_RAG_ANSWER_PROMPT.format(
+                brand_store_label=brand_profile.store_label,
+                context=context,
+            )
+        ),
         *messages,
     ])
     answer_content = str(answer_response.content)
@@ -167,6 +177,7 @@ def policy_rag_subagent_node(state: GlobalAgentState) -> dict:
             messages=state["messages"],
             provider=provider,
             model=model,
+            site_id=(state.get("user_info") or {}).get("site_id"),
         )
     except Exception as exc:
         return _error_response(state, task, str(exc))

@@ -5,6 +5,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -67,6 +69,13 @@ def test_shared_widget_host_contract_defaults_align_with_typescript():
     assert "type SharedWidgetMountMode = 'floating_launcher';" in ts_content
 
 
+def test_shared_widget_host_contract_rejects_explicit_empty_chatbot_server_base_url():
+    assets_module = _load_shared_assets_module()
+
+    with pytest.raises(ValueError, match="chatbot_server_base_url"):
+        assets_module.build_shared_widget_host_contract(chatbot_server_base_url="")
+
+
 def test_shared_widget_host_contract_overrides_take_precedence():
     assets_module = _load_shared_assets_module()
 
@@ -112,12 +121,29 @@ def test_shared_widget_host_contract_attribute_overrides_take_precedence():
     assert resolved["mountMode"] == "floating_launcher"
 
 
+def test_shared_widget_host_contract_rejects_explicit_empty_override_values():
+    assets_module = _load_shared_assets_module()
+
+    with pytest.raises(ValueError, match="chatbot_server_base_url"):
+        assets_module.resolve_shared_widget_host_contract(
+            base_contract={"chatbotServerBaseUrl": ""},
+        )
+
+    with pytest.raises(ValueError, match="chatbot_server_base_url"):
+        assets_module.resolve_shared_widget_host_contract(
+            attribute_overrides={"chatbot-server-base-url": ""},
+        )
+
+
 def test_shared_widget_runtime_exposes_site_without_site_id():
     module = _load_runtime_module()
 
     payload = module.build_widget_runtime_payload(
         site="food",
         chatbot_server_base_url="https://chat.example.com/",
+        capability_profile="order_cs_plus_retrieval",
+        enabled_retrieval_corpora=["faq"],
+        widget_features={"image_upload": False},
     )
 
     assert payload["site"] == "food"
@@ -126,4 +152,22 @@ def test_shared_widget_runtime_exposes_site_without_site_id():
     assert payload["widgetBundlePath"] == "/widget.js"
     assert payload["widgetElementTag"] == "order-cs-widget"
     assert payload["mountMode"] == "floating_launcher"
+    assert payload["capabilityProfile"] == "order_cs_plus_retrieval"
+    assert payload["enabledRetrievalCorpora"] == ["faq"]
+    assert payload["widgetFeatures"] == {"image_upload": False}
     assert "site_id" not in payload
+
+
+def test_shared_widget_runtime_payload_exposes_branding_metadata():
+    module = _load_runtime_module()
+
+    payload = module.build_widget_runtime_payload(
+        site="bilyeo",
+        chatbot_server_base_url="http://127.0.0.1:8100/",
+    )
+
+    assert payload["siteId"] == "bilyeo"
+    assert payload["brandDisplayName"] == "bilyeo"
+    assert payload["brandStoreLabel"] == "bilyeo 쇼핑몰"
+    assert payload["assistantTitle"] == "bilyeo AI 고객상담사"
+    assert payload["initialGreeting"] == "안녕하세요. bilyeo 챗봇입니다."

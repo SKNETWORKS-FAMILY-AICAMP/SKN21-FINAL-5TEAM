@@ -8,6 +8,10 @@ import os
 # backend 디렉토리를 path에 추가
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "backend"))
 
+from env_bootstrap import ensure_backend_env_loaded
+
+ensure_backend_env_loaded()
+
 from werkzeug.security import generate_password_hash
 from models import get_connection, init_db
 from faq_crawling import main as faq_crawling_main
@@ -22,9 +26,17 @@ def run_crawling():
     faq_crawling_main()
 
     print("\n[상품 크롤링]")
-    product_crawling_main()
+    product_crawl_result = product_crawling_main() or {}
 
     print("\n=== 크롤링 완료 ===\n")
+    if product_crawl_result:
+        latest_path = str(product_crawl_result.get("latest_path") or "").strip()
+        snapshot_path = str(product_crawl_result.get("snapshot_path") or "").strip()
+        if latest_path:
+            print(f"  상품 크롤링 latest: {latest_path}")
+        if snapshot_path:
+            print(f"  상품 크롤링 snapshot: {snapshot_path}")
+    return product_crawl_result
 
 
 def seed_db():

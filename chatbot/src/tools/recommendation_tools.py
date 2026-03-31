@@ -1,19 +1,17 @@
+import importlib
 import json
 import os
 import re
 import pandas as pd
-from typing import List, Optional
+from typing import Any, List, Optional
 from flashrank import Ranker, RerankRequest
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
-from ecommerce.backend.app.database import SessionLocal
-from ecommerce.backend.app.models import User
-from ecommerce.backend.app.router.products import crud as product_crud
-from ecommerce.backend.app.router.products import schemas as product_schemas
 from chatbot.src.tools.image_search_tools import (
-    search_similar_products_multimodal,
-    search_similar_products_from_text,
+    SearchHit,
+    search_similar_product_hits_multimodal,
+    search_similar_product_hits_from_text,
 )
 
 # Path to the sampled dataset
@@ -36,6 +34,163 @@ PRODUCTS_CSV_PATH = os.path.join(
 _DF_CACHE = None
 _RANKER: Ranker | None = None
 _DISCOVERY_RERANK_LLM: ChatOpenAI | None = None
+_ECOMMERCE_BACKEND_CACHE: tuple[Any, Any, Any, Any] | None = None
+_ECOMMERCE_BACKEND_ERROR: Exception | None = None
+
+
+def _load_ecommerce_backend_primitives() -> tuple[Any, Any, Any, Any]:
+    global _ECOMMERCE_BACKEND_CACHE, _ECOMMERCE_BACKEND_ERROR
+    if _ECOMMERCE_BACKEND_CACHE is not None:
+        return _ECOMMERCE_BACKEND_CACHE
+    if _ECOMMERCE_BACKEND_ERROR is not None:
+        raise _ECOMMERCE_BACKEND_ERROR
+    try:
+        database_module = importlib.import_module("ecommerce.backend.app.database")
+        models_module = importlib.import_module("ecommerce.backend.app.models")
+        crud_module = importlib.import_module("ecommerce.backend.app.router.products.crud")
+        schemas_module = importlib.import_module("ecommerce.backend.app.router.products.schemas")
+        _ECOMMERCE_BACKEND_CACHE = (
+            getattr(database_module, "SessionLocal"),
+            getattr(models_module, "User"),
+            crud_module,
+            schemas_module,
+        )
+        return _ECOMMERCE_BACKEND_CACHE
+    except Exception as exc:
+        _ECOMMERCE_BACKEND_ERROR = exc
+        raise
+
+
+def _ecommerce_backend_available() -> bool:
+    try:
+        _load_ecommerce_backend_primitives()
+    except Exception:
+        return False
+    return True
+
+
+def _first_non_empty(*values: Any) -> str | None:
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
+def _coerce_price(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, dict):
+        for key in ("amount", "price", "value", "sale_price", "discounted_price"):
+            parsed = _coerce_price(value.get(key))
+            if parsed is not None:
+                return parsed
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    normalized = text.replace(",", "")
+    normalized = re.sub(r"[^0-9.\-]", "", normalized)
+    if not normalized:
+        return None
+    try:
+        return float(normalized)
+    except Exception:
+        return None
+
+
+def _normalize_category(payload: dict[str, Any]) -> str | None:
+    primary = _first_non_empty(
+        payload.get("category"),
+        payload.get("subcategory"),
+        payload.get("sub_category"),
+        payload.get("article_type"),
+        payload.get("articleType"),
+    )
+    if primary:
+        return primary
+    parts = [
+        _first_non_empty(payload.get("main_category")),
+        _first_non_empty(payload.get("sub_category")),
+        _first_non_empty(payload.get("article_type")),
+    ]
+    cleaned = [part for part in parts if part]
+    if not cleaned:
+        return None
+    deduped: list[str] = []
+    for part in cleaned:
+        if part not in deduped:
+            deduped.append(part)
+    return " > ".join(deduped)
+
+
+def _payload_to_product(hit: SearchHit) -> dict[str, Any]:
+    payload = dict(hit.payload or {})
+    product_id = payload.get("product_id", payload.get("id", hit.product_id))
+    title = _first_non_empty(
+        payload.get("product_display_name"),
+        payload.get("product_name"),
+        payload.get("name"),
+        payload.get("title"),
+        payload.get("variant_name"),
+        payload.get("option_name"),
+    )
+    category = _normalize_category(payload)
+    return {
+        "id": int(product_id) if str(product_id).strip().isdigit() else product_id,
+        "name": title or f"상품 {product_id}",
+        "price": _coerce_price(
+            payload.get("price")
+            or payload.get("sale_price")
+            or payload.get("discounted_price")
+            or payload.get("list_price")
+        ),
+        "category": category,
+        "color": _first_non_empty(
+            payload.get("color"),
+            payload.get("base_colour"),
+            payload.get("baseColor"),
+        ),
+        "season": _first_non_empty(payload.get("season")),
+        "image_url": _first_non_empty(
+            payload.get("image_url"),
+            payload.get("resolved_image_url"),
+            payload.get("image"),
+            payload.get("primary_image"),
+        ),
+        "brand": _first_non_empty(
+            payload.get("brand"),
+            payload.get("brand_name"),
+            payload.get("manufacturer"),
+        ),
+        "description": _first_non_empty(
+            payload.get("description"),
+            payload.get("summary"),
+            payload.get("details"),
+            payload.get("benefits"),
+        ),
+    }
+
+
+def _build_products_from_hits(hits: list[SearchHit]) -> tuple[list[int], list[dict[str, Any]]]:
+    product_ids: list[int] = []
+    products: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for hit in hits:
+        try:
+            product_id = int(hit.product_id)
+        except Exception:
+            continue
+        if product_id in seen_ids:
+            continue
+        seen_ids.add(product_id)
+        product_ids.append(product_id)
+        products.append(_payload_to_product(hit))
+    return product_ids, products
 
 _COLOR_TRANSLATIONS = {
     "검은색": "black",
@@ -1523,16 +1678,18 @@ def recommend_clothes(
         limit: 추천할 상품 최대 개수 (기본값 3)
         user_id: 사용자 ID (기본값 1, DB에서 성별 조회용)
     """
-    db = SessionLocal()
     gender = None
-    try:
-        user = db.query(User).filter(User.id == user_id).first()
-        if user:
-            gender = getattr(user, "gender", None)
-    except Exception as e:
-        print(f"Error fetching user gender: {e}")
-    finally:
-        db.close()
+    if _ecommerce_backend_available():
+        SessionLocal, User, _product_crud, _product_schemas = _load_ecommerce_backend_primitives()
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                gender = getattr(user, "gender", None)
+        except Exception as e:
+            print(f"Error fetching user gender: {e}")
+        finally:
+            db.close()
 
     df = _get_dataframe()
     if df.empty:
@@ -1620,6 +1777,7 @@ def recommend_clothes(
     }
 
 def _build_product_payloads(product_ids: List[int]) -> List[dict]:
+    SessionLocal, _User, product_crud, product_schemas = _load_ecommerce_backend_primitives()
     db = SessionLocal()
     try:
         payloads: List[dict] = []
@@ -1660,6 +1818,7 @@ def _build_product_payloads(product_ids: List[int]) -> List[dict]:
 
 
 def _keyword_search_products(query_text: str, top_k: int) -> tuple[List[int], List[dict]]:
+    SessionLocal, _User, product_crud, _product_schemas = _load_ecommerce_backend_primitives()
     db = SessionLocal()
     try:
         limit = max(1, min(top_k, 20))
@@ -1682,6 +1841,7 @@ def _keyword_fallback_products(query_text: str, top_k: int) -> tuple[List[int], 
     if product_ids:
         return product_ids, payloads
 
+    SessionLocal, _User, product_crud, _product_schemas = _load_ecommerce_backend_primitives()
     db = SessionLocal()
     try:
         limit = max(1, min(top_k, 20))
@@ -1852,14 +2012,23 @@ def search_by_image(
         return {"error": "이미지 바이트 데이터를 전달해주세요."}
 
     try:
-        product_ids = search_similar_products_multimodal(
+        hits = search_similar_product_hits_multimodal(
             image_bytes=bytes(image_bytes),
             text=query_text,
             top_k=top_k,
             search_mode=search_mode,
         )
+        product_ids, products = _build_products_from_hits(hits)
+        if _ecommerce_backend_available() and product_ids:
+            fallback_products = _build_product_payloads(product_ids)
+            if fallback_products:
+                fallback_by_id = {
+                    int(product["id"]): product
+                    for product in fallback_products
+                    if product.get("id") is not None
+                }
+                products = [fallback_by_id.get(int(product_id), product) for product_id, product in zip(product_ids, products)]
         print("CLIP SEARCH RESULT:", product_ids)
-        products = _build_product_payloads(product_ids)
         product_ids, products = _rerank_products_by_query(query_text, product_ids, products)
         return {
             "ui_action": "show_product_list",
@@ -1890,22 +2059,33 @@ def search_by_text_clip(
         variants = _build_query_variants(query_text)
         variant_top_k = max(top_k + 3, 8)
         candidate_lists: list[list[int]] = []
+        hit_by_product_id: dict[int, SearchHit] = {}
         for variant in variants:
-            candidate_lists.append(
-                search_similar_products_from_text(
-                    text=variant,
-                    top_k=variant_top_k,
-                    search_mode=search_mode,
-                )
+            hits = search_similar_product_hits_from_text(
+                text=variant,
+                top_k=variant_top_k,
+                search_mode=search_mode,
             )
-        keyword_ids, keyword_products = _keyword_candidate_products(query_text, top_k)
-        if keyword_ids:
-            candidate_lists.append(keyword_ids)
-        rescue_ids, rescue_products = _rescue_candidate_products(query_text, top_k)
-        if rescue_ids:
-            candidate_lists.append(rescue_ids)
+            if hits:
+                candidate_lists.append([int(hit.product_id) for hit in hits])
+                for hit in hits:
+                    hit_by_product_id.setdefault(int(hit.product_id), hit)
+        keyword_ids: list[int] = []
+        keyword_products: list[dict[str, Any]] = []
+        rescue_ids: list[int] = []
+        rescue_products: list[dict[str, Any]] = []
+        if _ecommerce_backend_available():
+            keyword_ids, keyword_products = _keyword_candidate_products(query_text, top_k)
+            if keyword_ids:
+                candidate_lists.append(keyword_ids)
+            rescue_ids, rescue_products = _rescue_candidate_products(query_text, top_k)
+            if rescue_ids:
+                candidate_lists.append(rescue_ids)
         product_ids = _merge_product_ids(candidate_lists, top_k)
-        products = _build_product_payloads(product_ids)
+        retrieval_hits = [hit_by_product_id[pid] for pid in product_ids if pid in hit_by_product_id]
+        _retrieval_ids, products = _build_products_from_hits(retrieval_hits)
+        if _ecommerce_backend_available() and product_ids:
+            products = _build_product_payloads(product_ids)
         existing_ids = {int(product["id"]) for product in products if product.get("id") is not None}
         for product in keyword_products:
             pid = product.get("id")
@@ -1933,13 +2113,14 @@ def search_by_text_clip(
         }
     except Exception as e:
         print("TEXT CLIP SEARCH ERROR:", e)
-        fallback_query = _translate_discovery_query(query_text) or query_text
-        fallback_ids, fallback_products = _keyword_fallback_products(fallback_query, top_k)
-        if fallback_products:
-            return {
-                "ui_action": "show_product_list",
-                "product_ids": fallback_ids,
-                "products": fallback_products,
-                "fallback": "keyword_search",
-            }
+        if _ecommerce_backend_available():
+            fallback_query = _translate_discovery_query(query_text) or query_text
+            fallback_ids, fallback_products = _keyword_fallback_products(fallback_query, top_k)
+            if fallback_products:
+                return {
+                    "ui_action": "show_product_list",
+                    "product_ids": fallback_ids,
+                    "products": fallback_products,
+                    "fallback": "keyword_search",
+                }
         return {"error": f"텍스트 기반 이미지 검색 실패: {str(e)}"}

@@ -11,6 +11,10 @@ from fastembed import SparseTextEmbedding
 from flashrank import Ranker, RerankRequest
 
 from chatbot.src.infrastructure.qdrant import get_qdrant_client
+from chatbot.src.infrastructure.site_retrieval import (
+    get_current_runtime_site_id,
+    resolve_site_collections,
+)
 from chatbot.src.core.config import settings
 from chatbot.src.data_preprocessing.bge_m3_embedding import embed_texts
 
@@ -74,12 +78,19 @@ def ensure_retrieval_models():
     _init_ranker()
 
 
-def _build_filter(category: str, collection: str):
+def _build_filter(
+    category: str,
+    collection: str,
+    *,
+    faq_collection: str | None = None,
+):
     """카테고리 필터 생성"""
+    if faq_collection is None:
+        faq_collection = settings.COLLECTION_FAQ
     if not category:
         return None
 
-    if collection != settings.COLLECTION_FAQ:
+    if collection != faq_collection:
         return None
 
     # 카테고리 매핑
@@ -104,10 +115,18 @@ def _extract_text(payload: dict) -> str:
     ).strip()
 
 
-def _make_doc_key(collection: str, point_id: str, payload: dict[str, Any]) -> str:
+def _make_doc_key(
+    collection: str,
+    point_id: str,
+    payload: dict[str, Any],
+    *,
+    faq_collection: str | None = None,
+) -> str:
     """평가용으로 사용할 안정적인 문서 키를 생성합니다."""
+    if faq_collection is None:
+        faq_collection = settings.COLLECTION_FAQ
     question = str(payload.get("question", "")).strip()
-    if collection == settings.COLLECTION_FAQ and question:
+    if collection == faq_collection and question:
         return f"faq::{question}"
 
     article_no = str(payload.get("article_no", "")).strip()
@@ -301,7 +320,8 @@ def _score_policy_adjustment(query: str, passage: dict[str, Any], category: str 
             score += weight if doc_has(*doc_keywords) else -(weight * 0.2)
 
     if query_has("결제수단", "결제 수단", "무통장", "신용카드", "계좌이체"):
-        if collection == settings.COLLECTION_FAQ and doc_has("결제수단", "결제 방법"):
+        faq_collection = resolve_site_collections(get_current_runtime_site_id()).faq
+        if collection == faq_collection and doc_has("결제수단", "결제 방법"):
             score += 2.8
         if article_no == "11":
             score += 2.2
@@ -383,7 +403,8 @@ def _score_policy_adjustment(query: str, passage: dict[str, Any], category: str 
             score -= 1.4
 
     if query_has("보상", "손해"):
-        if collection == settings.COLLECTION_TERMS:
+        policy_collection = resolve_site_collections(get_current_runtime_site_id()).policy
+        if collection == policy_collection:
             score += 1.8
         if article_no == "13":
             score += 0.8
@@ -594,7 +615,7 @@ def _score_policy_adjustment(query: str, passage: dict[str, Any], category: str 
 
 
 @tool
-def search_knowledge_base(query: str, category: str = None) -> dict:
+def search_knowledge_base(query: str, category: str = None, site_id: str | None = None) -> dict:
     """
     쇼핑몰 규정, 배송 정책, 교환/반품 안내 등 지식 베이스를 검색합니다.
     주문 상태나 배송 현황 조회가 아니라, '규정'이나 '정보'를 물어볼 때 사용합니다.
@@ -639,9 +660,12 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
     # Hybrid 검색 (FAQ + 약관)
     client = get_qdrant_client()
     candidates = []
+    site_collections = resolve_site_collections(site_id or get_current_runtime_site_id())
+    faq_collection = site_collections.faq
+    policy_collection = site_collections.policy
 
-    for col in [settings.COLLECTION_FAQ, settings.COLLECTION_TERMS]:
-        query_filter = _build_filter(category, col)
+    for col in [faq_collection, policy_collection]:
+        query_filter = _build_filter(category, col, faq_collection=faq_collection)
 
         try:
             if dense is not None and sparse_idx is not None and sparse_val is not None:
@@ -717,7 +741,12 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
             faq_passages.append(
                 {
                     "id": str(c.id),
-                    "doc_key": _make_doc_key(collection, str(c.id), c.payload),
+                    "doc_key": _make_doc_key(
+                        collection,
+                        str(c.id),
+                        c.payload,
+                        faq_collection=faq_collection,
+                    ),
                     "collection": collection,
                     "text": _extract_text(c.payload),
                     "meta": c.payload,
@@ -738,7 +767,7 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
 
         try:
             scroll_res, _ = client.scroll(
-                collection_name=settings.COLLECTION_TERMS,
+                collection_name=policy_collection,
                 scroll_filter=models.Filter(must=must_conditions),
                 limit=100,
             )
@@ -771,11 +800,12 @@ def search_knowledge_base(query: str, category: str = None) -> dict:
                     {
                         "id": passages_id,
                         "doc_key": _make_doc_key(
-                            settings.COLLECTION_TERMS,
+                            policy_collection,
                             passages_id,
                             rep.payload,
+                            faq_collection=faq_collection,
                         ),
-                        "collection": settings.COLLECTION_TERMS,
+                        "collection": policy_collection,
                         "text": merged_text,
                         "meta": rep.payload,
                         "score": max_score,

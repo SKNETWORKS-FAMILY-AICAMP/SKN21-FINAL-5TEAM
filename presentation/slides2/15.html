@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>온보딩 generation · runtime · repair 흐름</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="theme.css">
+    <style>
+        .pipeline-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .pipeline-step {
+            position: relative;
+            min-height: 146px;
+            padding: 12px 10px;
+            background: var(--canvas);
+            border: 1px solid var(--line);
+            border-radius: 22px;
+            box-shadow: var(--shadow);
+        }
+
+        .pipeline-step::after {
+            content: "→";
+            position: absolute;
+            right: -11px;
+            top: 41%;
+            font-size: 22px;
+            font-weight: 800;
+            color: rgba(63, 71, 215, 0.42);
+        }
+
+        .pipeline-step:last-child::after {
+            content: "";
+        }
+
+        .pipeline-step strong {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            border-radius: 999px;
+            background: rgba(63, 71, 215, 0.1);
+            color: var(--cobalt);
+            font-size: 12px;
+            font-weight: 800;
+            margin-bottom: 10px;
+        }
+
+        .pipeline-step h3 {
+            margin: 0;
+            font-size: 16px;
+            line-height: 1.18;
+            letter-spacing: -0.03em;
+        }
+
+        .pipeline-step p {
+            margin: 7px 0 0;
+            font-size: 11px;
+            line-height: 1.45;
+            color: var(--muted);
+        }
+
+        .signal-banner {
+            margin-top: 12px;
+        }
+
+        .bottom-split {
+            display: grid;
+            grid-template-columns: 1.14fr 0.86fr;
+            gap: 16px;
+            margin-top: 14px;
+        }
+
+        .runtime-flow {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .runtime-node {
+            min-height: 88px;
+            padding: 12px 10px;
+            border-radius: 18px;
+            background: linear-gradient(180deg, #fbfbff 0%, var(--canvas-tint) 100%);
+            border: 1px solid var(--line);
+            box-shadow: var(--shadow);
+        }
+
+        .runtime-node h4,
+        .repair-node h4 {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+        }
+
+        .runtime-node p,
+        .repair-node p {
+            margin: 7px 0 0;
+            font-size: 11px;
+            line-height: 1.45;
+            color: var(--muted);
+        }
+
+        .repair-loop {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .repair-node {
+            min-height: 100px;
+            padding: 12px 10px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+        }
+
+        .micro-pill-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+            margin-top: 12px;
+        }
+
+        .micro-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 28px;
+            padding: 0 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+<main class="slide">
+    <div class="topbar">
+        <p class="eyebrow">Generation to Repair</p>
+        <span class="page-badge">15</span>
+    </div>
+    <section class="hero compact">
+        <h1>버튼을 누른 뒤에는 generation,<br>runtime, repair가 순서대로 돈다</h1>
+        <div class="accent-line"></div>
+        <p class="lead">이 슬라이드 한 장으로 generation 파이프라인, 운영 시 retrieval 흐름, 실패 시 repair 전략까지 함께 설명할 수 있습니다.</p>
+    </section>
+    <section class="pipeline-grid">
+        <article class="pipeline-step">
+            <strong>01</strong>
+            <h3>Analysis</h3>
+            <p>host 코드에서 auth, order API, mount 지점, retrieval source를 찾고 verified contract 후보를 수집합니다.</p>
+        </article>
+        <article class="pipeline-step">
+            <strong>02</strong>
+            <h3>Planning</h3>
+            <p>이 사이트를 어떤 계약으로 연결할지 integration plan을 만듭니다. 핵심 seam이 비면 여기서 중단합니다.</p>
+        </article>
+        <article class="pipeline-step">
+            <strong>03</strong>
+            <h3>Compile</h3>
+            <p>수정안을 하나로 섞지 않고 host-edit program과 chatbot-edit program으로 분리합니다.</p>
+        </article>
+        <article class="pipeline-step">
+            <strong>04</strong>
+            <h3>Apply</h3>
+            <p>원본 repo가 아니라 isolated runtime workspace에 먼저 적용합니다.</p>
+        </article>
+        <article class="pipeline-step">
+            <strong>05</strong>
+            <h3>Preflight</h3>
+            <p>chatbot runtime import와 wiring 문제를 validation 전에 앞당겨 조기 검출합니다.</p>
+        </article>
+        <article class="pipeline-step">
+            <strong>06</strong>
+            <h3>Export</h3>
+            <p>runtime 결과를 replay 가능한 host patch와 chatbot patch로 내보냅니다.</p>
+        </article>
+        <article class="pipeline-step">
+            <strong>07</strong>
+            <h3>Index / Validate</h3>
+            <p>Qdrant corpus 인덱싱, widget/auth/order/conversation 검증 후 artifact를 남깁니다.</p>
+        </article>
+    </section>
+    <section class="banner accent signal-banner">
+        <p><strong>핵심:</strong> LLM이 바로 소스를 덮어쓰는 게 아니라, 계약 확인 → 격리 실행 → replay/export → validation → rewind 순으로 통제합니다.</p>
+    </section>
+    <section class="bottom-split">
+        <article class="card">
+            <p class="kicker">Runtime / Qdrant</p>
+            <h3>운영 시점에는 widget에서 Qdrant와 host API까지 이어집니다</h3>
+            <div class="runtime-flow">
+                <div class="runtime-node">
+                    <h4>Widget</h4>
+                    <p>사용자가 질문하거나 이미지를 업로드합니다.</p>
+                </div>
+                <div class="runtime-node">
+                    <h4>Chatbot API</h4>
+                    <p>`/api/chat`과 shared widget runtime이 요청을 받습니다.</p>
+                </div>
+                <div class="runtime-node">
+                    <h4>LangGraph</h4>
+                    <p>order, policy, discovery subagent로 라우팅합니다.</p>
+                </div>
+                <div class="runtime-node">
+                    <h4>Host / Qdrant</h4>
+                    <p>주문 조회는 host API, 정책·이미지 검색은 Qdrant를 조회합니다.</p>
+                </div>
+                <div class="runtime-node">
+                    <h4>Image Search</h4>
+                    <p>우선 CLIP + Qdrant, 실패 시 Vision → text retrieval로 fallback 합니다.</p>
+                </div>
+            </div>
+        </article>
+        <article class="card accent">
+            <p class="kicker">Repair</p>
+            <h3>실패하면 처음부터가 아니라<br>필요한 stage까지만 rewind</h3>
+            <div class="repair-loop">
+                <div class="repair-node">
+                    <h4>Failure Bundle</h4>
+                    <p>실패 stage와 artifact, 관련 파일을 묶습니다.</p>
+                </div>
+                <div class="repair-node">
+                    <h4>Diagnosis</h4>
+                    <p>원인과 rewind 후보를 정리합니다.</p>
+                </div>
+                <div class="repair-node">
+                    <h4>Effective Rewind</h4>
+                    <p>LLM 제안이 있어도 최종 rewind는 엔진이 결정합니다.</p>
+                </div>
+                <div class="repair-node">
+                    <h4>Rerun</h4>
+                    <p>해당 stage부터만 다시 실행해 시간을 줄입니다.</p>
+                </div>
+            </div>
+            <div class="micro-pill-row">
+                <span class="micro-pill">contract-first</span>
+                <span class="micro-pill">dual-patch</span>
+                <span class="micro-pill">isolated runtime</span>
+            </div>
+        </article>
+    </section>
+</main>
+</body>
+</html>

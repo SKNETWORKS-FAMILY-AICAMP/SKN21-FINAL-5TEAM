@@ -24,6 +24,7 @@ def _run_shared_widget_typescript(
     bootstrap = tmp_path / bootstrap_name
     tsconfig = tmp_path / tsconfig_name
     alias_root = tmp_path / "alias-node-modules" / "@shared-chatbot"
+    skn_alias_root = tmp_path / "alias-node-modules" / "@skn" / "shared-chatbot"
     out_dir = tmp_path / "dist"
 
     css_types.write_text(
@@ -46,9 +47,14 @@ def _run_shared_widget_typescript(
             '    "skipLibCheck": true,\n'
             f'    "outDir": "{out_dir}",\n'
             f'    "baseUrl": "{FRONTEND_ROOT}",\n'
-            '    "paths": {\n'
-            f'      "@shared-chatbot/*": ["{REPO_ROOT / "chatbot" / "frontend" / "shared_widget" / "*"}"]\n'
-            '    },\n'
+                '    "paths": {\n'
+                f'      "@shared-chatbot/*": ["{REPO_ROOT / "chatbot" / "frontend" / "shared_widget" / "*"}"],\n'
+                f'      "react": ["{FRONTEND_ROOT / "node_modules" / "react"}"],\n'
+                f'      "react-dom/server": ["{FRONTEND_ROOT / "node_modules" / "react-dom" / "server"}"],\n'
+                f'      "react-dom/client": ["{FRONTEND_ROOT / "node_modules" / "react-dom" / "client"}"],\n'
+                f'      "react/jsx-runtime": ["{FRONTEND_ROOT / "node_modules" / "react" / "jsx-runtime"}"],\n'
+                f'      "react-markdown": ["{FRONTEND_ROOT / "node_modules" / "react-markdown"}"]\n'
+                '    },\n'
             f'    "typeRoots": ["{FRONTEND_ROOT / "node_modules" / "@types"}"]\n'
             "  },\n"
             '  "include": [\n'
@@ -73,9 +79,26 @@ def _run_shared_widget_typescript(
 
         emitted = next(out_dir.rglob(entry_name.replace(".tsx", ".js")))
         shared_widget_js = next(out_dir.rglob("ChatbotWidget.js"))
-        (shared_widget_js.parent / "chatbot-widget.module.css").write_text("", encoding="utf-8")
+        shared_index_js = next(out_dir.rglob("index.js"))
+        for css_name in (
+            "chatbot-widget.module.css",
+            "chatbotfab.module.css",
+            "productlist.module.css",
+            "reviewform.module.css",
+            "usedsaleform.module.css",
+        ):
+            (shared_widget_js.parent / css_name).write_text("", encoding="utf-8")
         alias_root.mkdir(parents=True, exist_ok=True)
+        skn_alias_root.mkdir(parents=True, exist_ok=True)
+        (alias_root / "index.js").write_text(
+            f'module.exports = require("{shared_index_js}");\n',
+            encoding="utf-8",
+        )
         (alias_root / "ChatbotWidget.js").write_text(
+            f'module.exports = require("{shared_widget_js}");\n',
+            encoding="utf-8",
+        )
+        (skn_alias_root / "ChatbotWidget.js").write_text(
             f'module.exports = require("{shared_widget_js}");\n',
             encoding="utf-8",
         )
@@ -83,6 +106,14 @@ def _run_shared_widget_typescript(
             """
 require.extensions[".css"] = (module) => {
   module.exports = {};
+};
+const Module = require("module");
+const originalLoad = Module._load;
+Module._load = function(request, parent, isMain) {
+  if (request === "react-markdown") {
+    return ({ children }) => children;
+  }
+  return originalLoad.apply(this, arguments);
 };
 require("__EMITTED__");
 """.strip().replace("__EMITTED__", str(emitted)),
@@ -107,7 +138,10 @@ require("__EMITTED__");
         return run_result.stdout
     finally:
         if alias_root.exists():
+            (alias_root / "index.js").unlink(missing_ok=True)
             (alias_root / "ChatbotWidget.js").unlink(missing_ok=True)
+        if skn_alias_root.exists():
+            (skn_alias_root / "ChatbotWidget.js").unlink(missing_ok=True)
 
 
 def test_shared_widget_renders_order_and_product_payloads(tmp_path: Path) -> None:
@@ -171,7 +205,12 @@ process.stdout.write(markup);
             f'    "outDir": "{out_dir}",\n'
             f'    "baseUrl": "{FRONTEND_ROOT}",\n'
             '    "paths": {\n'
-            f'      "@shared-chatbot/*": ["{REPO_ROOT / "chatbot" / "frontend" / "shared_widget" / "*"}"]\n'
+            f'      "@shared-chatbot/*": ["{REPO_ROOT / "chatbot" / "frontend" / "shared_widget" / "*"}"],\n'
+            f'      "react": ["{FRONTEND_ROOT / "node_modules" / "react"}"],\n'
+            f'      "react-dom/server": ["{FRONTEND_ROOT / "node_modules" / "react-dom" / "server"}"],\n'
+            f'      "react-dom/client": ["{FRONTEND_ROOT / "node_modules" / "react-dom" / "client"}"],\n'
+            f'      "react/jsx-runtime": ["{FRONTEND_ROOT / "node_modules" / "react" / "jsx-runtime"}"],\n'
+            f'      "react-markdown": ["{FRONTEND_ROOT / "node_modules" / "react-markdown"}"]\n'
             '    },\n'
             f'    "typeRoots": ["{FRONTEND_ROOT / "node_modules" / "@types"}"]\n'
             "  },\n"
@@ -283,6 +322,48 @@ process.stdout.write(JSON.stringify({ markup }));
     payload = json.loads(output)
     assert "장바구니" not in payload["markup"]
     assert "바로 구매" not in payload["markup"]
+
+
+def test_shared_widget_order_cs_profile_still_renders_fallback_ui(tmp_path: Path) -> None:
+    output = _run_shared_widget_typescript(
+        tmp_path,
+        entry_name="render_shared_widget_order_cs_fallback.tsx",
+        bootstrap_name="run_render_shared_widget_order_cs_fallback.cjs",
+        tsconfig_name="tsconfig.shared-widget-order-cs-fallback.json",
+        source="""
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ChatbotWidget } from "@shared-chatbot/ChatbotWidget";
+
+declare const process: {
+  stdout: {
+    write: (chunk: string) => void;
+  };
+};
+
+const markup = renderToStaticMarkup(
+  React.createElement(ChatbotWidget as any, {
+    capabilities: ["orders_view", "orders_refund"],
+    messages: [
+      {
+        type: "confirmation",
+        role: "bot",
+        message: "주문(7)의 반품을 접수할까요?",
+        action: "refund",
+      },
+    ],
+    renderFallback: (message: any) =>
+      React.createElement("div", { "data-fallback-type": message.type }, message.message),
+  }),
+);
+
+process.stdout.write(JSON.stringify({ markup }));
+        """,
+    )
+
+    payload = json.loads(output)
+    assert "주문(7)의 반품을 접수할까요?" in payload["markup"]
+    assert "data-fallback-type=\"confirmation\"" in payload["markup"]
 
 
 def test_shared_widget_preserves_child_state_across_cloned_message_rerenders(tmp_path: Path) -> None:
@@ -538,8 +619,13 @@ def test_shared_widget_source_avoids_site_specific_fallbacks_and_index_keys() ->
     chatbot_widget_source = (
         REPO_ROOT / "chatbot" / "frontend" / "shared_widget" / "ChatbotWidget.tsx"
     ).read_text(encoding="utf-8")
+    chatbot_fab_source = (
+        REPO_ROOT / "chatbot" / "frontend" / "shared_widget" / "chatbotfab.tsx"
+    ).read_text(encoding="utf-8")
 
     assert "/products/${product.id}.jpg" not in product_list_source
+    assert "import productListStyles from './productlist.module.css';" in product_list_source
+    assert "classNames?.productCard ?? productListStyles.productCard" in product_list_source
     assert "classNames?.primary" in product_list_source
     assert "onClick={() => onCloseSizeModal?.()}" in product_list_source
     assert "event.stopPropagation()" in product_list_source
@@ -547,6 +633,8 @@ def test_shared_widget_source_avoids_site_specific_fallbacks_and_index_keys() ->
     assert "key={`product-${index}`}" not in chatbot_widget_source
     assert "key={`text-${index}`}" not in chatbot_widget_source
     assert "key={`fallback-${index}`}" not in chatbot_widget_source
+    assert "const isResumeSubmission = Boolean(hidden && resumePayload);" in chatbot_fab_source
+    assert "if (!text || (isLoading && !isResumeSubmission)) return;" in chatbot_fab_source
 
 
 def test_next_config_uses_shared_source_of_truth() -> None:
@@ -564,3 +652,46 @@ def test_next_config_uses_shared_source_of_truth() -> None:
     assert "NEXT_PUBLIC_API_URL" in shared_source
     assert "./next.config.shared.js" in ts_source
     assert "./next.config.shared.js" in js_source
+
+
+def test_shared_widget_branding_helpers_use_host_contract_metadata(tmp_path: Path) -> None:
+    output = _run_shared_widget_typescript(
+        tmp_path,
+        entry_name="resolve_shared_widget_branding.tsx",
+        bootstrap_name="run_resolve_shared_widget_branding.cjs",
+        tsconfig_name="tsconfig.shared-widget-branding.json",
+        source="""
+import { buildInitialBotMessage, resolveAssistantTitle } from "@shared-chatbot/index";
+
+declare const process: {
+  stdout: {
+    write: (chunk: string) => void;
+  };
+};
+
+const title = resolveAssistantTitle({
+  authBootstrapPath: "/api/chat/auth-token",
+  chatbotApiBase: "http://127.0.0.1:8100",
+  siteId: "bilyeo",
+  brandDisplayName: "bilyeo",
+  brandStoreLabel: "bilyeo 쇼핑몰",
+  assistantTitle: "bilyeo AI 고객상담사",
+  initialGreeting: "안녕하세요. bilyeo 챗봇입니다.",
+});
+const greeting = buildInitialBotMessage({
+  authBootstrapPath: "/api/chat/auth-token",
+  chatbotApiBase: "http://127.0.0.1:8100",
+  siteId: "bilyeo",
+  brandDisplayName: "bilyeo",
+  brandStoreLabel: "bilyeo 쇼핑몰",
+  assistantTitle: "bilyeo AI 고객상담사",
+  initialGreeting: "안녕하세요. bilyeo 챗봇입니다.",
+});
+
+process.stdout.write(JSON.stringify({ title, greeting }));
+        """,
+    )
+
+    payload = json.loads(output)
+    assert payload["title"] == "bilyeo AI 고객상담사"
+    assert payload["greeting"]["text"] == "안녕하세요. bilyeo 챗봇입니다."

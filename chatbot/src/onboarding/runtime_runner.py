@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .debug_logging import append_onboarding_event
 from .manifest import OverlayManifest
-from .onboarding_ignore import DEFAULT_IGNORED_PARTS
+from .onboarding_ignore import runtime_copy_ignored_names
 from .workspace_editor import apply_direct_edit_operations
 
 
@@ -18,7 +18,7 @@ class OverlayPatchApplyError(Exception):
 
 
 def _ignore_runtime_copy_directory(_: str, names: list[str]) -> set[str]:
-    return {name for name in names if name in DEFAULT_IGNORED_PARTS}
+    return runtime_copy_ignored_names(_, names)
 
 
 def prepare_runtime_workspace(

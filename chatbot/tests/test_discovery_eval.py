@@ -14,6 +14,8 @@ from chatbot.chatbot_eval.benchmark.rags.discovery.src.metrics import (
     score_retrieval,
 )
 from chatbot.src.graph.nodes.discovery_subagent import _should_direct_text_search
+from chatbot.src.tools import recommendation_tools
+from chatbot.src.tools.image_search_tools import SearchHit
 from chatbot.src.tools.recommendation_tools import (
     _build_slot_variant,
     _build_keyword_queries,
@@ -28,6 +30,7 @@ from chatbot.src.tools.recommendation_tools import (
     _score_discovery_phrase_bonus,
     _score_discovery_slot_alignment,
     _translate_discovery_query,
+    search_by_text_clip,
 )
 
 
@@ -183,6 +186,52 @@ def test_build_query_variants_keeps_original_and_translated_query() -> None:
     assert any("track pants" in variant for variant in variants)
 
 
+def test_search_by_text_clip_uses_retrieval_payloads_without_ecommerce_backend(
+    monkeypatch,
+) -> None:
+    fake_hits = [
+        SearchHit(
+            product_id=301,
+            dense_score=0.92,
+            payload={
+                "product_id": 301,
+                "product_name": "에스트라 아토베리어365 로션",
+                "category": "로션",
+                "description": "건성 피부용 고보습 로션",
+                "image_url": "https://example.com/lotion.jpg",
+                "price": "18000",
+                "brand": "AESTURA",
+            },
+        )
+    ]
+
+    monkeypatch.setattr(
+        recommendation_tools,
+        "search_similar_product_hits_from_text",
+        lambda **kwargs: list(fake_hits),
+    )
+    monkeypatch.setattr(
+        recommendation_tools,
+        "_ecommerce_backend_available",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        recommendation_tools,
+        "_llm_rerank_products",
+        lambda query, product_ids, products: (product_ids, products),
+    )
+
+    result = recommendation_tools.search_by_text_clip.invoke(
+        {"query": "보습 로션 추천해줘", "top_k": 3}
+    )
+
+    assert result["product_ids"] == [301]
+    assert result["products"][0]["name"] == "에스트라 아토베리어365 로션"
+    assert result["products"][0]["category"] == "로션"
+    assert result["products"][0]["price"] == 18000.0
+    assert result["products"][0]["image_url"] == "https://example.com/lotion.jpg"
+
+
 def test_build_focused_variant_prefers_compact_search_phrase() -> None:
     assert _build_focused_variant("회색 백팩 보여줘") == "grey backpack"
 
@@ -249,10 +298,7 @@ def test_llm_rerank_products_reorders_head_with_mock_llm(monkeypatch) -> None:
                 content = "[4585, 7056, 20938]"
             return Response()
 
-    monkeypatch.setattr(
-        "chatbot.src.tools.recommendation_tools._get_discovery_rerank_llm",
-        lambda: FakeLLM(),
-    )
+    monkeypatch.setattr(recommendation_tools, "_get_discovery_rerank_llm", lambda: FakeLLM())
 
     product_ids = [7056, 20938, 4585, 51330]
     products = [

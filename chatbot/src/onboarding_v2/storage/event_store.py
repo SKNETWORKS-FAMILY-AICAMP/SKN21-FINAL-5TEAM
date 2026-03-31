@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,6 +19,10 @@ class EventStore:
         self.events_root = self.run_root / "events"
         self.events_root.mkdir(parents=True, exist_ok=True)
         self.events_path = self.events_root / "events.jsonl"
+        self.views_root = self.run_root / "views"
+        self.views_root.mkdir(parents=True, exist_ok=True)
+        self.timeline_path = self.views_root / "timeline.txt"
+        self._write_lock = threading.Lock()
 
     def write_event(self, **payload) -> EventRecord:
         record = EventRecord(
@@ -25,9 +30,13 @@ class EventStore:
             timestamp=payload.pop("timestamp", _utcnow()),
             **payload,
         )
-        with self.events_path.open("a", encoding="utf-8") as handle:
-            handle.write(record.model_dump_json())
-            handle.write("\n")
+        with self._write_lock:
+            with self.events_path.open("a", encoding="utf-8") as handle:
+                handle.write(record.model_dump_json())
+                handle.write("\n")
+            with self.timeline_path.open("a", encoding="utf-8") as handle:
+                handle.write(self._format_timeline_line(record))
+                handle.write("\n")
         return record
 
     def read_events(self) -> list[EventRecord]:
@@ -39,3 +48,6 @@ class EventStore:
                 continue
             records.append(EventRecord.model_validate_json(line))
         return records
+
+    def _format_timeline_line(self, record: EventRecord) -> str:
+        return f"{record.timestamp} {record.stage} {record.event_type} {record.summary}"
