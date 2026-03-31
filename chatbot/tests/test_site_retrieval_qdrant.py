@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from chatbot.src.infrastructure import site_retrieval
+from chatbot.src.core.config import settings
 
 
 class _FakeAliasInfo:
@@ -117,3 +118,20 @@ def test_swap_alias_repoints_live_alias_atomically():
     operations = client.alias_updates[-1]
     assert any(isinstance(item, models.DeleteAliasOperation) for item in operations)
     assert any(isinstance(item, models.CreateAliasOperation) for item in operations)
+
+
+def test_resolve_runtime_retrieval_capabilities_for_site_c_uses_global_defaults(monkeypatch):
+    client = _FakeQdrantClient()
+    client.collections[settings.COLLECTION_FAQ] = {}
+    client.collections[settings.COLLECTION_TERMS] = {}
+    client.collections[settings.COLLECTION_CLIP_IMAGE] = {}
+
+    monkeypatch.setattr(site_retrieval, "_get_client", lambda: client)
+
+    capability_profile, enabled, widget_features = site_retrieval.resolve_runtime_retrieval_capabilities(
+        "site-c"
+    )
+
+    assert capability_profile == "order_cs_plus_retrieval"
+    assert enabled == ["faq", "policy", "discovery_image"]
+    assert widget_features == {"image_upload": True}

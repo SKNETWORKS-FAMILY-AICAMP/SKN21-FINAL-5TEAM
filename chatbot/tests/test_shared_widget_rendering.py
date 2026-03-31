@@ -635,6 +635,14 @@ def test_shared_widget_source_avoids_site_specific_fallbacks_and_index_keys() ->
     assert "key={`fallback-${index}`}" not in chatbot_widget_source
     assert "const isResumeSubmission = Boolean(hidden && resumePayload);" in chatbot_fab_source
     assert "if (!text || (isLoading && !isResumeSubmission)) return;" in chatbot_fab_source
+    assert "이번 상담이 도움이 되었나요?" not in chatbot_fab_source
+    assert "handleFeedback" not in chatbot_fab_source
+    assert "modelPickerRow" not in chatbot_fab_source
+    assert "selectedModel" not in chatbot_fab_source
+    assert "provider?: string | null;" not in chatbot_widget_source
+    assert "model?: string | null;" not in chatbot_widget_source
+    assert "provider: args.provider ?? undefined," not in chatbot_widget_source
+    assert "model: args.model ?? undefined," not in chatbot_widget_source
 
 
 def test_next_config_uses_shared_source_of_truth() -> None:

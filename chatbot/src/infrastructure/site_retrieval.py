@@ -167,7 +167,7 @@ def normalize_site_slug(site_id: str | None) -> str | None:
 
 def resolve_site_collections(site_id: str | None) -> SiteCollections:
     site_slug = normalize_site_slug(site_id)
-    if not site_slug:
+    if not site_slug or site_slug == "site-c":
         return SiteCollections(
             faq=settings.COLLECTION_FAQ,
             policy=settings.COLLECTION_TERMS,

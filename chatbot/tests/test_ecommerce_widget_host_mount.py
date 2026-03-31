@@ -23,6 +23,8 @@ def test_ecommerce_frontend_bootstraps_shared_widget_bundle() -> None:
     assert "/widget.js" in content
     assert "<order-cs-widget" in content
     assert 'capabilities="full"' in content
+    assert "siteId: 'site-c'" in content
+    assert "capabilityProfile: 'full'" in content
 
 
 def test_ecommerce_frontend_typescript_config_includes_node_types() -> None:

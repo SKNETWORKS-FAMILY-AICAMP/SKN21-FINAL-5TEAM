@@ -9,24 +9,25 @@
  * Restarting with stat
  * Debugger is active!
  * Debugger PIN: 108-210-125
-127.0.0.1 - - [31/Mar/2026 10:03:21] "GET /api/products/categories HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:03:21] "GET /api/products HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:03:30] "[31m[1mPOST /api/auth/login HTTP/1.1[0m" 401 -
-127.0.0.1 - - [31/Mar/2026 10:03:33] "POST /api/auth/login HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:03:33] "GET /api/products/categories HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:03:33] "GET /api/products HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:03:35] "POST /api/chat/auth-token HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:04:04] "GET /api/chat/auth-token HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:04:15] "GET /api/products/categories HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:04:15] "GET /api/products HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:04:32] "POST /api/chat/auth-token HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:04:40] "GET /api/chat/auth-token HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:08:08] "GET /api/products/categories HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:08:08] "GET /api/products HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:08:09] "POST /api/chat/auth-token HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:08:16] "GET /api/chat/auth-token HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:09:21] "GET /api/products HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:09:21] "GET /api/products/categories HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:09:21] "GET /api/products/categories HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:09:21] "GET /api/products HTTP/1.1" 200 -
-127.0.0.1 - - [31/Mar/2026 10:09:22] "POST /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:05] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:05] "GET /api/products/categories HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:07] "GET /api/products/categories HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:07] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:17] "POST /api/auth/login HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:17] "GET /api/products/categories HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:17] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:19] "POST /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:26] "GET /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:39] "GET /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:50] "GET /api/products/categories HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:50] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:52] "POST /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:33:58] "GET /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:34:05] "GET /api/products/categories HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:34:05] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:34:05] "POST /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:34:11] "GET /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:34:15] "GET /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:34:19] "GET /api/chat/auth-token HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 10:34:27] "GET /api/chat/auth-token HTTP/1.1" 200 -
+[bilyeo] Oracle schema ready (attempt 1/30)

@@ -7,7 +7,11 @@
     "current": {
         "month": "2026-03",
         "class_a": 10425,
+<<<<<<< HEAD
         "class_b": 13174,
+=======
+        "class_b": 13034,
+>>>>>>> new_feature
         "storage_bytes": 1093942187
     }
 }

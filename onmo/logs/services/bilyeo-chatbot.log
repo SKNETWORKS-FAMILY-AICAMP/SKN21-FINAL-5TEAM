@@ -1,4 +1,4 @@
-INFO:     Started server process [27714]
+INFO:     Started server process [66719]
 INFO:     Waiting for application startup.
 INFO:src.infrastructure.kobart_summarizer:[KoBART] 모델 로드 시작: EbanLee/kobart-summary-v3
 INFO:src.infrastructure.kobart_summarizer:[KoBART] 모델 로드 완료 (device=mps, params=123,859,968)
@@ -24,13 +24,22 @@ Reranker loaded. cache_dir=default
 ✅ Startup Sequence Complete
 ==================================================
 
-INFO:     127.0.0.1:58598 - "GET /widget.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58626 - "GET /widget.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58648 - "OPTIONS /api/v1/chat/stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58649 - "POST /api/v1/chat/stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58663 - "GET /widget.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58672 - "POST /api/v1/chat/stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58757 - "GET /widget.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58766 - "POST /api/v1/chat/stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58797 - "GET /widget.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58797 - "GET /widget.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60219 - "GET /widget.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60266 - "GET /widget.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60266 - "GET /widget.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60294 - "OPTIONS /api/v1/chat/stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60295 - "POST /api/v1/chat/stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60300 - "POST /api/v1/chat/stream HTTP/1.1" 200 OK
+INFO:src.graph.nodes.summarize:[Summarize] 요약 시작 (대상 2개 메시지)
+INFO:src.graph.nodes.summarize:[Summarize] 요약 완료: 96자
+INFO:     127.0.0.1:60314 - "GET /widget.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60322 - "POST /api/v1/chat/stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60322 - "GET /widget.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60340 - "POST /api/v1/chat/stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60340 - "POST /api/v1/chat/stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60340 - "POST /api/v1/chat/stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60347 - "POST /api/v1/chat/stream HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [66719]
