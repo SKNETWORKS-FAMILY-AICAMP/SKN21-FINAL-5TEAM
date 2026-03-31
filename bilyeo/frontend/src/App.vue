@@ -4,13 +4,16 @@
     <main class="main-content">
       <router-view />
     </main>
-    <order-cs-widget />
+    <order-cs-widget v-if="widgetEnabled" />
   </div>
 </template>
 
 <script>
 import NavBar from './components/NavBar.vue'
 
+const WIDGET_ENABLED = String(import.meta.env.VITE_ENABLE_ORDER_CS_WIDGET || 'true')
+  .trim()
+  .toLowerCase() !== 'false'
 const CHATBOT_SERVER_BASE_URL = (import.meta.env.VITE_CHATBOT_SERVER_BASE_URL || 'http://127.0.0.1:8100')
   .replace(/\/+$/, '')
 const WIDGET_SITE_ID = String(import.meta.env.VITE_WIDGET_SITE_ID || 'bilyeo').trim()
@@ -43,6 +46,9 @@ function ensureSharedWidgetBundle() {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return
   }
+  if (!WIDGET_ENABLED) {
+    return
+  }
 
   window.__ORDER_CS_WIDGET_HOST_CONTRACT__ = ORDER_CS_WIDGET_HOST_CONTRACT
 
@@ -61,6 +67,11 @@ export default {
   name: 'App',
   components: {
     NavBar
+  },
+  data() {
+    return {
+      widgetEnabled: WIDGET_ENABLED
+    }
   },
   mounted() {
     ensureSharedWidgetBundle()
