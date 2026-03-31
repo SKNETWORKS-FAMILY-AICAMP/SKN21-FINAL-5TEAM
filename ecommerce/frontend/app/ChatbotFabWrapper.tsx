@@ -10,6 +10,8 @@ type SharedWidgetHostContract = {
   widgetBundlePath: string;
   widgetElementTag: string;
   mountMode: SharedWidgetMountMode;
+  siteId?: string;
+  capabilityProfile?: string;
 };
 
 function resolveChatbotServerBaseUrl(): string {
@@ -25,6 +27,8 @@ export default function ChatbotFabWrapper() {
       widgetBundlePath: '/widget.js',
       widgetElementTag: 'order-cs-widget',
       mountMode: 'floating_launcher',
+      siteId: 'site-c',
+      capabilityProfile: 'full',
     };
 
     (

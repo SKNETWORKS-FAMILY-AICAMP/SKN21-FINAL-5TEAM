@@ -36,3 +36,12 @@ def test_app_shell_reads_widget_capability_contract_from_env():
     assert "VITE_ENABLED_RETRIEVAL_CORPORA" in app_shell
     assert "capabilityProfile: CAPABILITY_PROFILE" in app_shell
     assert "enabledRetrievalCorpora: ENABLED_RETRIEVAL_CORPORA" in app_shell
+
+
+def test_app_shell_supports_disabling_widget_for_capture_mode():
+    app_shell = (ROOT / "bilyeo" / "frontend" / "src" / "App.vue").read_text(encoding="utf-8")
+
+    assert "VITE_ENABLE_ORDER_CS_WIDGET" in app_shell
+    assert '<order-cs-widget v-if="widgetEnabled" />' in app_shell
+    assert "if (!WIDGET_ENABLED)" in app_shell
+    assert "widgetEnabled: WIDGET_ENABLED" in app_shell

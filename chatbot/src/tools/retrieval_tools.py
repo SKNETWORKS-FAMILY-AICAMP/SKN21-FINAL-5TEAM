@@ -12,6 +12,7 @@ from flashrank import Ranker, RerankRequest
 
 from chatbot.src.infrastructure.qdrant import get_qdrant_client
 from chatbot.src.infrastructure.site_retrieval import (
+    collection_exists,
     get_current_runtime_site_id,
     resolve_site_collections,
 )
@@ -665,6 +666,8 @@ def search_knowledge_base(query: str, category: str = None, site_id: str | None 
     policy_collection = site_collections.policy
 
     for col in [faq_collection, policy_collection]:
+        if not collection_exists(col, client=client):
+            continue
         query_filter = _build_filter(category, col, faq_collection=faq_collection)
 
         try:

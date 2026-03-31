@@ -56,6 +56,14 @@ def test_resolve_site_collections_uses_site_scoped_aliases() -> None:
     assert collections.discovery_image == "site_demo-shop__discovery_image"
 
 
+def test_resolve_site_collections_uses_global_defaults_for_site_c() -> None:
+    collections = resolve_site_collections("site-c")
+
+    assert collections.faq == settings.COLLECTION_FAQ
+    assert collections.policy == settings.COLLECTION_TERMS
+    assert collections.discovery_image == settings.COLLECTION_CLIP_IMAGE
+
+
 def test_build_retrieval_attempts_omits_none_category() -> None:
     attempts = _build_retrieval_attempts(
         query_variants=["배송 소요 기간", "배송은 보통 며칠 정도 걸리나요?"],

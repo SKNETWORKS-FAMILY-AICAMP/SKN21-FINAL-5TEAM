@@ -152,6 +152,90 @@ def test_seed_run_crawling_surfaces_product_export_metadata(monkeypatch):
     assert result["snapshot_path"] == "/tmp/products-20260330-123456.json"
 
 
+def test_seed_db_does_not_trigger_crawling(monkeypatch):
+    module = _load_seed_module(monkeypatch)
+    events: list[str] = []
+
+    monkeypatch.setattr(module, "run_crawling", lambda: events.append("crawl"))
+
+    class _Cursor:
+        def execute(self, query, params=None):
+            if "SELECT COUNT(*) FROM orders" in query:
+                self._fetchone = (1,)
+            elif "SELECT user_id, email FROM users ORDER BY user_id" in query:
+                self._fetchall = [(1, "test@example.com")]
+            elif "SELECT product_id, name, price, category FROM products" in query:
+                self._fetchall = [(1, "상품", 1000, "스킨케어")]
+
+        def fetchone(self):
+            return self._fetchone
+
+        def fetchall(self):
+            return self._fetchall
+
+        def close(self):
+            return None
+
+    class _Conn:
+        def cursor(self):
+            return _Cursor()
+
+        def commit(self):
+            return None
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(module, "get_connection", lambda: _Conn())
+    monkeypatch.setattr(module, "init_db", lambda: None)
+
+    module.seed_db()
+
+    assert events == []
+
+
+def test_seed_db_with_crawling_triggers_crawlers(monkeypatch):
+    module = _load_seed_module(monkeypatch)
+    events: list[str] = []
+
+    monkeypatch.setattr(module, "run_crawling", lambda: events.append("crawl"))
+
+    class _Cursor:
+        def execute(self, query, params=None):
+            if "SELECT COUNT(*) FROM orders" in query:
+                self._fetchone = (1,)
+            elif "SELECT user_id, email FROM users ORDER BY user_id" in query:
+                self._fetchall = [(1, "test@example.com")]
+            elif "SELECT product_id, name, price, category FROM products" in query:
+                self._fetchall = [(1, "상품", 1000, "스킨케어")]
+
+        def fetchone(self):
+            return self._fetchone
+
+        def fetchall(self):
+            return self._fetchall
+
+        def close(self):
+            return None
+
+    class _Conn:
+        def cursor(self):
+            return _Cursor()
+
+        def commit(self):
+            return None
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(module, "get_connection", lambda: _Conn())
+    monkeypatch.setattr(module, "init_db", lambda: None)
+
+    module.seed_db(with_crawling=True)
+
+    assert events == ["crawl"]
+
+
 def test_download_image_uses_defined_local_image_directory(tmp_path: Path, monkeypatch):
     module = _load_product_crawling_module(monkeypatch)
 

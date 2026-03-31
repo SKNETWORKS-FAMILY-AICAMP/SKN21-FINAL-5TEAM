@@ -173,8 +173,6 @@ type ChatMsg =
   | ReviewFormMessage
   | UsedSaleFormMessage
   | ImageMessage;
-type LlmProvider = 'openai' | 'huggingface' | 'vllm';
-type ModelOption = { id: string; provider: LlmProvider; label: string };
 
 type DaumPostcodeData = {
   roadAddress?: string;
@@ -214,21 +212,11 @@ export async function ensureFloatingLauncherBootstrapOnOpen(args: {
   return bootstrapSharedChatAuth(args.host, args.fetchImpl);
 }
 const ORDER_LIST_BASE_MESSAGE = '최근 30일간의 주문 목록입니다.';
-
-const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.2'] as const;
-const HF_MODELS = ['Qwen/Qwen3-0.6B'] as const;
-const VLLM_MODELS = ['Qwen/Qwen3.5-35B-A3B'] as const;
 const ORDER_CS_ONLY_CAPABILITIES: SharedWidgetCapabilities = [
   'orders_view',
   'orders_cancel',
   'orders_exchange',
   'orders_return',
-];
-
-const MODEL_OPTIONS: ModelOption[] = [
-  ...OPENAI_MODELS.map((id) => ({ id, provider: 'openai' as const, label: id })),
-  ...HF_MODELS.map((id) => ({ id, provider: 'huggingface' as const, label: id })),
-  ...VLLM_MODELS.map((id) => ({ id, provider: 'vllm' as const, label: `${id} (RunPod)` })),
 ];
 
 function normalizeSiteBrandLabel(value?: string | null): string {
@@ -265,16 +253,6 @@ export function buildInitialBotMessage(host?: SharedWidgetHostConfig): TextMessa
     type: 'text',
     text: `안녕하세요. ${deriveAssistantBrandDisplayName(host)} 챗봇입니다.`,
   };
-}
-
-function resolveProviderByModel(modelId: string): LlmProvider {
-  if (VLLM_MODELS.includes(modelId as (typeof VLLM_MODELS)[number])) {
-    return 'vllm';
-  }
-  if (HF_MODELS.includes(modelId as (typeof HF_MODELS)[number])) {
-    return 'huggingface';
-  }
-  return 'openai';
 }
 
 function buildOrderListMessage(rawMessage: string | undefined, requiresSelection: boolean | undefined): string {
@@ -699,11 +677,7 @@ export default function ChatbotFab({
   const [imageUploadHint, setImageUploadHint] = useState<string | null>(null);
   const [panelSize, setPanelSize] = useState({ w: 700, h: 660 });
   const isResizing = useRef(false);
-  const [selectedModel, setSelectedModel] = useState<string>(OPENAI_MODELS[0]);
-  const [isModelModalOpen, setIsModelModalOpen] = useState(false);
   const [pendingImage, setPendingImage] = useState<PendingImageState | null>(null);
-  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
-  const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [chatBootstrap, setChatBootstrap] = useState<SharedChatBootstrap | null>(null);
 
   const releasePendingImageObjectUrl = (candidate: PendingImageState | null) => {
@@ -716,28 +690,6 @@ export default function ChatbotFab({
     releasePendingImageObjectUrl(pendingImage);
     setPendingImage(null);
   };
-
-  const resetConversationSession = () => {
-    clearPendingImage();
-    setMessages([buildInitialBotMessage(effectiveHost)]);
-    setConversationState(null);
-    setStatusMessage(null);
-    setStreamingText('');
-    setFeedbackError(null);
-    setInput('');
-  };
-
-  useEffect(() => {
-    const storedModel = localStorage.getItem('chatbot_llm_model');
-
-    if (storedModel && MODEL_OPTIONS.some((m) => m.id === storedModel)) {
-      setSelectedModel(storedModel);
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('chatbot_llm_model', selectedModel);
-  }, [selectedModel]);
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -768,11 +720,6 @@ export default function ChatbotFab({
     const handleEscKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
 
-      if (isModelModalOpen) {
-        setIsModelModalOpen(false);
-        return;
-      }
-
       if (open) {
         setOpen(false);
       }
@@ -780,7 +727,7 @@ export default function ChatbotFab({
 
     window.addEventListener('keydown', handleEscKey);
     return () => window.removeEventListener('keydown', handleEscKey);
-  }, [isModelModalOpen, open]);
+  }, [open]);
 
   const handlePanelWheelCapture: React.WheelEventHandler<HTMLElement> = (e) => {
     // 챗봇 위에서의 휠 이벤트가 페이지(배경)까지 전파되지 않도록 차단
@@ -892,7 +839,6 @@ export default function ChatbotFab({
     setIsLoading(true);
     setStatusMessage(null); // 초기화
     setStreamingText('');
-    setFeedbackError(null);
 
     try {
       const bootstrap = await ensureSharedChatBootstrap();
@@ -913,15 +859,12 @@ export default function ChatbotFab({
       }
 
       setInput('');
-      const provider = resolveProviderByModel(selectedModel);
       await streamSharedChatResponse(
         {
           host: effectiveHost,
           message: text,
           previousState: conversationState,
           resumePayload,
-          provider,
-          model: selectedModel,
           bootstrap,
           fetchImpl: sharedFetch,
           capabilityProfile,
@@ -1386,48 +1329,6 @@ export default function ChatbotFab({
     }
   };
 
-  const handleFeedback = async (feedbackLabel: 'good' | 'bad') => {
-    const conversationId = typeof conversationState?.conversation_id === 'string'
-      ? conversationState.conversation_id
-      : null;
-
-    if (!conversationId || isSubmittingFeedback) {
-      return;
-    }
-
-    setIsSubmittingFeedback(true);
-    setFeedbackError(null);
-
-    try {
-      const response = await fetch(`${effectiveHost.chatbotApiBase}/api/v1/chat/feedback`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          conversation_id: conversationId,
-          feedback_label: feedbackLabel,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || '피드백 저장에 실패했습니다.');
-      }
-
-      const result = await response.json();
-      if (result?.reset_required) {
-        resetConversationSession();
-      }
-    } catch (error) {
-      console.error('Feedback API error:', error);
-      setFeedbackError(error instanceof Error ? error.message : '피드백 저장에 실패했습니다.');
-    } finally {
-      setIsSubmittingFeedback(false);
-    }
-  };
-
   return (
     <>
       {/* 우측 하단 원형 버튼 */}
@@ -1704,30 +1605,6 @@ export default function ChatbotFab({
         </div>
 
         <div className={styles.bottomControls}>
-          {conversationState?.conversation_id && messages.length > 1 && !isLoading ? (
-            <div className={styles.feedbackBar}>
-              <div className={styles.feedbackLabel}>이번 상담이 도움이 되었나요?</div>
-              <div className={styles.feedbackActions}>
-                <button
-                  type="button"
-                  className={styles.feedbackBtn}
-                  onClick={() => handleFeedback('good')}
-                  disabled={isSubmittingFeedback}
-                >
-                  👍 Good
-                </button>
-                <button
-                  type="button"
-                  className={styles.feedbackBtn}
-                  onClick={() => handleFeedback('bad')}
-                  disabled={isSubmittingFeedback}
-                >
-                  👎 Bad
-                </button>
-              </div>
-              {feedbackError ? <div className={styles.feedbackError}>{feedbackError}</div> : null}
-            </div>
-          ) : null}
           <div className={styles.inputBar}>
             {imageUploadEnabled ? (
               <button
@@ -1798,40 +1675,6 @@ export default function ChatbotFab({
               </div>
             </div>
           )}
-
-          <div className={styles.modelPickerRow}>
-            <button
-              type="button"
-              className={styles.modelPickerBtn}
-              onClick={() => setIsModelModalOpen((prev) => !prev)}
-              disabled={isLoading}
-              aria-label="모델 선택 열기"
-              title={`현재 모델: ${selectedModel}`}
-            >
-              {selectedModel} ▾
-            </button>
-
-            {isModelModalOpen && (
-              <div className={styles.modelDropdown}>
-                <div className={styles.modelDropdownTitle}>Model</div>
-                <div className={styles.modelDropdownList}>
-                  {MODEL_OPTIONS.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      className={`${styles.modelOptionBtn} ${selectedModel === option.id ? styles.modelOptionBtnActive : ''}`}
-                      onClick={() => {
-                        setSelectedModel(option.id);
-                        setIsModelModalOpen(false);
-                      }}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </aside>
     </>

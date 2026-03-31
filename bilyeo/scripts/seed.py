@@ -1,6 +1,8 @@
 """
 더미 데이터 시드 스크립트
-사용법: python seed.py
+사용법:
+  python seed.py
+  python seed.py --with-crawling
 """
 import sys
 import os
@@ -39,13 +41,18 @@ def run_crawling():
     return product_crawl_result
 
 
-def seed_db():
-    """더미 데이터를 삽입합니다."""
+def seed_db(*, with_crawling: bool = False):
+    """더미 데이터를 삽입합니다.
+
+    기본 동작은 크롤링 없이 기존 DB 상품/FAQ 데이터를 기준으로 시드합니다.
+    온보딩/검증 경로에서 이 스크립트를 호출해도 외부 크롤링이 발생하지 않도록 합니다.
+    """
     # 테이블이 없으면 먼저 생성
     init_db()
 
-    # FAQ 및 상품 크롤링을 먼저 실행
-    run_crawling()
+    if with_crawling:
+        # 수동 운영 시에만 명시적으로 크롤링을 동반합니다.
+        run_crawling()
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -216,4 +223,4 @@ def seed_db():
 
 
 if __name__ == "__main__":
-    seed_db()
+    seed_db(with_crawling="--with-crawling" in sys.argv[1:])

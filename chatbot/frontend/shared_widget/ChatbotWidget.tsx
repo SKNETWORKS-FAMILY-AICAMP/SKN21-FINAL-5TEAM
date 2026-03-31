@@ -347,8 +347,6 @@ export async function streamSharedChatResponse(
     message: string;
     previousState?: Record<string, unknown> | null;
     resumePayload?: Record<string, unknown> | null;
-    provider?: string | null;
-    model?: string | null;
     bootstrap: SharedChatBootstrap;
     fetchImpl: FetchLike;
     capabilityProfile?: string | null;
@@ -367,8 +365,6 @@ export async function streamSharedChatResponse(
       message: args.message,
       previous_state: args.previousState ?? null,
       resume_payload: args.resumePayload ?? null,
-      provider: args.provider ?? undefined,
-      model: args.model ?? undefined,
       site_id: args.bootstrap.site_id,
       access_token: args.bootstrap.access_token,
       user_id: args.bootstrap.user_id,
